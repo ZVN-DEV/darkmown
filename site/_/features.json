@@ -4,8 +4,8 @@
     "body": "Pages come from site/pages, and hidden work is just dot or minus prefixed."
   },
   {
-    "title": "Includes instead of component ceremony",
-    "body": "Use @include for one piece or @repeat from JSON when a pattern needs data."
+    "title": "One loop, @loop",
+    "body": "Loop a JSON file, an in-scope value, or a :state list — includes inside inherit the loop value."
   },
   {
     "title": "Colocated behavior",

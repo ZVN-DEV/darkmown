@@ -31,6 +31,14 @@ export function initProject(root) {
     "",
     ":button \"Increment\" -> count++",
     "",
+    ":state todos = [\"Write a page\"]",
+    "",
+    "@loop todos into todo",
+    "- { todo }",
+    "@endloop",
+    "",
+    ":button \"Add\" -> todos += \"Add a loop\"",
+    "",
     "</main>"
   ].join("\n"));
   writeNew(root, "site/pages/index.skin", [

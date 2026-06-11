@@ -8,7 +8,7 @@ title: Reactive Markdown
 
 # Reactive Markdown
 
-This page proves Stage 2 from the original vision: Markdown-native state ships a runtime only when the page asks for it.
+This page opts into the runtime because it declares state. Static pages ship zero framework JavaScript.
 
 :state count = 0
 
@@ -18,7 +18,8 @@ The count is { count }.
 
 :state open = false
 
-:button "Toggle details" -> open = true
+:button "Show details" -> open = true
+:button "Hide details" -> open = false
 
 :if open
 The details are visible now.
@@ -26,16 +27,42 @@ The details are visible now.
 The details are hidden.
 :endif
 
-:state todos = ["Route pages", "Ship tiny runtime"]
+## Keyed loops over real objects
 
-## Reactive list
+The same `@loop` that unrolls static data also drives reactive lists. Items are objects, bindings use dotted paths, and the runtime patches the list by key instead of re-rendering it:
 
-:for todo in todos
-- { todo }
-:endfor
+:state todos = [{"id": 1, "title": "Route pages", "owner": "PM"}, {"id": 2, "title": "Ship tiny runtime", "owner": "Dev"}]
 
-:button "Add todo" -> todos += "Live compile"
+@loop todos into todo
+- **{ todo.title }** — { todo.owner }
+@endloop
 
-Static pages like Docs stay runtime-free.
+:button "Add todo" -> todos += {"id": 3, "title": "Live compile", "owner": "Testing"}
+
+## Section-scoped state
+
+Two sections can each own a state value named `tally` without colliding. Buttons resolve to the nearest scope:
+
+::: section #left .tally-card
+:state tally = 0
+
+### Left section
+
+The left tally is { tally }.
+
+:button "Bump left" -> tally++
+:::
+
+::: section #right .tally-card
+:state tally = 10
+
+### Right section
+
+The right tally is { tally }.
+
+:button "Bump right" -> tally++
+:::
+
+Static pages like the docs stay runtime-free.
 
 </main>

@@ -16,8 +16,15 @@ export function buildSite(cwd = process.cwd()) {
   const routes = discoverRoutes(paths.routesRoot);
   const manifest = [];
 
+  const warned = new Set();
+
   for (const route of routes) {
     const page = compilePage(route.file, paths);
+    for (const warning of page.warnings || []) {
+      if (warned.has(warning)) continue;
+      warned.add(warning);
+      console.warn(`hint: ${warning}`);
+    }
     const outFile = outputPathForRoute(paths.distRoot, route.route);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, page.html);
@@ -59,7 +66,7 @@ function emitAssets(assets, paths) {
 function emitShelfAssets(paths) {
   if (!fs.existsSync(paths.shelfRoot)) return;
   for (const file of walk(paths.shelfRoot)) {
-    if ([".md", ".mdx", ".wd", ".json"].includes(path.extname(file))) continue;
+    if ([".md", ".wd", ".json"].includes(path.extname(file))) continue;
     const rel = path.relative(paths.shelfRoot, file);
     const out = path.join(paths.distRoot, "__wd/media", rel);
     fs.mkdirSync(path.dirname(out), { recursive: true });

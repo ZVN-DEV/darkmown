@@ -1,0 +1,129 @@
+---
+title: Markie docs
+---
+
+@include /nav.wd
+
+<main>
+
+# Docs
+
+Markie is a Markdown-native framework for mostly-static sites with tiny reactive islands. Pages are plain files: `.md` stays pure CommonMark, and `.wd` ("whateverdown") is the same Markdown plus first-party directives.
+
+@include ./-relative-note.wd
+
+## Install
+
+From this repo:
+
+```sh
+npm install
+npm link
+markie help
+```
+
+Or use the local script surface:
+
+```sh
+npm run dev
+npm run build
+```
+
+## Create a site
+
+```sh
+markie init my-site
+cd my-site
+npm install
+npm run dev
+```
+
+## The two formats
+
+- `.md` is strict CommonMark. Directives, includes, and `{ bindings }` stay plain text, and the build prints a hint if it spots `.wd` syntax in a `.md` file.
+- `.wd` is Markdown plus directives. Renaming a file from `.md` to `.wd` is the upgrade path — nothing else changes.
+
+## Routing rules
+
+- `site/pages/index.wd` becomes `/`.
+- `site/pages/docs/index.wd` becomes `/docs/`.
+- `.secret.wd`, `-draft.wd`, and hidden folders do not become pages.
+- `site/_/` is the include shelf, never a route.
+
+## Includes
+
+- `@include /nav.wd` resolves from `site/_`.
+- `@include ./-relative-note.wd` resolves beside the current page.
+- `@include /card.wd with title="Hello" count=3` passes values into the include.
+- `with title={ feature.title }` passes a value already in scope — including whole objects.
+- Includes inside a loop inherit the loop value automatically.
+
+## Loops
+
+`@loop <things> into <thing>` is the only loop. The body is normal Markdown (or more directives) and repeats once per row:
+
+```wd
+@loop /features.json into card
+@include /feature-card.wd
+@endloop
+```
+
+The source decides how the loop behaves:
+
+- A JSON file path (`/features.json`, `./data.json`) unrolls at build time — pure static HTML.
+- An in-scope value (an include argument or an outer loop value) also unrolls at build time.
+- A `:state` list compiles to a reactive region the runtime patches by key.
+
+Loops nest, and `{ card.title }` style dotted paths reach into each row.
+
+## Interpolation
+
+One syntax everywhere: `{ name }` or `{ name.path }`.
+
+- If the name is a static value in scope (include argument, loop value), it is resolved at build time.
+- If the name is declared `:state`, it becomes a live binding.
+- Otherwise the text is left exactly as written — braces in prose never break a page or pull in the runtime.
+
+## Sections
+
+`::: section #id .class` opens a container and `:::` closes it. Sections scope state: a `:state` declared inside a section belongs to that section, so two sections can both declare `count` without colliding. Bindings and buttons resolve to the nearest scope.
+
+## Reactive directives
+
+Reactive pages opt into `/__wd/runtime.js` (under 1 KB gzipped). Static pages do not.
+
+```wd
+:state count = 0
+
+The count is { count }.
+
+:button "Increment" -> count++
+
+:if count
+Count has changed.
+:else
+Count is still zero.
+:endif
+
+:state todos = [{"id": 1, "title": "Route pages"}]
+
+@loop todos into todo
+- { todo.title }
+@endloop
+
+:button "Add" -> todos += {"id": 2, "title": "Live compile"}
+```
+
+Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in a colocated `.js` file.
+
+## Colocation
+
+- A matching `.skin` file attaches CSS to the page (indentation-based, compiles to real CSS).
+- A matching `.js` file attaches page behavior.
+- Both work for included fragments too, by basename.
+
+## Spec status
+
+The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:fetch`, `:form`, `:session`, `:cart`, and server-driven fragments remain roadmap work — see `docs/spec-alignment.md` in the package for the full audit.
+
+</main>

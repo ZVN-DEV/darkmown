@@ -112,8 +112,9 @@ Usage:
   markie help         Show this help
 
 Authoring:
-  site/pages          File-based routes for .md, .mdx, and .wd
+  site/pages          File-based routes: .md stays plain, .wd adds directives
   site/_              Include shelf for @include /name.wd
+  @loop x into item   Loop over JSON files, in-scope values, or :state lists
   *.skin              Colocated indentation-based CSS
   *.js                Colocated page behavior
 `);

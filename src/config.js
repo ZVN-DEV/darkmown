@@ -3,7 +3,7 @@ import path from "node:path";
 export const routesDir = "site/pages";
 export const shelfDir = "site/_";
 export const distDir = "dist";
-export const pageExtensions = new Set([".md", ".mdx", ".wd"]);
+export const pageExtensions = new Set([".md", ".wd"]);
 
 export function createPaths(cwd = process.cwd()) {
   return {

@@ -1,8 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
+import MarkdownIt from "markdown-it";
+
+const md = new MarkdownIt({ html: true });
+md.use(bindingPlugin);
+
+const pageIncludeExtensions = [".md", ".wd"];
 
 export function compilePage(file, context) {
-  const compiled = compileDocument(file, context, []);
+  const compiled = compileDocument(file, context);
   const title = compiled.meta.title || "Markie";
   const favicon = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Cpath%20d='M9%2022V10h4l3%206%203-6h4v12h-4v-6l-2%204h-2l-2-4v6z'%20fill='%23f7f3ea'/%3E%3C/svg%3E";
   const cssLinks = [...compiled.assets.skins].map((href) => `<link rel="stylesheet" href="${href}">`).join("\n");
@@ -25,11 +31,31 @@ ${compiled.html}
 ${scripts}
 </body>
 </html>`,
-    assets: compiled.assets
+    assets: compiled.assets,
+    warnings: compiled.warnings
   };
 }
 
 export function compileDocument(file, context, stack = [], vars = {}) {
+  const comp = createCompilation();
+  const result = compileFile(file, context, stack, createScope(null, vars), comp, [], null);
+  return { meta: result.meta, html: result.html, assets: comp.assets, warnings: comp.warnings };
+}
+
+function createCompilation() {
+  return {
+    assets: { skins: new Set(), scripts: new Set(), files: new Map(), runtime: false },
+    state: new Map(),
+    warnings: [],
+    sectionCounter: 0
+  };
+}
+
+function createScope(parent, vars = {}) {
+  return { parent, vars: { ...vars } };
+}
+
+function compileFile(file, context, stack, scope, comp, sections, loopItem) {
   const real = fs.realpathSync(file);
   if (stack.includes(real)) {
     throw new Error(`Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`);
@@ -37,18 +63,15 @@ export function compileDocument(file, context, stack = [], vars = {}) {
 
   const raw = fs.readFileSync(file, "utf8");
   const { meta, body } = parseFrontmatter(raw);
-  const assets = createAssets();
-  collectColocatedAssets(file, context, assets);
-  const expanded = expandIncludes(body, file, context, [...stack, real], vars, assets);
-  return {
-    meta,
-    html: renderMarkdown(applyVars(expanded, vars), assets),
-    assets
-  };
-}
+  collectColocatedAssets(file, context, comp.assets);
 
-function createAssets() {
-  return { skins: new Set(), scripts: new Set(), files: new Map(), runtime: false };
+  if (path.extname(file) === ".md") {
+    scanMarkdownHints(body, file, comp);
+    return { meta, html: md.render(body, {}) };
+  }
+
+  const ctx = { file, context, stack: [...stack, real], scope, comp, sections, loopItem };
+  return { meta, html: compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx) };
 }
 
 export function parseFrontmatter(raw) {
@@ -65,36 +88,534 @@ export function parseFrontmatter(raw) {
   return { meta, body };
 }
 
-function expandIncludes(source, fromFile, context, stack, vars, assets) {
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+// ---------------------------------------------------------------------------
+// Block parser: directives + prose segments
+// ---------------------------------------------------------------------------
+
+function compileBody(lines, ctx) {
   const out = [];
-  for (const line of lines) {
-    const include = line.match(/^@include\s+(.+?)(?:\s+with\s+(.+))?$/);
-    const repeat = line.match(/^@repeat\s+(.+?)\s+from\s+(.+)$/);
-    if (include) {
-      const target = resolveInclude(include[1].trim(), fromFile, context);
-      const childVars = { ...vars, ...parseArgs(include[2] || "") };
-      const child = compileDocument(target, context, stack, childVars);
-      mergeAssets(assets, child.assets);
-      out.push(child.html);
+  let prose = [];
+  let fence = null;
+
+  const flush = () => {
+    if (!prose.length) return;
+    const text = prose.join("\n");
+    prose = [];
+    if (text.trim()) out.push(renderProse(text, ctx));
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      prose.push(line);
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
       continue;
     }
-    if (repeat) {
-      const target = resolveInclude(repeat[1].trim(), fromFile, context);
-      const dataFile = resolveInclude(repeat[2].trim(), fromFile, context, true);
-      const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
-      if (!Array.isArray(rows)) throw new Error(`Repeat data must be an array: ${dataFile}`);
-      for (const row of rows) {
-        const child = compileDocument(target, context, stack, { ...vars, ...row });
-        mergeAssets(assets, child.assets);
-        out.push(child.html);
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      prose.push(line);
+      continue;
+    }
+
+    if (/^@include\s/.test(line)) {
+      flush();
+      out.push(handleInclude(line, ctx));
+      continue;
+    }
+    if (/^@loop\s/.test(line)) {
+      flush();
+      const block = scanBlock(lines, i, /^@loop\s/, "@endloop", ctx.file);
+      out.push(handleLoop(line, block.body, ctx));
+      i = block.end;
+      continue;
+    }
+    const container = line.match(/^:::\s*(.*)$/);
+    if (container) {
+      flush();
+      if (!container[1].trim()) throw new Error(`Stray ::: close with no open container in ${ctx.file}`);
+      const block = scanContainer(lines, i, ctx.file);
+      out.push(handleContainer(container[1].trim(), block.body, ctx));
+      i = block.end;
+      continue;
+    }
+    if (/^:state\s/.test(line)) {
+      flush();
+      out.push(handleState(line, ctx));
+      continue;
+    }
+    if (/^:button\s/.test(line)) {
+      flush();
+      out.push(handleButton(line, ctx));
+      continue;
+    }
+    if (/^:if\s/.test(line)) {
+      flush();
+      const block = scanConditional(lines, i, ctx.file);
+      out.push(handleIf(line, block.truthy, block.falsy, ctx));
+      i = block.end;
+      continue;
+    }
+    const demo = renderDemoDirective(line);
+    if (demo) {
+      flush();
+      out.push(demo);
+      continue;
+    }
+    if (/^@repeat\b/.test(line)) {
+      throw new Error(`@repeat was replaced by @loop in ${ctx.file}. Use: @loop /data.json into item ... @endloop`);
+    }
+    if (/^:for\b/.test(line)) {
+      throw new Error(`:for was replaced by @loop in ${ctx.file}. Use: @loop items into item ... @endloop`);
+    }
+    if (/^(@endloop|:endif|:endfor|:else)\s*$/.test(line)) {
+      throw new Error(`Stray "${line.trim()}" with no matching opener in ${ctx.file}`);
+    }
+    prose.push(line);
+  }
+
+  flush();
+  return out.join("\n");
+}
+
+function scanBlock(lines, start, openRe, endToken, file) {
+  const body = [];
+  let depth = 0;
+  let fence = null;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      body.push(line);
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      body.push(line);
+      continue;
+    }
+    if (openRe.test(line)) depth++;
+    if (line.trim() === endToken) {
+      if (depth === 0) return { body, end: i };
+      depth--;
+    }
+    body.push(line);
+  }
+  throw new Error(`Missing ${endToken} for "${lines[start]}" in ${file}`);
+}
+
+function scanContainer(lines, start, file) {
+  const body = [];
+  let depth = 0;
+  let fence = null;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      body.push(line);
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      body.push(line);
+      continue;
+    }
+    const marker = line.match(/^:::\s*(.*)$/);
+    if (marker) {
+      if (marker[1].trim()) {
+        depth++;
+      } else if (depth === 0) {
+        return { body, end: i };
+      } else {
+        depth--;
       }
+    }
+    body.push(line);
+  }
+  throw new Error(`Missing closing ::: for "${lines[start]}" in ${file}`);
+}
+
+function scanConditional(lines, start, file) {
+  const truthy = [];
+  const falsy = [];
+  let current = truthy;
+  let depth = 0;
+  let fence = null;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      current.push(line);
       continue;
     }
-    out.push(line);
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      current.push(line);
+      continue;
+    }
+    if (/^:if\s/.test(line)) depth++;
+    if (line.trim() === ":endif") {
+      if (depth === 0) return { truthy, falsy, end: i };
+      depth--;
+    }
+    if (line.trim() === ":else" && depth === 0) {
+      current = falsy;
+      continue;
+    }
+    current.push(line);
+  }
+  throw new Error(`Missing :endif for "${lines[start]}" in ${file}`);
+}
+
+// ---------------------------------------------------------------------------
+// Directive handlers
+// ---------------------------------------------------------------------------
+
+function handleInclude(line, ctx) {
+  const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
+  if (!match) throw new Error(`Malformed @include in ${ctx.file}: ${line}`);
+  const target = resolveInclude(match[1], ctx.file, ctx.context);
+  const args = parseIncludeArgs(match[2] || "", ctx);
+  const scope = createScope(ctx.scope, args);
+  const child = compileFile(target, ctx.context, ctx.stack, scope, ctx.comp, ctx.sections, ctx.loopItem);
+  return child.html;
+}
+
+function parseIncludeArgs(raw, ctx) {
+  const args = {};
+  const re = /([A-Za-z0-9_-]+)=("[^"]*"|'[^']*'|\{[^}]*\}|\S+)/g;
+  for (const match of raw.matchAll(re)) {
+    const value = match[2];
+    if (value.startsWith("{")) {
+      const expr = value.slice(1, -1).trim();
+      const resolved = lookupPath(expr, ctx);
+      if (!resolved.found) {
+        throw new Error(`@include argument ${match[1]}={ ${expr} } in ${ctx.file} does not match any value in scope`);
+      }
+      args[match[1]] = resolved.value;
+    } else {
+      args[match[1]] = parseScalar(value);
+    }
+  }
+  return args;
+}
+
+function handleContainer(header, bodyLines, ctx) {
+  const tokens = header.split(/\s+/);
+  let tag = "section";
+  let extraClass = [];
+  let id = "";
+  let nameToken = tokens[0] && !tokens[0].startsWith("#") && !tokens[0].startsWith(".") ? tokens.shift() : "section";
+  if (nameToken !== "section") {
+    tag = "div";
+    extraClass.push(nameToken);
+  }
+  for (const token of tokens) {
+    if (token.startsWith("#")) id = token.slice(1);
+    else if (token.startsWith(".")) extraClass.push(token.slice(1));
+    else throw new Error(`Unexpected token "${token}" in container "::: ${header}" in ${ctx.file}`);
+  }
+  if (!id) id = `wd-s${++ctx.comp.sectionCounter}`;
+
+  ctx.sections.push(id);
+  let inner;
+  try {
+    inner = compileBody(bodyLines, ctx);
+  } finally {
+    ctx.sections.pop();
+  }
+  const classAttr = extraClass.length ? ` class="${escapeHtml(extraClass.join(" "))}"` : "";
+  return `<${tag} id="${escapeHtml(id)}"${classAttr}>\n${inner}\n</${tag}>`;
+}
+
+function handleState(line, ctx) {
+  const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+  if (!match) throw new Error(`Malformed :state in ${ctx.file}: ${line}`);
+  if (ctx.loopItem) throw new Error(`:state cannot be declared inside a reactive @loop body (${ctx.file})`);
+  const value = parseStateValue(match[2]);
+  const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${match[1]}` : match[1];
+  if (ctx.comp.state.has(key)) throw new Error(`State "${match[1]}" is declared twice in the same scope (${ctx.file})`);
+  ctx.comp.state.set(key, value);
+  ctx.comp.assets.runtime = true;
+  return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: value })}</script>`;
+}
+
+function handleButton(line, ctx) {
+  const match = line.match(/^:button\s+"([^"]+)"\s*->\s*(.+)$/);
+  if (!match) throw new Error(`Malformed :button in ${ctx.file}: ${line}`);
+  ctx.comp.assets.runtime = true;
+  const action = parseAction(match[2], ctx);
+  const valueAttr = action.value === undefined ? "" : ` data-wd-value="${escapeHtml(JSON.stringify(action.value))}"`;
+  return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${valueAttr}>${escapeHtml(match[1])}</button>`;
+}
+
+function handleIf(line, truthyLines, falsyLines, ctx) {
+  const match = line.match(/^:if\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*$/);
+  if (!match) throw new Error(`Malformed :if in ${ctx.file}: ${line}. Use ":if name" with a :state or in-scope value.`);
+  const segs = match[1].split(".");
+  const head = segs[0];
+
+  const staticValue = lookupVar(ctx.scope, head);
+  if (staticValue.found) {
+    const active = Boolean(getPath(staticValue.value, segs.slice(1)));
+    return compileBody(active ? truthyLines : falsyLines, ctx);
+  }
+
+  if (ctx.loopItem && head === ctx.loopItem) {
+    throw new Error(`:if over the reactive loop item "${head}" is not supported yet (${ctx.file})`);
+  }
+
+  const key = resolveStateKey(head, ctx);
+  if (!key) {
+    throw new Error(`:if ${match[1]} in ${ctx.file} does not match a :state or in-scope value. Declare it first.`);
+  }
+  ctx.comp.assets.runtime = true;
+  const truthy = compileBody(truthyLines, ctx).trim();
+  const falsy = compileBody(falsyLines, ctx).trim();
+  const restPath = segs.slice(1).join(".");
+  const pathAttr = restPath ? ` data-wd-path="${escapeHtml(restPath)}"` : "";
+  const active = getPath(ctx.comp.state.get(key), segs.slice(1)) ? truthy : falsy;
+  return `<div data-wd-if="${key}"${pathAttr}><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
+}
+
+function handleLoop(line, bodyLines, ctx) {
+  const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)\s*$/);
+  if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. Use: @loop <things> into <thing>`);
+  const source = stripQuotes(match[1].trim());
+  const itemName = match[2];
+
+  if (source.startsWith("/") || source.startsWith("./") || source.startsWith("../") || source.endsWith(".json")) {
+    const dataFile = resolveInclude(source, ctx.file, ctx.context, true);
+    const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+    if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
+    return staticUnroll(rows, itemName, bodyLines, ctx);
+  }
+
+  const resolved = lookupPath(source, ctx);
+  if (resolved.found) {
+    if (!Array.isArray(resolved.value)) {
+      throw new Error(`@loop ${source} in ${ctx.file} found an in-scope value, but it is not a list`);
+    }
+    return staticUnroll(resolved.value, itemName, bodyLines, ctx);
+  }
+
+  if (/^[A-Za-z_$][\w$]*$/.test(source)) {
+    const key = resolveStateKey(source, ctx);
+    if (key) return reactiveLoop(key, itemName, bodyLines, ctx);
+  }
+
+  throw new Error(
+    `@loop source "${source}" in ${ctx.file} was not found. Loop over a JSON file (@loop /data.json into row), an in-scope value, or a :state list.`
+  );
+}
+
+function staticUnroll(rows, itemName, bodyLines, ctx) {
+  const out = [];
+  for (const row of rows) {
+    const rowCtx = { ...ctx, scope: createScope(ctx.scope, { [itemName]: row }) };
+    out.push(compileBody(bodyLines, rowCtx));
   }
   return out.join("\n");
 }
+
+function reactiveLoop(key, itemName, bodyLines, ctx) {
+  ctx.comp.assets.runtime = true;
+  const templateCtx = { ...ctx, loopItem: itemName, scope: createScope(ctx.scope) };
+  const templateHtml = compileBody(bodyLines, templateCtx).trim();
+
+  let wrapperTag = "div";
+  let itemTemplate = templateHtml;
+  const listMatch = templateHtml.match(/^<(ul|ol)>\s*([\s\S]*?)\s*<\/\1>$/);
+  if (listMatch && (listMatch[2].match(/<li>/g) || []).length === 1) {
+    wrapperTag = listMatch[1];
+    itemTemplate = listMatch[2].trim();
+  } else {
+    itemTemplate = `<div data-wd-loop-piece>${templateHtml}</div>`;
+  }
+
+  const rows = Array.isArray(ctx.comp.state.get(key)) ? ctx.comp.state.get(key) : [];
+  const counts = new Map();
+  const initial = rows
+    .map((item) => {
+      const itemKey = loopKeyOf(item, counts);
+      return fillTemplateString(withLoopKey(itemTemplate, itemKey), item);
+    })
+    .join("");
+
+  return `<div data-wd-loop="${key}"><template data-wd-loop-template>${itemTemplate}</template><${wrapperTag} data-wd-loop-out>${initial}</${wrapperTag}></div>`;
+}
+
+function withLoopKey(template, itemKey) {
+  return template.replace(/^<([a-zA-Z][a-zA-Z0-9-]*)/, `<$1 data-wd-loop-key="${escapeHtml(itemKey)}"`);
+}
+
+function fillTemplateString(template, item) {
+  return template.replace(/<span data-wd-each(?: data-wd-path="([^"]*)")?><\/span>/g, (_, p) => {
+    const value = p ? getPath(item, p.split(".")) : item;
+    const pathAttr = p ? ` data-wd-path="${p}"` : "";
+    return `<span data-wd-each${pathAttr}>${escapeHtml(value ?? "")}</span>`;
+  });
+}
+
+export function loopKeyOf(item, counts) {
+  const base =
+    item && typeof item === "object"
+      ? String(item.id ?? item.key ?? JSON.stringify(item))
+      : String(item);
+  const seen = counts.get(base) || 0;
+  counts.set(base, seen + 1);
+  return seen ? `${base}#${seen}` : base;
+}
+
+function renderDemoDirective(line) {
+  const tryMatch = line.match(/^:try\s+"([^"]+)"\s+href="([^"]+)"$/);
+  if (tryMatch) return `<a class="try-card" href="${tryMatch[2]}"><span>Try</span>${escapeHtml(tryMatch[1])}</a>`;
+  const note = line.match(/^:note\s+"([^"]+)"$/);
+  if (note) return `<aside class="note">${escapeHtml(note[1])}</aside>`;
+  const sprint = line.match(/^:sprint\s+min=(\d+)\s+max=(\d+)\s+roles="([^"]+)"$/);
+  if (sprint) {
+    const roles = sprint[3].split(",").map((role) => role.trim()).filter(Boolean);
+    return `<section class="sprint-board" data-min="${sprint[1]}" data-max="${sprint[2]}">${roles.map((role) => `<article><strong>${escapeHtml(role)}</strong><span>active lane</span></article>`).join("")}</section>`;
+  }
+  return "";
+}
+
+// ---------------------------------------------------------------------------
+// Interpolation: one syntax, { name } / { name.path }
+// ---------------------------------------------------------------------------
+
+function renderProse(text, ctx) {
+  return md.render(text, { resolveBinding: (expr) => resolveBindingHtml(expr, ctx) });
+}
+
+function bindingPlugin(mdInstance) {
+  mdInstance.inline.ruler.push("wd_binding", (state, silent) => {
+    if (state.src.charCodeAt(state.pos) !== 0x7b /* { */) return false;
+    const match = /^\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/.exec(state.src.slice(state.pos));
+    if (!match) return false;
+    const resolve = state.env?.resolveBinding;
+    const html = resolve ? resolve(match[1]) : null;
+    if (typeof html !== "string") return false;
+    if (!silent) {
+      const token = state.push("html_inline", "", 0);
+      token.content = html;
+    }
+    state.pos += match[0].length;
+    return true;
+  });
+}
+
+function resolveBindingHtml(expr, ctx) {
+  const segs = expr.split(".");
+  const head = segs[0];
+
+  if (ctx.loopItem && head === ctx.loopItem) {
+    const rest = segs.slice(1).join(".");
+    return `<span data-wd-each${rest ? ` data-wd-path="${escapeHtml(rest)}"` : ""}></span>`;
+  }
+
+  const staticValue = lookupVar(ctx.scope, head);
+  if (staticValue.found) {
+    return escapeHtml(getPath(staticValue.value, segs.slice(1)) ?? "");
+  }
+
+  const key = resolveStateKey(head, ctx);
+  if (key) {
+    ctx.comp.assets.runtime = true;
+    const initial = getPath(ctx.comp.state.get(key), segs.slice(1));
+    const rest = segs.slice(1).join(".");
+    const pathAttr = rest ? ` data-wd-path="${escapeHtml(rest)}"` : "";
+    return `<span data-wd-bind="${key}"${pathAttr}>${escapeHtml(initial ?? "")}</span>`;
+  }
+
+  return null;
+}
+
+function lookupVar(scope, name) {
+  for (let current = scope; current; current = current.parent) {
+    if (name in current.vars) return { found: true, value: current.vars[name] };
+  }
+  return { found: false };
+}
+
+function lookupPath(expr, ctx) {
+  const segs = expr.split(".");
+  const head = lookupVar(ctx.scope, segs[0]);
+  if (!head.found) return { found: false };
+  return { found: true, value: getPath(head.value, segs.slice(1)) };
+}
+
+function getPath(value, segments) {
+  let current = value;
+  for (const segment of segments) {
+    if (current == null) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function resolveStateKey(name, ctx) {
+  for (let i = ctx.sections.length - 1; i >= 0; i--) {
+    const key = `${ctx.sections[i]}:${name}`;
+    if (ctx.comp.state.has(key)) return key;
+  }
+  return ctx.comp.state.has(name) ? name : null;
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+function parseAction(raw, ctx) {
+  const expression = raw.trim();
+  const resolveTarget = (name) => {
+    const key = resolveStateKey(name, ctx);
+    if (!key) {
+      throw new Error(`Button action targets unknown state "${name}" in ${ctx.file}. Declare it first with :state ${name} = ...`);
+    }
+    return key;
+  };
+
+  const increment = expression.match(/^([A-Za-z_$][\w$]*)\+\+$/);
+  if (increment) return { op: "inc", target: resolveTarget(increment[1]) };
+  const decrement = expression.match(/^([A-Za-z_$][\w$]*)--$/);
+  if (decrement) return { op: "dec", target: resolveTarget(decrement[1]) };
+  const add = expression.match(/^([A-Za-z_$][\w$]*)\s*\+=\s*(.+)$/);
+  if (add) {
+    const target = resolveTarget(add[1]);
+    const value = parseActionLiteral(add[2]);
+    if (Array.isArray(ctx.comp.state.get(target))) return { op: "append", target, value };
+    if (typeof value === "number") return { op: "add", target, value };
+    throw new Error(`Unsupported button action "${raw}". += with non-number values requires a list state target.`);
+  }
+  const assign = expression.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+  if (assign) return { op: "set", target: resolveTarget(assign[1]), value: parseActionLiteral(assign[2]) };
+  throw new Error(`Unsupported button action "${raw}". Supported actions: count++, count--, count += 1, items += "value", name = "value".`);
+}
+
+function parseActionLiteral(raw) {
+  const value = raw.trim();
+  if (/^["'].*["']$/.test(value)) return stripQuotes(value);
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value === "null") return null;
+  if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
+  if (/^[\[{]/.test(value)) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      throw new Error(`Unsupported action literal "${raw}". Use a quoted string, number, boolean, null, or valid JSON.`);
+    }
+  }
+  throw new Error(`Unsupported action literal "${raw}". Use a quoted string, number, boolean, null, or valid JSON.`);
+}
+
+// ---------------------------------------------------------------------------
+// Includes / assets
+// ---------------------------------------------------------------------------
 
 function collectColocatedAssets(file, context, assets) {
   const ext = path.extname(file);
@@ -109,13 +630,6 @@ function collectColocatedAssets(file, context, assets) {
     if (assetExt === ".skin") assets.skins.add(publicPath);
     if (assetExt === ".js") assets.scripts.add(publicPath);
   }
-}
-
-function mergeAssets(target, source) {
-  for (const skin of source.skins) target.skins.add(skin);
-  for (const script of source.scripts) target.scripts.add(script);
-  for (const [file, href] of source.files) target.files.set(file, href);
-  target.runtime ||= source.runtime;
 }
 
 function resolveInclude(spec, fromFile, context, allowAny = false) {
@@ -133,7 +647,7 @@ function resolveInclude(spec, fromFile, context, allowAny = false) {
       throw new Error(`Include "${spec}" from ${fromFile} resolves outside site/pages or site/_`);
     }
     if (!fs.existsSync(resolved)) continue;
-    if (!allowAny && ![".md", ".mdx", ".wd"].includes(path.extname(resolved))) continue;
+    if (!allowAny && !pageIncludeExtensions.includes(path.extname(resolved))) continue;
     return resolved;
   }
   throw new Error(`Could not resolve include "${spec}" from ${fromFile}`);
@@ -144,232 +658,35 @@ function isAllowedInclude(file, context) {
   return roots.some((root) => file === root || file.startsWith(`${root}${path.sep}`));
 }
 
-function parseArgs(raw) {
-  const args = {};
-  const re = /([A-Za-z0-9_-]+)=("[^"]*"|'[^']*'|[^\s]+)/g;
-  for (const match of raw.matchAll(re)) args[match[1]] = stripQuotes(match[2]);
-  return args;
-}
+// ---------------------------------------------------------------------------
+// Plain .md hints
+// ---------------------------------------------------------------------------
 
-function applyVars(source, vars) {
-  return source.replace(/\{\{\s*([A-Za-z0-9_-]+)\s*\}\}/g, (_, key) => vars[key] ?? "");
-}
-
-function renderMarkdown(source, assets = createAssets(), initialState = {}) {
-  const lines = source.split("\n");
-  const html = [];
-  let paragraph = [];
-  let inCode = false;
-  let code = [];
-  let list = [];
-  const state = { ...initialState };
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    html.push(`<p>${inline(paragraph.join(" "), state, assets)}</p>`);
-    paragraph = [];
-  };
-  const flushList = () => {
-    if (!list.length) return;
-    html.push(`<ul>${list.map((item) => `<li>${inline(item, state, assets)}</li>`).join("")}</ul>`);
-    list = [];
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.startsWith("```")) {
-      if (inCode) {
-        html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
-        code = [];
-        inCode = false;
-      } else {
-        flushParagraph();
-        flushList();
-        inCode = true;
-      }
+function scanMarkdownHints(body, file, comp) {
+  let fence = null;
+  for (const line of body.split("\n")) {
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
       continue;
     }
-    if (inCode) {
-      code.push(line);
+    if (fenceMatch) {
+      fence = fenceMatch[1];
       continue;
     }
-    if (!line.trim()) {
-      flushParagraph();
-      flushList();
-      continue;
+    const hit = line.match(/^(@include|@loop|@repeat|:state|:button|:if|:for|:try|:note|:sprint|:::)(\s|$)/);
+    if (hit) {
+      comp.warnings.push(
+        `${file}: "${hit[1]}" is .wd syntax and stays plain text in .md — rename the file to .wd to activate it.`
+      );
+      return;
     }
-    if (line.trim().startsWith("<")) {
-      flushParagraph();
-      flushList();
-      html.push(line);
-      continue;
-    }
-    const heading = line.match(/^(#{1,6})\s+(.+)$/);
-    if (heading) {
-      flushParagraph();
-      flushList();
-      const level = heading[1].length;
-      html.push(`<h${level}>${inline(heading[2], state, assets)}</h${level}>`);
-      continue;
-    }
-    const item = line.match(/^\s*[-*]\s+(.+)$/);
-    if (item) {
-      flushParagraph();
-      list.push(item[1]);
-      continue;
-    }
-    const ifMatch = line.match(/^:if\s+([A-Za-z_$][\w$]*)$/);
-    if (ifMatch) {
-      flushParagraph();
-      flushList();
-      const block = collectConditional(lines, i);
-      html.push(renderConditional(ifMatch[1], block.truthy, block.falsy, assets, state));
-      i = block.end;
-      continue;
-    }
-    const forMatch = line.match(/^:for\s+([A-Za-z_$][\w$]*)\s+in\s+([A-Za-z_$][\w$]*)$/);
-    if (forMatch) {
-      flushParagraph();
-      flushList();
-      const block = collectBlock(lines, i, ":endfor");
-      html.push(renderFor(forMatch[1], forMatch[2], block.body, assets, state));
-      i = block.end;
-      continue;
-    }
-    const directive = renderDirective(line, assets, state);
-    if (directive) {
-      flushParagraph();
-      flushList();
-      html.push(directive);
-      continue;
-    }
-    paragraph.push(line.trim());
   }
-
-  flushParagraph();
-  flushList();
-  return html.join("\n");
 }
 
-function collectConditional(lines, start) {
-  const truthy = [];
-  const falsy = [];
-  let current = truthy;
-  let depth = 0;
-
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.match(/^:if\s+/)) depth++;
-    if (line === ":endif" && depth === 0) return { truthy, falsy, end: i };
-    if (line === ":endif") depth--;
-    if (line === ":else" && depth === 0) {
-      current = falsy;
-      continue;
-    }
-    current.push(line);
-  }
-
-  throw new Error(`Missing :endif for ${lines[start]}`);
-}
-
-function collectBlock(lines, start, endToken) {
-  const body = [];
-  let depth = 0;
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.match(/^:for\s+/)) depth++;
-    if (line === endToken && depth === 0) return { body, end: i };
-    if (line === endToken) depth--;
-    body.push(line);
-  }
-  throw new Error(`Missing ${endToken} for ${lines[start]}`);
-}
-
-function renderConditional(key, truthyLines, falsyLines, assets, state) {
-  assets.runtime = true;
-  const truthy = renderMarkdown(truthyLines.join("\n"), assets, state);
-  const falsy = renderMarkdown(falsyLines.join("\n"), assets, state);
-  const active = state[key] ? truthy : falsy;
-  return `<span data-wd-if="${key}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><span data-wd-if-out>${active}</span></span>`;
-}
-
-function renderFor(itemName, listName, bodyLines, assets, state) {
-  assets.runtime = true;
-  const rows = Array.isArray(state[listName]) ? state[listName] : [];
-  const template = renderTemplateLines(bodyLines, itemName);
-  const initial = rows.map((item) => renderForItem(template, itemName, item)).join("");
-  return `<span data-wd-for="${listName}" data-wd-item="${itemName}"><template data-wd-for-template>${template}</template><span data-wd-for-out>${initial}</span></span>`;
-}
-
-function renderTemplateLines(lines, itemName) {
-  return renderMarkdown(lines.join("\n"), createAssets()).replaceAll(`data-wd-bind="${itemName}"`, `data-wd-each="${itemName}"`);
-}
-
-function renderForItem(template, itemName, item) {
-  return template.replace(new RegExp(`(<span data-wd-each="${itemName}">)(</span>)`, "g"), `$1${escapeHtml(item)}$2`);
-}
-
-function renderDirective(line, assets, state) {
-  const stateMatch = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-  if (stateMatch) {
-    assets.runtime = true;
-    state[stateMatch[1]] = parseStateValue(stateMatch[2]);
-    return `<script type="application/json" data-wd-state>${safeScriptJson({ [stateMatch[1]]: state[stateMatch[1]] })}</script>`;
-  }
-  const button = line.match(/^:button\s+"([^"]+)"\s*->\s*(.+)$/);
-  if (button) {
-    assets.runtime = true;
-    const action = parseAction(button[2], state);
-    return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${action.value === undefined ? "" : ` data-wd-value="${escapeHtml(JSON.stringify(action.value))}"`}>${escapeHtml(button[1])}</button>`;
-  }
-  const tryMatch = line.match(/^:try\s+"([^"]+)"\s+href="([^"]+)"$/);
-  if (tryMatch) return `<a class="try-card" href="${tryMatch[2]}"><span>Try</span>${escapeHtml(tryMatch[1])}</a>`;
-  const note = line.match(/^:note\s+"([^"]+)"$/);
-  if (note) return `<aside class="note">${escapeHtml(note[1])}</aside>`;
-  const sprint = line.match(/^:sprint\s+min=(\d+)\s+max=(\d+)\s+roles="([^"]+)"$/);
-  if (sprint) {
-    const roles = sprint[3].split(",").map((role) => role.trim()).filter(Boolean);
-    return `<section class="sprint-board" data-min="${sprint[1]}" data-max="${sprint[2]}">${roles.map((role) => `<article><strong>${escapeHtml(role)}</strong><span>active lane</span></article>`).join("")}</section>`;
-  }
-  return "";
-}
-
-function inline(text, state = {}, assets = createAssets()) {
-  const codeSpans = [];
-  const protectedText = escapeHtml(text).replace(/`([^`]+)`/g, (_, code) => {
-    const token = `@@WD_CODE_${codeSpans.length}@@`;
-    codeSpans.push(`<code>${code}</code>`);
-    return token;
-  });
-
-  return protectedText
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-    .replace(/\{\s*([A-Za-z_$][\w$]*)\s*\}/g, (_, key) => {
-      assets.runtime = true;
-      return `<span data-wd-bind="${key}">${escapeHtml(state[key] ?? "")}</span>`;
-    })
-    .replace(/@@WD_CODE_(\d+)@@/g, (_, index) => codeSpans[Number(index)]);
-}
-
-function parseAction(raw, state = {}) {
-  const expression = raw.trim();
-  const increment = expression.match(/^([A-Za-z_$][\w$]*)\+\+$/);
-  if (increment) return { op: "inc", target: increment[1] };
-  const decrement = expression.match(/^([A-Za-z_$][\w$]*)--$/);
-  if (decrement) return { op: "dec", target: decrement[1] };
-  const add = expression.match(/^([A-Za-z_$][\w$]*)\s*\+=\s*(.+)$/);
-  if (add) {
-    const value = parseActionLiteral(add[2]);
-    if (Array.isArray(state[add[1]])) return { op: "append", target: add[1], value };
-    if (typeof value === "number") return { op: "add", target: add[1], value };
-    throw new Error(`Unsupported button action "${raw}". += with non-number values requires an array state target.`);
-  }
-  const assign = expression.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-  if (assign) return { op: "set", target: assign[1], value: parseActionLiteral(assign[2]) };
-  throw new Error(`Unsupported button action "${raw}". Supported actions: count++, count--, count += 1, items += "value", name = "value".`);
-}
+// ---------------------------------------------------------------------------
+// Literals
+// ---------------------------------------------------------------------------
 
 function safeScriptJson(value) {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
@@ -389,21 +706,13 @@ function parseStateValue(raw) {
   }
 }
 
-function parseActionLiteral(raw) {
-  const value = raw.trim();
-  if (/^["'].*["']$/.test(value)) return stripQuotes(value);
-  if (value === "true") return true;
-  if (value === "false") return false;
-  if (value === "null") return null;
-  if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
-  if (/^[\[{]/.test(value)) {
-    try {
-      return JSON.parse(value);
-    } catch {
-      throw new Error(`Unsupported action literal "${raw}". Use a quoted string, number, boolean, null, or valid JSON.`);
-    }
-  }
-  throw new Error(`Unsupported action literal "${raw}". Use a quoted string, number, boolean, null, or valid JSON.`);
+function parseScalar(raw) {
+  const trimmed = raw.trim();
+  if (/^["']/.test(trimmed)) return stripQuotes(trimmed);
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  return trimmed;
 }
 
 function stripQuotes(value) {

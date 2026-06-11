@@ -1,0 +1,46 @@
+- generic [ref=e1]:
+  - navigation [ref=e2]:
+    - strong [ref=e3]: Markie
+    - link "Home" [ref=e4] [cursor=pointer]:
+      - /url: /
+    - link "Docs" [ref=e5] [cursor=pointer]:
+      - /url: /docs/
+    - link "Plain Markdown" [ref=e6] [cursor=pointer]:
+      - /url: /markdown/
+    - link "Reactive" [ref=e7] [cursor=pointer]:
+      - /url: /reactive/
+  - main [ref=e8]:
+    - heading "Reactive Markdown" [level=1] [ref=e9]
+    - paragraph [ref=e10]: This page opts into the runtime because it declares state. Static pages ship zero framework JavaScript.
+    - paragraph [ref=e11]: The count is 2.
+    - button "Increment" [active] [ref=e12] [cursor=pointer]
+    - button "Show details" [ref=e13] [cursor=pointer]
+    - button "Hide details" [ref=e14] [cursor=pointer]
+    - paragraph [ref=e41]: The details are hidden.
+    - heading "Keyed loops over real objects" [level=2] [ref=e18]
+    - paragraph [ref=e19]:
+      - text: The same
+      - code [ref=e20]: "@loop"
+      - text: "that unrolls static data also drives reactive lists. Items are objects, bindings use dotted paths, and the runtime patches the list by key instead of re-rendering it:"
+    - list [ref=e22]:
+      - listitem [ref=e23]:
+        - strong [ref=e24]: Route pages
+        - text: — PM
+      - listitem [ref=e25]:
+        - strong [ref=e26]: Ship tiny runtime
+        - text: — Dev
+    - button "Add todo" [ref=e27] [cursor=pointer]
+    - heading "Section-scoped state" [level=2] [ref=e28]
+    - paragraph [ref=e29]:
+      - text: Two sections can each own a state value named
+      - code [ref=e30]: tally
+      - text: "without colliding. Buttons resolve to the nearest scope:"
+    - generic [ref=e31]:
+      - heading "Left section" [level=3] [ref=e32]
+      - paragraph [ref=e33]: The left tally is 0.
+      - button "Bump left" [ref=e34] [cursor=pointer]
+    - generic [ref=e35]:
+      - heading "Right section" [level=3] [ref=e36]
+      - paragraph [ref=e37]: The right tally is 10.
+      - button "Bump right" [ref=e38] [cursor=pointer]
+    - paragraph [ref=e39]: Static pages like the docs stay runtime-free.

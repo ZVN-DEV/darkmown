@@ -17,22 +17,28 @@ Markdown pages that compile into fast, mostly-static websites, with tiny reactiv
 <a class="btn" href="/reactive/">Try reactivity</a>
 </section>
 
-:note "Markie stays true to the original vision: zero JavaScript for static routes, a sub-5 KB target for reactive pages, .skin styling, includes instead of components, and a folder router."
+:note "Two formats, one rule: .md stays plain CommonMark forever, and renaming to .wd is what unlocks directives, includes, loops, and state."
 
 ## What to try
 
-:try "Open the docs route built from site/pages/docs/index.md" href="/docs/"
-:try "Open the MDX compatibility route" href="/lab/"
-:try "Open the reactive Markdown route" href="/reactive/"
+:try "Open the docs route, a .wd page full of includes" href="/docs/"
+:try "Open a plain .md page and see directives stay inert" href="/markdown/"
+:try "Open the reactive page: state, keyed loops, scoped sections" href="/reactive/"
 :try "Open a hidden route and confirm it 404s" href="/-draft/"
 
-## Repeat without ugly loops
+## Loops that read like prose
 
-For static repetition, `.wd` repeats a readable include from data:
+`@loop` is the only loop. Point it at a JSON file, an in-scope value, or a `:state` list, and the body repeats once per row. Includes inside the loop inherit the loop value:
 
-`@repeat /feature-card.wd from /features.json`
+```wd
+@loop /features.json into card
+@include /feature-card.wd
+@endloop
+```
 
-@repeat /feature-card.wd from /features.json
+@loop /features.json into card
+@include /feature-card.wd
+@endloop
 
 ## Colocated behavior
 

@@ -47,3 +47,5 @@ Runs a live compiler:
 Compiles `site/pages` into `dist`.
 
 Static pages do not receive `/__wd/runtime.js`; reactive pages do.
+
+When a `.md` file contains `.wd` syntax (directives, includes, loops), the build prints a hint suggesting a rename to `.wd` — the syntax stays plain text in `.md` by design.

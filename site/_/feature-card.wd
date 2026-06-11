@@ -1,7 +1,7 @@
 <section class="feature-card">
 
-**{{ title }}**
+**{ card.title }**
 
-{{ body }}
+{ card.body }
 
 </section>
