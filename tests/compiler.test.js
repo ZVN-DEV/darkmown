@@ -730,3 +730,31 @@ test(":computed rejects unsafe expressions at compile time", () => {
     /Unsupported syntax/
   );
 });
+
+// ---------------------------------------------------------------------------
+// Stage 5: adapter round-trips and packaging
+// ---------------------------------------------------------------------------
+
+test(":form action + into emits a fetch round-trip form that degrades natively", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':form action="/api/subscribe" into reply',
+    ":input email type=email required",
+    ':submit "Subscribe"',
+    ":endform",
+    "",
+    ":if reply",
+    "Got { reply.status }",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<form data-wd-form="reply" action="\/api\/subscribe" method="post">/);
+  assert.match(page.html, /data-wd-state>\{"reply":null\}/);
+  assert.match(page.html, /\/__wd\/runtime\.js/);
+
+  write(root, "site/pages/bad.wd", ':form bogus="x"\n:endform');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :form/
+  );
+});

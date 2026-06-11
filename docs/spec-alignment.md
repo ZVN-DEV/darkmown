@@ -39,12 +39,19 @@ This audit compares the current Markie implementation with the original MARROW/W
 - **Dev self-reload:** `markie dev` rebuilds in a child process, so changes to the framework's own `src/` always compile with fresh modules.
 - **Packaging:** version 0.2.0 with repository metadata; `markie version` reads package.json.
 
+## Stage 5 additions (2026-06-11, same day)
+
+- **Adapter-style Tier 2 (decided):** Markie does not own a server. `:form action="/url" into reply` posts urlencoded via fetch and lands the JSON reply in state, degrading to a plain native POST without JS. Sessions ride on `:fetch` plus ordinary cookies against any backend. A first-party `site/api/` runtime stays open as a future option if a real project demands it.
+- **Dev error overlay:** failed rebuilds render the compiler error in the browser; the overlay clears on the next good build.
+- **`markie serve`:** local preview of the built `dist`, no dev client injected.
+- **Packaging:** v0.3.0, license UNLICENSED pending a licensing decision, scaffold pins the live version, npm pack contents covered by tests.
+
 ## Still missing from the full vision
 
-- Server-driven fragments (Tier 2): `:session`, cart server sync, `swap` semantics, fragment endpoints — needs a server architecture decision first.
+- First-party server runtime (`site/api/`), HTML-fragment `swap` semantics, and cart server sync — parked behind the adapter decision until a real project needs them.
 - Nested `:if` over loop items, and `@loop` over fetch sub-paths.
 - `@starting-style` emission and browser fallbacks for older engines.
-- Editor tooling, diagnostics, and an actual npm publish.
+- Editor tooling, richer diagnostics, and an actual npm publish (needs a license decision).
 
 ## Current claim
 

@@ -1,6 +1,6 @@
 {
   "name": "markie-framework",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "A Markdown-native web framework with .wd directives, .skin styling, and zero-JS static output by default.",
@@ -40,5 +40,6 @@
     "whateverdown",
     "zero-js",
     "reactive"
-  ]
+  ],
+  "license": "UNLICENSED"
 }

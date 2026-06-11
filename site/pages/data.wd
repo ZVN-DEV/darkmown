@@ -50,6 +50,23 @@ Hello **{ profile.name }** — good luck with { profile.quest }.
 Submit the form and this sentence reacts. Nothing leaves the page.
 :endif
 
+## Server round-trips, adapter style
+
+Markie does not own your backend — point a form at any endpoint. With JS, the submit becomes a fetch and the JSON reply lands in state; without JS, the same markup is a plain native POST:
+
+:form action="/__wd/echo" into reply
+:input message placeholder="Say something to the server"
+:submit "Send to server"
+:endform
+
+:if reply
+The server answered with { reply.received.message } at { reply.at }.
+:else
+The reply will appear here.
+:endif
+
+The `/__wd/echo` endpoint ships with `markie dev` for demos only — in production this points at your real API, and sessions ride on `:fetch` plus ordinary cookies.
+
 ## Persistent state survives reload
 
 `:state items = [] persist` keeps this section in localStorage. Add a few, reload the page, and the count holds:

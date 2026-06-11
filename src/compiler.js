@@ -440,20 +440,27 @@ function compileComputedExpr(raw, ctx) {
 }
 
 function handleForm(line, bodyLines, ctx) {
-  const into = line.match(/^:form\s+into\s+([A-Za-z_$][\w$]*)\s*$/);
-  const native = line.match(/^:form\s+action="([^"]+)"(?:\s+method="([^"]+)")?\s*$/);
-  if (!into && !native) {
+  let rest = line.slice(":form".length).trim();
+  const action = rest.match(/action="([^"]+)"/)?.[1];
+  const method = rest.match(/method="([^"]+)"/)?.[1] || "post";
+  const into = rest.match(/(?:^|\s)into\s+([A-Za-z_$][\w$]*)/)?.[1];
+  const leftover = rest
+    .replace(/action="[^"]+"/, "")
+    .replace(/method="[^"]+"/, "")
+    .replace(/(?:^|\s)into\s+[A-Za-z_$][\w$]*/, "")
+    .trim();
+  if ((!action && !into) || leftover) {
     throw new Error(
-      `Malformed :form in ${ctx.file}: ${line}. Use ':form into name' (client state) or ':form action="/url"' (native post).`
+      `Malformed :form in ${ctx.file}: ${line}. Use ':form into name' (client state), ':form action="/url"' (native post), or both (fetch round-trip into state).`
     );
   }
   const inner = compileBody(bodyLines, ctx).trim();
-  if (into) {
-    const key = declareState(into[1], null, ctx);
-    return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: null })}</script><form data-wd-form="${key}">${inner}</form>`;
+  if (!into) {
+    return `<form action="${escapeHtml(action)}" method="${escapeHtml(method)}">${inner}</form>`;
   }
-  const method = native[2] || "post";
-  return `<form action="${escapeHtml(native[1])}" method="${escapeHtml(method)}">${inner}</form>`;
+  const key = declareState(into, null, ctx);
+  const actionAttrs = action ? ` action="${escapeHtml(action)}" method="${escapeHtml(method)}"` : "";
+  return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: null })}</script><form data-wd-form="${key}"${actionAttrs}>${inner}</form>`;
 }
 
 function handleInput(line, ctx) {

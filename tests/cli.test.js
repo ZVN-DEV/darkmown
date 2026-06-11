@@ -31,7 +31,7 @@ test("init scaffolds without overwriting and uses publishable dependency spec", 
   initProject(target);
 
   const pkg = JSON.parse(fs.readFileSync(path.join(target, "package.json"), "utf8"));
-  assert.equal(pkg.devDependencies["markie-framework"], "^0.2.0");
+  assert.equal(pkg.devDependencies["markie-framework"], "^0.3.0");
   assert.equal(fs.readFileSync(path.join(target, "site/pages/index.wd"), "utf8"), "# Existing\n");
   assert.equal(fs.existsSync(path.join(target, "site/pages/index.skin")), true);
   assert.equal(fs.existsSync(path.join(target, "site/_/nav.wd")), true);

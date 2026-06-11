@@ -142,9 +142,38 @@ document.addEventListener("submit", (event) => {
   const form = event.target.closest("[data-wd-form]");
   if (!form) return;
   event.preventDefault();
-  state[form.getAttribute("data-wd-form")] = Object.fromEntries(new FormData(form));
-  savePersisted();
-  render();
+  const key = form.getAttribute("data-wd-form");
+  const action = form.getAttribute("action");
+
+  if (!action) {
+    state[key] = Object.fromEntries(new FormData(form));
+    savePersisted();
+    render();
+    return;
+  }
+
+  fetch(action, {
+    method: form.getAttribute("method") || "post",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(new FormData(form)).toString()
+  })
+    .then(async (response) => {
+      const text = await response.text();
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      let value;
+      try {
+        value = JSON.parse(text);
+      } catch {
+        value = { status: response.status, body: text };
+      }
+      state[key] = value;
+      savePersisted();
+      render();
+    })
+    .catch((error) => {
+      state[`${key}_error`] = String(error);
+      render();
+    });
 });
 
 function startFetch(node) {

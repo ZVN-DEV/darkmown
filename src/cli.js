@@ -40,7 +40,9 @@ if (command === "help" || command === "--help" || command === "-h") {
       const started = performance.now();
       execFile(process.execPath, [cliPath, "build"], { cwd: process.cwd() }, (error, stdout, stderr) => {
         if (error) {
-          console.error(stderr || stdout || String(error));
+          const message = (stderr || stdout || String(error)).trim();
+          console.error(message);
+          broadcast(clients, `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`);
           return;
         }
         const elapsed = Math.round(performance.now() - started);
@@ -76,6 +78,19 @@ if (command === "help" || command === "--help" || command === "-h") {
         res.end(devClientScript());
         return;
       }
+      if (url.split("?")[0] === "/__wd/echo" && req.method === "POST") {
+        let body = "";
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", () => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            ok: true,
+            received: Object.fromEntries(new URLSearchParams(body)),
+            at: new Date().toISOString()
+          }));
+        });
+        return;
+      }
       serveDev(distRoot, url, res);
     } catch (error) {
       res.writeHead(500, { "content-type": "text/plain" });
@@ -85,6 +100,16 @@ if (command === "help" || command === "--help" || command === "-h") {
   server.listen(port, () => {
     console.log(`Markie dev server ready at http://localhost:${port}`);
     console.log(`Live compiler watching site/ and src/`);
+  });
+} else if (command === "serve") {
+  const port = Number(process.env.PORT || 4173);
+  const distRoot = path.join(process.cwd(), "dist");
+  if (!fs.existsSync(distRoot)) {
+    console.error("No dist directory found. Run `markie build` first.");
+    process.exit(1);
+  }
+  http.createServer((req, res) => serve(distRoot, req.url || "/", res)).listen(port, () => {
+    console.log(`Markie preview of dist at http://localhost:${port}`);
   });
 } else {
   console.error(`Unknown command: ${command}`);
@@ -118,6 +143,7 @@ Usage:
   markie init [dir]   Scaffold a new Markie project
   markie dev          Start the live compiler dev server
   markie build        Compile site/pages into dist
+  markie serve        Preview the built dist locally
   markie help         Show this help
 
 Authoring:

@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+const markieVersion = JSON.parse(
+  fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")
+).version;
+
 export function initProject(root) {
   fs.mkdirSync(root, { recursive: true });
   writeNew(root, "package.json", JSON.stringify({
@@ -9,7 +13,7 @@ export function initProject(root) {
       build: "markie build"
     },
     devDependencies: {
-      "markie-framework": "^0.2.0"
+      "markie-framework": `^${markieVersion}`
     }
   }, null, 2));
   writeNew(root, "site/pages/index.wd", [
