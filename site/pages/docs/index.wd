@@ -1,5 +1,6 @@
 ---
 title: Markie docs
+transitions: true
 ---
 
 @include /nav.wd

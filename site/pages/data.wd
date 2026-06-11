@@ -1,5 +1,6 @@
 ---
 title: Data, forms, and persistence
+transitions: true
 ---
 
 @include /nav.wd
@@ -55,18 +56,35 @@ Submit the form and this sentence reacts. Nothing leaves the page.
 
 ::: section #cart
 :state items = [] persist
+:computed total = items.length * 4
 
-The cart holds { items.length } item(s).
+The cart holds { items.length } item(s) worth ${ total }.
 
 :button "Add sticker" -> items += {"id": "sticker", "name": "Sticker"}
 :button "Add poster" -> items += {"id": "poster", "name": "Poster"}
 :button "Empty cart" -> items = []
 :::
 
+`:computed total = items.length * 4` derives state from state — the price updates with every cart change, persistence included.
+
 ## The escape hatch
 
 Colocated `data.js` uses the `window.wd` API (`wd.get`, `wd.set`) for anything directives can't say. Section state is addressed as `cart:items`:
 
 <button class="pulse-button" data-wd-double>Double the cart via window.wd</button>
+
+## Lazy loading
+
+The list below uses `when=visible` — the request only fires once this section scrolls into view. Watch the network tab:
+
+:fetch quotes from "/__wd/data/quotes.json" when=visible
+
+:if quotes
+@loop quotes into quote
+- { quote }
+@endloop
+:else
+Scroll me into view and I will load.
+:endif
 
 </main>

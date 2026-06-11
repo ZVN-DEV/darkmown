@@ -126,10 +126,12 @@ Loading…
 :state cart = [] persist
 ```
 
-- `:fetch name from "url"` declares state and fills it from JSON over the network; `name_error` carries failures.
+- `:fetch name from "url"` declares state and fills it from JSON over the network; `name_error` carries failures. Add `when=visible` to defer the request until the spot scrolls into view.
+- `:computed total = items.length * 4` derives state from state with a compile-time-checked expression (names, numbers, arithmetic, comparisons — nothing else).
 - `:form into name` captures submits straight into state (no backend). `:form action="/url"` emits a plain native form instead — zero JS, full progressive enhancement.
 - `:state x = [] persist` keeps that state in localStorage across reloads.
 - `:if item.path` works inside reactive loops for per-row branches.
+- `transitions: true` in frontmatter turns on cross-document view transitions — pure CSS, zero JS.
 
 ## The escape hatch
 

@@ -28,9 +28,26 @@ function getPath(value, path) {
   let current = value;
   for (const segment of path.split(".")) {
     if (current == null) return undefined;
+    if (segment === "constructor" || segment === "prototype" || segment === "__proto__") return undefined;
     current = current[segment];
   }
   return current;
+}
+
+const computedDefs = [...document.querySelectorAll("[data-wd-computed]")].map((node) => ({
+  key: node.getAttribute("data-wd-computed-key"),
+  evaluate: new Function("S", `return (${node.getAttribute("data-wd-computed-expr")});`)
+}));
+
+function recompute() {
+  const read = (key, path) => getPath(state[key], path);
+  for (const def of computedDefs) {
+    try {
+      state[def.key] = def.evaluate(read);
+    } catch {
+      state[def.key] = undefined;
+    }
+  }
 }
 
 function loopKeyOf(item, counts) {
@@ -59,6 +76,7 @@ function fillItem(node, item) {
 }
 
 function render() {
+  recompute();
   for (const node of document.querySelectorAll("[data-wd-if]")) {
     const value = getPath(state[node.getAttribute("data-wd-if")], node.getAttribute("data-wd-path"));
     const active = String(Boolean(value));
@@ -129,9 +147,9 @@ document.addEventListener("submit", (event) => {
   render();
 });
 
-for (const script of document.querySelectorAll("script[data-wd-fetch]")) {
-  const { key, url } = JSON.parse(script.textContent || "{}");
-  fetch(url)
+function startFetch(node) {
+  const key = node.getAttribute("data-wd-fetch-key");
+  fetch(node.getAttribute("data-wd-fetch-url"))
     .then((response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.json();
@@ -144,6 +162,19 @@ for (const script of document.querySelectorAll("script[data-wd-fetch]")) {
       state[`${key}_error`] = String(error);
       render();
     });
+}
+
+for (const node of document.querySelectorAll("[data-wd-fetch]")) {
+  if (node.getAttribute("data-wd-fetch-when") === "visible" && "IntersectionObserver" in window) {
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      startFetch(node);
+    });
+    observer.observe(node);
+  } else {
+    startFetch(node);
+  }
 }
 
 window.wd = {

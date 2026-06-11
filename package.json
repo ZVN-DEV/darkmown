@@ -1,6 +1,6 @@
 {
   "name": "markie-framework",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "A Markdown-native web framework with .wd directives, .skin styling, and zero-JS static output by default.",
@@ -23,5 +23,22 @@
   },
   "dependencies": {
     "markdown-it": "^14.2.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZVN-DEV/Markie-fw.git"
+  },
+  "homepage": "https://github.com/ZVN-DEV/Markie-fw#readme",
+  "bugs": {
+    "url": "https://github.com/ZVN-DEV/Markie-fw/issues"
+  },
+  "keywords": [
+    "markdown",
+    "framework",
+    "static-site",
+    "wd",
+    "whateverdown",
+    "zero-js",
+    "reactive"
+  ]
 }

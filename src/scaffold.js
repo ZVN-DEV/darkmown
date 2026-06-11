@@ -9,7 +9,7 @@ export function initProject(root) {
       build: "markie build"
     },
     devDependencies: {
-      "markie-framework": "^0.1.0"
+      "markie-framework": "^0.2.0"
     }
   }, null, 2));
   writeNew(root, "site/pages/index.wd", [

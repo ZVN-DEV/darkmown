@@ -1,18 +1,22 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { buildSite } from "./builder.js";
 import { devClientPath, devClientScript, devEventsPath, injectDevClient } from "./dev.js";
 import { initProject } from "./scaffold.js";
 import { contentType, resolvePublicFile, serve } from "./server.js";
 
+const cliPath = fileURLToPath(import.meta.url);
 const command = process.argv[2] || "build";
 
 if (command === "help" || command === "--help" || command === "-h") {
   printHelp();
 } else if (command === "version" || command === "--version" || command === "-v") {
-  console.log("0.1.0");
+  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  console.log(pkg.version);
 } else if (command === "init") {
   const target = process.argv[3] || ".";
   const result = initProject(path.resolve(process.cwd(), target));
@@ -23,22 +27,27 @@ if (command === "help" || command === "--help" || command === "-h") {
   console.log(`Built ${result.routes.length} routes into ${path.relative(process.cwd(), result.distRoot)}`);
 } else if (command === "dev") {
   const port = Number(process.env.PORT || 5173);
-  let current = buildSite();
+  const distRoot = path.join(process.cwd(), "dist");
+  buildSite();
   const clients = new Set();
   let timer;
 
+  // Rebuild in a child process so changes to Markie's own src/ always load
+  // fresh modules — an in-process rebuild would reuse the stale import cache.
   const rebuild = () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      try {
-        const started = performance.now();
-        current = buildSite();
+      const started = performance.now();
+      execFile(process.execPath, [cliPath, "build"], { cwd: process.cwd() }, (error, stdout, stderr) => {
+        if (error) {
+          console.error(stderr || stdout || String(error));
+          return;
+        }
         const elapsed = Math.round(performance.now() - started);
-        broadcast(clients, `event: reload\ndata: ${JSON.stringify({ routes: current.routes.length, elapsed })}\n\n`);
-        console.log(`Rebuilt ${current.routes.length} routes in ${elapsed}ms`);
-      } catch (error) {
-        console.error(error.stack || String(error));
-      }
+        if (stderr.trim()) console.warn(stderr.trim());
+        broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
+        console.log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
+      });
     }, 30);
   };
 
@@ -67,7 +76,7 @@ if (command === "help" || command === "--help" || command === "-h") {
         res.end(devClientScript());
         return;
       }
-      serveDev(current.distRoot, url, res);
+      serveDev(distRoot, url, res);
     } catch (error) {
       res.writeHead(500, { "content-type": "text/plain" });
       res.end(error.stack || String(error));

@@ -548,7 +548,7 @@ test(":fetch declares state, emits a fetch script, and powers reactive regions",
   ].join("\n"));
 
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<script type="application\/json" data-wd-fetch>\{"key":"team","url":"\/__wd\/data\/team\.json"\}<\/script>/);
+  assert.match(page.html, /<span data-wd-fetch data-wd-fetch-key="team" data-wd-fetch-url="\/__wd\/data\/team\.json"><\/span>/);
   assert.match(page.html, /data-wd-if="team"/);
   assert.match(page.html, /data-wd-loop="team"/);
   assert.match(page.html, /Loading…/);
@@ -652,4 +652,81 @@ test("shelf json is published under /__wd/data for :fetch", () => {
   write(root, "site/_/team.json", JSON.stringify([{ id: 1 }]));
   buildSite(root);
   assert.equal(fs.existsSync(path.join(root, "dist/__wd/data/team.json")), true);
+});
+
+// ---------------------------------------------------------------------------
+// Stage 4: view transitions, lazy fetch, computed state
+// ---------------------------------------------------------------------------
+
+test("transitions frontmatter emits the view-transition style, absent by default", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "---\ntitle: Home\ntransitions: true\n---\n\n# Home");
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /@view-transition \{ navigation: auto; \}/);
+
+  write(root, "site/pages/plain.wd", "# Plain");
+  const plain = compilePage(path.join(root, "site/pages/plain.wd"), createPaths(root));
+  assert.doesNotMatch(plain.html, /@view-transition/);
+});
+
+test(":fetch emits a marker span and when=visible is carried through", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch team from "/__wd/data/team.json"',
+    ':fetch quotes from "/__wd/data/quotes.json" when=visible'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<span data-wd-fetch data-wd-fetch-key="team" data-wd-fetch-url="\/__wd\/data\/team\.json"><\/span>/);
+  assert.match(page.html, /<span data-wd-fetch data-wd-fetch-key="quotes" data-wd-fetch-url="\/__wd\/data\/quotes\.json" data-wd-fetch-when="visible"><\/span>/);
+});
+
+test(":computed compiles a safe expression, seeds the initial value, and scopes to sections", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    "::: section #cart",
+    ':state items = [{"id": 1}, {"id": 2}] persist',
+    ":computed total = items.length * 4 + 1",
+    "Total ${ total }",
+    ":::"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-computed-key="cart:total"/);
+  assert.match(page.html, /data-wd-computed-expr="S\(&quot;cart:items&quot;,&quot;length&quot;\) \* 4 \+ 1"/);
+  assert.match(page.html, /<span data-wd-bind="cart:total">9<\/span>/);
+});
+
+test(":computed rejects unsafe expressions at compile time", () => {
+  const root = fixture();
+  write(root, "site/pages/unknown.wd", ":computed x = ghost * 2");
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/unknown.wd"), createPaths(root)),
+    /unknown state "ghost"/
+  );
+
+  write(root, "site/pages/assign.wd", [
+    ":state a = 1",
+    ":computed x = a = 2"
+  ].join("\n"));
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/assign.wd"), createPaths(root)),
+    /Assignment is not allowed/
+  );
+
+  write(root, "site/pages/proto.wd", [
+    ":state a = 1",
+    ":computed x = a.constructor.constructor"
+  ].join("\n"));
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/proto.wd"), createPaths(root)),
+    /not allowed in :computed/
+  );
+
+  write(root, "site/pages/chars.wd", [
+    ":state a = 1",
+    ":computed x = a; alert(1)"
+  ].join("\n"));
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/chars.wd"), createPaths(root)),
+    /Unsupported syntax/
+  );
 });

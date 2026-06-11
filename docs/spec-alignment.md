@@ -31,13 +31,20 @@ This audit compares the current Markie implementation with the original MARROW/W
 - **Action safety:** directive actions use a narrow compile-time-checked grammar instead of arbitrary JavaScript. Actions must target declared state.
 - **Name and extension:** MARROW/`.mw` became Markie/`.wd` per the follow-up direction.
 
+## Stage 4 additions (2026-06-11, same day)
+
+- **View transitions:** `transitions: true` in frontmatter emits `@view-transition { navigation: auto; }` — the original doc's zero-JS MPA navigation polish.
+- **Lazy loading:** `:fetch … when=visible` defers the request until the marker scrolls into view (IntersectionObserver) — the adapted form of `:lazy`.
+- **Computed state:** `:computed name = expr` with a compile-time-validated grammar (state refs, numbers, strings, arithmetic, comparisons; assignment, calls, and prototype walks rejected). Initial values are evaluated at build time.
+- **Dev self-reload:** `markie dev` rebuilds in a child process, so changes to the framework's own `src/` always compile with fresh modules.
+- **Packaging:** version 0.2.0 with repository metadata; `markie version` reads package.json.
+
 ## Still missing from the full vision
 
-- Server-driven fragments (Tier 2): `:session`, cart server sync, `swap` semantics, fragment endpoints.
-- `:lazy` deferred islands and computed/derived state.
+- Server-driven fragments (Tier 2): `:session`, cart server sync, `swap` semantics, fragment endpoints — needs a server architecture decision first.
 - Nested `:if` over loop items, and `@loop` over fetch sub-paths.
-- View transitions, `@starting-style` emission, and browser fallbacks.
-- Editor tooling, diagnostics, and publish-ready package metadata.
+- `@starting-style` emission and browser fallbacks for older engines.
+- Editor tooling, diagnostics, and an actual npm publish.
 
 ## Current claim
 

@@ -14,6 +14,7 @@ export function compilePage(file, context) {
   const cssLinks = [...compiled.assets.skins].map((href) => `<link rel="stylesheet" href="${href}">`).join("\n");
   const scriptSrcs = compiled.assets.runtime ? ["/__wd/runtime.js", ...compiled.assets.scripts] : [...compiled.assets.scripts];
   const scripts = scriptSrcs.map((src) => `<script type="module" src="${src}"></script>`).join("\n");
+  const transitions = compiled.meta.transitions === "true" ? `\n  <style>@view-transition { navigation: auto; }</style>` : "";
 
   return {
     meta: compiled.meta,
@@ -24,7 +25,7 @@ export function compilePage(file, context) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
   <link rel="icon" href="${favicon}">
-  ${cssLinks}
+  ${cssLinks}${transitions}
 </head>
 <body>
 ${compiled.html}
@@ -147,6 +148,11 @@ function compileBody(lines, ctx) {
     if (/^:fetch\s/.test(line)) {
       flush();
       out.push(handleFetch(line, ctx));
+      continue;
+    }
+    if (/^:computed\s/.test(line)) {
+      flush();
+      out.push(handleComputed(line, ctx));
       continue;
     }
     if (/^:form\s/.test(line)) {
@@ -374,13 +380,63 @@ function declareState(name, value, ctx) {
 }
 
 function handleFetch(line, ctx) {
-  const match = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+)\s*$/);
+  const match = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+?)(\s+when=visible)?\s*$/);
   if (!match) {
-    throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. Use: :fetch posts from "/api/posts.json"`);
+    throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. Use: :fetch posts from "/api/posts.json" [when=visible]`);
   }
   const key = declareState(match[1], null, ctx);
   const url = stripQuotes(match[2]);
-  return `<script type="application/json" data-wd-fetch>${safeScriptJson({ key, url })}</script>`;
+  const when = match[3] ? ` data-wd-fetch-when="visible"` : "";
+  return `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"${when}></span>`;
+}
+
+function handleComputed(line, ctx) {
+  const match = line.match(/^:computed\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+  if (!match) throw new Error(`Malformed :computed in ${ctx.file}: ${line}. Use: :computed total = items.length * 4`);
+  const expr = compileComputedExpr(match[2].trim(), ctx);
+  let initial;
+  try {
+    const read = (key, path) => getPath(ctx.comp.state.get(key), path ? path.split(".") : []);
+    initial = new Function("S", `return (${expr});`)(read);
+  } catch {
+    initial = null;
+  }
+  const key = declareState(match[1], initial ?? null, ctx);
+  return `<span data-wd-computed data-wd-computed-key="${key}" data-wd-computed-expr="${escapeHtml(expr)}"></span><script type="application/json" data-wd-state>${safeScriptJson({ [key]: initial ?? null })}</script>`;
+}
+
+function compileComputedExpr(raw, ctx) {
+  const strings = [];
+  let expr = raw.replace(/"[^"\\]*"|'[^'\\]*'/g, (literal) => {
+    strings.push(`"${literal.slice(1, -1)}"`);
+    return `__WDSTR${strings.length - 1}__`;
+  });
+  if (/["'\\`]/.test(expr)) {
+    throw new Error(`Unsupported string syntax in :computed expression "${raw}" (${ctx.file})`);
+  }
+  if (!/^[\w$.\s+\-*/%()<>=!&|]*$/.test(expr)) {
+    throw new Error(
+      `Unsupported syntax in :computed expression "${raw}" (${ctx.file}). Allowed: state names, numbers, strings, + - * / % ( ), comparisons, && || !.`
+    );
+  }
+  if (/(^|[^=!<>])=(?!=)/.test(expr)) {
+    throw new Error(`Assignment is not allowed in :computed expressions ("${raw}" in ${ctx.file})`);
+  }
+  expr = expr.replace(/[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/g, (ref) => {
+    if (/^__WDSTR\d+__$/.test(ref)) return ref;
+    if (["true", "false", "null"].includes(ref)) return ref;
+    const segs = ref.split(".");
+    if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+      throw new Error(`Path segment "${ref}" is not allowed in :computed expressions (${ctx.file})`);
+    }
+    const key = resolveStateKey(segs[0], ctx);
+    if (!key) {
+      throw new Error(`:computed references unknown state "${segs[0]}" in ${ctx.file}. Declare it with :state or :fetch first.`);
+    }
+    const rest = segs.slice(1).join(".");
+    return `S(${JSON.stringify(key)}${rest ? `,${JSON.stringify(rest)}` : ""})`;
+  });
+  return expr.replace(/__WDSTR(\d+)__/g, (_, index) => strings[Number(index)]);
 }
 
 function handleForm(line, bodyLines, ctx) {
@@ -657,6 +713,7 @@ function getPath(value, segments) {
   let current = value;
   for (const segment of segments) {
     if (current == null) return undefined;
+    if (["constructor", "prototype", "__proto__"].includes(segment)) return undefined;
     current = current[segment];
   }
   return current;
