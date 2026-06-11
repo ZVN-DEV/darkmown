@@ -1,0 +1,5 @@
+<section class="feature-card">
+
+**Relative include:** this hidden block lives beside the docs page as `-relative-note.wd`, so it can be included without becoming a route.
+
+</section>

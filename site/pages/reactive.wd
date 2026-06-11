@@ -1,0 +1,41 @@
+---
+title: Reactive Markdown
+---
+
+@include /nav.wd
+
+<main>
+
+# Reactive Markdown
+
+This page proves Stage 2 from the original vision: Markdown-native state ships a runtime only when the page asks for it.
+
+:state count = 0
+
+The count is { count }.
+
+:button "Increment" -> count++
+
+:state open = false
+
+:button "Toggle details" -> open = true
+
+:if open
+The details are visible now.
+:else
+The details are hidden.
+:endif
+
+:state todos = ["Route pages", "Ship tiny runtime"]
+
+## Reactive list
+
+:for todo in todos
+- { todo }
+:endfor
+
+:button "Add todo" -> todos += "Live compile"
+
+Static pages like Docs stay runtime-free.
+
+</main>

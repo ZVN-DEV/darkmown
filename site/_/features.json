@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Folder routing without config",
+    "body": "Pages come from site/pages, and hidden work is just dot or minus prefixed."
+  },
+  {
+    "title": "Includes instead of component ceremony",
+    "body": "Use @include for one piece or @repeat from JSON when a pattern needs data."
+  },
+  {
+    "title": "Colocated behavior",
+    "body": "A matching .skin or .js file beside the page is picked up automatically."
+  }
+]

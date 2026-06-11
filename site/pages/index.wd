@@ -1,0 +1,49 @@
+---
+title: Markie
+---
+
+@include /nav.wd
+
+<main>
+
+<section class="hero">
+  <p class="eyebrow">Markdown-native framework</p>
+
+# Markie
+
+Markdown pages that compile into fast, mostly-static websites, with tiny reactive islands only where the document asks for them.
+
+<a class="btn primary" href="/docs/">Read the docs</a>
+<a class="btn" href="/reactive/">Try reactivity</a>
+</section>
+
+:note "Markie stays true to the original vision: zero JavaScript for static routes, a sub-5 KB target for reactive pages, .skin styling, includes instead of components, and a folder router."
+
+## What to try
+
+:try "Open the docs route built from site/pages/docs/index.md" href="/docs/"
+:try "Open the MDX compatibility route" href="/lab/"
+:try "Open the reactive Markdown route" href="/reactive/"
+:try "Open a hidden route and confirm it 404s" href="/-draft/"
+
+## Repeat without ugly loops
+
+For static repetition, `.wd` repeats a readable include from data:
+
+`@repeat /feature-card.wd from /features.json`
+
+@repeat /feature-card.wd from /features.json
+
+## Colocated behavior
+
+This button is powered by `site/pages/index.js`, discovered by matching the page basename:
+
+<button class="pulse-button" data-wd-demo>Script is waiting</button>
+
+## Sprint board
+
+:sprint min=4 max=6 roles="PM, Development, Research, Testing, Review"
+
+@include /sprint-loop.wd
+
+</main>

@@ -1,0 +1,45 @@
+tokens
+  ink #171717
+  paper #f8faf8
+  panel #ffffff
+  line #d9e2dc
+  accent #305c48
+  warm #8a4b2f
+  radius 8px
+
+page
+  margin 0
+  font ui-serif, Georgia, Cambria, serif
+  color $ink
+  bg $paper
+  line-height 1.7
+
+main
+  max-width 800px
+  margin 0 auto
+  padding 3rem 2rem 5rem
+
+h1
+  font-size 3rem
+  line-height 1
+
+.topnav
+  display flex
+  gap 1rem
+  align-items center
+  padding 1rem 2rem
+  border-bottom 1px solid $line
+  bg $panel
+
+.topnav strong
+  color $warm
+
+a
+  color $accent
+
+.feature-card
+  margin-top 2rem
+  border 1px solid $line
+  bg $panel
+  padding 1.2rem
+  radius $radius

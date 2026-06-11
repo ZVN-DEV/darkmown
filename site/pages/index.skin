@@ -1,0 +1,145 @@
+tokens
+  ink #171717
+  paper #fbfaf7
+  panel #ffffff
+  line #dedbd3
+  accent #16645a
+  warm #a83f2a
+  muted #666158
+  gap 1rem
+  radius 8px
+
+page
+  margin 0
+  font ui-serif, Georgia, Cambria, serif
+  color $ink
+  bg $paper
+  line-height 1.6
+  padding 0 0 4rem
+
+.hero
+  min-height 60vh
+  display flex
+  flex-direction column
+  align-items flex-start
+  justify-content center
+  border-bottom 1px solid $line
+  margin-bottom 2rem
+
+.hero > p:not(.eyebrow)
+  max-width 70ch
+
+.eyebrow
+  color $accent
+  text-transform uppercase
+  letter-spacing .08em
+  font-size .78rem
+  margin 0
+
+main
+  max-width 920px
+  margin 0 auto
+  padding 1rem 2rem 2rem
+
+h1
+  font-size clamp(2.4rem, 6vw, 5rem)
+  line-height .95
+  margin 2rem 0 1rem
+  max-width 10ch
+
+h2
+  margin-top 2rem
+  border-bottom 1px solid $line
+  padding-bottom .35rem
+
+a
+  color $accent
+
+.btn
+  display inline-block
+  margin .5rem .5rem .5rem 0
+  padding .75rem 1rem
+  border 1px solid $line
+  radius $radius
+  bg $panel
+  text-decoration none
+
+.btn.primary
+  bg $ink
+  color white
+  border 1px solid $ink
+
+.topnav
+  display flex
+  gap $gap
+  align-items center
+  padding 1rem 2rem
+  border-bottom 1px solid $line
+  bg rgba(255,255,255,.76)
+
+.topnav strong
+  color $warm
+
+.note
+  border 1px solid $line
+  bg $panel
+  padding 1rem
+  radius $radius
+
+.try-card
+  display inline-flex
+  align-items center
+  gap .65rem
+  margin .35rem .5rem .35rem 0
+  padding .75rem 1rem
+  border 1px solid $line
+  radius $radius
+  bg $panel
+  text-decoration none
+
+.try-card span
+  color white
+  bg $accent
+  padding .1rem .45rem
+  radius 999px
+
+.feature-card
+  display grid
+  gap .35rem
+  margin 1rem 0
+  padding 1rem
+  bg $panel
+  border 1px solid $line
+  radius $radius
+
+.feature-card strong
+  color $warm
+
+.pulse-button
+  border 0
+  bg $ink
+  color white
+  padding .85rem 1rem
+  radius $radius
+  font inherit
+  cursor pointer
+
+.pulse-button.is-on
+  bg $warm
+
+.sprint-board
+  display grid
+  grid-template-columns repeat(auto-fit, minmax(130px, 1fr))
+  gap $gap
+  margin 1rem 0
+
+.sprint-board article
+  bg $panel
+  border 1px solid $line
+  padding 1rem
+  radius $radius
+
+.sprint-board span
+  display block
+  color $accent
+  font-size .9rem
