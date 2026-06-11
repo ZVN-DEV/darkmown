@@ -116,6 +116,17 @@ Count is still zero.
 
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in a colocated `.js` file.
 
+## Data, forms, and persistence
+
+- `:fetch name from "url"` declares state and fills it from JSON over the network. Shelf `.json` files are served at `/__wd/data/`.
+- `:form into name` captures submits straight into state — no backend. `:form action="/url"` emits a plain native form with zero JS instead.
+- `:input field placeholder="…" required` and `:submit "Label"` build the form body.
+- `:state cart = [] persist` survives reloads via localStorage.
+- `:if item.path` works inside reactive loops for per-row branches.
+- Reactive pages expose `window.wd` (`get`, `set`, `state`, `render`) so colocated `.js` can do anything directives can't. Section state is addressed as `sectionId:name`.
+
+See it all live on the [Data & Forms page](/data/).
+
 ## Colocation
 
 - A matching `.skin` file attaches CSS to the page (indentation-based, compiles to real CSS).

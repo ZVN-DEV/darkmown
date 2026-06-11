@@ -1,0 +1,7 @@
+[
+  { "id": 1, "name": "PM", "role": "Acceptance & demo proof", "lead": true },
+  { "id": 2, "name": "Dev", "role": "Compiler, router, runtime", "lead": false },
+  { "id": 3, "name": "Research", "role": "Prior art & drift control", "lead": false },
+  { "id": 4, "name": "Testing", "role": "Routes, includes, browser smoke", "lead": false },
+  { "id": 5, "name": "Review", "role": "Blocks sloppy completion", "lead": false }
+]

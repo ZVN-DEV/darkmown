@@ -24,6 +24,7 @@ Markdown pages that compile into fast, mostly-static websites, with tiny reactiv
 :try "Open the docs route, a .wd page full of includes" href="/docs/"
 :try "Open a plain .md page and see directives stay inert" href="/markdown/"
 :try "Open the reactive page: state, keyed loops, scoped sections" href="/reactive/"
+:try "Open the data page: :fetch, forms into state, persistence" href="/data/"
 :try "Open a hidden route and confirm it 404s" href="/-draft/"
 
 ## Loops that read like prose

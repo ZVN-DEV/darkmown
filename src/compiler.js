@@ -144,6 +144,28 @@ function compileBody(lines, ctx) {
       out.push(handleState(line, ctx));
       continue;
     }
+    if (/^:fetch\s/.test(line)) {
+      flush();
+      out.push(handleFetch(line, ctx));
+      continue;
+    }
+    if (/^:form\s/.test(line)) {
+      flush();
+      const block = scanBlock(lines, i, /^:form\s/, ":endform", ctx.file);
+      out.push(handleForm(line, block.body, ctx));
+      i = block.end;
+      continue;
+    }
+    if (/^:input\s/.test(line)) {
+      flush();
+      out.push(handleInput(line, ctx));
+      continue;
+    }
+    if (/^:submit\s/.test(line)) {
+      flush();
+      out.push(handleSubmit(line, ctx));
+      continue;
+    }
     if (/^:button\s/.test(line)) {
       flush();
       out.push(handleButton(line, ctx));
@@ -168,7 +190,7 @@ function compileBody(lines, ctx) {
     if (/^:for\b/.test(line)) {
       throw new Error(`:for was replaced by @loop in ${ctx.file}. Use: @loop items into item ... @endloop`);
     }
-    if (/^(@endloop|:endif|:endfor|:else)\s*$/.test(line)) {
+    if (/^(@endloop|:endif|:endfor|:endform|:else)\s*$/.test(line)) {
       throw new Error(`Stray "${line.trim()}" with no matching opener in ${ctx.file}`);
     }
     prose.push(line);
@@ -318,6 +340,7 @@ function handleContainer(header, bodyLines, ctx) {
     else if (token.startsWith(".")) extraClass.push(token.slice(1));
     else throw new Error(`Unexpected token "${token}" in container "::: ${header}" in ${ctx.file}`);
   }
+  const explicitId = Boolean(id);
   if (!id) id = `wd-s${++ctx.comp.sectionCounter}`;
 
   ctx.sections.push(id);
@@ -327,20 +350,87 @@ function handleContainer(header, bodyLines, ctx) {
   } finally {
     ctx.sections.pop();
   }
+  const idAttr = explicitId ? ` id="${escapeHtml(id)}"` : "";
   const classAttr = extraClass.length ? ` class="${escapeHtml(extraClass.join(" "))}"` : "";
-  return `<${tag} id="${escapeHtml(id)}"${classAttr}>\n${inner}\n</${tag}>`;
+  return `<${tag}${idAttr}${classAttr}>\n${inner}\n</${tag}>`;
 }
 
 function handleState(line, ctx) {
-  const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+  const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+persist)?$/);
   if (!match) throw new Error(`Malformed :state in ${ctx.file}: ${line}`);
-  if (ctx.loopItem) throw new Error(`:state cannot be declared inside a reactive @loop body (${ctx.file})`);
   const value = parseStateValue(match[2]);
-  const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${match[1]}` : match[1];
-  if (ctx.comp.state.has(key)) throw new Error(`State "${match[1]}" is declared twice in the same scope (${ctx.file})`);
+  const key = declareState(match[1], value, ctx);
+  const persistAttr = match[3] ? ` data-wd-persist="${key}"` : "";
+  return `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
+}
+
+function declareState(name, value, ctx) {
+  if (ctx.loopItem) throw new Error(`State cannot be declared inside a reactive @loop body (${ctx.file})`);
+  const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${name}` : name;
+  if (ctx.comp.state.has(key)) throw new Error(`State "${name}" is declared twice in the same scope (${ctx.file})`);
   ctx.comp.state.set(key, value);
   ctx.comp.assets.runtime = true;
-  return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: value })}</script>`;
+  return key;
+}
+
+function handleFetch(line, ctx) {
+  const match = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+)\s*$/);
+  if (!match) {
+    throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. Use: :fetch posts from "/api/posts.json"`);
+  }
+  const key = declareState(match[1], null, ctx);
+  const url = stripQuotes(match[2]);
+  return `<script type="application/json" data-wd-fetch>${safeScriptJson({ key, url })}</script>`;
+}
+
+function handleForm(line, bodyLines, ctx) {
+  const into = line.match(/^:form\s+into\s+([A-Za-z_$][\w$]*)\s*$/);
+  const native = line.match(/^:form\s+action="([^"]+)"(?:\s+method="([^"]+)")?\s*$/);
+  if (!into && !native) {
+    throw new Error(
+      `Malformed :form in ${ctx.file}: ${line}. Use ':form into name' (client state) or ':form action="/url"' (native post).`
+    );
+  }
+  const inner = compileBody(bodyLines, ctx).trim();
+  if (into) {
+    const key = declareState(into[1], null, ctx);
+    return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: null })}</script><form data-wd-form="${key}">${inner}</form>`;
+  }
+  const method = native[2] || "post";
+  return `<form action="${escapeHtml(native[1])}" method="${escapeHtml(method)}">${inner}</form>`;
+}
+
+function handleInput(line, ctx) {
+  const match = line.match(/^:input\s+([A-Za-z_][\w-]*)\s*(.*)$/);
+  if (!match) throw new Error(`Malformed :input in ${ctx.file}: ${line}`);
+  const attrs = [`name="${escapeHtml(match[1])}"`];
+  let type = "text";
+  const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
+  for (const token of (match[2] || "").matchAll(re)) {
+    if (token[3]) {
+      if (!["required", "autofocus", "disabled", "readonly"].includes(token[3])) {
+        throw new Error(`Unknown :input flag "${token[3]}" in ${ctx.file}`);
+      }
+      attrs.push(token[3]);
+      continue;
+    }
+    const value = stripQuotes(token[2]);
+    if (token[1] === "type") {
+      type = value;
+      continue;
+    }
+    if (!["placeholder", "value", "min", "max", "step", "pattern", "autocomplete"].includes(token[1])) {
+      throw new Error(`Unknown :input attribute "${token[1]}" in ${ctx.file}`);
+    }
+    attrs.push(`${token[1]}="${escapeHtml(value)}"`);
+  }
+  return `<input type="${escapeHtml(type)}" ${attrs.join(" ")}>`;
+}
+
+function handleSubmit(line, ctx) {
+  const match = line.match(/^:submit\s+"([^"]+)"\s*$/);
+  if (!match) throw new Error(`Malformed :submit in ${ctx.file}: ${line}. Use: :submit "Label"`);
+  return `<button type="submit">${escapeHtml(match[1])}</button>`;
 }
 
 function handleButton(line, ctx) {
@@ -365,7 +455,14 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
   }
 
   if (ctx.loopItem && head === ctx.loopItem) {
-    throw new Error(`:if over the reactive loop item "${head}" is not supported yet (${ctx.file})`);
+    const truthy = compileBody(truthyLines, ctx).trim();
+    const falsy = compileBody(falsyLines, ctx).trim();
+    if (truthy.includes("data-wd-each-if") || falsy.includes("data-wd-each-if")) {
+      throw new Error(`Nested :if over loop items is not supported yet (${ctx.file})`);
+    }
+    const rest = segs.slice(1).join(".");
+    const pathAttr = ` data-wd-path="${escapeHtml(rest)}"`;
+    return `<span data-wd-each-if${pathAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
   }
 
   const key = resolveStateKey(head, ctx);
@@ -377,8 +474,9 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
   const falsy = compileBody(falsyLines, ctx).trim();
   const restPath = segs.slice(1).join(".");
   const pathAttr = restPath ? ` data-wd-path="${escapeHtml(restPath)}"` : "";
-  const active = getPath(ctx.comp.state.get(key), segs.slice(1)) ? truthy : falsy;
-  return `<div data-wd-if="${key}"${pathAttr}><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
+  const initialTruthy = Boolean(getPath(ctx.comp.state.get(key), segs.slice(1)));
+  const active = initialTruthy ? truthy : falsy;
+  return `<div data-wd-if="${key}"${pathAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
 }
 
 function handleLoop(line, bodyLines, ctx) {
@@ -453,7 +551,14 @@ function withLoopKey(template, itemKey) {
 }
 
 function fillTemplateString(template, item) {
-  return template.replace(/<span data-wd-each(?: data-wd-path="([^"]*)")?><\/span>/g, (_, p) => {
+  const withConditionals = template.replace(
+    /<span data-wd-each-if data-wd-path="([^"]*)"><template data-wd-if-true>([\s\S]*?)<\/template><template data-wd-if-false>([\s\S]*?)<\/template><span data-wd-each-if-out><\/span><\/span>/g,
+    (region, p, truthy, falsy) => {
+      const branch = getPath(item, p ? p.split(".") : []) ? truthy : falsy;
+      return region.replace("<span data-wd-each-if-out></span>", `<span data-wd-each-if-out>${branch}</span>`);
+    }
+  );
+  return withConditionals.replace(/<span data-wd-each(?: data-wd-path="([^"]*)")?><\/span>/g, (_, p) => {
     const value = p ? getPath(item, p.split(".")) : item;
     const pathAttr = p ? ` data-wd-path="${p}"` : "";
     return `<span data-wd-each${pathAttr}>${escapeHtml(value ?? "")}</span>`;

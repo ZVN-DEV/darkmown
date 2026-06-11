@@ -1,7 +1,26 @@
 const state = {};
+const persistKeys = new Set();
 
 for (const script of document.querySelectorAll("script[data-wd-state]")) {
   Object.assign(state, JSON.parse(script.textContent || "{}"));
+  const persist = script.getAttribute("data-wd-persist");
+  if (persist) persistKeys.add(persist);
+}
+
+for (const key of persistKeys) {
+  const stored = localStorage.getItem(`wd:${key}`);
+  if (stored === null) continue;
+  try {
+    state[key] = JSON.parse(stored);
+  } catch {
+    localStorage.removeItem(`wd:${key}`);
+  }
+}
+
+function savePersisted() {
+  for (const key of persistKeys) {
+    localStorage.setItem(`wd:${key}`, JSON.stringify(state[key] ?? null));
+  }
 }
 
 function getPath(value, path) {
@@ -25,6 +44,12 @@ function loopKeyOf(item, counts) {
 }
 
 function fillItem(node, item) {
+  for (const region of node.querySelectorAll("[data-wd-each-if]")) {
+    const value = getPath(item, region.getAttribute("data-wd-path"));
+    const output = region.querySelector("[data-wd-each-if-out]");
+    const template = region.querySelector(value ? "template[data-wd-if-true]" : "template[data-wd-if-false]");
+    output.innerHTML = template?.innerHTML || "";
+  }
   const targets = node.matches("[data-wd-each]")
     ? [node, ...node.querySelectorAll("[data-wd-each]")]
     : [...node.querySelectorAll("[data-wd-each]")];
@@ -36,6 +61,9 @@ function fillItem(node, item) {
 function render() {
   for (const node of document.querySelectorAll("[data-wd-if]")) {
     const value = getPath(state[node.getAttribute("data-wd-if")], node.getAttribute("data-wd-path"));
+    const active = String(Boolean(value));
+    if (node.getAttribute("data-wd-if-active") === active) continue;
+    node.setAttribute("data-wd-if-active", active);
     const output = node.querySelector("[data-wd-if-out]");
     const template = node.querySelector(value ? "template[data-wd-true]" : "template[data-wd-false]");
     output.innerHTML = template?.innerHTML || "";
@@ -88,7 +116,45 @@ document.addEventListener("click", (event) => {
   if (op === "add") state[target] = Number(state[target] ?? 0) + Number(value);
   if (op === "append") state[target] = [...(Array.isArray(state[target]) ? state[target] : []), value];
   if (op === "set") state[target] = value;
+  savePersisted();
   render();
 });
+
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest("[data-wd-form]");
+  if (!form) return;
+  event.preventDefault();
+  state[form.getAttribute("data-wd-form")] = Object.fromEntries(new FormData(form));
+  savePersisted();
+  render();
+});
+
+for (const script of document.querySelectorAll("script[data-wd-fetch]")) {
+  const { key, url } = JSON.parse(script.textContent || "{}");
+  fetch(url)
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((value) => {
+      state[key] = value;
+      render();
+    })
+    .catch((error) => {
+      state[`${key}_error`] = String(error);
+      render();
+    });
+}
+
+window.wd = {
+  state,
+  get: (key) => state[key],
+  set: (key, value) => {
+    state[key] = value;
+    savePersisted();
+    render();
+  },
+  render
+};
 
 render();

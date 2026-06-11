@@ -528,3 +528,128 @@ function write(root, file, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content);
 }
+
+// ---------------------------------------------------------------------------
+// Stage 3: fetch, forms, persistence, loop-item conditionals
+// ---------------------------------------------------------------------------
+
+test(":fetch declares state, emits a fetch script, and powers reactive regions", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch team from "/__wd/data/team.json"',
+    "",
+    ":if team",
+    "@loop team into member",
+    "- { member.name }",
+    "@endloop",
+    ":else",
+    "Loading…",
+    ":endif"
+  ].join("\n"));
+
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<script type="application\/json" data-wd-fetch>\{"key":"team","url":"\/__wd\/data\/team\.json"\}<\/script>/);
+  assert.match(page.html, /data-wd-if="team"/);
+  assert.match(page.html, /data-wd-loop="team"/);
+  assert.match(page.html, /Loading…/);
+  assert.match(page.html, /\/__wd\/runtime\.js/);
+});
+
+test(":form into declares state and emits a captured form; action mode stays native", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ":form into profile",
+    ":input name placeholder=\"Your name\" required",
+    ":input email type=email",
+    ":submit \"Save\"",
+    ":endform",
+    "",
+    ":if profile",
+    "Hi { profile.name }",
+    ":endif"
+  ].join("\n"));
+
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<form data-wd-form="profile">/);
+  assert.match(page.html, /<input type="text" name="name" placeholder="Your name" required>/);
+  assert.match(page.html, /<input type="email" name="email">/);
+  assert.match(page.html, /<button type="submit">Save<\/button>/);
+  assert.match(page.html, /data-wd-state>\{"profile":null\}/);
+  assert.match(page.html, /data-wd-bind="profile" data-wd-path="name"/);
+
+  const nativeRoot = fixture();
+  write(nativeRoot, "site/pages/index.wd", [
+    ":form action=\"/subscribe\"",
+    ":input email type=email required",
+    ":submit \"Subscribe\"",
+    ":endform"
+  ].join("\n"));
+  const nativePage = compilePage(path.join(nativeRoot, "site/pages/index.wd"), createPaths(nativeRoot));
+  assert.match(nativePage.html, /<form action="\/subscribe" method="post">/);
+  assert.doesNotMatch(nativePage.html, /data-wd-form/);
+  assert.equal(nativePage.assets.runtime, false);
+});
+
+test(":state persist marks the state script for localStorage", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    "::: section #cart",
+    ":state items = [] persist",
+    "{ items.length } items",
+    ":button \"Add\" -> items += {\"id\": 1}",
+    ":::"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<script type="application\/json" data-wd-state data-wd-persist="cart:items">\{"cart:items":\[\]\}<\/script>/);
+  assert.match(page.html, /data-wd-bind="cart:items" data-wd-path="length"/);
+  assert.match(page.html, /data-wd-target="cart:items"/);
+});
+
+test(":if over loop items renders per-item branches at compile time", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state team = [{"id": 1, "name": "A", "lead": true}, {"id": 2, "name": "B", "lead": false}]',
+    "",
+    "@loop team into member",
+    "::: card",
+    "{ member.name }",
+    ":if member.lead",
+    "Lead",
+    ":else",
+    "Crew",
+    ":endif",
+    ":::",
+    "@endloop"
+  ].join("\n"));
+
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-each-if data-wd-path="lead"/);
+  assert.match(page.html, /<template data-wd-if-true><p>Lead<\/p><\/template>/);
+  const first = page.html.match(/data-wd-loop-key="1"[\s\S]*?data-wd-loop-key="2"/)[0];
+  assert.match(first, /<span data-wd-each-if-out><p>Lead<\/p><\/span>/);
+  const second = page.html.split('data-wd-loop-key="2"')[1];
+  assert.match(second, /<span data-wd-each-if-out><p>Crew<\/p><\/span>/);
+});
+
+test("auto-id containers omit the id attribute, explicit ids keep it", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    "::: card",
+    "Anonymous",
+    ":::",
+    "::: section #named",
+    "Named",
+    ":::"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<div class="card">/);
+  assert.match(page.html, /<section id="named">/);
+});
+
+test("shelf json is published under /__wd/data for :fetch", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "# Home");
+  write(root, "site/_/team.json", JSON.stringify([{ id: 1 }]));
+  buildSite(root);
+  assert.equal(fs.existsSync(path.join(root, "dist/__wd/data/team.json")), true);
+});

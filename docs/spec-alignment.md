@@ -15,6 +15,14 @@ This audit compares the current Markie implementation with the original MARROW/W
 - **Colocation:** matching `.skin` and `.js` files attach to the page by basename, for includes too.
 - **Live DX:** dev mode live-compiles and reloads through a small SSE client.
 
+## Stage 3 additions (2026-06-11, same day)
+
+- **`:fetch name from "url"`:** declarative data loading into reactive state, with `name_error` for failures. Shelf `.json` publishes to `/__wd/data/` so it works on static hosts.
+- **`:form` two ways:** `:form into name` captures submits into client state with zero backend; `:form action="/url"` emits a plain native form and ships no JS — the progressive-enhancement story from the original doc.
+- **`:state x = v persist`:** localStorage-backed state. This is the honest client-side slice of the original `:cart` primitive; server sync remains future work.
+- **`:if item.path` inside reactive loops:** per-row conditional branches, filled at compile time and re-filled by the keyed patcher.
+- **`window.wd` escape hatch:** `get`/`set`/`state`/`render` exposed to colocated `.js` — the adapted form of the original `<script scope>` "infinite extension" idea, aligned with Markie's colocation model instead of inline scripts.
+
 ## Deliberate adaptations
 
 - **One loop, `@loop … into … @endloop`:** replaces both the original doc's `:for/:endfor` and the earlier `@repeat`. The source decides behavior: JSON file or in-scope value unrolls at build time; a `:state` list compiles to a keyed reactive region. Includes inside a loop inherit the loop value (Liquid-style), and `with x={ row.field }` reassigns.
@@ -25,9 +33,9 @@ This audit compares the current Markie implementation with the original MARROW/W
 
 ## Still missing from the full vision
 
-- `:fetch`, `:form`, `:session`, `:cart`, `:lazy`, and server-driven fragments (Tier 2).
-- Scoped `<script scope>` and `@script` escape hatches.
-- `:if` over reactive loop items, and computed/derived state.
+- Server-driven fragments (Tier 2): `:session`, cart server sync, `swap` semantics, fragment endpoints.
+- `:lazy` deferred islands and computed/derived state.
+- Nested `:if` over loop items, and `@loop` over fetch sub-paths.
 - View transitions, `@starting-style` emission, and browser fallbacks.
 - Editor tooling, diagnostics, and publish-ready package metadata.
 

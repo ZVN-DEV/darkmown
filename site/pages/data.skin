@@ -1,0 +1,109 @@
+tokens
+  ink #171717
+  paper #faf8f3
+  panel #ffffff
+  line #dedbd3
+  accent #16645a
+  warm #a83f2a
+  radius 8px
+
+page
+  margin 0
+  font ui-serif, Georgia, Cambria, serif
+  color $ink
+  bg $paper
+  line-height 1.7
+
+main
+  max-width 820px
+  margin 0 auto
+  padding 3rem 2rem 5rem
+
+h1
+  font-size 3rem
+  line-height 1
+
+h2
+  margin-top 2rem
+  border-top 1px solid $line
+  padding-top 1.2rem
+
+button
+  border 1px solid $ink
+  bg $ink
+  color white
+  padding .72rem 1rem
+  margin .3rem .5rem .3rem 0
+  radius $radius
+  font inherit
+  cursor pointer
+
+button:hover
+  bg $accent
+  border-color $accent
+
+.topnav
+  display flex
+  gap 1rem
+  align-items center
+  padding 1rem 2rem
+  border-bottom 1px solid $line
+  bg rgba(255,255,255,.76)
+
+.topnav strong
+  color $warm
+
+a
+  color $accent
+
+ul
+  border 1px solid $line
+  bg $panel
+  padding 1rem 1rem 1rem 2rem
+  radius $radius
+
+.tally-card
+  border 1px solid $line
+  bg $panel
+  padding .25rem 1.2rem 1.2rem
+  margin 1rem 0
+  radius $radius
+
+.tally-card h3
+  color $warm
+
+.member-card
+  border 1px solid $line
+  bg $panel
+  padding .8rem 1.2rem
+  margin .6rem 0
+  radius $radius
+
+form
+  display flex
+  gap .6rem
+  flex-wrap wrap
+  margin 1rem 0
+
+input
+  padding .7rem .9rem
+  border 1px solid $line
+  radius $radius
+  font inherit
+  bg $panel
+
+.pulse-button
+  border 0
+  bg $warm
+  color white
+  padding .85rem 1rem
+  radius $radius
+  font inherit
+  cursor pointer
+
+.tally-card
+  border 1px solid $line
+  bg $panel
+  padding .25rem 1.2rem 1.2rem
+  margin 1rem 0
+  radius $radius

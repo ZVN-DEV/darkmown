@@ -44,7 +44,8 @@ npm run dev
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Markie runtime. Reactive pages share `/__wd/runtime.js` (currently ~1.1 KB gzipped).
+- Static pages ship zero Markie runtime. Reactive pages share `/__wd/runtime.js` (currently ~1.6 KB gzipped).
+- Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Interpolation
 
@@ -103,6 +104,36 @@ Count is still zero.
 ```
 
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in colocated `.js` files.
+
+## Data, forms, and persistence
+
+```wd
+:fetch team from "/__wd/data/team.json"
+
+:if team
+@loop team into member
+- { member.name }
+@endloop
+:else
+Loading…
+:endif
+
+:form into profile
+:input name placeholder="Your name" required
+:submit "Save"
+:endform
+
+:state cart = [] persist
+```
+
+- `:fetch name from "url"` declares state and fills it from JSON over the network; `name_error` carries failures.
+- `:form into name` captures submits straight into state (no backend). `:form action="/url"` emits a plain native form instead — zero JS, full progressive enhancement.
+- `:state x = [] persist` keeps that state in localStorage across reloads.
+- `:if item.path` works inside reactive loops for per-row branches.
+
+## The escape hatch
+
+Reactive pages expose `window.wd` — `wd.get(key)`, `wd.set(key, value)`, `wd.state`, `wd.render()` — so colocated `.js` can do anything the directives can't. Section-scoped keys are addressed as `sectionId:name`.
 
 ## Spec status
 

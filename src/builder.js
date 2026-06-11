@@ -66,9 +66,11 @@ function emitAssets(assets, paths) {
 function emitShelfAssets(paths) {
   if (!fs.existsSync(paths.shelfRoot)) return;
   for (const file of walk(paths.shelfRoot)) {
-    if ([".md", ".wd", ".json"].includes(path.extname(file))) continue;
+    const ext = path.extname(file);
+    if ([".md", ".wd"].includes(ext)) continue;
     const rel = path.relative(paths.shelfRoot, file);
-    const out = path.join(paths.distRoot, "__wd/media", rel);
+    const folder = ext === ".json" ? "__wd/data" : "__wd/media";
+    const out = path.join(paths.distRoot, folder, rel);
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.copyFileSync(file, out);
   }

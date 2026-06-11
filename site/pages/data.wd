@@ -1,0 +1,72 @@
+---
+title: Data, forms, and persistence
+---
+
+@include /nav.wd
+
+<main>
+
+# Data, forms, and persistence
+
+This page demos the Tier 1.5 surface: declarative fetch, forms that write state, persistent state, and the JavaScript escape hatch.
+
+## Fetched data drives reactive loops
+
+`:fetch team from "/__wd/data/team.json"` declares state and fills it from the network. Until it lands, the page shows the fallback branch:
+
+:fetch team from "/__wd/data/team.json"
+
+:if team
+@loop team into member
+::: card .member-card
+**{ member.name }** — { member.role }
+:if member.lead
+Team lead ★
+:else
+Crew
+:endif
+:::
+@endloop
+:else
+Loading the team…
+:endif
+
+That loop also proves `:if` over loop items: the lead badge is decided per row.
+
+## Forms write state, no backend required
+
+`:form into profile` captures the submit straight into state. With `action="/url"` instead, Markie emits a plain native form and stays out of the way entirely:
+
+:form into profile
+:input name placeholder="Your name" required
+:input quest placeholder="Your quest"
+:submit "Save profile"
+:endform
+
+:if profile
+Hello **{ profile.name }** — good luck with { profile.quest }.
+:else
+Submit the form and this sentence reacts. Nothing leaves the page.
+:endif
+
+## Persistent state survives reload
+
+`:state items = [] persist` keeps this section in localStorage. Add a few, reload the page, and the count holds:
+
+::: section #cart
+:state items = [] persist
+
+The cart holds { items.length } item(s).
+
+:button "Add sticker" -> items += {"id": "sticker", "name": "Sticker"}
+:button "Add poster" -> items += {"id": "poster", "name": "Poster"}
+:button "Empty cart" -> items = []
+:::
+
+## The escape hatch
+
+Colocated `data.js` uses the `window.wd` API (`wd.get`, `wd.set`) for anything directives can't say. Section state is addressed as `cart:items`:
+
+<button class="pulse-button" data-wd-double>Double the cart via window.wd</button>
+
+</main>
