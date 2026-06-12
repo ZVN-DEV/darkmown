@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 import { injectDevClient } from "../src/dev.js";
-import { resolvePublicFile } from "../src/server.js";
+import { resolvePublicFile } from "../src/statics.js";
 
 test("public file resolution stays inside dist", () => {
   const dist = "/tmp/example/dist";

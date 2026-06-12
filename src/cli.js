@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { buildSite } from "./builder.js";
 import { devClientPath, devClientScript, devEventsPath, injectDevClient } from "./dev.js";
 import { initProject } from "./scaffold.js";
-import { contentType, resolvePublicFile, serve } from "./server.js";
+import { contentType, resolvePublicFile, serve } from "./statics.js";
 
 const cliPath = fileURLToPath(import.meta.url);
 const command = process.argv[2] || "build";
