@@ -10,6 +10,14 @@ const pageIncludeExtensions = [".md", ".wd"];
 export function compilePage(file, context) {
   const compiled = compileDocument(file, context);
   const title = compiled.meta.title || "Darkmown";
+  const description = compiled.meta.description || "";
+  const descriptionTag = description
+    ? `\n  <meta name="description" content="${escapeHtml(description)}">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">`
+    : "";
   const favicon = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='bold'%20fill='%23f7f3ea'%3ED%3C/text%3E%3C/svg%3E";
   const cssLinks = [...compiled.assets.skins].map((href) => `<link rel="stylesheet" href="${href}">`).join("\n");
   const scriptSrcs = compiled.assets.runtime ? ["/__wd/runtime.js", ...compiled.assets.scripts] : [...compiled.assets.scripts];
@@ -26,7 +34,7 @@ export function compilePage(file, context) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml(title)}</title>${descriptionTag}
   <link rel="icon" href="${favicon}">
   ${cssLinks}${transitions}
 </head>

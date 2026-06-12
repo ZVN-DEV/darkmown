@@ -1,5 +1,6 @@
 ---
-title: Darkmown
+title: Darkmown — Markdown that runs
+description: Build full websites in plain Markdown. Routing, state, server calls, includes, and reactive islands — no JavaScript or CSS required. Your docs and your code are all just text.
 ---
 
 @include /nav.wd
@@ -7,25 +8,35 @@ title: Darkmown
 <main>
 
 <section class="hero">
-  <p class="eyebrow">Markdown-native framework</p>
+  <p class="eyebrow">The Markdown framework</p>
 
-# Darkmown
+# Markdown that runs
 
-Markdown pages that compile into fast, mostly-static websites, with tiny reactive islands only where the document asks for them.
+Not just pages — **full websites**. Routing, state, server calls, embeds, and reactive islands, all from plain Markdown files. No JavaScript or CSS required. Your docs and your code are all just text.
 
 <a class="btn primary" href="/docs/">Read the docs</a>
-<a class="btn" href="/reactive/">Try reactivity</a>
+<a class="btn" href="/data/">See it run</a>
 </section>
 
-:note "Two formats, one rule: .md stays plain CommonMark forever, and renaming to .wd is what unlocks directives, includes, loops, and state."
+:note "Static pages ship zero JavaScript. The moment a page asks for reactivity, one ~2 KB runtime loads — never before. JS optional, CSS optional, always."
+
+## A whole framework, in text
+
+Everything a site needs, expressed as Markdown directives. No components, no config, no JSX, no special files:
+
+- **Routing** — folders are routes. Drop a file in, it's a page. Prefix with `.` or `-` to hide it.
+- **State & reactivity** — `:state`, `:button`, `:if`, and keyed `@loop`s patch the DOM directly. No virtual DOM.
+- **Server calls** — `:fetch` pulls JSON into state; `:form action=` round-trips to any backend and degrades to a native POST without JS.
+- **Composition** — `@include` embeds one Markdown file into another, passing values down Liquid-style.
+- **Styling, optional** — colocate a `.skin` file for design tokens, or ship none and let the browser default.
 
 ## What to try
 
-:try "Open the docs route, a .wd page full of includes" href="/docs/"
-:try "Open a plain .md page and see directives stay inert" href="/markdown/"
-:try "Open the reactive page: state, keyed loops, scoped sections" href="/reactive/"
-:try "Open the data page: :fetch, forms into state, persistence" href="/data/"
-:try "Open a hidden route and confirm it 404s" href="/-draft/"
+:try "The docs route — a .wd page built from includes" href="/docs/"
+:try "A plain .md page where directives stay inert text" href="/markdown/"
+:try "Reactive page: state, keyed loops, scoped sections" href="/reactive/"
+:try "Data page: fetch, forms, server round-trips, persistence" href="/data/"
+:try "A hidden route, to confirm it 404s" href="/-draft/"
 
 ## Loops that read like prose
 
@@ -49,13 +60,15 @@ This button is powered by `site/pages/index.js`, discovered by matching the page
 
 ## Deploy in one click
 
-This repo doubles as a template — `npm run build` emits a plain static `dist/`, so it deploys anywhere that serves files:
+`npm run build` emits a plain static `dist/` — no server, no special runtime — so it deploys anywhere that serves files. This very site is a Darkmown build:
 
 <a class="btn primary" href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy to Vercel</a>
 <a class="btn" href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy to Cloudflare</a>
 <a class="btn" href="https://github.com/ZVN-DEV/darkmown">Star on GitHub</a>
 
-## Sprint board
+## Built in the open
+
+Darkmown itself was built by a small agent team. The board below is a live `@loop` over real data — itself a demo of the framework rendering this page:
 
 :sprint min=4 max=6 roles="PM, Development, Research, Testing, Review"
 

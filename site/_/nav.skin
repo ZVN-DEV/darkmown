@@ -11,7 +11,8 @@ tokens
 
 .topnav
   display flex
-  gap 1rem
+  flex-wrap wrap
+  gap .5rem 1rem
   align-items center
   padding 1rem 2rem
   border-bottom 1px solid $line
