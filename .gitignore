@@ -5,3 +5,4 @@ dist/
 *.log
 .playwright-mcp/
 .vercel
+*.png
