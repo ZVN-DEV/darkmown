@@ -39,6 +39,31 @@ The same `@loop` that unrolls static data also drives reactive lists. Items are 
 
 :button "Add todo" -> todos += {"id": 3, "title": "Live compile", "owner": "Testing"}
 
+## Conditionals inside a loop, nested
+
+`:if` works per row, and conditionals nest — the inner branch is decided after the outer one, for every item, and stays reactive. Add a "done" task and watch which badge each row shows:
+
+:state tasks = [{"id": 1, "title": "Draft the spec", "done": true, "blocked": false}, {"id": 2, "title": "Wire the runtime", "done": false, "blocked": true}, {"id": 3, "title": "Write the demo", "done": false, "blocked": false}]
+
+@loop tasks into task
+::: card .task-row
+**{ task.title }** —
+:if task.done
+done ✓
+:else
+:if task.blocked
+blocked ✗
+:else
+in progress …
+:endif
+:endif
+:::
+@endloop
+
+:button "Add a finished task" -> tasks += {"id": 4, "title": "Ship it", "done": true, "blocked": false}
+
+Each row picks one of three states from two nested conditionals, all in plain Markdown — no component, no ternary, no JavaScript.
+
 ## Section-scoped state
 
 Two sections can each own a state value named `tally` without colliding. Buttons resolve to the nearest scope:

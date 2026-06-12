@@ -631,6 +631,42 @@ test(":if over loop items renders per-item branches at compile time", () => {
   assert.match(second, /<span data-wd-each-if-out><p>Crew<\/p><\/span>/);
 });
 
+test("nested :if over loop items renders the inner branch inside the outer", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state team = [{"id": 1, "name": "A", "lead": true, "online": true}, {"id": 2, "name": "B", "lead": true, "online": false}]',
+    "",
+    "@loop team into member",
+    "::: card",
+    ":if member.lead",
+    ":if member.online",
+    "Lead online",
+    ":else",
+    "Lead away",
+    ":endif",
+    ":else",
+    "Crew",
+    ":endif",
+    ":::",
+    "@endloop"
+  ].join("\n"));
+
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  // Outer region wraps an inner region inside its true template.
+  assert.match(page.html, /data-wd-each-if data-wd-path="lead"/);
+  assert.match(page.html, /data-wd-each-if data-wd-path="online"/);
+  // Templates stay pristine (markers, not resolved values) for runtime toggling.
+  assert.match(page.html, /<template data-wd-if-true><p>Lead online<\/p><\/template>/);
+  // Row 1 (lead + online): outer out shows the inner region resolved to "Lead online".
+  const first = page.html.match(/data-wd-loop-key="1"[\s\S]*?data-wd-loop-key="2"/)[0];
+  assert.match(first, /Lead online/);
+  assert.doesNotMatch(first.match(/data-wd-each-if-out>([\s\S]*?)<\/span><\/span>/)[1], /Crew/);
+  // Row 2 (lead + offline): inner resolves to "Lead away".
+  const second = page.html.split('data-wd-loop-key="2"')[1];
+  assert.match(second, /Lead away/);
+  assert.doesNotMatch(second, /Lead online<\/p><\/span><span data-wd-each-if-out>/);
+});
+
 test("auto-id containers omit the id attribute, explicit ids keep it", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", [

@@ -20,7 +20,7 @@ This audit compares the current Darkmown implementation with the original MARROW
 - **`:fetch name from "url"`:** declarative data loading into reactive state, with `name_error` for failures. Shelf `.json` publishes to `/__wd/data/` so it works on static hosts.
 - **`:form` two ways:** `:form into name` captures submits into client state with zero backend; `:form action="/url"` emits a plain native form and ships no JS — the progressive-enhancement story from the original doc.
 - **`:state x = v persist`:** localStorage-backed state. This is the honest client-side slice of the original `:cart` primitive; server sync remains future work.
-- **`:if item.path` inside reactive loops:** per-row conditional branches, filled at compile time and re-filled by the keyed patcher.
+- **`:if item.path` inside reactive loops:** per-row conditional branches, filled at compile time and re-filled by the keyed patcher. Conditionals **nest** — an inner `:if` is resolved after the outer branch, both at build time (balanced-region pre-render) and at runtime (recursive fill).
 - **`window.wd` escape hatch:** `get`/`set`/`state`/`render` exposed to colocated `.js` — the adapted form of the original `<script scope>` "infinite extension" idea, aligned with Darkmown's colocation model instead of inline scripts.
 
 ## Deliberate adaptations
@@ -49,7 +49,7 @@ This audit compares the current Darkmown implementation with the original MARROW
 ## Still missing from the full vision
 
 - First-party server runtime (`site/api/`), HTML-fragment `swap` semantics, and cart server sync — parked behind the adapter decision until a real project needs them.
-- Nested `:if` over loop items, and `@loop` over fetch sub-paths.
+- `@loop` over fetch sub-paths (looping a path *inside* fetched state rather than top-level state).
 - `@starting-style` emission and browser fallbacks for older engines.
 - Editor tooling, richer diagnostics, and an actual npm publish (needs a license decision).
 

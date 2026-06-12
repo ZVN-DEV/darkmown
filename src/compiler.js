@@ -538,9 +538,6 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
   if (ctx.loopItem && head === ctx.loopItem) {
     const truthy = compileBody(truthyLines, ctx).trim();
     const falsy = compileBody(falsyLines, ctx).trim();
-    if (truthy.includes("data-wd-each-if") || falsy.includes("data-wd-each-if")) {
-      throw new Error(`Nested :if over loop items is not supported yet (${ctx.file})`);
-    }
     const rest = segs.slice(1).join(".");
     const pathAttr = ` data-wd-path="${escapeHtml(rest)}"`;
     return `<span data-wd-each-if${pathAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
@@ -632,18 +629,73 @@ function withLoopKey(template, itemKey) {
 }
 
 function fillTemplateString(template, item) {
-  const withConditionals = template.replace(
-    /<span data-wd-each-if data-wd-path="([^"]*)"><template data-wd-if-true>([\s\S]*?)<\/template><template data-wd-if-false>([\s\S]*?)<\/template><span data-wd-each-if-out><\/span><\/span>/g,
-    (region, p, truthy, falsy) => {
-      const branch = getPath(item, p ? p.split(".") : []) ? truthy : falsy;
-      return region.replace("<span data-wd-each-if-out></span>", `<span data-wd-each-if-out>${branch}</span>`);
-    }
-  );
-  return withConditionals.replace(/<span data-wd-each(?: data-wd-path="([^"]*)")?><\/span>/g, (_, p) => {
+  // Resolve per-item :if regions first (recursively, so nested conditionals are
+  // pre-rendered for the initial paint), then fill the plain text bindings.
+  return fillEachText(fillEachIfRegions(template, item), item);
+}
+
+// Walk the string resolving only the OUTERMOST data-wd-each-if regions; each
+// chosen branch is recursed so nested conditionals resolve too. The <template>
+// markup is left pristine so the runtime can keep toggling branches.
+function fillEachIfRegions(str, item) {
+  const marker = '<span data-wd-each-if ';
+  let result = "";
+  let i = 0;
+  for (;;) {
+    const start = str.indexOf(marker, i);
+    if (start === -1) return result + str.slice(i);
+    result += str.slice(i, start);
+    const end = matchElement(str, start, "span");
+    result += fillOneEachIf(str.slice(start, end), item);
+    i = end;
+  }
+}
+
+function fillOneEachIf(region, item) {
+  const path = (region.match(/^<span data-wd-each-if data-wd-path="([^"]*)">/) || [, ""])[1];
+  const trueStart = region.indexOf("<template data-wd-if-true>");
+  const trueEnd = matchElement(region, trueStart, "template");
+  const falseStart = region.indexOf("<template data-wd-if-false>", trueEnd);
+  const falseEnd = matchElement(region, falseStart, "template");
+  const open = "<template data-wd-if-true>".length;
+  const close = "</template>".length;
+  const truthy = region.slice(trueStart + open, trueEnd - close);
+  const falsy = region.slice(falseStart + "<template data-wd-if-false>".length, falseEnd - close);
+  const branch = getPath(item, path ? path.split(".") : []) ? truthy : falsy;
+  const head = region.slice(0, falseEnd);
+  return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item)}</span></span>`;
+}
+
+function fillEachText(str, item) {
+  return str.replace(/<span data-wd-each(?: data-wd-path="([^"]*)")?><\/span>/g, (_, p) => {
     const value = p ? getPath(item, p.split(".")) : item;
     const pathAttr = p ? ` data-wd-path="${p}"` : "";
     return `<span data-wd-each${pathAttr}>${escapeHtml(value ?? "")}</span>`;
   });
+}
+
+// Return the index just past the balanced close of the element of `tag` that
+// begins at `start`. Counts nested same-tag opens/closes so regions that embed
+// their own spans/templates (nested :if) match correctly.
+function matchElement(str, start, tag) {
+  const openPrefix = `<${tag}`;
+  const closeTag = `</${tag}>`;
+  let depth = 0;
+  let i = start;
+  while (i < str.length) {
+    if (str.startsWith(openPrefix, i) && (str[i + openPrefix.length] === " " || str[i + openPrefix.length] === ">")) {
+      depth++;
+      const gt = str.indexOf(">", i);
+      i = gt === -1 ? str.length : gt + 1;
+    } else if (str.startsWith(closeTag, i)) {
+      depth--;
+      i += closeTag.length;
+      if (depth === 0) return i;
+    } else {
+      i++;
+    }
+  }
+  return str.length;
 }
 
 export function loopKeyOf(item, counts) {

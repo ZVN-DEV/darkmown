@@ -61,11 +61,14 @@ function loopKeyOf(item, counts) {
 }
 
 function fillItem(node, item) {
+  // querySelectorAll does not descend into <template> content, so this only sees
+  // the outermost regions; recursing into each injected branch fills the rest.
   for (const region of node.querySelectorAll("[data-wd-each-if]")) {
     const value = getPath(item, region.getAttribute("data-wd-path"));
     const output = region.querySelector("[data-wd-each-if-out]");
     const template = region.querySelector(value ? "template[data-wd-if-true]" : "template[data-wd-if-false]");
     output.innerHTML = template?.innerHTML || "";
+    fillItem(output, item);
   }
   const targets = node.matches("[data-wd-each]")
     ? [node, ...node.querySelectorAll("[data-wd-each]")]

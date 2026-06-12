@@ -107,7 +107,7 @@ Directive actions are intentionally narrow and compile-time checked. Arbitrary J
 - `:form into name` captures submits straight into state — no backend. `:form action="/url"` emits a plain native form with zero JS instead.
 - `:input field placeholder="…" required` and `:submit "Label"` build the form body.
 - `:state cart = [] persist` survives reloads via localStorage.
-- `:if item.path` works inside reactive loops for per-row branches.
+- `:if item.path` works inside reactive loops for per-row branches, and conditionals nest — an inner `:if` resolves after the outer branch, staying reactive.
 - Reactive pages expose `window.wd` (`get`, `set`, `state`, `render`) so colocated `.js` can do anything directives can't. Section state is addressed as `sectionId:name`.
 
 See it all live on the [Data & Forms page](/data/).
