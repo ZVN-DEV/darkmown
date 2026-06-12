@@ -48,6 +48,14 @@ This button is powered by `site/pages/index.js`, discovered by matching the page
 
 <button class="pulse-button" data-wd-demo>Script is waiting</button>
 
+## Deploy in one click
+
+This repo doubles as a template — `npm run build` emits a plain static `dist/`, so it deploys anywhere that serves files:
+
+<a class="btn primary" href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy to Vercel</a>
+<a class="btn" href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy to Cloudflare</a>
+<a class="btn" href="https://github.com/ZVN-DEV/darkmown">Star on GitHub</a>
+
 ## Sprint board
 
 :sprint min=4 max=6 roles="PM, Development, Research, Testing, Review"
