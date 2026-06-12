@@ -69,17 +69,6 @@ a
   color white
   border 1px solid $ink
 
-.topnav
-  display flex
-  gap $gap
-  align-items center
-  padding 1rem 2rem
-  border-bottom 1px solid $line
-  bg rgba(255,255,255,.76)
-
-.topnav strong
-  color $warm
-
 .note
   border 1px solid $line
   bg $panel

@@ -1,0 +1,84 @@
+tokens
+  ink #171717
+  paper #fbfaf7
+  panel #ffffff
+  line #dedbd3
+  accent #16645a
+  warm #a83f2a
+  codebg #18221d
+  codeink #ecf3ea
+  radius 8px
+
+.topnav
+  display flex
+  gap 1rem
+  align-items center
+  padding 1rem 2rem
+  border-bottom 1px solid $line
+  bg rgba(251,250,247,.85)
+  backdrop-filter blur(8px)
+  position sticky
+  top 0
+  z-index 10
+
+.topnav strong
+  color $warm
+  font-size 1.05rem
+  margin-right .5rem
+
+.topnav a
+  color $accent
+  text-decoration none
+
+.topnav a:hover
+  text-decoration underline
+
+code
+  bg $panel
+  border 1px solid $line
+  padding .1rem .32rem
+  radius 5px
+  font-size .9em
+
+h1 code, h2 code, h3 code
+  font-size .85em
+
+pre
+  bg $codebg
+  color $codeink
+  padding 1.1rem 1.3rem
+  margin 1.2rem 0
+  radius $radius
+  overflow-x auto
+  line-height 1.6
+  font-size .9rem
+  box-shadow inset 0 0 0 1px rgba(255,255,255,.08)
+
+pre code
+  bg transparent
+  border 0
+  padding 0
+  color inherit
+  font-size 1em
+
+table
+  border-collapse collapse
+  bg $panel
+  margin 1rem 0
+
+th
+  text-align left
+  border 1px solid $line
+  padding .5rem .9rem
+  bg #f1ede4
+
+td
+  border 1px solid $line
+  padding .5rem .9rem
+
+blockquote
+  margin 1.2rem 0
+  padding .6rem 1.2rem
+  border-left 3px solid $accent
+  bg $panel
+  radius $radius

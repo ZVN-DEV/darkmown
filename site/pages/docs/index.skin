@@ -29,23 +29,6 @@ h2
   padding-top 1.2rem
   border-top 1px solid $line
 
-code
-  bg $panel
-  border 1px solid $line
-  padding .08rem .28rem
-  radius 5px
-
-.topnav
-  display flex
-  gap 1rem
-  align-items center
-  padding 1rem 2rem
-  border-bottom 1px solid $line
-  bg rgba(255,255,255,.76)
-
-.topnav strong
-  color $accent
-
 a
   color $accent
 
