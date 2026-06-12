@@ -658,15 +658,14 @@ test("shelf json is published under /__wd/data for :fetch", () => {
 // Stage 4: view transitions, lazy fetch, computed state
 // ---------------------------------------------------------------------------
 
-test("transitions frontmatter emits the view-transition style, absent by default", () => {
+test("view transitions stay disabled until the render-blocking regression is solved", () => {
+  // @view-transition render-blocked deployed pages: rAF stalled at 0 frames and
+  // every navigation hung. Do not re-enable without an activation fallback and
+  // a production-deploy verification.
   const root = fixture();
   write(root, "site/pages/index.wd", "---\ntitle: Home\ntransitions: true\n---\n\n# Home");
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /@view-transition \{ navigation: auto; \}/);
-
-  write(root, "site/pages/plain.wd", "# Plain");
-  const plain = compilePage(path.join(root, "site/pages/plain.wd"), createPaths(root));
-  assert.doesNotMatch(plain.html, /@view-transition/);
+  assert.doesNotMatch(page.html, /@view-transition/);
 });
 
 test(":fetch emits a marker span and when=visible is carried through", () => {

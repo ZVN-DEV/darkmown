@@ -1,6 +1,5 @@
 ---
 title: Darkmown docs
-transitions: true
 ---
 
 @include /nav.wd

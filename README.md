@@ -133,7 +133,6 @@ Loading…
 - `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Darkmown adapts to any backend — it does not own one. `darkmown dev` ships a `/__wd/echo` endpoint for demos.
 - `:state x = [] persist` keeps that state in localStorage across reloads.
 - `:if item.path` works inside reactive loops for per-row branches.
-- `transitions: true` in frontmatter turns on cross-document view transitions — pure CSS, zero JS.
 
 ## The escape hatch
 

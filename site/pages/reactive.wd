@@ -1,6 +1,5 @@
 ---
 title: Reactive Markdown
-transitions: true
 ---
 
 @include /nav.wd

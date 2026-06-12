@@ -1,6 +1,5 @@
 ---
 title: Plain Markdown
-transitions: true
 ---
 
 # Plain Markdown stays plain

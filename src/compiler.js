@@ -14,7 +14,10 @@ export function compilePage(file, context) {
   const cssLinks = [...compiled.assets.skins].map((href) => `<link rel="stylesheet" href="${href}">`).join("\n");
   const scriptSrcs = compiled.assets.runtime ? ["/__wd/runtime.js", ...compiled.assets.scripts] : [...compiled.assets.scripts];
   const scripts = scriptSrcs.map((src) => `<script type="module" src="${src}"></script>`).join("\n");
-  const transitions = compiled.meta.transitions === "true" ? `\n  <style>@view-transition { navigation: auto; }</style>` : "";
+  // View transitions are temporarily disabled: cross-document @view-transition
+  // render-blocked deployed pages (rAF stalled, navigation hangs). Tracked for
+  // reintroduction with proper activation fallbacks.
+  const transitions = "";
 
   return {
     meta: compiled.meta,
