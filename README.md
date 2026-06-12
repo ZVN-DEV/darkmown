@@ -1,33 +1,31 @@
 # Darkmown
 
-Darkmown is a Markdown-native web framework based on the original MARROW/WhateverDown vision.
+**[darkmown.com](https://darkmown.com)** · markdown, rearranged.
 
-Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections.
+Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime under 2 KB gzipped.
 
-## Install the CLI
-
-From this repo:
+## Quick start
 
 ```sh
-npm install
-npm link
-darkmown help
-```
-
-For local development without linking:
-
-```sh
-node src/cli.js help
-npm run dev
-```
-
-## Create a site
-
-```sh
-darkmown init my-site
+npx darkmown init my-site
 cd my-site
 npm install
 npm run dev
+```
+
+Or add it to an existing project:
+
+```sh
+npm install -D darkmown
+npx darkmown dev
+```
+
+## Working from this repo
+
+```sh
+npm install
+npm test
+npm run dev    # live demo site — the same site that runs darkmown.com
 ```
 
 ## Commands

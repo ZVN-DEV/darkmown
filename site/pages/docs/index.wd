@@ -14,29 +14,14 @@ Darkmown is a Markdown-native framework for mostly-static sites with tiny reacti
 
 ## Install
 
-From this repo:
-
 ```sh
-npm install
-npm link
-darkmown help
-```
-
-Or use the local script surface:
-
-```sh
-npm run dev
-npm run build
-```
-
-## Create a site
-
-```sh
-darkmown init my-site
+npx darkmown init my-site
 cd my-site
 npm install
 npm run dev
 ```
+
+Or add Darkmown to an existing project with `npm install -D darkmown`.
 
 ## The two formats
 
