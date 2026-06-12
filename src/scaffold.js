@@ -13,7 +13,7 @@ export function initProject(root) {
       build: "darkmown build"
     },
     devDependencies: {
-      "darkmown": `^${darkmownVersion}`
+      "@zvndev/darkmown": `^${darkmownVersion}`
     }
   }, null, 2));
   writeNew(root, "site/pages/index.wd", [

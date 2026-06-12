@@ -4,7 +4,7 @@ All notable changes to Darkmown are documented here. Versions follow [semver](ht
 
 ## 0.4.0 — 2026-06-11
 
-- **Renamed**: the framework is now **Darkmown** (formerly Markie). Package `darkmown`, CLI `darkmown`. The `.wd` format and `/__wd/` asset paths are unchanged.
+- **Renamed**: the framework is now **Darkmown** (formerly Markie). Package `@zvndev/darkmown` (npm's typosquat guard reserves bare `darkmown` as too similar to `markdown`), CLI `darkmown`. The `.wd` format and `/__wd/` asset paths are unchanged.
 - **License**: MIT. Repository is public.
 - Gold-standard launch hardening: CI (Node 20/22/24 matrix, build check, runtime size budget, dependency audit), release automation on tag push, SECURITY.md, CONTRIBUTING.md, CLAUDE.md, this changelog.
 

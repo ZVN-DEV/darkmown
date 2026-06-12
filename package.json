@@ -1,7 +1,10 @@
 {
-  "name": "darkmown",
+  "name": "@zvndev/darkmown",
   "version": "0.4.0",
   "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "description": "Darkmown — the markdown framework. Plain .md stays plain; rename to .wd for loops, state, includes, and tiny reactive islands. Zero JS on static pages.",
   "bin": {

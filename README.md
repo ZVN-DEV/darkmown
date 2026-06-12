@@ -7,7 +7,7 @@ Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays 
 ## Quick start
 
 ```sh
-npx darkmown init my-site
+npx @zvndev/darkmown init my-site
 cd my-site
 npm install
 npm run dev
@@ -16,9 +16,11 @@ npm run dev
 Or add it to an existing project:
 
 ```sh
-npm install -D darkmown
+npm install -D @zvndev/darkmown
 npx darkmown dev
 ```
+
+The package is `@zvndev/darkmown`; the command it installs is plain `darkmown`.
 
 ## Working from this repo
 

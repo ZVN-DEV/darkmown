@@ -10,7 +10,7 @@ const cli = path.resolve("src/cli.js");
 
 test("package exposes the darkmown bin", () => {
   const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-  assert.equal(pkg.name, "darkmown");
+  assert.equal(pkg.name, "@zvndev/darkmown");
   assert.equal(pkg.bin.darkmown, "./src/cli.js");
 });
 
@@ -32,7 +32,7 @@ test("init scaffolds without overwriting and uses publishable dependency spec", 
 
   const pkg = JSON.parse(fs.readFileSync(path.join(target, "package.json"), "utf8"));
   const rootPkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-  assert.equal(pkg.devDependencies["darkmown"], `^${rootPkg.version}`);
+  assert.equal(pkg.devDependencies["@zvndev/darkmown"], `^${rootPkg.version}`);
   assert.equal(fs.readFileSync(path.join(target, "site/pages/index.wd"), "utf8"), "# Existing\n");
   assert.equal(fs.existsSync(path.join(target, "site/pages/index.skin")), true);
   assert.equal(fs.existsSync(path.join(target, "site/_/nav.wd")), true);

@@ -15,13 +15,13 @@ Darkmown is a Markdown-native framework for mostly-static sites with tiny reacti
 ## Install
 
 ```sh
-npx darkmown init my-site
+npx @zvndev/darkmown init my-site
 cd my-site
 npm install
 npm run dev
 ```
 
-Or add Darkmown to an existing project with `npm install -D darkmown`.
+Or add Darkmown to an existing project with `npm install -D @zvndev/darkmown`. The package is scoped; the command it installs is plain `darkmown`.
 
 ## The two formats
 
