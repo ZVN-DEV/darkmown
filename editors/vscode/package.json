@@ -1,0 +1,73 @@
+{
+  "name": "darkmown",
+  "displayName": "Darkmown",
+  "description": "Syntax highlighting, snippets, and language support for Darkmown .wd and .skin files.",
+  "version": "0.1.0",
+  "publisher": "zvndev",
+  "license": "MIT",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "darkmown",
+    "markdown",
+    "wd",
+    "skin",
+    "static site"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZVN-DEV/darkmown.git",
+    "directory": "editors/vscode"
+  },
+  "homepage": "https://darkmown.com",
+  "bugs": {
+    "url": "https://github.com/ZVN-DEV/darkmown/issues"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "darkmown",
+        "aliases": ["Darkmown", "whateverdown", "wd"],
+        "extensions": [".wd"],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "darkmown-skin",
+        "aliases": ["Darkmown Skin", "skin"],
+        "extensions": [".skin"],
+        "configuration": "./skin-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "darkmown",
+        "scopeName": "text.markdown.darkmown",
+        "path": "./syntaxes/darkmown.tmLanguage.json"
+      },
+      {
+        "language": "darkmown-skin",
+        "scopeName": "source.darkmown-skin",
+        "path": "./syntaxes/skin.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "darkmown",
+        "path": "./snippets/darkmown.json"
+      }
+    ]
+  }
+}

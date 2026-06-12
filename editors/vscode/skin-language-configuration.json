@@ -1,0 +1,14 @@
+{
+  "comments": {},
+  "brackets": [
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" }
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*[.#&A-Za-z][^\\n]*$",
+    "decreaseIndentPattern": "^\\s*$"
+  }
+}

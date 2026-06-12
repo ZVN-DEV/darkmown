@@ -138,6 +138,10 @@ Loading…
 
 Reactive pages expose `window.wd` — `wd.get(key)`, `wd.set(key, value)`, `wd.state`, `wd.render()` — so colocated `.js` can do anything the directives can't. Section-scoped keys are addressed as `sectionId:name`.
 
+## Editor support
+
+A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown. Build it with `cd editors/vscode && npx @vscode/vsce package`, or install the published extension from the Marketplace (search "Darkmown").
+
 ## Spec status
 
 See [docs/spec-alignment.md](docs/spec-alignment.md) for the deep alignment audit against the original vision.

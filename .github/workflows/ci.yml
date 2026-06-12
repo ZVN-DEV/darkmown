@@ -60,3 +60,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
+
+  extension:
+    name: VS Code grammar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tokenize .wd and .skin through the VS Code engine
+        working-directory: editors/vscode
+        run: |
+          npm install
+          npm test

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Darkmown Skin",
+  "scopeName": "source.darkmown-skin",
+  "patterns": [
+    { "include": "#tokens-keyword" },
+    { "include": "#selector" },
+    { "include": "#declaration" }
+  ],
+  "repository": {
+    "tokens-keyword": {
+      "match": "^\\s*(tokens)\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.tokens.skin" }
+      }
+    },
+    "selector": {
+      "patterns": [
+        {
+          "comment": "Lines beginning with a class/id/parent ref are unambiguously selectors. Declarations always start with a lowercase property name, so a value like '#hex' never reaches here.",
+          "match": "^\\s*([.#&].*)$",
+          "name": "entity.name.selector.skin",
+          "captures": {
+            "1": {
+              "patterns": [
+                { "match": "#[\\w-]+", "name": "entity.other.attribute-name.id.skin" },
+                { "match": "\\.[\\w-]+", "name": "entity.other.attribute-name.class.skin" },
+                { "match": "&", "name": "entity.name.tag.reference.skin" },
+                { "match": "[:>+~,]", "name": "punctuation.separator.selector.skin" },
+                { "match": "[A-Za-z][\\w-]*", "name": "entity.name.tag.skin" }
+              ]
+            }
+          }
+        },
+        {
+          "comment": "A bare element token alone on its line is a selector (declarations always carry a value).",
+          "match": "^\\s*([A-Za-z][\\w-]*)\\s*$",
+          "name": "entity.name.tag.skin"
+        }
+      ]
+    },
+    "declaration": {
+      "match": "^\\s*([a-z][a-z-]*)\\s+(.+)$",
+      "captures": {
+        "1": { "name": "support.type.property-name.skin" },
+        "2": { "patterns": [{ "include": "#value" }] }
+      }
+    },
+    "value": {
+      "patterns": [
+        { "match": "\\$[A-Za-z_][\\w-]*", "name": "variable.other.token.skin" },
+        { "match": "#[0-9a-fA-F]{3,8}\\b", "name": "constant.other.color.rgb-value.skin" },
+        { "match": "\\b(rgba?|hsla?|var|calc|blur|inset|url)\\b", "name": "support.function.skin" },
+        { "match": "-?\\b\\d+(?:\\.\\d+)?(px|rem|em|%|vh|vw|s|ms|deg|fr)?\\b", "name": "constant.numeric.skin" },
+        { "match": "\"[^\"]*\"|'[^']*'", "name": "string.quoted.skin" },
+        { "match": "\\b(solid|dashed|dotted|none|auto|center|left|right|flex|grid|block|inline|sticky|absolute|relative|fixed|bold|italic|wrap|nowrap|hidden|visible|transparent|white|black|inherit|currentColor)\\b", "name": "constant.language.skin" }
+      ]
+    }
+  }
+}

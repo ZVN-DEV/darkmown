@@ -1,0 +1,245 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Darkmown",
+  "scopeName": "text.markdown.darkmown",
+  "patterns": [
+    { "include": "#frontmatter" },
+    { "include": "#section" },
+    { "include": "#loop" },
+    { "include": "#include" },
+    { "include": "#conditional" },
+    { "include": "#form" },
+    { "include": "#state" },
+    { "include": "#computed" },
+    { "include": "#fetch" },
+    { "include": "#button" },
+    { "include": "#demo" },
+    { "include": "#interpolation" },
+    { "include": "text.html.markdown" }
+  ],
+  "repository": {
+    "frontmatter": {
+      "begin": "\\A(-{3})\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.frontmatter.begin.darkmown" }
+      },
+      "end": "^(-{3})\\s*$",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.frontmatter.end.darkmown" }
+      },
+      "name": "meta.frontmatter.darkmown",
+      "patterns": [
+        {
+          "match": "^\\s*([A-Za-z0-9_-]+)\\s*(:)",
+          "captures": {
+            "1": { "name": "entity.name.tag.frontmatter.darkmown" },
+            "2": { "name": "punctuation.separator.key-value.darkmown" }
+          }
+        }
+      ]
+    },
+    "section": {
+      "patterns": [
+        {
+          "match": "^\\s*(:::)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.section.end.darkmown" }
+          }
+        },
+        {
+          "match": "^\\s*(:::)\\s+([A-Za-z][\\w-]*)?\\s*(.*)$",
+          "captures": {
+            "1": { "name": "keyword.control.section.begin.darkmown" },
+            "2": { "name": "storage.type.section.darkmown" },
+            "3": {
+              "patterns": [
+                { "match": "#[\\w-]+", "name": "entity.other.attribute-name.id.darkmown" },
+                { "match": "\\.[\\w-]+", "name": "entity.other.attribute-name.class.darkmown" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "loop": {
+      "patterns": [
+        {
+          "match": "^\\s*(@loop)\\s+(.+?)\\s+(into)\\s+([A-Za-z_$][\\w$]*)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.loop.darkmown" },
+            "2": {
+              "patterns": [
+                { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" },
+                { "match": "[^\\s].*", "name": "variable.parameter.loop-source.darkmown" }
+              ]
+            },
+            "3": { "name": "keyword.control.loop.into.darkmown" },
+            "4": { "name": "variable.other.loop-item.darkmown" }
+          }
+        },
+        {
+          "match": "^\\s*(@endloop)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.loop.end.darkmown" }
+          }
+        }
+      ]
+    },
+    "include": {
+      "match": "^\\s*(@include)\\s+(\\S+)(?:\\s+(with)\\s+(.*))?$",
+      "captures": {
+        "1": { "name": "keyword.control.include.darkmown" },
+        "2": { "name": "string.unquoted.path.darkmown" },
+        "3": { "name": "keyword.control.include.with.darkmown" },
+        "4": {
+          "patterns": [
+            { "include": "#interpolation" },
+            { "match": "([A-Za-z_$][\\w$]*)(=)", "captures": { "1": { "name": "variable.parameter.darkmown" }, "2": { "name": "keyword.operator.assignment.darkmown" } } },
+            { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" }
+          ]
+        }
+      }
+    },
+    "conditional": {
+      "patterns": [
+        {
+          "match": "^\\s*(:if)\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.conditional.if.darkmown" },
+            "2": { "name": "variable.other.darkmown" }
+          }
+        },
+        { "match": "^\\s*(:else)\\s*$", "captures": { "1": { "name": "keyword.control.conditional.else.darkmown" } } },
+        { "match": "^\\s*(:endif)\\s*$", "captures": { "1": { "name": "keyword.control.conditional.end.darkmown" } } }
+      ]
+    },
+    "form": {
+      "patterns": [
+        {
+          "match": "^\\s*(:form)\\b(.*)$",
+          "captures": {
+            "1": { "name": "keyword.control.form.darkmown" },
+            "2": {
+              "patterns": [
+                { "match": "\\b(action|method|into)\\b", "name": "entity.other.attribute-name.darkmown" },
+                { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" },
+                { "match": "=", "name": "keyword.operator.assignment.darkmown" },
+                { "match": "[A-Za-z_$][\\w$]*", "name": "variable.other.darkmown" }
+              ]
+            }
+          }
+        },
+        {
+          "match": "^\\s*(:input)\\s+([A-Za-z_$][\\w$]*)(.*)$",
+          "captures": {
+            "1": { "name": "keyword.control.input.darkmown" },
+            "2": { "name": "variable.other.field.darkmown" },
+            "3": {
+              "patterns": [
+                { "match": "\\b(placeholder|value|min|max|step|pattern|autocomplete|required|type)\\b", "name": "entity.other.attribute-name.darkmown" },
+                { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" },
+                { "match": "=", "name": "keyword.operator.assignment.darkmown" }
+              ]
+            }
+          }
+        },
+        {
+          "match": "^\\s*(:submit)\\s+(\"[^\"]*\")\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.submit.darkmown" },
+            "2": { "name": "string.quoted.double.darkmown" }
+          }
+        },
+        { "match": "^\\s*(:endform)\\s*$", "captures": { "1": { "name": "keyword.control.form.end.darkmown" } } }
+      ]
+    },
+    "state": {
+      "match": "^\\s*(:state)\\s+([A-Za-z_$][\\w$]*)\\s*(=)\\s*(.*?)\\s*(persist)?\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.state.darkmown" },
+        "2": { "name": "variable.other.state.darkmown" },
+        "3": { "name": "keyword.operator.assignment.darkmown" },
+        "4": { "patterns": [{ "include": "#value" }] },
+        "5": { "name": "storage.modifier.persist.darkmown" }
+      }
+    },
+    "computed": {
+      "match": "^\\s*(:computed)\\s+([A-Za-z_$][\\w$]*)\\s*(=)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "keyword.control.computed.darkmown" },
+        "2": { "name": "variable.other.computed.darkmown" },
+        "3": { "name": "keyword.operator.assignment.darkmown" },
+        "4": {
+          "patterns": [
+            { "match": "\\b\\d+(?:\\.\\d+)?\\b", "name": "constant.numeric.darkmown" },
+            { "match": "[+\\-*/%<>=!&|]+", "name": "keyword.operator.darkmown" },
+            { "match": "[A-Za-z_$][\\w$.:]*", "name": "variable.other.darkmown" },
+            { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" }
+          ]
+        }
+      }
+    },
+    "fetch": {
+      "match": "^\\s*(:fetch)\\s+([A-Za-z_$][\\w$]*)\\s+(from)\\s+(\"[^\"]*\")(?:\\s+(when)(=)(visible))?\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.fetch.darkmown" },
+        "2": { "name": "variable.other.state.darkmown" },
+        "3": { "name": "keyword.control.fetch.from.darkmown" },
+        "4": { "name": "string.quoted.double.darkmown" },
+        "5": { "name": "entity.other.attribute-name.darkmown" },
+        "6": { "name": "keyword.operator.assignment.darkmown" },
+        "7": { "name": "constant.language.darkmown" }
+      }
+    },
+    "button": {
+      "match": "^\\s*(:button)\\s+(\"[^\"]*\")\\s*(->)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "keyword.control.button.darkmown" },
+        "2": { "name": "string.quoted.double.darkmown" },
+        "3": { "name": "keyword.operator.arrow.darkmown" },
+        "4": {
+          "patterns": [
+            { "match": "(\\+\\+|--|\\+=|=)", "name": "keyword.operator.darkmown" },
+            { "include": "#value" },
+            { "match": "[A-Za-z_$][\\w$.:]*", "name": "variable.other.state.darkmown" }
+          ]
+        }
+      }
+    },
+    "demo": {
+      "patterns": [
+        {
+          "match": "^\\s*(:note|:try|:sprint)\\b(.*)$",
+          "captures": {
+            "1": { "name": "keyword.control.demo.darkmown" },
+            "2": {
+              "patterns": [
+                { "match": "\\b(href|min|max|roles)\\b", "name": "entity.other.attribute-name.darkmown" },
+                { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" },
+                { "match": "=", "name": "keyword.operator.assignment.darkmown" },
+                { "match": "\\b\\d+\\b", "name": "constant.numeric.darkmown" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "interpolation": {
+      "match": "(\\{)\\s*([A-Za-z_$][A-Za-z0-9_$.:]*)\\s*(\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.template-expression.begin.darkmown" },
+        "2": { "name": "variable.other.interpolation.darkmown" },
+        "3": { "name": "punctuation.definition.template-expression.end.darkmown" }
+      }
+    },
+    "value": {
+      "patterns": [
+        { "match": "\\b(true|false|null)\\b", "name": "constant.language.darkmown" },
+        { "match": "-?\\b\\d+(?:\\.\\d+)?\\b", "name": "constant.numeric.darkmown" },
+        { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" },
+        { "begin": "\\[", "end": "\\]", "name": "meta.array.darkmown", "patterns": [{ "include": "#value" }] },
+        { "begin": "\\{", "end": "\\}", "name": "meta.object.darkmown", "patterns": [{ "include": "#value" }, { "match": "[A-Za-z_$][\\w$]*", "name": "variable.other.darkmown" }] }
+      ]
+    }
+  }
+}

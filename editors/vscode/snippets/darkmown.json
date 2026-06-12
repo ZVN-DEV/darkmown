@@ -1,0 +1,72 @@
+{
+  "Frontmatter": {
+    "prefix": "---",
+    "body": ["---", "title: ${1:Page title}", "---", "$0"],
+    "description": "Page frontmatter block"
+  },
+  "State": {
+    "prefix": ":state",
+    "body": [":state ${1:name} = ${2:0}"],
+    "description": "Declare reactive state"
+  },
+  "Persistent state": {
+    "prefix": ":state persist",
+    "body": [":state ${1:items} = ${2:[]} persist"],
+    "description": "Declare state backed by localStorage"
+  },
+  "Computed": {
+    "prefix": ":computed",
+    "body": [":computed ${1:total} = ${2:items.length}"],
+    "description": "Derive state from state"
+  },
+  "Button": {
+    "prefix": ":button",
+    "body": [":button \"${1:Label}\" -> ${2:count}${3:++}"],
+    "description": "Action button"
+  },
+  "If / else / endif": {
+    "prefix": ":if",
+    "body": [":if ${1:name}", "${2:Shown when truthy}", ":else", "${3:Shown when falsy}", ":endif"],
+    "description": "Conditional block"
+  },
+  "Loop": {
+    "prefix": "@loop",
+    "body": ["@loop ${1:items} into ${2:item}", "- { ${2:item}.${3:title} }", "@endloop"],
+    "description": "Loop over a list, JSON file, or :state"
+  },
+  "Include": {
+    "prefix": "@include",
+    "body": ["@include /${1:partial.wd}"],
+    "description": "Embed another Markdown file"
+  },
+  "Include with args": {
+    "prefix": "@include with",
+    "body": ["@include /${1:card.wd} with ${2:title}={ ${3:row.name} }"],
+    "description": "Embed a file and pass values down"
+  },
+  "Section": {
+    "prefix": ":::",
+    "body": ["::: section #${1:id}", "$0", ":::"],
+    "description": "Scoped section container"
+  },
+  "Fetch": {
+    "prefix": ":fetch",
+    "body": [":fetch ${1:data} from \"${2:/__wd/data/items.json}\""],
+    "description": "Load JSON into reactive state"
+  },
+  "Lazy fetch": {
+    "prefix": ":fetch visible",
+    "body": [":fetch ${1:data} from \"${2:/__wd/data/items.json}\" when=visible"],
+    "description": "Defer fetch until scrolled into view"
+  },
+  "Form into state": {
+    "prefix": ":form into",
+    "body": [":form into ${1:profile}", ":input ${2:name} placeholder=\"${3:Your name}\" required", ":submit \"${4:Save}\"", ":endform"],
+    "description": "Capture a submit into client state"
+  },
+  "Form to server": {
+    "prefix": ":form action",
+    "body": [":form action=\"${1:/api/echo}\" into ${2:reply}", ":input ${3:message} placeholder=\"${4:Say something}\"", ":submit \"${5:Send}\"", ":endform"],
+    "description": "Round-trip a form to a backend"
+  }
+}

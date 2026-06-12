@@ -5,6 +5,7 @@ All notable changes to Darkmown are documented here. Versions follow [semver](ht
 ## 0.5.0 — 2026-06-12
 
 - **Nested `:if` over loop items.** Conditionals inside a reactive `@loop` now nest — an inner `:if` resolves after the outer branch, per row, both at build time (balanced-region pre-render) and at runtime (recursive fill). Previously the compiler threw "not supported yet"; the loop-template fill no longer relies on a non-greedy regex that broke on nesting.
+- **VS Code extension** (`editors/vscode`): syntax highlighting, snippets, and folding for `.wd` and `.skin` files. Grammars are tested through the real VS Code tokenizer (vscode-textmate) in CI.
 - Site: landing page repositioned around the core wedge ("Markdown that runs" — full reactive websites in plain Markdown). `description`/Open Graph/Twitter meta tags now emit from frontmatter. Runtime-size claims corrected to the true ~2 KB; mobile nav wraps instead of overflowing.
 
 ## 0.4.0 — 2026-06-11
