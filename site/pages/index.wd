@@ -14,8 +14,8 @@ description: Build full websites in plain Markdown. Routing, state, server calls
 
 Not just pages — **full websites**. Routing, state, server calls, embeds, and reactive islands, all from plain Markdown files. No JavaScript or CSS required. Your docs and your code are all just text.
 
-<a class="btn primary" href="/docs/">Read the docs</a>
-<a class="btn" href="/data/">See it run</a>
+<a class="btn primary" href="/app/">See a whole app in one file</a>
+<a class="btn" href="/docs/">Read the docs</a>
 </section>
 
 :note "Static pages ship zero JavaScript. The moment a page asks for reactivity, one ~2 KB runtime loads — never before. JS optional, CSS optional, always."
@@ -32,6 +32,7 @@ Everything a site needs, expressed as Markdown directives. No components, no con
 
 ## What to try
 
+:try "A whole live app in one .wd file: fetch, loops, nested ifs, a form" href="/app/"
 :try "The docs route — a .wd page built from includes" href="/docs/"
 :try "A plain .md page where directives stay inert text" href="/markdown/"
 :try "Reactive page: state, keyed loops, scoped sections" href="/reactive/"
@@ -57,6 +58,8 @@ Everything a site needs, expressed as Markdown directives. No components, no con
 This button is powered by `site/pages/index.js`, discovered by matching the page basename:
 
 <button class="pulse-button" data-wd-demo>Script is waiting</button>
+
+<span id="deploy"></span>
 
 ## Deploy in one click
 

@@ -1,0 +1,76 @@
+tokens
+  ink #171717
+  paper #fbfaf7
+  panel #ffffff
+  line #e4e1d8
+  accent #16645a
+  warm #a83f2a
+  radius 10px
+
+main
+  max-width 760px
+  margin 0 auto
+  padding 2.5rem 1.5rem 4rem
+  font ui-sans-serif, system-ui, sans-serif
+  color $ink
+
+h1
+  font-size 2.1rem
+  letter-spacing -0.02em
+
+.boundary
+  margin 1.5rem 0
+  padding 1rem 1.2rem
+  border-left 3px solid $warm
+  background #fcf4ef
+  border-radius $radius
+  font-size .95rem
+
+.roadmap-row
+  display flex
+  align-items center
+  justify-content space-between
+  gap 1rem
+  padding .75rem 1rem
+  margin .5rem 0
+  background $panel
+  border 1px solid $line
+  border-radius $radius
+
+.badge
+  font-size .8rem
+  font-weight 600
+  padding .2rem .6rem
+  border-radius 999px
+  white-space nowrap
+
+.badge.shipped
+  background #e3f3ec
+  color $accent
+
+.badge.wip
+  background #fef0e6
+  color $warm
+
+.badge.blocked
+  background #f3e3e3
+  color #9a2a2a
+
+button
+  background $accent
+  color white
+  border 0
+  padding .55rem .9rem
+  margin .25rem .4rem .25rem 0
+  border-radius 8px
+  font-size .95rem
+  cursor pointer
+
+input
+  font-size 1rem
+  padding .6rem .7rem
+  border 1px solid $line
+  border-radius 8px
+  width 100%
+  max-width 22rem
+  margin .3rem 0

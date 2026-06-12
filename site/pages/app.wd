@@ -1,0 +1,92 @@
+---
+title: A live app in one Markdown file
+description: One .wd file — static prose, fetched data, looped results with nested conditionals, a persistent counter, and a form that round-trips to a real server. No JavaScript written, no components, no build config.
+---
+
+@include /nav.wd
+
+<main>
+
+# A live app, in one Markdown file
+
+Everything on this page — the prose, the fetched list, the badges, the form, the counter — is a single `.wd` file. No components. No JSX. No build config. Watch where JavaScript actually enters.
+
+## Static until proven reactive
+
+This whole section is plain Markdown. The list below is unrolled **at build time** from a JSON file — it renders into HTML with no runtime at all:
+
+@loop /features.json into feature
+- **{ feature.name }** — { feature.detail }
+@endloop
+
+<aside class="boundary">If you deleted everything below this line, this page would ship <strong>zero</strong> bytes of JavaScript. Everything above is static HTML. Below is where the one ~2&nbsp;KB runtime loads — and only because the document asks for it.</aside>
+
+## Fetched data, looped, with nested conditions
+
+`:fetch` pulls JSON over the network into reactive state — from a static file here, or any API. Until it lands, the page shows a fallback. Each row then decides its own badge from **nested** conditionals, in plain Markdown:
+
+:fetch roadmap from "/__wd/data/roadmap.json"
+
+:if roadmap
+@loop roadmap into item
+::: card .roadmap-row
+**{ item.title }**
+:if item.blocked
+<span class="badge blocked">blocked</span>
+:else
+:if item.shipped
+<span class="badge shipped">shipped ✓</span>
+:else
+<span class="badge wip">in progress</span>
+:endif
+:endif
+:::
+@endloop
+:else
+Loading the roadmap…
+:endif
+
+No ternaries, no `.map()`, no framework — the outer `:if` checks `blocked`, the inner one checks `shipped`, per row, and both stay reactive.
+
+## A counter that survives reload
+
+`:state … persist` keeps this in `localStorage`, and `:computed` derives from it. Star a few, reload the page, and it holds:
+
+::: section #watch
+:state stars = 0 persist
+:computed milestone = stars >= 3
+
+You are watching { stars } item(s).
+
+:button "★ Watch one" -> stars++
+:button "Reset" -> stars = 0
+
+:if milestone
+Nice — you are tracking the whole near-term roadmap.
+:endif
+:::
+
+## A form that talks to a real server
+
+This form posts to a live serverless function and shows the reply. With JavaScript it is a `fetch`; without it, the exact same markup is a native POST — Darkmown adapts to your backend instead of owning one:
+
+:form action="/__wd/echo" into reply
+:input note placeholder="Tell us what you'd build with this"
+:submit "Send to the server"
+:endform
+
+:if reply
+The server got it and answered at **{ reply.at }**.
+:else
+Your reply will appear here.
+:endif
+
+:if reply_error
+Something went wrong: { reply_error }
+:endif
+
+---
+
+That was one file. Static prose, build-time loops, fetched data, nested conditionals, persistent state, computed values, and a server round-trip — and the only JavaScript on the page is the shared runtime Darkmown loads for you. [Read the docs](/docs/) or [deploy your own](/#deploy).
+
+</main>
