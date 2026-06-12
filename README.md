@@ -1,6 +1,6 @@
-# Markie
+# Darkmown
 
-Markie is a Markdown-native web framework based on the original MARROW/WhateverDown vision.
+Darkmown is a Markdown-native web framework based on the original MARROW/WhateverDown vision.
 
 Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections.
 
@@ -11,7 +11,7 @@ From this repo:
 ```sh
 npm install
 npm link
-markie help
+darkmown help
 ```
 
 For local development without linking:
@@ -24,7 +24,7 @@ npm run dev
 ## Create a site
 
 ```sh
-markie init my-site
+darkmown init my-site
 cd my-site
 npm install
 npm run dev
@@ -32,11 +32,11 @@ npm run dev
 
 ## Commands
 
-- `markie init [dir]` scaffolds a new site.
-- `markie dev` starts the live compiler with browser reload and an in-browser error overlay when a build fails.
-- `markie build` writes static output to `dist`.
-- `markie serve` previews the built `dist` locally.
-- `markie help` prints CLI usage.
+- `darkmown init [dir]` scaffolds a new site.
+- `darkmown dev` starts the live compiler with browser reload and an in-browser error overlay when a build fails.
+- `darkmown build` writes static output to `dist`.
+- `darkmown serve` previews the built `dist` locally.
+- `darkmown help` prints CLI usage.
 
 ## Authoring model
 
@@ -45,7 +45,7 @@ npm run dev
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Markie runtime. Reactive pages share `/__wd/runtime.js` (currently ~1.6 KB gzipped).
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~1.6 KB gzipped).
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Interpolation
@@ -130,7 +130,7 @@ Loading…
 - `:fetch name from "url"` declares state and fills it from JSON over the network; `name_error` carries failures. Add `when=visible` to defer the request until the spot scrolls into view.
 - `:computed total = items.length * 4` derives state from state with a compile-time-checked expression (names, numbers, arithmetic, comparisons — nothing else).
 - `:form into name` captures submits straight into state (no backend). `:form action="/url"` emits a plain native form instead — zero JS, full progressive enhancement.
-- `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Markie adapts to any backend — it does not own one. `markie dev` ships a `/__wd/echo` endpoint for demos.
+- `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Darkmown adapts to any backend — it does not own one. `darkmown dev` ships a `/__wd/echo` endpoint for demos.
 - `:state x = [] persist` keeps that state in localStorage across reloads.
 - `:if item.path` works inside reactive loops for per-row branches.
 - `transitions: true` in frontmatter turns on cross-document view transitions — pure CSS, zero JS.

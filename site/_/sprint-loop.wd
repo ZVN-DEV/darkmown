@@ -1,6 +1,6 @@
 ## Long-running session sprinting
 
-Markie treats sprinting as a visible operating loop, not as hidden recursion inside Markdown.
+Darkmown treats sprinting as a visible operating loop, not as hidden recursion inside Markdown.
 
 - PM keeps the acceptance checklist and decides whether the demo proves the promise.
 - Development owns compiler, router, runtime, and demo integration.

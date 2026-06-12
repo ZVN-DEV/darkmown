@@ -20,7 +20,7 @@ if (command === "help" || command === "--help" || command === "-h") {
 } else if (command === "init") {
   const target = process.argv[3] || ".";
   const result = initProject(path.resolve(process.cwd(), target));
-  console.log(`Created Markie project at ${path.relative(process.cwd(), result.root) || "."}`);
+  console.log(`Created Darkmown project at ${path.relative(process.cwd(), result.root) || "."}`);
   console.log(`Next: cd ${path.relative(process.cwd(), result.root) || "."} && npm install && npm run dev`);
 } else if (command === "build") {
   const result = buildSite();
@@ -32,7 +32,7 @@ if (command === "help" || command === "--help" || command === "-h") {
   const clients = new Set();
   let timer;
 
-  // Rebuild in a child process so changes to Markie's own src/ always load
+  // Rebuild in a child process so changes to Darkmown's own src/ always load
   // fresh modules — an in-process rebuild would reuse the stale import cache.
   const rebuild = () => {
     clearTimeout(timer);
@@ -98,18 +98,18 @@ if (command === "help" || command === "--help" || command === "-h") {
     }
   });
   server.listen(port, () => {
-    console.log(`Markie dev server ready at http://localhost:${port}`);
+    console.log(`Darkmown dev server ready at http://localhost:${port}`);
     console.log(`Live compiler watching site/ and src/`);
   });
 } else if (command === "serve") {
   const port = Number(process.env.PORT || 4173);
   const distRoot = path.join(process.cwd(), "dist");
   if (!fs.existsSync(distRoot)) {
-    console.error("No dist directory found. Run `markie build` first.");
+    console.error("No dist directory found. Run `darkmown build` first.");
     process.exit(1);
   }
   http.createServer((req, res) => serve(distRoot, req.url || "/", res)).listen(port, () => {
-    console.log(`Markie preview of dist at http://localhost:${port}`);
+    console.log(`Darkmown preview of dist at http://localhost:${port}`);
   });
 } else {
   console.error(`Unknown command: ${command}`);
@@ -137,14 +137,14 @@ function broadcast(clients, message) {
 }
 
 function printHelp() {
-  console.log(`Markie
+  console.log(`Darkmown
 
 Usage:
-  markie init [dir]   Scaffold a new Markie project
-  markie dev          Start the live compiler dev server
-  markie build        Compile site/pages into dist
-  markie serve        Preview the built dist locally
-  markie help         Show this help
+  darkmown init [dir]   Scaffold a new Darkmown project
+  darkmown dev          Start the live compiler dev server
+  darkmown build        Compile site/pages into dist
+  darkmown serve        Preview the built dist locally
+  darkmown help         Show this help
 
 Authoring:
   site/pages          File-based routes: .md stays plain, .wd adds directives

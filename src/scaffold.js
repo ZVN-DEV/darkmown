@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const markieVersion = JSON.parse(
+const darkmownVersion = JSON.parse(
   fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version;
 
@@ -9,23 +9,23 @@ export function initProject(root) {
   fs.mkdirSync(root, { recursive: true });
   writeNew(root, "package.json", JSON.stringify({
     scripts: {
-      dev: "markie dev",
-      build: "markie build"
+      dev: "darkmown dev",
+      build: "darkmown build"
     },
     devDependencies: {
-      "markie-framework": `^${markieVersion}`
+      "darkmown": `^${darkmownVersion}`
     }
   }, null, 2));
   writeNew(root, "site/pages/index.wd", [
     "---",
-    "title: My Markie site",
+    "title: My Darkmown site",
     "---",
     "",
     "@include /nav.wd",
     "",
     "<main>",
     "",
-    "# My Markie site",
+    "# My Darkmown site",
     "",
     "Plain Markdown works. Rename to `.wd` when you want directives.",
     "",
@@ -75,7 +75,7 @@ export function initProject(root) {
     "</nav>"
   ].join("\n"));
   writeNew(root, "README.md", [
-    "# My Markie site",
+    "# My Darkmown site",
     "",
     "Run `npm install` and `npm run dev` to start the live compiler.",
     "",

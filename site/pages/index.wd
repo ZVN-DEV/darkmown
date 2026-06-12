@@ -1,5 +1,5 @@
 ---
-title: Markie
+title: Darkmown
 transitions: true
 ---
 
@@ -10,7 +10,7 @@ transitions: true
 <section class="hero">
   <p class="eyebrow">Markdown-native framework</p>
 
-# Markie
+# Darkmown
 
 Markdown pages that compile into fast, mostly-static websites, with tiny reactive islands only where the document asks for them.
 

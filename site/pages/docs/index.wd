@@ -1,5 +1,5 @@
 ---
-title: Markie docs
+title: Darkmown docs
 transitions: true
 ---
 
@@ -9,7 +9,7 @@ transitions: true
 
 # Docs
 
-Markie is a Markdown-native framework for mostly-static sites with tiny reactive islands. Pages are plain files: `.md` stays pure CommonMark, and `.wd` ("whateverdown") is the same Markdown plus first-party directives.
+Darkmown is a Markdown-native framework for mostly-static sites with tiny reactive islands. Pages are plain files: `.md` stays pure CommonMark, and `.wd` ("whateverdown") is the same Markdown plus first-party directives.
 
 @include ./-relative-note.wd
 
@@ -20,7 +20,7 @@ From this repo:
 ```sh
 npm install
 npm link
-markie help
+darkmown help
 ```
 
 Or use the local script surface:
@@ -33,7 +33,7 @@ npm run build
 ## Create a site
 
 ```sh
-markie init my-site
+darkmown init my-site
 cd my-site
 npm install
 npm run dev

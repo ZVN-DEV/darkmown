@@ -1,20 +1,20 @@
-# Markie CLI
+# Darkmown CLI
 
 ## Install locally
 
 ```sh
 npm install
 npm link
-markie help
+darkmown help
 ```
 
-`package.json` exposes the executable as `markie`.
+`package.json` exposes the executable as `darkmown`.
 
 ## Commands
 
-### `markie init [dir]`
+### `darkmown init [dir]`
 
-Creates a minimal Markie site with:
+Creates a minimal Darkmown site with:
 
 - `site/pages/index.wd`
 - `site/pages/index.skin`
@@ -31,7 +31,7 @@ npm install
 npm run dev
 ```
 
-### `markie dev`
+### `darkmown dev`
 
 Runs a live compiler:
 
@@ -42,7 +42,7 @@ Runs a live compiler:
 - injects `/__wd/dev-client.js`
 - reloads the browser through `/__wd/dev-events`
 
-### `markie build`
+### `darkmown build`
 
 Compiles `site/pages` into `dist`.
 

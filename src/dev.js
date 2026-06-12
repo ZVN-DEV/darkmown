@@ -23,7 +23,7 @@ source.addEventListener("builderror", (event) => {
     ].join(";");
     document.body.appendChild(overlay);
   }
-  overlay.textContent = "Markie build failed\\n\\n" + message + "\\n\\nFix the file and this overlay clears on the next successful build.";
+  overlay.textContent = "Darkmown build failed\\n\\n" + message + "\\n\\nFix the file and this overlay clears on the next successful build.";
 });
 source.addEventListener("error", () => {});
 `;

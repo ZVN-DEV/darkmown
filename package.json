@@ -1,11 +1,11 @@
 {
-  "name": "markie-framework",
-  "version": "0.3.0",
+  "name": "darkmown",
+  "version": "0.4.0",
   "private": false,
   "type": "module",
-  "description": "A Markdown-native web framework with .wd directives, .skin styling, and zero-JS static output by default.",
+  "description": "Darkmown — the markdown framework. Plain .md stays plain; rename to .wd for loops, state, includes, and tiny reactive islands. Zero JS on static pages.",
   "bin": {
-    "markie": "./src/cli.js"
+    "darkmown": "./src/cli.js"
   },
   "scripts": {
     "build": "node src/cli.js build",
@@ -16,7 +16,8 @@
     "src",
     "site",
     "docs",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
@@ -26,11 +27,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ZVN-DEV/Markie-fw.git"
+    "url": "git+https://github.com/ZVN-DEV/darkmown.git"
   },
-  "homepage": "https://github.com/ZVN-DEV/Markie-fw#readme",
+  "homepage": "https://github.com/ZVN-DEV/darkmown#readme",
   "bugs": {
-    "url": "https://github.com/ZVN-DEV/Markie-fw/issues"
+    "url": "https://github.com/ZVN-DEV/darkmown/issues"
   },
   "keywords": [
     "markdown",
@@ -41,5 +42,5 @@
     "zero-js",
     "reactive"
   ],
-  "license": "UNLICENSED"
+  "license": "MIT"
 }

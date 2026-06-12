@@ -5,7 +5,7 @@ transitions: true
 
 # Plain Markdown stays plain
 
-This page is `markdown.md`. Markie renders it with a real CommonMark parser and adds nothing — no runtime, no directives, no surprises.
+This page is `markdown.md`. Darkmown renders it with a real CommonMark parser and adds nothing — no runtime, no directives, no surprises.
 
 ## Everything CommonMark works
 
@@ -22,7 +22,7 @@ This page is `markdown.md`. Markie renders it with a real CommonMark parser and 
 | Blockquotes | Working |
 | Images | Working |
 
-![Markie logo](/__wd/media/logo.svg)
+![Darkmown logo](/__wd/media/logo.svg)
 
 ## Directives stay inert here
 

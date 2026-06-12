@@ -36,7 +36,7 @@ That loop also proves `:if` over loop items: the lead badge is decided per row.
 
 ## Forms write state, no backend required
 
-`:form into profile` captures the submit straight into state. With `action="/url"` instead, Markie emits a plain native form and stays out of the way entirely:
+`:form into profile` captures the submit straight into state. With `action="/url"` instead, Darkmown emits a plain native form and stays out of the way entirely:
 
 :form into profile
 :input name placeholder="Your name" required
@@ -52,7 +52,7 @@ Submit the form and this sentence reacts. Nothing leaves the page.
 
 ## Server round-trips, adapter style
 
-Markie does not own your backend — point a form at any endpoint. With JS, the submit becomes a fetch and the JSON reply lands in state; without JS, the same markup is a plain native POST:
+Darkmown does not own your backend — point a form at any endpoint. With JS, the submit becomes a fetch and the JSON reply lands in state; without JS, the same markup is a plain native POST:
 
 :form action="/__wd/echo" into reply
 :input message placeholder="Say something to the server"
@@ -65,7 +65,7 @@ The server answered with { reply.received.message } at { reply.at }.
 The reply will appear here.
 :endif
 
-The `/__wd/echo` endpoint ships with `markie dev` for demos only — in production this points at your real API, and sessions ride on `:fetch` plus ordinary cookies.
+The `/__wd/echo` endpoint ships with `darkmown dev` for demos only — in production this points at your real API, and sessions ride on `:fetch` plus ordinary cookies.
 
 ## Persistent state survives reload
 
