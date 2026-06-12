@@ -3,5 +3,11 @@
   "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/__wd/echo",
+      "destination": "/api/echo"
+    }
+  ]
 }

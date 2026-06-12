@@ -757,3 +757,28 @@ test(":form action + into emits a fetch round-trip form that degrades natively",
     /Malformed :form/
   );
 });
+
+test(":fetch and round-trip :form auto-declare their _error keys for display", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch team from "/__wd/data/team.json"',
+    "",
+    ":if team_error",
+    "Fetch failed: { team_error }",
+    ":endif",
+    "",
+    ':form action="/api/x" into reply',
+    ":input a",
+    ':submit "Go"',
+    ":endform",
+    "",
+    ":if reply_error",
+    "Submit failed: { reply_error }",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-if="team_error"/);
+  assert.match(page.html, /data-wd-bind="team_error"/);
+  assert.match(page.html, /data-wd-if="reply_error"/);
+  assert.match(page.html, /data-wd-bind="reply_error"/);
+});

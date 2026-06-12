@@ -64,7 +64,11 @@ The server answered with { reply.received.message } at { reply.at }.
 The reply will appear here.
 :endif
 
-The `/__wd/echo` endpoint ships with `darkmown dev` for demos only — in production this points at your real API, and sessions ride on `:fetch` plus ordinary cookies.
+:if reply_error
+The request failed: { reply_error }
+:endif
+
+In `darkmown dev` the echo endpoint is built into the dev server; on darkmown.com it is a real serverless function behind the same URL. Either way, Darkmown itself stays static — sessions ride on `:fetch` plus ordinary cookies against your real API.
 
 ## Persistent state survives reload
 

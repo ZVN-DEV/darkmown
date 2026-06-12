@@ -388,9 +388,15 @@ function handleFetch(line, ctx) {
     throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. Use: :fetch posts from "/api/posts.json" [when=visible]`);
   }
   const key = declareState(match[1], null, ctx);
+  declareErrorState(key, ctx);
   const url = stripQuotes(match[2]);
   const when = match[3] ? ` data-wd-fetch-when="visible"` : "";
   return `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"${when}></span>`;
+}
+
+function declareErrorState(key, ctx) {
+  const errorKey = `${key}_error`;
+  if (!ctx.comp.state.has(errorKey)) ctx.comp.state.set(errorKey, null);
 }
 
 function handleComputed(line, ctx) {
@@ -462,6 +468,7 @@ function handleForm(line, bodyLines, ctx) {
     return `<form action="${escapeHtml(action)}" method="${escapeHtml(method)}">${inner}</form>`;
   }
   const key = declareState(into, null, ctx);
+  declareErrorState(key, ctx);
   const actionAttrs = action ? ` action="${escapeHtml(action)}" method="${escapeHtml(method)}"` : "";
   return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: null })}</script><form data-wd-form="${key}"${actionAttrs}>${inner}</form>`;
 }

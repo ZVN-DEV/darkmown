@@ -167,6 +167,7 @@ document.addEventListener("submit", (event) => {
         value = { status: response.status, body: text };
       }
       state[key] = value;
+      state[`${key}_error`] = null;
       savePersisted();
       render();
     })
@@ -185,6 +186,7 @@ function startFetch(node) {
     })
     .then((value) => {
       state[key] = value;
+      state[`${key}_error`] = null;
       render();
     })
     .catch((error) => {
