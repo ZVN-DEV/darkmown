@@ -23,3 +23,37 @@ test("compiles tokens and selector rules after the token block", () => {
   assert.match(css, /button:hover \{ background: red; \}/);
   assert.doesNotMatch(css, /--color:/);
 });
+
+test("multi-word and grouped selectors compile structurally (indent decides)", () => {
+  const css = compileSkin([
+    "pre",
+    "  bg #111",
+    "",
+    "pre code",
+    "  bg transparent",
+    "  border 0",
+    "",
+    "h1 code, h2 code",
+    "  font-size .85em",
+    "",
+    ".topnav a",
+    "  color red",
+    "  &:hover",
+    "    text-decoration underline"
+  ].join("\n"));
+  assert.match(css, /pre \{ background: #111; \}/);
+  assert.match(css, /pre code \{ background: transparent; \}/);
+  assert.match(css, /h1 code, h2 code \{ font-size: \.85em; \}/);
+  assert.match(css, /\.topnav a \{ color: red; \}/);
+  assert.match(css, /\.topnav a:hover \{ text-decoration: underline; \}/);
+});
+
+test("declarations with commas and multiple values are never mistaken for selectors", () => {
+  const css = compileSkin([
+    "page",
+    "  font ui-serif, Georgia, Cambria, serif",
+    "  padding 1rem 2rem 3rem"
+  ].join("\n"));
+  assert.match(css, /body \{ font-family: ui-serif, Georgia, Cambria, serif; \}/);
+  assert.match(css, /body \{ padding: 1rem 2rem 3rem; \}/);
+});

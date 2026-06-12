@@ -6,23 +6,29 @@ const aliases = new Map([
 ]);
 
 export function compileSkin(source) {
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const lines = source
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .filter((raw) => raw.trim() && !raw.trim().startsWith("//"))
+    .map((raw) => ({ indent: raw.match(/^\s*/)[0].length, text: raw.trim() }));
+
   const stack = [];
   const css = [];
   let tokenIndent = null;
   const rootVars = [];
 
-  for (const raw of lines) {
-    if (!raw.trim() || raw.trim().startsWith("//")) continue;
-    const indent = raw.match(/^\s*/)[0].length;
-    const text = raw.trim();
+  for (let i = 0; i < lines.length; i++) {
+    const { indent, text } = lines[i];
+    // Structure decides meaning: a line opens a block (selector) exactly when
+    // the next line is indented deeper. Everything else is a declaration.
+    const opensBlock = i + 1 < lines.length && lines[i + 1].indent > indent;
 
-    if (text === "tokens") {
+    if (text === "tokens" && opensBlock) {
       tokenIndent = indent;
       continue;
     }
 
-    if (tokenIndent !== null && indent > tokenIndent && !looksLikeSelector(text)) {
+    if (tokenIndent !== null && indent > tokenIndent) {
       const [name, ...rest] = text.split(/\s+/);
       rootVars.push(`  --${name}: ${rest.join(" ")};`);
       continue;
@@ -31,7 +37,7 @@ export function compileSkin(source) {
     if (tokenIndent !== null && indent <= tokenIndent) tokenIndent = null;
     while (stack.length && stack.at(-1).indent >= indent) stack.pop();
 
-    if (looksLikeSelector(text)) {
+    if (opensBlock) {
       const parent = stack.at(-1)?.selector;
       const selector = normalizeSelector(text, parent);
       stack.push({ indent, selector });
@@ -49,14 +55,14 @@ export function compileSkin(source) {
   return css.join("\n");
 }
 
-function looksLikeSelector(text) {
-  if (/^[.#&]/.test(text)) return true;
-  return text === "page" || /^[a-z][a-z0-9_-]*(?::[a-z0-9_-]+)?$/i.test(text);
-}
-
 function normalizeSelector(text, parent) {
   const selector = text === "page" ? "body" : text;
   if (!parent || parent === ":root") return selector;
-  if (selector.startsWith("&")) return selector.replace("&", parent);
-  return `${parent} ${selector}`;
+  return selector
+    .split(",")
+    .map((part) => {
+      const clean = part.trim();
+      return clean.startsWith("&") ? clean.replace("&", parent) : `${parent} ${clean}`;
+    })
+    .join(", ");
 }
