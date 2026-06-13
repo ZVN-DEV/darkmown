@@ -66,6 +66,21 @@ Shown when falsy.
 ```
 Source: a JSON file path, an in-scope value, or a `:state` list. Loops nest; `:if todo.done` branches per row.
 
+### Filtering — `@loop … where` + live search with `:bind`
+```wd
+@loop /products.json into p where p.featured == true and p.price < 80
+- { p.name }                              ← item-only predicate → filtered at BUILD time, stays zero-JS
+@endloop
+
+:state products = [{"id":1,"name":"Aurora"},{"id":2,"name":"Briza"}]
+:state q = ""
+:bind q placeholder="Search"             ← <input> bound two-way to :state q
+@loop products into p where p.name contains q   ← predicate reads :state → reactive, re-filters live
+- { p.name }
+@endloop
+```
+`where` joins conditions with `and` / `or`. Operators: `==` `!=` `<` `<=` `>` `>=` and `contains` (case-insensitive substring). Operands are item paths (`p.field`), declared `:state`, numbers, or `"strings"` — whitelist-validated, no expressions. **Rule that decides JS: if the predicate only reads the row, it filters at build time and the page stays static; if it reads any `:state`, the loop becomes reactive.** `:bind name` is the input primitive for live filtering — it accepts `type=` (default `text`), `placeholder=`, `autocomplete=`, and `required` / `autofocus`.
+
 ### Includes & sections
 ```wd
 @include /nav.wd                         ← partial from site/_/
@@ -111,6 +126,7 @@ Your `.skin` selectors must match the **real** output. The emitted HTML is:
 | `::: name .card … :::` (non-`section`) | `<div class="card">…</div>` |
 | `:button "x" -> …` | `<button>x</button>` |
 | `:input email …` | `<input type="…">` |
+| `:bind q placeholder="…"` | `<input>` bound two-way to `:state q` |
 | `:submit "Go"` | `<button type="submit">Go</button>` |
 | `:form …` | `<form>…</form>` |
 | reactive `@loop` of a list | `<ul>`/`<ol>` (or `<div>`) of items |

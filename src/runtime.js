@@ -50,6 +50,17 @@ function recompute() {
   }
 }
 
+const containsFn = (a, b) => String(a ?? "").toLowerCase().includes(String(b ?? "").toLowerCase());
+const predicateCache = new Map();
+function loopPredicate(body) {
+  let fn = predicateCache.get(body);
+  if (!fn) {
+    fn = new Function("I", "S", "C", `return (${body});`);
+    predicateCache.set(body, fn);
+  }
+  return fn;
+}
+
 function loopKeyOf(item, counts) {
   const base =
     item && typeof item === "object"
@@ -91,11 +102,20 @@ function render() {
   }
 
   for (const region of document.querySelectorAll("[data-wd-loop]")) {
-    const rows = state[region.getAttribute("data-wd-loop")];
+    const key = region.getAttribute("data-wd-loop");
+    const data = region.getAttribute("data-wd-loop-data");
+    const rows = key ? state[key] : (data ? JSON.parse(data) : []);
     const template = region.querySelector("template[data-wd-loop-template]");
     const out = region.querySelector("[data-wd-loop-out]");
     if (!template || !out) continue;
-    const list = Array.isArray(rows) ? rows : [];
+    let list = Array.isArray(rows) ? rows : [];
+    const where = region.getAttribute("data-wd-loop-where");
+    if (where) {
+      const predicate = loopPredicate(where);
+      list = list.filter((item) =>
+        predicate((path) => getPath(item, path), (k, r) => getPath(state[k], r || ""), containsFn)
+      );
+    }
 
     const existing = new Map();
     for (const child of [...out.children]) {
@@ -122,7 +142,19 @@ function render() {
   for (const node of document.querySelectorAll("[data-wd-bind]")) {
     node.textContent = getPath(state[node.getAttribute("data-wd-bind")], node.getAttribute("data-wd-path")) ?? "";
   }
+
+  for (const input of document.querySelectorAll("[data-wd-bind-input]")) {
+    if (document.activeElement !== input) input.value = state[input.getAttribute("data-wd-bind-input")] ?? "";
+  }
 }
+
+document.addEventListener("input", (event) => {
+  const input = event.target.closest("[data-wd-bind-input]");
+  if (!input) return;
+  state[input.getAttribute("data-wd-bind-input")] = input.value;
+  savePersisted();
+  render();
+});
 
 document.addEventListener("click", (event) => {
   const action = event.target.closest("[data-wd-action]");
