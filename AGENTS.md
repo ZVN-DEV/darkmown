@@ -84,17 +84,21 @@ Source: a JSON file path, an in-scope value, or a `:state` list. Loops nest; `:i
 
 :form into profile                        ← captures submit into state (declares `profile`), no backend
 :input name placeholder="Your name" required
+:input email type=email placeholder="Email"   ← set type= for email/number/etc (default is text)
 :submit "Save"
 :endform
 
-:form action="/api/subscribe" into reply  ← posts to your backend; JSON reply → state.reply
-:input email placeholder="Email"
-:submit "Subscribe"
-:endform
+:if profile                               ← read form state AFTER :endform (see rule below)
+Thanks, **{ profile.name }**!
+:endif
 
 :computed total = items.length * 4         ← derived state; arithmetic & comparisons only
 ```
-Shelf `.json` files (in `site/_/`) publish to `/__wd/data/`. `:form action=` posts urlencoded and lands the JSON reply in state (without JS it degrades to a native POST). Darkmown owns no backend — point forms at your own API.
+Shelf `.json` files (in `site/_/`) publish to `/__wd/data/`. `:form action="/api/x" into reply` posts urlencoded and lands the JSON reply in state (without JS it degrades to a native POST). Darkmown owns no backend — point forms at your own API.
+
+**Form-state rules (these cause most form failures):**
+- `:form into x` declares `x` only at `:endform`. A `:if x` (or `{ x.field }`) that reads it must come **after `:endform`**, never inside the form body.
+- State declared inside a `::: section` is **scoped to that section** (as `sectionId:x`). If you wrap a `:form into x` in a section, a `:if x` *outside* that section can't see it. Keep the form and the `:if` that reads it in the **same scope** — or don't wrap the form in a section.
 
 ## What HTML each directive emits — target these in `.skin`
 
@@ -213,6 +217,7 @@ Always include: a tokens block, a real type scale, generous spacing, a `max-widt
 - **One `#` per page** (the H1/title). Use `##` for section headings (they render as `<h2>` — style those). Never emit two `<h1>`s.
 - **Only style classes you actually attach.** Add a class with `::: name .card` (container) or raw HTML `class="…"`. Don't write `.thanks { … }` then forget to put `.thanks` on the element — the styling silently does nothing. (Wrap a styled confirmation in `::: section .thanks … :::`.)
 - **Make cards feel real:** a subtle `box-shadow`, a `:hover` lift, and a distinct price/secondary-text color or weight. Avoid emoji as icons — they read as a default-AI tell; prefer an inline SVG or a styled monogram.
+- **Markdown is NOT parsed inside raw HTML blocks.** `**bold**` or `_em_` written inside a `<div>…</div>` renders as literal asterisks. Inside raw HTML use real tags (`<strong>`, `<em>`); use Markdown `**` only in plain prose lines.
 
 ## The escape hatch — for logic directives can't express
 
