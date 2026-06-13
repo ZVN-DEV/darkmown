@@ -8,6 +8,21 @@ Overall = mean of (compiled ? mean(persona scores) : capped 1.5) across all buil
 | 2 | AGENTS.md v2 (styling + mechanics) | **3.54** | 0.75* | 2.96 | 4.41 | 3.84 |
 | 3 | v3 + harness fix + .skin @media/font | **4.41** | 1.00 | 3.51 | 4.85 | 4.88 |
 | 4 | v4 (doc nits) | **3.96**† | 0.83 | 3.44 | 4.64 | 4.21 |
+| 5 | v5 (form gotchas) — **converged** | **4.51** | 1.00 | 3.69 | 4.86 | 4.97 |
+
+Per-model R5: Haiku **4.47**, Sonnet **4.52**, Opus **4.53** — a tight cluster; even the cheapest model (Haiku, 2.29 in R1) now builds Darkmown as well as Opus. v5 form fixes recovered `optionality` (compile 0.33→1.0, Prod-Owner→5.0).
+
+## Final read — converged after 5 rounds
+
+**Trajectory:** overall **2.78 → 4.51** (+62%); compile **0.75 → 1.00**; Stylist **1.48 → 3.69**; Purist **3.78 → 4.86**; Prod-Owner **3.21 → 4.97**. Failure notes **132 → 49**, now **0 compile failures, 0 invented syntax**.
+
+**The two residuals are not doc-fixable:**
+1. **Design-taste ceiling (24/49 R5 notes).** Graders reserve 5 for distinctive art direction — custom typefaces, imagery, dark mode. A one-sheet reliably gets models to *clean, modern, responsive, polished* (Stylist ~3.7–4.4 on build tasks) but can't manufacture original design identity.
+2. **The filter gap (5 notes, every round).** Darkmown has no state-driven list filtering, so the escape-hatch DOM-toggle is the only option — and it's fragile against the keyed-loop reconciler. **This is the single recurring non-doc signal across all 5 rounds → strongest case to build the `:filter`/derived-list primitive.**
+
+**Bugs the loop caught & fixed (with tests):** `.skin` `@media` (responsive was impossible), `.skin` `font` shorthand, and a harness bug (compile stage resurrecting deleted files). All these would have hit real users.
+
+Loop stopped at R5 by design — chasing N=1 sampling noise past convergence isn't worth the cost. The harness (`bench/`) is reusable to regression-test future doc or framework changes.
 
 †R4 is **sampling noise, not a regression** (N=1 per model×task). The whole dip is two `optionality` compile failures from real model errors: Sonnet put `:if` *inside* the `:form…:endform` block; Opus wrapped the form in a `::: section`, scoping the state away from its `:if`. Styling/scripting held or improved (styling Stylist 4.3 vs 4.17). Per-model R4: Haiku **4.48** (clean), Sonnet 3.77, Opus 3.63.
 
