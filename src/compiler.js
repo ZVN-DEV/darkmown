@@ -178,6 +178,11 @@ function compileBody(lines, ctx) {
       out.push(handleInput(line, ctx));
       continue;
     }
+    if (/^:bind\s/.test(line)) {
+      flush();
+      out.push(handleBind(line, ctx));
+      continue;
+    }
     if (/^:submit\s/.test(line)) {
       flush();
       out.push(handleSubmit(line, ctx));
@@ -508,6 +513,38 @@ function handleInput(line, ctx) {
   return `<input type="${escapeHtml(type)}" ${attrs.join(" ")}>`;
 }
 
+// :bind <state> [placeholder="…"] [type=…] — a live two-way input bound to a
+// declared :state. Updates state on every keystroke; reflects state back when
+// not focused. The state must be declared first (with :state).
+function handleBind(line, ctx) {
+  const match = line.match(/^:bind\s+([A-Za-z_$][\w$]*)\s*(.*)$/);
+  if (!match) throw new Error(`Malformed :bind in ${ctx.file}: ${line}. Use: :bind query placeholder="Search"`);
+  const key = resolveStateKey(match[1], ctx);
+  if (!key) {
+    throw new Error(`:bind ${match[1]} in ${ctx.file} has no matching state. Declare it first: :state ${match[1]} = ""`);
+  }
+  ctx.comp.assets.runtime = true;
+  let type = "text";
+  const attrs = [];
+  const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
+  for (const token of (match[2] || "").matchAll(re)) {
+    if (token[3]) {
+      if (!["required", "autofocus"].includes(token[3])) throw new Error(`Unknown :bind flag "${token[3]}" in ${ctx.file}`);
+      attrs.push(token[3]);
+      continue;
+    }
+    const value = stripQuotes(token[2]);
+    if (token[1] === "type") { type = value; continue; }
+    if (!["placeholder", "autocomplete"].includes(token[1])) {
+      throw new Error(`Unknown :bind attribute "${token[1]}" in ${ctx.file}`);
+    }
+    attrs.push(`${token[1]}="${escapeHtml(value)}"`);
+  }
+  const initial = ctx.comp.state.get(key);
+  const valueAttr = initial === undefined || initial === null ? "" : ` value="${escapeHtml(String(initial))}"`;
+  return `<input type="${escapeHtml(type)}" data-wd-bind-input="${key}"${valueAttr} ${attrs.join(" ")}>`;
+}
+
 function handleSubmit(line, ctx) {
   const match = line.match(/^:submit\s+"([^"]+)"\s*$/);
   if (!match) throw new Error(`Malformed :submit in ${ctx.file}: ${line}. Use: :submit "Label"`);
@@ -558,16 +595,17 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
 }
 
 function handleLoop(line, bodyLines, ctx) {
-  const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)\s*$/);
-  if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. Use: @loop <things> into <thing>`);
+  const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(?:\s+where\s+(.+?))?\s*$/);
+  if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. Use: @loop <things> into <thing> [where <predicate>]`);
   const source = stripQuotes(match[1].trim());
   const itemName = match[2];
+  const where = match[3] ? compilePredicate(match[3].trim(), itemName, ctx) : null;
 
   if (source.startsWith("/") || source.startsWith("./") || source.startsWith("../") || source.endsWith(".json")) {
     const dataFile = resolveInclude(source, ctx.file, ctx.context, true);
     const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
-    return staticUnroll(rows, itemName, bodyLines, ctx);
+    return loopOverData(rows, itemName, bodyLines, ctx, where);
   }
 
   const resolved = lookupPath(source, ctx);
@@ -575,17 +613,85 @@ function handleLoop(line, bodyLines, ctx) {
     if (!Array.isArray(resolved.value)) {
       throw new Error(`@loop ${source} in ${ctx.file} found an in-scope value, but it is not a list`);
     }
-    return staticUnroll(resolved.value, itemName, bodyLines, ctx);
+    return loopOverData(resolved.value, itemName, bodyLines, ctx, where);
   }
 
   if (/^[A-Za-z_$][\w$]*$/.test(source)) {
     const key = resolveStateKey(source, ctx);
-    if (key) return reactiveLoop(key, itemName, bodyLines, ctx);
+    if (key) return reactiveLoop(key, itemName, bodyLines, ctx, where ? { where } : null);
   }
 
   throw new Error(
     `@loop source "${source}" in ${ctx.file} was not found. Loop over a JSON file (@loop /data.json into row), an in-scope value, or a :state list.`
   );
+}
+
+// A static source (JSON file / in-scope value). No `where`, or a `where` that
+// only reads the loop item → filter at build time and stay zero-JS. A `where`
+// that reads :state → becomes a reactive filtered loop with the rows baked in.
+function loopOverData(rows, itemName, bodyLines, ctx, where) {
+  if (!where) return staticUnroll(rows, itemName, bodyLines, ctx);
+  if (!where.refsState) return staticUnroll(rows.filter((row) => evalPredicate(where.body, row, ctx)), itemName, bodyLines, ctx);
+  return reactiveLoop(null, itemName, bodyLines, ctx, { where, data: rows });
+}
+
+// Compile a `where` predicate to a safe JS boolean expression over I()/S()/C().
+// Conditions (operand <op> operand) join with `and`/`or`; operands are loop-item
+// paths, declared :state, numbers, or strings. No identifiers survive un-mapped.
+function compilePredicate(raw, itemName, ctx) {
+  const parts = raw.split(/\s+(and|or)\s+/i);
+  const pieces = [];
+  let refsState = false;
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) { pieces.push(parts[i].toLowerCase() === "and" ? "&&" : "||"); continue; }
+    const cond = compileCondition(parts[i].trim(), itemName, ctx);
+    refsState = refsState || cond.usesState;
+    pieces.push(`(${cond.expr})`);
+  }
+  return { body: pieces.join(" "), refsState };
+}
+
+function compileCondition(cond, itemName, ctx) {
+  const m = cond.match(/^(.+?)\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
+  if (!m) throw new Error(`Malformed where-condition "${cond}" in ${ctx.file}. Use: ${itemName}.field contains state, or ${itemName}.field <op> value.`);
+  const left = compileOperand(m[1].trim(), itemName, ctx);
+  const right = compileOperand(m[3].trim(), itemName, ctx);
+  const usesState = left.usesState || right.usesState;
+  const op = m[2].toLowerCase();
+  if (op === "contains") return { expr: `C(${left.code}, ${right.code})`, usesState };
+  return { expr: `${left.code} ${op} ${right.code}`, usesState };
+}
+
+function compileOperand(tok, itemName, ctx) {
+  if (/^"[^"]*"$/.test(tok) || /^'[^']*'$/.test(tok)) return { code: JSON.stringify(tok.slice(1, -1)), usesState: false };
+  if (/^-?\d+(?:\.\d+)?$/.test(tok)) return { code: tok, usesState: false };
+  if (["true", "false", "null"].includes(tok)) return { code: tok, usesState: false };
+  if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(tok)) {
+    throw new Error(`Unsupported operand "${tok}" in @loop where (${ctx.file}). Use ${itemName}.field, a :state name, a number, or a "string".`);
+  }
+  const segs = tok.split(".");
+  if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+    throw new Error(`Path "${tok}" is not allowed in @loop where (${ctx.file})`);
+  }
+  if (segs[0] === itemName) return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, usesState: false };
+  const key = resolveStateKey(segs[0], ctx);
+  if (!key) {
+    throw new Error(`@loop where references unknown name "${segs[0]}" in ${ctx.file}. Use the loop item (${itemName}.field) or a declared :state.`);
+  }
+  const rest = segs.slice(1).join(".");
+  return { code: `S(${JSON.stringify(key)}${rest ? `, ${JSON.stringify(rest)}` : ""})`, usesState: true };
+}
+
+const containsHelper = (a, b) => String(a ?? "").toLowerCase().includes(String(b ?? "").toLowerCase());
+
+function evalPredicate(body, item, ctx) {
+  try {
+    const I = (p) => getPath(item, p ? p.split(".") : []);
+    const S = (k, r) => getPath(ctx.comp.state.get(k), r ? r.split(".") : []);
+    return Boolean(new Function("I", "S", "C", `return (${body});`)(I, S, containsHelper));
+  } catch {
+    return false;
+  }
 }
 
 function staticUnroll(rows, itemName, bodyLines, ctx) {
@@ -597,7 +703,7 @@ function staticUnroll(rows, itemName, bodyLines, ctx) {
   return out.join("\n");
 }
 
-function reactiveLoop(key, itemName, bodyLines, ctx) {
+function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   ctx.comp.assets.runtime = true;
   const templateCtx = { ...ctx, loopItem: itemName, scope: createScope(ctx.scope) };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
@@ -612,7 +718,10 @@ function reactiveLoop(key, itemName, bodyLines, ctx) {
     itemTemplate = `<div data-wd-loop-piece>${templateHtml}</div>`;
   }
 
-  const rows = Array.isArray(ctx.comp.state.get(key)) ? ctx.comp.state.get(key) : [];
+  const where = opts?.where || null;
+  const baked = opts?.data || null;       // rows for a static source filtered by state
+  const allRows = key ? (Array.isArray(ctx.comp.state.get(key)) ? ctx.comp.state.get(key) : []) : (baked || []);
+  const rows = where ? allRows.filter((row) => evalPredicate(where.body, row, ctx)) : allRows;
   const counts = new Map();
   const initial = rows
     .map((item) => {
@@ -621,7 +730,9 @@ function reactiveLoop(key, itemName, bodyLines, ctx) {
     })
     .join("");
 
-  return `<div data-wd-loop="${key}"><template data-wd-loop-template>${itemTemplate}</template><${wrapperTag} data-wd-loop-out>${initial}</${wrapperTag}></div>`;
+  const whereAttr = where ? ` data-wd-loop-where="${escapeHtml(where.body)}"` : "";
+  const dataAttr = baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "";
+  return `<div data-wd-loop="${key || ""}"${whereAttr}${dataAttr}><template data-wd-loop-template>${itemTemplate}</template><${wrapperTag} data-wd-loop-out>${initial}</${wrapperTag}></div>`;
 }
 
 function withLoopKey(template, itemKey) {

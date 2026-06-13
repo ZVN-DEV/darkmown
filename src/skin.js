@@ -16,8 +16,16 @@ function resolveProp(prop, rest) {
 export function compileSkin(source) {
   const lines = source
     .replace(/\r\n?/g, "\n")
+    .replace(/\/\*[\s\S]*?\*\//g, "") // strip /* … */ block comments (any span)
     .split("\n")
-    .filter((raw) => raw.trim() && !raw.trim().startsWith("//"))
+    .filter((raw) => {
+      const t = raw.trim();
+      if (!t || t.startsWith("//")) return false;
+      // Decorative divider lines (----, ====, * * *, ~~~) carry no rule and would
+      // otherwise parse as a bogus selector/declaration. Anything with a letter or
+      // digit is real content; punctuation-only lines are skipped.
+      return /[A-Za-z0-9]/.test(t);
+    })
     .map((raw) => ({ indent: raw.match(/^\s*/)[0].length, text: raw.trim() }));
 
   const stack = [];

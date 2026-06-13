@@ -74,6 +74,33 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 
 Loops nest, dotted paths reach into rows, and `@include ... with x={ row.field }` reassigns values Liquid-style.
 
+### Filtering — `@loop … where`
+
+Add `where <predicate>` to filter a loop. Conditions compare a loop-item field against a number, a string, or another value, and join with `and` / `or`:
+
+```wd
+@loop /products.json into p where p.featured == true and p.price < 80
+- { p.name }
+@endloop
+```
+
+Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive substring match. The predicate is a compile-time-validated whitelist — only item paths, declared `:state`, numbers, and `"strings"` are allowed (no arbitrary expressions, no `eval`).
+
+**The source decides reactivity, just like the loop itself.** If the predicate only reads the row, the filter runs at build time and the page stays **zero-JS**. If the predicate reads a `:state` value, the loop becomes reactive and re-filters live as that state changes — a live search in pure Markdown:
+
+```wd
+:state products = [{"id":1,"name":"Aurora Lamp"},{"id":2,"name":"Briza Fan"}]
+:state q = ""
+
+:bind q placeholder="Search"
+
+@loop products into p where p.name contains q
+- { p.name }
+@endloop
+```
+
+`:bind <state>` renders an `<input>` wired two-way to a `:state` value — typing updates the state, and the state reflects back into the field. It accepts `type=` (default `text`), `placeholder=`, `autocomplete=`, and the `required` / `autofocus` flags.
+
 ## Sections
 
 ```wd

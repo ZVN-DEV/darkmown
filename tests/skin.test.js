@@ -82,3 +82,29 @@ test("font passes through as the CSS shorthand when it leads with a size", () =>
   assert.match(css, /body \{ font: 16px\/1\.6 system-ui; \}/);
   assert.match(css, /body \{ font-family: ui-sans-serif, system-ui; \}/);
 });
+
+test("block comments and decorative divider lines are skipped, not parsed as rules", () => {
+  const css = compileSkin([
+    "/* Brand skin",
+    "   multi-line header */",
+    "tokens",
+    "  ink #111  /* near-black */",
+    "",
+    "------------------------------",
+    "page",
+    "  color $ink",
+    "  /* spacing tweaks below */",
+    "  padding 2rem",
+    "* * *",
+    ".card",
+    "  radius 8px"
+  ].join("\n"));
+  assert.match(css, /--ink: #111;/);
+  assert.match(css, /body \{ color: var\(--ink\); \}/);
+  assert.match(css, /body \{ padding: 2rem; \}/);
+  assert.match(css, /\.card \{ border-radius: 8px; \}/);
+  // dividers and comments never leak into output
+  assert.doesNotMatch(css, /----/);
+  assert.doesNotMatch(css, /\*\s\*/);
+  assert.doesNotMatch(css, /comment|Brand skin|spacing tweaks/);
+});

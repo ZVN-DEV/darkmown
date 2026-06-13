@@ -2,6 +2,14 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.6.0 — 2026-06-13
+
+- **State-driven list filtering — `@loop … where <predicate>`.** Filter any loop with conditions that join via `and` / `or`. Operators: `==` `!=` `<` `<=` `>` `>=` and `contains` (case-insensitive substring). Operands are item paths, declared `:state`, numbers, or `"strings"` — a compile-time whitelist (no expressions, no `eval`; `constructor`/`prototype`/`__proto__` rejected in compiler and runtime). **The predicate decides reactivity:** an item-only predicate filters at build time and the page stays zero-JS; a predicate that reads `:state` compiles to a reactive filtered loop driven by the keyed reconciler (rows are baked in for static JSON sources). This replaces the fragile DOM-toggle escape hatch — the #1 gap surfaced by the agent-eval benchmark.
+- **`:bind <state>`** — a two-way `<input>` bound to a `:state` value, the input primitive behind live search. Accepts `type=` (default `text`), `placeholder=`, `autocomplete=`, and the `required` / `autofocus` flags. The field reflects state changes back unless it is focused.
+- **`.skin` robustness:** `/* … */` block comments and decorative divider lines (`----`, `* * *`) are skipped instead of mis-parsed as rules.
+- Scaffold (`darkmown init`): ships a styled default nav (brand + links, hover states) and an `about.md` companion page so a fresh project looks finished and the nav links resolve.
+- Live demo: the reactive page now includes a real "search in pure Markdown" section powered by `@loop … where` + `:bind`.
+
 ## 0.5.0 — 2026-06-12
 
 - **Nested `:if` over loop items.** Conditionals inside a reactive `@loop` now nest — an inner `:if` resolves after the outer branch, per row, both at build time (balanced-region pre-render) and at runtime (recursive fill). Previously the compiler threw "not supported yet"; the loop-template fill no longer relies on a non-greedy regex that broke on nesting.
