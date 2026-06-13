@@ -10,7 +10,7 @@ export const meta = {
 
 // ---- Inputs (constants; edit between rounds — args proved flaky with scriptPath)
 const SHEET_PATH = '/tmp/dmbench/SHEET.md'   // AGENTS.md under test — builders' ONLY framework read
-const ROUND = 3
+const ROUND = 4
 const REPO = '/Users/macbookpro-kirby/Desktop/Coding/ZVN/Markie-fw'
 const MODELS = ['haiku', 'sonnet', 'opus']
 // NOTE: given files for each task are PRE-SEEDED into each build dir before this

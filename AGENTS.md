@@ -208,6 +208,12 @@ Always include: a tokens block, a real type scale, generous spacing, a `max-widt
 </div>
 ```
 
+### Page structure & hierarchy — required for styles to apply
+- **Wrap every page's body in `<main>`.** Your `main { … }` rules (centering, `max-width`, page padding) are dead unless the element exists.
+- **One `#` per page** (the H1/title). Use `##` for section headings (they render as `<h2>` — style those). Never emit two `<h1>`s.
+- **Only style classes you actually attach.** Add a class with `::: name .card` (container) or raw HTML `class="…"`. Don't write `.thanks { … }` then forget to put `.thanks` on the element — the styling silently does nothing. (Wrap a styled confirmation in `::: section .thanks … :::`.)
+- **Make cards feel real:** a subtle `box-shadow`, a `:hover` lift, and a distinct price/secondary-text color or weight. Avoid emoji as icons — they read as a default-AI tell; prefer an inline SVG or a styled monogram.
+
 ## The escape hatch — for logic directives can't express
 
 Directives are narrow on purpose. For real logic (filtering, custom interactions), use a colocated `.js` with `window.wd` (`wd.get`, `wd.set`, `wd.state`, `wd.render`). Section state is keyed `sectionId:name`.
@@ -235,6 +241,7 @@ q.addEventListener("input", () => {
   }
 });
 ```
+This visual DOM filter is fine for a static fetched list. (Note: a `wd.render()` triggered by other state changes can reset the toggled `display`; for a list that also mutates reactively, re-apply the filter after such changes.)
 
 ## Hard rules — do not break these
 
