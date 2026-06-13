@@ -705,7 +705,7 @@ function staticUnroll(rows, itemName, bodyLines, ctx) {
 
 function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   ctx.comp.assets.runtime = true;
-  const templateCtx = { ...ctx, loopItem: itemName, scope: createScope(ctx.scope) };
+  const templateCtx = { ...ctx, loopItem: itemName, loopKey: key, scope: createScope(ctx.scope) };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
 
   let wrapperTag = "div";
@@ -933,17 +933,41 @@ function parseAction(raw, ctx) {
   if (increment) return { op: "inc", target: resolveTarget(increment[1]) };
   const decrement = expression.match(/^([A-Za-z_$][\w$]*)--$/);
   if (decrement) return { op: "dec", target: resolveTarget(decrement[1]) };
+  // Per-row: carry the current loop item into another list — `cart += product`.
+  // Only inside a reactive @loop; the runtime resolves the row from the DOM.
   const add = expression.match(/^([A-Za-z_$][\w$]*)\s*\+=\s*(.+)$/);
   if (add) {
+    const rhs = add[2].trim();
+    if (ctx.loopItem && rhs === ctx.loopItem) {
+      const target = resolveTarget(add[1]);
+      if (!Array.isArray(ctx.comp.state.get(target))) {
+        throw new Error(`Button action "${raw}" needs ${add[1]} to be a :state list (declare it "${add[1]} = []") in ${ctx.file}.`);
+      }
+      return { op: "append-row", target };
+    }
     const target = resolveTarget(add[1]);
-    const value = parseActionLiteral(add[2]);
+    const value = parseActionLiteral(rhs);
     if (Array.isArray(ctx.comp.state.get(target))) return { op: "append", target, value };
     if (typeof value === "number") return { op: "add", target, value };
     throw new Error(`Unsupported button action "${raw}". += with non-number values requires a list state target.`);
   }
+  // Per-row: remove the current row from the list being looped — `todos remove todo`.
+  const remove = expression.match(/^([A-Za-z_$][\w$]*)\s+remove\s+([A-Za-z_$][\w$]*)$/);
+  if (remove) {
+    if (!ctx.loopItem) {
+      throw new Error(`Button action "${raw}" is only valid inside a reactive @loop in ${ctx.file}. Use: :button "Remove" -> list remove item`);
+    }
+    if (remove[2] !== ctx.loopItem) {
+      throw new Error(`Button action "${raw}" must remove the loop item "${ctx.loopItem}" in ${ctx.file}, not "${remove[2]}".`);
+    }
+    if (!ctx.loopKey || resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
+      throw new Error(`Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`);
+    }
+    return { op: "remove", target: ctx.loopKey };
+  }
   const assign = expression.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
   if (assign) return { op: "set", target: resolveTarget(assign[1]), value: parseActionLiteral(assign[2]) };
-  throw new Error(`Unsupported button action "${raw}". Supported actions: count++, count--, count += 1, items += "value", name = "value".`);
+  throw new Error(`Unsupported button action "${raw}". Supported actions: count++, count--, count += 1, items += "value", name = "value", list remove item (in a loop), cart += item (in a loop).`);
 }
 
 function parseActionLiteral(raw) {

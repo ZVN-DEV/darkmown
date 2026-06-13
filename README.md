@@ -101,6 +101,34 @@ Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive sub
 
 `:bind <state>` renders an `<input>` wired two-way to a `:state` value — typing updates the state, and the state reflects back into the field. It accepts `type=` (default `text`), `placeholder=`, `autocomplete=`, and the `required` / `autofocus` flags.
 
+### Editable lists — per-row actions
+
+A `:button` inside a reactive `@loop` can act on its own row. Two row actions exist:
+
+```wd
+:state products = [{"id": 1, "name": "Aurora", "price": 49}]
+:state cart = []
+
+@loop products into product
+::: card
+**{ product.name }** — ${ product.price }
+:button "Add to cart" -> cart += product    <- carry this row into another list
+:::
+@endloop
+
+@loop cart into line
+::: card
+{ line.name }
+:button "Remove" -> cart remove line          <- drop this row from the looped list
+:::
+@endloop
+```
+
+- `cart += <item>` appends a **copy** of the current row to another `:state` list, so adding the same product twice gives two independent lines.
+- `<list> remove <item>` removes the current row from the list being looped. The `<list>` must be that loop's own `:state` source and `<item>` must be the loop variable — both checked at compile time. Removal targets the exact row, so it stays correct even when the loop is filtered with `where`.
+
+That is a full add-to-cart / remove-line flow — and a to-do list with delete — in plain Markdown, no JavaScript.
+
 ## Sections
 
 ```wd
