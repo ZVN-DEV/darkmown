@@ -132,6 +132,7 @@ function render() {
       }
       used.add(key);
       fillItem(node, item);
+      node.__wdItem = item; // let per-row actions resolve which row was clicked
       out.appendChild(node);
     }
     for (const [key, node] of existing) {
@@ -156,6 +157,14 @@ document.addEventListener("input", (event) => {
   render();
 });
 
+// The clicked button's row: the nearest reconciled loop node carries its item.
+function clickedRow(el) {
+  const row = el.closest("[data-wd-loop-key]");
+  const region = el.closest("[data-wd-loop]");
+  if (!row || !region) return null;
+  return { srcKey: region.getAttribute("data-wd-loop"), item: row.__wdItem };
+}
+
 document.addEventListener("click", (event) => {
   const action = event.target.closest("[data-wd-action]");
   if (!action) return;
@@ -169,6 +178,20 @@ document.addEventListener("click", (event) => {
   if (op === "add") state[target] = Number(state[target] ?? 0) + Number(value);
   if (op === "append") state[target] = [...(Array.isArray(state[target]) ? state[target] : []), value];
   if (op === "set") state[target] = value;
+  if (op === "remove") {
+    const row = clickedRow(action);
+    if (row && row.srcKey) state[row.srcKey] = (Array.isArray(state[row.srcKey]) ? state[row.srcKey] : []).filter((x) => x !== row.item);
+  }
+  if (op === "append-row") {
+    const row = clickedRow(action);
+    // Clone the row so each appended line is a distinct object — otherwise adding
+    // the same source row twice yields two identical references and a later
+    // remove (filter by !== ref) would delete both lines.
+    if (row && row.item !== undefined) {
+      const copy = row.item && typeof row.item === "object" ? structuredClone(row.item) : row.item;
+      state[target] = [...(Array.isArray(state[target]) ? state[target] : []), copy];
+    }
+  }
   savePersisted();
   render();
 });

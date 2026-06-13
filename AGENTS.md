@@ -41,7 +41,17 @@ Count: { count }
 :button "Add item" -> cart += {"id": 1, "name": "Sticker"}
 :button "Reset" -> count = 0
 ```
-Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list += <json>`, `x = <json>`. Target must be declared `:state`. Values are JSON literals — they cannot reference loop items or other state. **`:button` is for state actions only** — for a link styled as a button, write raw HTML `<a class="btn" href="…">`.
+Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list += <json>`, `x = <json>`. Target must be declared `:state`. Literal values are JSON. **`:button` is for state actions only** — for a link styled as a button, write raw HTML `<a class="btn" href="…">`.
+
+**Per-row actions (inside a reactive `@loop … into item`):** two actions reference the current row instead of a JSON literal —
+```wd
+@loop products into product
+:button "Add to cart" -> cart += product   ← append a COPY of this row to another :state list
+:::
+@loop cart into line
+:button "Remove" -> cart remove line        ← drop this row from the list being looped
+```
+`cart += product` is the only way to carry a loop item into another list (literals still can't reference rows). `<list> remove <item>`: `<list>` must be the loop's own `:state` source and `<item>` the loop variable (both compile-checked). This is the canonical add-to-cart / remove-line / delete-todo pattern — no `.js` needed. Removal targets the exact row, so it is correct even under a `where` filter.
 
 ### Conditionals
 ```wd

@@ -60,3 +60,33 @@ ul
 
 .tally-card h3
   color $warm
+
+.card.product
+  display flex
+  align-items center
+  justify-content space-between
+  gap 1rem
+  border 1px solid $line
+  bg $panel
+  padding .6rem 1rem
+  margin .5rem 0
+  radius $radius
+
+.card.product p
+  margin 0
+
+.card.line
+  display flex
+  align-items center
+  justify-content space-between
+  gap 1rem
+  border 1px solid $line
+  padding .5rem 1rem
+  margin .4rem 0
+  radius $radius
+
+.card.line button
+  bg transparent
+  color $warm
+  border 1px solid $line
+  padding .35rem .8rem

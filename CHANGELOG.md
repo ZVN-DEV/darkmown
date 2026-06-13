@@ -2,6 +2,14 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.7.0 — 2026-06-13
+
+- **Per-row actions in reactive loops.** A `:button` inside `@loop … into item` can now act on its own row — the canonical add-to-cart / remove-line / delete-todo pattern, with no hand-written JavaScript:
+  - `cart += item` appends a **copy** of the current row to another `:state` list. This is the only way to carry a loop item into another list (literal action values still can't reference rows); the copy means adding the same source row twice yields two independent lines.
+  - `<list> remove <item>` removes the current row from the list being looped. `<list>` must be that loop's own `:state` source and `<item>` the loop variable — both validated at compile time.
+  The runtime resolves the clicked row by stamping each reconciled node with its item, so removal targets the exact row and stays correct even when the loop is filtered with `where` (index-based removal would not). Closes the last gap blocking a real store demo.
+- Live demo: the reactive page's filtering section is now a full mini-shop — search products, add to cart, remove lines — all composing on one page.
+
 ## 0.6.0 — 2026-06-13
 
 - **State-driven list filtering — `@loop … where <predicate>`.** Filter any loop with conditions that join via `and` / `or`. Operators: `==` `!=` `<` `<=` `>` `>=` and `contains` (case-insensitive substring). Operands are item paths, declared `:state`, numbers, or `"strings"` — a compile-time whitelist (no expressions, no `eval`; `constructor`/`prototype`/`__proto__` rejected in compiler and runtime). **The predicate decides reactivity:** an item-only predicate filters at build time and the page stays zero-JS; a predicate that reads `:state` compiles to a reactive filtered loop driven by the keyed reconciler (rows are baked in for static JSON sources). This replaces the fragile DOM-toggle escape hatch — the #1 gap surfaced by the agent-eval benchmark.

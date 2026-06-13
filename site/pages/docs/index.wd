@@ -88,6 +88,21 @@ The predicate decides reactivity exactly like the source does: read only the row
 
 `:bind <state>` renders an `<input>` wired two-way to a `:state` value — type and the list filters as you go.
 
+### Editable lists with per-row actions
+
+A `:button` inside a reactive loop can act on its own row — the basis for carts and to-do lists:
+
+```wd
+@loop products into product
+:button "Add to cart" -> cart += product
+:::
+@loop cart into line
+:button "Remove" -> cart remove line
+:::
+```
+
+`cart += product` appends a copy of the current row to another `:state` list; `cart remove line` removes the current row from the list being looped. Both are checked against the enclosing loop at compile time — no JavaScript.
+
 ## Interpolation
 
 One syntax everywhere: `{ name }` or `{ name.path }`.
