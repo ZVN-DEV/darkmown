@@ -12,7 +12,7 @@ export const meta = {
 const SHEET_PATH = args.sheetPath      // /tmp path to the AGENTS.md under test — builders' ONLY allowed read
 const ROUND = args.round || 1
 const REPO = args.repoPath             // path to the framework repo (for the local compiler)
-const MODELS = args.models || ['haiku', 'sonnet', 'opus', 'fable']
+const MODELS = args.models || ['haiku', 'sonnet', 'opus']
 
 // ---- Task suite -------------------------------------------------------------
 const TASKS = [
@@ -54,7 +54,7 @@ const PERSONAS = [
   {
     key: 'stylist',
     title: 'Senior product designer',
-    rubric: `Judge ONLY the visual styling quality and modernity. 5 = looks like a polished, modern 2026 product site (deliberate type scale, spacing, color, hierarchy, responsive); 3 = clean but plain; 1 = unstyled, broken, or generic AI slop. Note whether they used a .skin file or CSS effectively. If the task was not styling-focused, judge the styling that IS present (or none).`
+    rubric: `Judge ONLY the visual styling quality and modernity. 5 = looks like a polished, modern 2026 product site (deliberate type scale, spacing, color, hierarchy, responsive); 3 = clean but plain; 1 = unstyled, broken, or generic AI slop. Note whether they used a .skin file or CSS effectively. IMPORTANT fairness rule: if the task did NOT ask for new styling or visual/build work (e.g. a pure content edit that says "keep the existing style"), do not punish the absence of new styling — score 3 (neutral) when existing presentation is preserved, and only go below 3 if they actively broke or worsened the look. Reserve the full 0–5 range for tasks that involve building UI or explicitly request styling.`
   },
   {
     key: 'purist',

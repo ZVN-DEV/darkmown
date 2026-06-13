@@ -1,38 +1,38 @@
 # Building with Darkmown — agent guide
 
-Darkmown is a Markdown-native web framework. You build sites by writing `.md` and `.wd` files. This sheet is everything you need to build or modify a Darkmown site. Read it fully before writing files.
+Darkmown is a Markdown-native web framework. You build sites by writing `.md` and `.wd` files. This sheet is everything you need. Read it fully before writing files, and **always ship styling** — an unstyled page is a failed page.
 
 ## The one rule
 
 - `.md` files are plain CommonMark. Directives stay inert text.
-- `.wd` files are the same Markdown **plus directives** (state, loops, conditionals, includes, forms). To make a `.md` page interactive, **rename it to `.wd`** — nothing else changes.
-- Static pages ship **zero** JavaScript. A page only loads the ~2 KB runtime if it declares reactive behavior.
+- `.wd` files are the same Markdown **plus directives** (state, loops, conditionals, includes, forms).
+- To make a `.md` page interactive, **rename it to `.wd`**. ⚠️ Renaming means the old `.md` is **gone** — never leave both `index.md` and `index.wd`, that is a fatal `Duplicate route` build error. Upgrade = delete the `.md`, create the `.wd`.
+- Static pages ship **zero** JavaScript; a page loads the ~2 KB runtime only if it declares reactive behavior.
 
 ## Project layout & routing
 
 ```
 site/
   pages/        ← the route tree. index.wd → /, about.wd → /about/, docs/index.wd → /docs/
-  _/            ← include shelf + shared partials (not routed). nav.wd lives here.
+  _/            ← include shelf + shared partials (not routed). nav.wd and shelf JSON live here.
 package.json
 ```
-
-- **Folders are routes.** A file at `site/pages/blog/post.wd` serves at `/blog/post/`.
+- **Folders are routes.** `site/pages/blog/post.wd` serves at `/blog/post/`.
 - Files/folders starting with `.`, `-`, or `_` are **hidden** from routing (drafts, partials).
 - A `page.skin` next to `page.wd` attaches styling; a `page.js` attaches behavior. Matched by basename.
 
-Commands: `darkmown dev` (live server), `darkmown build` (writes `dist/`), `darkmown serve` (preview build).
+Commands: `darkmown dev`, `darkmown build`, `darkmown serve`.
 
 ## Interpolation — one syntax
 
-`{ name }` or `{ name.path }`. It resolves, in order: loop item → in-scope value (include arg / loop var) → declared `:state` → otherwise stays literal text. Unknown names never break the page.
+`{ name }` or `{ name.path }`. Resolves in order: loop item → in-scope value → declared `:state` → otherwise literal text. **Declare state before you bind it** — compilation is line-based, top to bottom, so a `{ x }` or `:if x` must come *after* the `:state x` (or the `:form into x`) that creates it.
 
-## Directives
+## Directives — the complete set (nothing else exists)
 
 ### State and buttons
 ```wd
 :state count = 0
-:state cart = [] persist          ← `persist` keeps it in localStorage
+:state cart = [] persist          ← persist = localStorage
 
 Count: { count }
 
@@ -41,12 +41,12 @@ Count: { count }
 :button "Add item" -> cart += {"id": 1, "name": "Sticker"}
 :button "Reset" -> count = 0
 ```
-Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list += <json>`, `x = <json>`. The target must be declared `:state`. Values are JSON literals — they cannot reference loop items or other state.
+Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list += <json>`, `x = <json>`. Target must be declared `:state`. Values are JSON literals — they cannot reference loop items or other state. **`:button` is for state actions only** — for a link styled as a button, write raw HTML `<a class="btn" href="…">`.
 
 ### Conditionals
 ```wd
 :if count
-Shown when count is truthy.
+Shown when truthy.
 :else
 Shown when falsy.
 :endif
@@ -55,7 +55,7 @@ Shown when falsy.
 
 ### Loops — the only loop
 ```wd
-@loop /products.json into product       ← JSON file: unrolled at build time (static)
+@loop /products.json into product       ← JSON file: unrolled at build time
 - **{ product.name }** — { product.price }
 @endloop
 
@@ -64,39 +64,25 @@ Shown when falsy.
 - { todo.title }
 @endloop
 ```
-Source can be a JSON file path, an in-scope value, or a `:state` list. Loops nest. Inside a loop, `:if todo.done` branches per row.
+Source: a JSON file path, an in-scope value, or a `:state` list. Loops nest; `:if todo.done` branches per row.
 
-### Includes
+### Includes & sections
 ```wd
-@include /nav.wd                         ← from site/_/
-@include /card.wd with title={ row.name } price={ row.price }
-```
-Includes inherit the surrounding scope; `with` passes/reassigns values.
+@include /nav.wd                         ← partial from site/_/
+@include /card.wd with title={ row.name }
 
-### Sections (scoped state)
-```wd
-::: section #cart .panel
+::: section #cart .panel                 ← container with id/classes; state inside is scoped to it
 :state items = []
 { items.length } items
-:button "Add" -> items += {"id": 1}
 :::
 ```
-State inside a section is scoped to it. Two sections can each own a `count`. Address section state from `.js` as `sectionId:name`.
 
 ### Data, forms, computed
 ```wd
 :fetch team from "/__wd/data/team.json"   ← loads JSON into state; sets team_error on failure
-:fetch quotes from "/q.json" when=visible ← lazy: fires when scrolled into view
+:fetch quotes from "/q.json" when=visible ← lazy, on scroll into view
 
-:if team
-@loop team into member
-- { member.name }
-@endloop
-:else
-Loading…
-:endif
-
-:form into profile                        ← captures submit into state, no backend
+:form into profile                        ← captures submit into state (declares `profile`), no backend
 :input name placeholder="Your name" required
 :submit "Save"
 :endform
@@ -108,53 +94,134 @@ Loading…
 
 :computed total = items.length * 4         ← derived state; arithmetic & comparisons only
 ```
-Shelf `.json` files (in `site/_/`) publish to `/__wd/data/`. `:form action=` posts urlencoded and lands the JSON reply in state; without JS it degrades to a native POST. Darkmown owns no backend — point forms at your own API.
+Shelf `.json` files (in `site/_/`) publish to `/__wd/data/`. `:form action=` posts urlencoded and lands the JSON reply in state (without JS it degrades to a native POST). Darkmown owns no backend — point forms at your own API.
 
-## Styling with `.skin`
+## What HTML each directive emits — target these in `.skin`
 
-A colocated `.skin` file compiles to CSS. It is indentation-structural: a line is a selector if the next line is indented under it.
+Your `.skin` selectors must match the **real** output. The emitted HTML is:
+
+| You write | It renders as |
+|---|---|
+| `# Heading`, prose, `- list` | normal `<h1>`, `<p>`, `<ul><li>` (style by tag) |
+| `::: section #id .card … :::` | `<section id="id" class="card">…</section>` |
+| `::: name .card … :::` (non-`section`) | `<div class="card">…</div>` |
+| `:button "x" -> …` | `<button>x</button>` |
+| `:input email …` | `<input type="…">` |
+| `:submit "Go"` | `<button type="submit">Go</button>` |
+| `:form …` | `<form>…</form>` |
+| reactive `@loop` of a list | `<ul>`/`<ol>` (or `<div>`) of items |
+| `{ name }` | a text node |
+
+So style with real selectors: `section`, `.card`, `button`, `input`, `form`, `h1`. **To add a class to a container, use `::: name .class`. For any other custom element, write raw HTML `<div class="…">`. There is NO `{.class}` attribute syntax.**
+
+## Styling with `.skin` — ship this on every page
+
+A colocated `.skin` compiles to CSS. It is indentation-structural: a line is a **selector** if the next line is indented under it; otherwise it is a `property value` declaration. Start from a real design system — tokens, a type scale, spacing, a responsive grid:
 
 ```skin
-tokens                 ← becomes :root CSS variables
-  ink #16181d
+tokens                       ← becomes :root CSS variables ($name → var(--name))
+  ink #14181f
+  muted #5b6470
+  paper #ffffff
+  bg #f6f7f9
   accent #4f46e5
-  radius 12px
+  line #e6e8ec
+  radius 14px
 
 body
   margin 0
-  font system-ui, sans-serif
-  color $ink           ← $token → var(--token)
+  font 16px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif
+  color $ink
+  background $bg
+
+main
+  max-width 960px
+  margin 0 auto
+  padding 4rem 1.5rem
+
+h1
+  font-size 3rem
+  line-height 1.05
+  letter-spacing -0.03em
+  margin 0 0 1rem
 
 .hero
-  padding 4rem 2rem
-  background $accent
+  padding 5rem 2rem
   border-radius $radius
+  background linear-gradient(135deg, #4f46e5, #9333ea)
+  color white
+
+.grid
+  display grid
+  grid-template-columns repeat(3, 1fr)
+  gap 1.25rem
+
+.card
+  background $paper
+  border 1px solid $line
+  border-radius $radius
+  padding 1.5rem
+
+button
+  font 1rem ui-sans-serif, system-ui, sans-serif
+  padding .7rem 1.2rem
+  border 0
+  border-radius 10px
+  background $accent
+  color white
+  cursor pointer
+
+input
+  width 100%
+  padding .7rem .9rem
+  border 1px solid $line
+  border-radius 10px
+  font-size 1rem
+
+@media (max-width: 640px)
+  .grid
+    grid-template-columns 1fr
+  h1
+    font-size 2.1rem
 ```
+Always include: a tokens block, a real type scale, generous spacing, a `max-width` centered `main`, styled `button`/`input`, and a responsive `@media` rule. Prefer `.skin`; a plain `<style>` block in a `.wd` also works.
 
-You can also write a normal `<style>` block in a `.wd` file if you prefer plain CSS.
+## The escape hatch — for logic directives can't express
 
-## The escape hatch — for anything directives can't express
+Directives are narrow on purpose. For real logic (filtering, custom interactions), use a colocated `.js` with `window.wd` (`wd.get`, `wd.set`, `wd.state`, `wd.render`). Section state is keyed `sectionId:name`.
 
-Directives are intentionally narrow. For real logic (filtering a list, custom interactions), use a colocated `.js` file with the `window.wd` API:
+**Canonical "filter a list" pattern** (filtering is not a directive). Keep the fetched/source list intact and filter the rendered DOM — do not overwrite the source state, do not poll with setInterval:
+```wd
+<input id="q" placeholder="Search" autocomplete="off">
 
+:fetch products from "/__wd/data/products.json"
+:if products
+@loop products into p
+::: section .card
+**{ p.name }** — { p.price }
+:::
+@endloop
+:endif
+```
 ```js
-// products.js — attached to products.wd
-const input = document.querySelector("#search");
-input.addEventListener("input", () => {
-  const all = wd.get("products");
-  wd.set("visible", all.filter(p => p.name.toLowerCase().includes(input.value.toLowerCase())));
+// products.js
+const q = document.getElementById("q");
+q.addEventListener("input", () => {
+  const term = q.value.toLowerCase();
+  for (const card of document.querySelectorAll(".card")) {
+    card.style.display = card.textContent.toLowerCase().includes(term) ? "" : "none";
+  }
 });
 ```
-`window.wd`: `wd.get(key)`, `wd.set(key, value)`, `wd.state`, `wd.render()`. Section state is keyed `sectionId:name`.
 
 ## Hard rules — do not break these
 
-1. **Never invent directives or syntax.** Only the directives above exist. No `{% %}`, no `:for`, no `v-if`, no JSX.
-2. **One loop (`@loop … into … @endloop`), one interpolation (`{ name }`).** Never use alternates.
-3. **Button/`:computed` grammars are whitelisted.** No arbitrary JS in directives — that goes in `.js`.
-4. `.md` stays inert. If a page needs directives, make it `.wd`.
-5. Interpolation only resolves declared state / in-scope values. Declare state before binding it.
-6. For complex logic, reach for the `.js` escape hatch — don't try to force it into directives.
+1. **Never invent directives or syntax.** These do NOT exist: `@section`/`@endsection`, `{% if %}`, `{.class}` attribute lists, `:for`, `v-if`, JSX. The only container is `::: … :::`; the only loop is `@loop`; the only interpolation is `{ }`.
+2. **Always ship styling.** A `.skin` (or `<style>`) with a modern type scale, spacing, and a responsive rule — every page. Unstyled = failure.
+3. **`.skin` must target emitted HTML** (see the table). Verify selectors match real elements.
+4. **Rename = delete.** Upgrading `.md`→`.wd` means removing the `.md`. Never leave both.
+5. **Declare before you bind.** `:state` (or `:form into x`) must appear before any `{ x }` / `:if x` that reads it.
+6. **Whitelisted grammars only.** Button/`:computed` actions are fixed forms; arbitrary logic goes in a `.js` escape hatch.
 
 ## Minimal complete page
 
@@ -165,7 +232,7 @@ title: Hello
 
 @include /nav.wd
 
-<main>
+<main class="hero">
 
 # Hello
 
@@ -177,3 +244,4 @@ You clicked { count } times.
 
 </main>
 ```
+…with a colocated `index.skin` styling `.hero`, `button`, and the type scale.
