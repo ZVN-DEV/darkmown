@@ -162,14 +162,24 @@ h1
   border-radius $radius
   padding 1.5rem
 
+.actions
+  display flex
+  gap .75rem
+  flex-wrap wrap
+
 button
-  font 1rem ui-sans-serif, system-ui, sans-serif
+  font-size 1rem
   padding .7rem 1.2rem
   border 0
   border-radius 10px
   background $accent
   color white
   cursor pointer
+  transition transform .15s ease, box-shadow .15s ease
+
+button:hover
+  transform translateY(-1px)
+  box-shadow 0 6px 20px rgba(79,70,229,.3)
 
 input
   width 100%
@@ -178,13 +188,25 @@ input
   border-radius 10px
   font-size 1rem
 
+input:focus-visible
+  outline 2px solid $accent
+  outline-offset 2px
+
 @media (max-width: 640px)
   .grid
     grid-template-columns 1fr
   h1
     font-size 2.1rem
 ```
-Always include: a tokens block, a real type scale, generous spacing, a `max-width` centered `main`, styled `button`/`input`, and a responsive `@media` rule. Prefer `.skin`; a plain `<style>` block in a `.wd` also works.
+Always include: a tokens block, a real type scale, generous spacing, a `max-width` centered `main`, styled `button`/`input` with `:hover`/`:focus-visible` states, and a responsive `@media` rule (`.skin` supports `@media` — its indented rules are wrapped automatically). The `font` property is the CSS shorthand when it leads with a size (`font 16px/1.6 system-ui`) and `font-family` otherwise. Prefer `.skin`; a plain `<style>` block in a `.wd` also works.
+
+**Layout gotcha — CTAs and link rows.** Markdown wraps adjacent links/buttons on consecutive lines into a single `<p>`, so putting `display:flex` on their container won't space them. To lay out a row of buttons or nav links, wrap them in explicit raw HTML and style that:
+```wd
+<div class="actions">
+<a class="btn" href="/signup">Start free</a>
+<a class="btn ghost" href="/docs">Docs</a>
+</div>
+```
 
 ## The escape hatch — for logic directives can't express
 

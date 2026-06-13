@@ -5,6 +5,14 @@ const aliases = new Map([
   ["bg", "background"]
 ]);
 
+// `font` is aliased to font-family for the common `font <stack>` case, but the
+// real CSS `font` shorthand (`font 16px/1.4 system-ui`) must pass through. If
+// the value looks like a shorthand (leads with a size or contains `/`), keep it.
+function resolveProp(prop, rest) {
+  if (prop === "font" && (/^[\d.]/.test(rest[0] || "") || rest.join(" ").includes("/"))) return "font";
+  return aliases.get(prop) || prop;
+}
+
 export function compileSkin(source) {
   const lines = source
     .replace(/\r\n?/g, "\n")
@@ -39,16 +47,23 @@ export function compileSkin(source) {
 
     if (opensBlock) {
       const parent = stack.at(-1)?.selector;
-      const selector = normalizeSelector(text, parent);
-      stack.push({ indent, selector });
+      // At-rules (@media, @supports) wrap rules instead of extending selectors:
+      // carry the outer selector through so nested selectors combine normally.
+      if (text.startsWith("@")) {
+        stack.push({ indent, selector: parent ?? null, media: text });
+      } else {
+        stack.push({ indent, selector: normalizeSelector(text, parent) });
+      }
       continue;
     }
 
     const current = stack.at(-1)?.selector || ":root";
+    const media = stack.find((frame) => frame.media)?.media;
     const [prop, ...rest] = text.split(/\s+/);
-    const cssProp = aliases.get(prop) || prop;
+    const cssProp = resolveProp(prop, rest);
     const value = rest.join(" ").replace(/\$([a-zA-Z0-9_-]+)/g, "var(--$1)");
-    css.push(`${current} { ${cssProp}: ${value}; }`);
+    const rule = `${current} { ${cssProp}: ${value}; }`;
+    css.push(media ? `${media} { ${rule} }` : rule);
   }
 
   if (rootVars.length) css.unshift(`:root {\n${rootVars.join("\n")}\n}`);

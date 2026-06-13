@@ -8,11 +8,14 @@ export const meta = {
   ]
 }
 
-// ---- Inputs (from args) -----------------------------------------------------
-const SHEET_PATH = args.sheetPath      // /tmp path to the AGENTS.md under test — builders' ONLY allowed read
-const ROUND = args.round || 1
-const REPO = args.repoPath             // path to the framework repo (for the local compiler)
-const MODELS = args.models || ['haiku', 'sonnet', 'opus']
+// ---- Inputs (constants; edit between rounds — args proved flaky with scriptPath)
+const SHEET_PATH = '/tmp/dmbench/SHEET.md'   // AGENTS.md under test — builders' ONLY framework read
+const ROUND = 3
+const REPO = '/Users/macbookpro-kirby/Desktop/Coding/ZVN/Markie-fw'
+const MODELS = ['haiku', 'sonnet', 'opus']
+// NOTE: given files for each task are PRE-SEEDED into each build dir before this
+// runs (see bench/seed.sh). Builders edit/delete them in place; the compile
+// stage must NOT recreate them.
 
 // ---- Task suite -------------------------------------------------------------
 const TASKS = [
@@ -99,40 +102,35 @@ const GRADE_SCHEMA = {
 
 function buildPrompt(task, dir) {
   const givenBlock = Object.keys(task.given).length
-    ? `\n\nThe project already contains these files (work from them):\n` +
+    ? `\n\nThe project ALREADY CONTAINS these files on disk under ${dir} (they are real files — edit them in place, and DELETE any that should be removed):\n` +
       Object.entries(task.given).map(([p, c]) => `--- ${p} ---\n${c}`).join('\n')
     : `\n\nThis is a fresh project (only the standard scaffold + site/_/nav.wd exist).`
-  return `You are building a real Darkmown site for a user. Your ONLY reference is the Darkmown agent guide at this path:
+  return `You are building a real Darkmown site for a user. Your ONLY framework reference is the Darkmown agent guide at this path:
 
   ${SHEET_PATH}
 
-Read that file first. Build ONLY from it. Do NOT read any other file on disk, do NOT search the web, do NOT guess at syntax that is not in the guide. (This measures how well the guide alone teaches the framework.)
+Read that guide first and build ONLY from it. You MAY read and edit files inside your own project dir ${dir}, but do NOT read Darkmown's framework source elsewhere, do NOT search the web, and do NOT use syntax that is not in the guide.
 
 TASK:
 ${task.prompt}
 ${givenBlock}
 
-Write every file you create or change into this exact directory (create subdirs as needed): ${dir}
-Use real, complete file contents. When done, return the dir, the list of relative file paths you wrote, and one sentence on your approach. Do not write anything outside ${dir}, and do not read anything except the guide above.`
+Make all changes inside ${dir} (create subdirs as needed). Edit existing files in place; create new files; and **delete files that should no longer exist** (e.g. if you upgrade a .md to .wd, remove the .md). Use real, complete file contents. When done, return the dir, the list of relative file paths that should exist after your work, and one sentence on your approach.`
 }
 
 function compilePrompt(task, dir, build) {
-  const givenList = Object.keys(task.given)
-  const givenBlock = givenList.length
-    ? `\n   The task's ORIGINAL files are below. Create any of these that the candidate did NOT already write to ${dir} (do not overwrite files the candidate wrote):\n` +
-      Object.entries(task.given).map(([p, c]) => `   ===FILE ${p}===\n${c}\n===ENDFILE===`).join('\n')
-    : ''
-  return `Objectively check whether a candidate Darkmown site compiles with the real compiler. Do NOT fix, improve, or correct the candidate's work — only ensure scaffolding/given files exist, then measure.
+  return `Objectively check whether a candidate Darkmown site compiles with the real compiler. Do NOT fix, improve, correct, add, or delete any candidate content — only ensure the build wrapper exists, then measure exactly what is on disk.
 
-Steps (use Bash/Write):
-1. The candidate files are under: ${dir}
-2. Make sure the project can build:
+Steps (use Bash):
+1. The candidate's project is under: ${dir} — leave its site/ files EXACTLY as the candidate left them (do not create, restore, or remove any page/partial/asset).
+2. Only ensure the minimal build wrapper:
    - ensure ${dir}/package.json exists (create {"type":"module"} if missing)
-   - ensure ${dir}/site/_/nav.wd exists; if missing create it with one line: <nav class="topnav"><strong>Site</strong> <a href="/">Home</a></nav>${givenBlock}
+   - ensure ${dir}/site/_/nav.wd exists; if missing, create it with one line: <nav class="topnav"><strong>Site</strong> <a href="/">Home</a></nav>
+   (Do NOT touch anything under ${dir}/site/pages — whatever the candidate left, good or broken, is what gets measured.)
 3. Run the real compiler with ${dir} as the working directory:  cd ${dir} && node ${REPO}/src/cli.js build
 4. Report: compiled = true ONLY if the build exits 0 and writes ${dir}/dist/. Put the full error/stderr text in errorText (empty string if it compiled). Count lines starting with "hint:" or "warning:" into warnings.
 
-Do NOT edit any .wd/.skin/.js the candidate authored — if it fails, report the failure honestly. Return strictly the schema.`
+Return strictly the schema.`
 }
 
 function gradePrompt(task, dir, build, compile, persona) {

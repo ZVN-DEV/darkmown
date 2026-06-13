@@ -57,3 +57,28 @@ test("declarations with commas and multiple values are never mistaken for select
   assert.match(css, /body \{ font-family: ui-serif, Georgia, Cambria, serif; \}/);
   assert.match(css, /body \{ padding: 1rem 2rem 3rem; \}/);
 });
+
+test("@media blocks wrap their nested rules instead of becoming selectors", () => {
+  const css = compileSkin([
+    ".grid",
+    "  display grid",
+    "@media (max-width: 640px)",
+    "  .grid",
+    "    grid-template-columns 1fr",
+    "  h1",
+    "    font-size 2rem"
+  ].join("\n"));
+  assert.match(css, /\.grid \{ display: grid; \}/);
+  assert.match(css, /@media \(max-width: 640px\) \{ \.grid \{ grid-template-columns: 1fr; \} \}/);
+  assert.match(css, /@media \(max-width: 640px\) \{ h1 \{ font-size: 2rem; \} \}/);
+});
+
+test("font passes through as the CSS shorthand when it leads with a size", () => {
+  const css = compileSkin([
+    "body",
+    "  font 16px/1.6 system-ui",
+    "  font ui-sans-serif, system-ui"
+  ].join("\n"));
+  assert.match(css, /body \{ font: 16px\/1\.6 system-ui; \}/);
+  assert.match(css, /body \{ font-family: ui-sans-serif, system-ui; \}/);
+});
