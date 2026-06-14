@@ -2,6 +2,10 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.8.1 — 2026-06-14
+
+- Fix: a quoted array item that follows `, ` no longer keeps a leading space — `tags: [a, "b, c"]` parses to `["a", "b, c"]`, not `["a", " b, c"]`.
+
 ## 0.8.0 — 2026-06-14
 
 - **Array frontmatter + readable `meta`.** Frontmatter now parses inline flow arrays — `tags: [sales, revenue, "q1, q2"]` becomes a real array (previously the literal string `"[sales, revenue]"`), with quoted items keeping their internal commas and bracket-free values staying plain scalars. Block sequences (`- item` lines) remain out of scope to keep the parser single-pass.

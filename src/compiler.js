@@ -130,6 +130,7 @@ function parseInlineArray(raw) {
     } else if ((char === '"' || char === "'") && buf.trim() === "") {
       quote = char;
       quoted = true;
+      buf = ""; // drop any whitespace between the comma and the opening quote
     } else if (char === ",") {
       push();
     } else {

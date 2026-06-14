@@ -20,6 +20,8 @@ test("empty, single, and quoted-with-comma array items", () => {
   assert.deepEqual(parseFrontmatter("---\ntags: [solo]\n---\n").meta.tags, ["solo"]);
   // a quoted item keeps its internal comma; quotes are stripped
   assert.deepEqual(parseFrontmatter('---\ntags: ["a, b", c]\n---\n').meta.tags, ["a, b", "c"]);
+  // whitespace between a comma and a following quoted item is dropped (not leaked in)
+  assert.deepEqual(parseFrontmatter('---\ntags: [a, "b, c"]\n---\n').meta.tags, ["a", "b, c"]);
 });
 
 test("a scalar field beside an array field both parse correctly", () => {
