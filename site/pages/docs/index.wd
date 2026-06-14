@@ -61,6 +61,48 @@ The source decides how the loop behaves:
 
 Loops nest, and `{ card.title }` style dotted paths reach into each row.
 
+### Filtering with `where`
+
+Add `where <predicate>` to filter a loop. Conditions join with `and` / `or`:
+
+```wd
+@loop /products.json into p where p.featured == true and p.price < 80
+- { p.name }
+@endloop
+```
+
+Operators are `==` `!=` `<` `<=` `>` `>=` and `contains` (case-insensitive substring). Operands are item fields, declared `:state`, numbers, or `"strings"` — a validated whitelist, never arbitrary code.
+
+The predicate decides reactivity exactly like the source does: read only the row and the filter runs at build time (zero JS); read a `:state` value and the loop re-filters live. Pair it with `:bind` for a search box in pure Markdown:
+
+```wd
+:state products = [{"id":1,"name":"Aurora Lamp"},{"id":2,"name":"Briza Fan"}]
+:state q = ""
+
+:bind q placeholder="Search"
+
+@loop products into p where p.name contains q
+- { p.name }
+@endloop
+```
+
+`:bind <state>` renders an `<input>` wired two-way to a `:state` value — type and the list filters as you go.
+
+### Editable lists with per-row actions
+
+A `:button` inside a reactive loop can act on its own row — the basis for carts and to-do lists:
+
+```wd
+@loop products into product
+:button "Add to cart" -> cart += product
+:::
+@loop cart into line
+:button "Remove" -> cart remove line
+:::
+```
+
+`cart += product` appends a copy of the current row to another `:state` list; `cart remove line` removes the current row from the list being looped. Both are checked against the enclosing loop at compile time — no JavaScript.
+
 ## Interpolation
 
 One syntax everywhere: `{ name }` or `{ name.path }`.

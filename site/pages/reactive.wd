@@ -64,6 +64,36 @@ in progress …
 
 Each row picks one of three states from two nested conditionals, all in plain Markdown — no component, no ternary, no JavaScript.
 
+## Live filtering — search in pure Markdown
+
+`@loop … where` filters a list, and because the predicate reads a `:state` value, the loop re-filters live as you type. `:bind` is the input bound two-way to that state. Type below and watch the list narrow — no event handlers, no JavaScript:
+
+:state products = [{"id": 1, "name": "Aurora Lamp", "price": 49}, {"id": 2, "name": "Briza Fan", "price": 39}, {"id": 3, "name": "Cove Speaker", "price": 89}, {"id": 4, "name": "Dune Mug", "price": 12}, {"id": 5, "name": "Ember Kettle", "price": 64}]
+:state cart = []
+:state q = ""
+
+:bind q placeholder="Search products…"
+
+@loop products into p where p.name contains q
+::: card .product
+**{ p.name }** — ${ p.price }
+:button "Add to cart" -> cart += p
+:::
+@endloop
+
+The predicate whitelist is compile-time validated — item fields, declared state, numbers, and strings only. An item-only predicate (say `where p.price < 50`) would instead filter at build time and ship zero JavaScript.
+
+### …and an editable cart
+
+A `:button` inside a loop can act on its own row. **Add to cart** carries the row into another list; **Remove** drops a line — a whole add/remove flow with no JavaScript:
+
+@loop cart into line
+::: card .line
+{ line.name } — ${ line.price }
+:button "Remove" -> cart remove line
+:::
+@endloop
+
 ## Section-scoped state
 
 Two sections can each own a state value named `tally` without colliding. Buttons resolve to the nearest scope:

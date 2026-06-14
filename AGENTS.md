@@ -41,7 +41,17 @@ Count: { count }
 :button "Add item" -> cart += {"id": 1, "name": "Sticker"}
 :button "Reset" -> count = 0
 ```
-Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list += <json>`, `x = <json>`. Target must be declared `:state`. Values are JSON literals — they cannot reference loop items or other state. **`:button` is for state actions only** — for a link styled as a button, write raw HTML `<a class="btn" href="…">`.
+Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list += <json>`, `x = <json>`. Target must be declared `:state`. Literal values are JSON. **`:button` is for state actions only** — for a link styled as a button, write raw HTML `<a class="btn" href="…">`.
+
+**Per-row actions (inside a reactive `@loop … into item`):** two actions reference the current row instead of a JSON literal —
+```wd
+@loop products into product
+:button "Add to cart" -> cart += product   ← append a COPY of this row to another :state list
+:::
+@loop cart into line
+:button "Remove" -> cart remove line        ← drop this row from the list being looped
+```
+`cart += product` is the only way to carry a loop item into another list (literals still can't reference rows). `<list> remove <item>`: `<list>` must be the loop's own `:state` source and `<item>` the loop variable (both compile-checked). This is the canonical add-to-cart / remove-line / delete-todo pattern — no `.js` needed. Removal targets the exact row, so it is correct even under a `where` filter.
 
 ### Conditionals
 ```wd
@@ -65,6 +75,21 @@ Shown when falsy.
 @endloop
 ```
 Source: a JSON file path, an in-scope value, or a `:state` list. Loops nest; `:if todo.done` branches per row.
+
+### Filtering — `@loop … where` + live search with `:bind`
+```wd
+@loop /products.json into p where p.featured == true and p.price < 80
+- { p.name }                              ← item-only predicate → filtered at BUILD time, stays zero-JS
+@endloop
+
+:state products = [{"id":1,"name":"Aurora"},{"id":2,"name":"Briza"}]
+:state q = ""
+:bind q placeholder="Search"             ← <input> bound two-way to :state q
+@loop products into p where p.name contains q   ← predicate reads :state → reactive, re-filters live
+- { p.name }
+@endloop
+```
+`where` joins conditions with `and` / `or`. Operators: `==` `!=` `<` `<=` `>` `>=` and `contains` (case-insensitive substring). Operands are item paths (`p.field`), declared `:state`, numbers, or `"strings"` — whitelist-validated, no expressions. **Rule that decides JS: if the predicate only reads the row, it filters at build time and the page stays static; if it reads any `:state`, the loop becomes reactive.** `:bind name` is the input primitive for live filtering — it accepts `type=` (default `text`), `placeholder=`, `autocomplete=`, and `required` / `autofocus`.
 
 ### Includes & sections
 ```wd
@@ -111,6 +136,7 @@ Your `.skin` selectors must match the **real** output. The emitted HTML is:
 | `::: name .card … :::` (non-`section`) | `<div class="card">…</div>` |
 | `:button "x" -> …` | `<button>x</button>` |
 | `:input email …` | `<input type="…">` |
+| `:bind q placeholder="…"` | `<input>` bound two-way to `:state q` |
 | `:submit "Go"` | `<button type="submit">Go</button>` |
 | `:form …` | `<form>…</form>` |
 | reactive `@loop` of a list | `<ul>`/`<ol>` (or `<div>`) of items |

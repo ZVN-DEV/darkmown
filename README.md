@@ -74,6 +74,61 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 
 Loops nest, dotted paths reach into rows, and `@include ... with x={ row.field }` reassigns values Liquid-style.
 
+### Filtering — `@loop … where`
+
+Add `where <predicate>` to filter a loop. Conditions compare a loop-item field against a number, a string, or another value, and join with `and` / `or`:
+
+```wd
+@loop /products.json into p where p.featured == true and p.price < 80
+- { p.name }
+@endloop
+```
+
+Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive substring match. The predicate is a compile-time-validated whitelist — only item paths, declared `:state`, numbers, and `"strings"` are allowed (no arbitrary expressions, no `eval`).
+
+**The source decides reactivity, just like the loop itself.** If the predicate only reads the row, the filter runs at build time and the page stays **zero-JS**. If the predicate reads a `:state` value, the loop becomes reactive and re-filters live as that state changes — a live search in pure Markdown:
+
+```wd
+:state products = [{"id":1,"name":"Aurora Lamp"},{"id":2,"name":"Briza Fan"}]
+:state q = ""
+
+:bind q placeholder="Search"
+
+@loop products into p where p.name contains q
+- { p.name }
+@endloop
+```
+
+`:bind <state>` renders an `<input>` wired two-way to a `:state` value — typing updates the state, and the state reflects back into the field. It accepts `type=` (default `text`), `placeholder=`, `autocomplete=`, and the `required` / `autofocus` flags.
+
+### Editable lists — per-row actions
+
+A `:button` inside a reactive `@loop` can act on its own row. Two row actions exist:
+
+```wd
+:state products = [{"id": 1, "name": "Aurora", "price": 49}]
+:state cart = []
+
+@loop products into product
+::: card
+**{ product.name }** — ${ product.price }
+:button "Add to cart" -> cart += product    <- carry this row into another list
+:::
+@endloop
+
+@loop cart into line
+::: card
+{ line.name }
+:button "Remove" -> cart remove line          <- drop this row from the looped list
+:::
+@endloop
+```
+
+- `cart += <item>` appends a **copy** of the current row to another `:state` list, so adding the same product twice gives two independent lines.
+- `<list> remove <item>` removes the current row from the list being looped. The `<list>` must be that loop's own `:state` source and `<item>` must be the loop variable — both checked at compile time. Removal targets the exact row, so it stays correct even when the loop is filtered with `where`.
+
+That is a full add-to-cart / remove-line flow — and a to-do list with delete — in plain Markdown, no JavaScript.
+
 ## Sections
 
 ```wd
