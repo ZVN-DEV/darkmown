@@ -94,15 +94,14 @@ JSON request body instead of urlencoded, for clean line-item mutations.
 - Default stays urlencoded so the native-POST no-JS degradation is unchanged;
   `as=json` is opt-in and only affects the JS fetch path.
 
-### P5 — `:select` bound to state (general form control)
+### P5 — Form controls + two-way binding (general)
 
-A native `<select>` whose value writes state — a basic form control the
-framework lacks. General-purpose (filters, sorts, any picker), not
-Shopify-specific. The *variant* meaning is layered in the package.
-
-- `:select size from sizes` (options from a state list) binds the chosen value.
-- Compile-time whitelisted like other directives; emits a plain `<select>` with
-  a `data-wd-bind`.
+Superseded by `docs/form-controls-plan.md`, which generalizes the original
+"`:select` bound to state" idea into full native-control support: every
+`<input>` type, `:select`/`:option`, `:textarea`, and a `bind` keyword for
+live two-way binding. The Shopify variant picker is built on these primitives
+in the package; the controls themselves are core and general-purpose (filters,
+sorts, any picker). See that plan for the spec.
 
 **Everything else is package-level.** If a proposed change names Shopify, carts,
 GraphQL, or variants, it does not belong here.
