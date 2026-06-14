@@ -2,6 +2,12 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.8.0 — 2026-06-14
+
+- **Array frontmatter + readable `meta`.** Frontmatter now parses inline flow arrays — `tags: [sales, revenue, "q1, q2"]` becomes a real array (previously the literal string `"[sales, revenue]"`), with quoted items keeping their internal commas and bracket-free values staying plain scalars. Block sequences (`- item` lines) remain out of scope to keep the parser single-pass.
+- A page's frontmatter is now in scope in its body as `meta`: `{ meta.title }` prints a field, `{ meta.tags }` renders an array joined with `, `, and `@loop meta.tags into tag` iterates a frontmatter array at build time (stays `runtime: false`, zero-JS).
+- A correctness fix in its own right, and the groundwork for reading/emitting bundles in Google Cloud's Open Knowledge Format (markdown + `type`-bearing frontmatter + cross-links). OKF support, if pursued, will be a thin additive export — deliberately not coupled to its v0.1 Draft.
+
 ## 0.7.0 — 2026-06-13
 
 - **Per-row actions in reactive loops.** A `:button` inside `@loop … into item` can now act on its own row — the canonical add-to-cart / remove-line / delete-todo pattern, with no hand-written JavaScript:

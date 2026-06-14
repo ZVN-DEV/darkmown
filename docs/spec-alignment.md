@@ -56,6 +56,10 @@ This audit compares the current Darkmown implementation with the original MARROW
 - **Editor tooling:** VS Code extension (`editors/vscode`) ships `.wd` + `.skin` TextMate grammars, snippets, and folding, grammar-tested in CI.
 - **`AGENTS.md`:** a model-facing build guide (shipped in the npm files array), tuned over a 5-round agent-eval benchmark that lifted build quality from 2.78→4.51/5.
 
+## Stage 7 additions (2026-06-14)
+
+- **Array frontmatter + readable `meta`:** `parseFrontmatter` now parses inline flow arrays (`tags: [a, b, "x, y"]` → real array; quoted items keep internal commas; a value without a leading `[` stays a scalar — block sequences are intentionally out of scope to keep the parser single-pass). A page's frontmatter is exposed to its body under `meta`, so `{ meta.title }` prints a field, `{ meta.tags }` renders an array joined with `, `, and `@loop meta.tags into tag` iterates a frontmatter array at build time (stays `runtime: false`). Genuine correctness fix on its own, and the groundwork for reading/emitting OKF-style bundles (Google Cloud's Open Knowledge Format — markdown + `type`-bearing frontmatter + cross-links; tracked but deliberately not coupled to its v0.1 Draft).
+
 ## Still missing from the full vision
 
 - First-party server runtime (`site/api/`), HTML-fragment `swap` semantics, and cart server sync — parked behind the adapter decision until a real project needs them.
