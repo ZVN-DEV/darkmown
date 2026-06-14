@@ -48,7 +48,21 @@ These are the gating framework changes. Each respects the invariants:
 compile-time-validated whitelists, runtime stays under 5 KB gzipped, static
 pages stay `runtime: false`. None mention Shopify.
 
-### P1 — Dynamic routes (build-time fan-out) — **highest priority**
+> **Status as of v0.7.0 (revised 2026-06-14):** several primitives this plan
+> assumed were "new work" already shipped:
+> - **Filtering** — `@loop … where <predicate>` (v0.6.0): `== != < <= > >=
+>   contains`, `and`/`or`; build-time when item-only (zero-JS), reactive when it
+>   reads `:state`. Covers most of P3's *filtering* use case **client-side, with
+>   no refetch**.
+> - **Live input** — `:bind <state>` (v0.6.0): two-way `<input>`. The base of P5.
+> - **Cart add/remove** — per-row loop actions `cart += item` and `list remove
+>   item` (v0.7.0). The storefront's add-to-cart / remove-line primitive is
+>   **done**; runtime resolves the clicked row correctly even under `where`.
+>
+> Remaining open primitives: **P1, P2, P4**, and the **P5 extensions** in
+> `docs/form-controls-plan.md`. P3 is downgraded (see below).
+
+### P1 — Dynamic routes (build-time fan-out) — **highest priority, still open**
 
 One template renders N static pages from a data source. Nothing else in the
 storefront works without this; it is also broadly useful (blogs, docs, OKF).
@@ -64,26 +78,30 @@ storefront works without this; it is also broadly useful (blogs, docs, OKF).
   expansions), `src/compiler.js` (param exposed in static scope, resolvable by
   `{ handle }` and interpolation priority order).
 
-### P2 — `@loop` over fetched sub-paths
+### P2 — `@loop` over fetched sub-paths — **still open**
 
-Already a known gap (`docs/spec-alignment.md:52`). Needed to loop `cart.lines`
-or `search.products` *inside* a fetched/stateful object rather than only
-top-level state.
+Still a gap as of v0.7.0: the reactive `@loop` branch (`handleLoop` in
+`src/compiler.js`) accepts only a **bare `:state` identifier**, not a dotted
+path. Needed to loop `cart.lines` or `search.products` *inside* a
+fetched/stateful object.
 
 - `@loop cart.lines into line` where `cart` came from `:fetch` or `:form into`.
 - Pure extension of the existing one-loop concept — keyed reconcile already
   exists in `src/runtime.js`; this teaches the loop source resolver to walk a
-  dotted path into reactive state.
+  dotted path into reactive state. `where` filtering should compose unchanged.
 
-### P3 — Parametrized / reactive `:fetch` URLs
+### P3 — Parametrized / reactive `:fetch` URLs — **downgraded**
 
-Let a fetch URL interpolate state so search and filtering refetch on change —
-still GET-returns-JSON, still BFF-mediated, no GraphQL in the client.
+**Re-scoped after v0.6.0.** `@loop … where` reading `:state` already filters an
+already-loaded list reactively with **no server round-trip**, so ordinary
+faceted filtering/search-over-loaded-data needs no new fetch primitive — filter
+client-side with `where`. P3 is only justified when the dataset is too large to
+ship to the client and you must re-query the BFF (e.g. full-catalog search).
+Treat as optional / late.
 
 - `:fetch results from "/api/search?q={ query }"` re-fires when `query` changes.
-- Touch points: `handleFetch` (`src/compiler.js:393`) emits the URL template +
-  its state deps; `src/runtime.js` re-fetches on dep change (debounced).
-- Keep `when=visible` working alongside.
+- Touch points: `handleFetch` emits the URL template + its state deps;
+  `src/runtime.js` re-fetches on dep change (debounced). Keep `when=visible`.
 
 ### P4 — `:form … as=json`
 
@@ -94,14 +112,14 @@ JSON request body instead of urlencoded, for clean line-item mutations.
 - Default stays urlencoded so the native-POST no-JS degradation is unchanged;
   `as=json` is opt-in and only affects the JS fetch path.
 
-### P5 — Form controls + two-way binding (general)
+### P5 — Form controls (general) — **base shipped, extensions open**
 
-Superseded by `docs/form-controls-plan.md`, which generalizes the original
-"`:select` bound to state" idea into full native-control support: every
-`<input>` type, `:select`/`:option`, `:textarea`, and a `bind` keyword for
-live two-way binding. The Shopify variant picker is built on these primitives
-in the package; the controls themselves are core and general-purpose (filters,
-sorts, any picker). See that plan for the spec.
+The two-way binding base shipped in v0.6.0 as **`:bind <state>`** (live
+`<input>`). `docs/form-controls-plan.md` covers the remaining extensions: full
+`<input>` type/attribute matrix, `:select`/`:option`, `:textarea`,
+checkbox/radio groups, dotted-path targets — and reconciling the `:input`/`:bind`
+duality. The Shopify variant picker composes these in the package; the controls
+are core and general-purpose (filters, sorts, any picker).
 
 **Everything else is package-level.** If a proposed change names Shopify, carts,
 GraphQL, or variants, it does not belong here.
@@ -138,9 +156,10 @@ Everything above the primitives. Ships independently of the framework version.
 
 ### 3b. Storefront authoring kit (Darkmown includes + colocated JS)
 
-- Includes under `site/_/`: `product-card.wd`, `cart-drawer.wd`, `money.wd`
-  (currency formatting via `:computed`), `variant-picker.wd` (built on P5),
-  `pagination.wd` (built on P2/P3).
+- Includes under `site/_/`: `product-card.wd`, `cart-drawer.wd` (uses shipped
+  `cart += item` / `list remove item`), `money.wd` (currency via `:computed`),
+  `variant-picker.wd` (built on `:bind` + P5 extensions), `filters.wd` (uses
+  shipped `@loop … where`), `pagination.wd` (built on P1/P2).
 - Colocated `.js` via the `window.wd` escape hatch (`site/pages/data.wd:90`) for
   the genuinely interactive 30%: variant resolution, predictive-search
   debouncing, account-gated views.
@@ -161,11 +180,11 @@ Fastify is the reference; Hono/Express/Go can reimplement against the contract.
 
 | Surface | Tier | Mechanism |
 |---|---|---|
-| Product detail page | Static + tiny island | P1 static body/SEO; variant-picker (P5) + add-to-cart (`:form`) reactive |
-| Collection page | Static + filter island | P1 grid; faceted filter via P3 |
+| Product detail page | Static + tiny island | P1 static body/SEO; variant-picker (P5) + add-to-cart (`cart += item`, shipped) |
+| Collection page | Static + filter island | P1 grid; faceted filter via `@loop … where` (shipped) |
 | Home, blog, pages, policies, metaobjects | Static, zero JS | build pull → `.wd`/`.md` |
-| Cart drawer / page | Reactive | `:state` + `:form action` to BFF; loop via P2 |
-| Search (predictive + results) | Reactive | P3 + island JS; results page also static-renderable for SEO |
+| Cart drawer / page | Reactive | `:state` cart + `cart += item` / `list remove item` (shipped); render lines via P2 |
+| Search (predictive + results) | Reactive | live `:bind` + `@loop … where` (shipped) for loaded data; P3 only for full-catalog queries |
 | Account | Reactive, auth-gated | Customer Account API via BFF |
 
 Result: a 10k-SKU catalog ships as SEO-perfect static pages with framework JS
@@ -175,17 +194,19 @@ only on cart/search islands. No markdown framework does this.
 
 ## 5. Storefront API feature coverage
 
-Legend: ✅ primitives + BFF · 🟡 `window.wd` island · 🔧 needs a core primitive (P#)
+Legend: ✅ primitives + BFF · ✅✅ primitive already shipped (v0.6/0.7) · 🟡
+`window.wd` island · 🔧 needs an open core primitive (P#)
 
 | Feature | Approach | Status |
 |---|---|---|
-| Products / variants / options | P1 static PDP + variant picker | 🔧 P5, 🟡 resolution |
+| Products / variants / options | P1 static PDP + variant picker | 🔧 P1, P5-ext, 🟡 resolution |
 | Product media / images | static `<img srcset>` at build | ✅ |
-| Collections + cursor pagination | P1 grid + load-more | 🔧 P2/P3 |
-| Faceted filtering / sorting | filter state → P3 refetch | 🔧 P3 |
-| Predictive search (as-you-type) | island, P3 + debounce | 🔧 P3, 🟡 |
+| Collections + cursor pagination | P1 grid + load-more | 🔧 P1/P2 |
+| Faceted filtering / sorting | `@loop … where` over loaded list | ✅✅ shipped |
+| Predictive search (as-you-type) | `:bind` + `@loop … where` | ✅✅ shipped (🟡 for full-catalog) |
 | Full search results page | static-renderable + refine | ✅ |
-| Cart (add/update/remove/notes/attrs) | `:form action` into `cart` | ✅ (🔧 P4 for JSON) |
+| Cart add / remove lines | `cart += item` / `list remove item` | ✅✅ shipped |
+| Cart notes/attrs/update qty | `:form action` to BFF | ✅ (🔧 P4 for JSON) |
 | Discount codes / gift cards | cart mutation endpoints | ✅ |
 | Buyer identity / delivery / localization | `@inContext` in BFF | ✅ |
 | Checkout | redirect to `cart.checkoutUrl` | ✅ |
@@ -198,9 +219,9 @@ Legend: ✅ primitives + BFF · 🟡 `window.wd` island · 🔧 needs a core pri
 | Inventory / availability | build pull + PDP recheck | ✅ |
 | Markets / multi-currency | `@inContext` + `money.wd` | ✅ |
 
-~70% is static or covered by existing `:fetch`/`:form`/`:state`. The
-interactive remainder is unlocked by primitives P2–P5 plus the package's island
-JS.
+Filtering, live search input, and cart add/remove are **already shipped
+primitives**. The main remaining core gap for the storefront is **P1 (dynamic
+routes)**; P2/P4/P5-extensions are smaller follow-ons.
 
 ---
 
@@ -212,19 +233,22 @@ JS.
 - **Phase 1 — Catalog (static core):** P1 + build pull. All PDPs, collections,
   content, menus, policies as static zero-JS pages. SEO, sitemap, structured
   data.
-- **Phase 2 — Cart & checkout:** cart endpoints, cookie session, reactive cart
-  drawer/page (P2, optionally P4), discounts, checkout redirect. Closes the
-  cart-sync gap.
-- **Phase 3 — Discovery:** search (predictive + results), faceted filtering,
-  pagination (P2/P3), recommendations.
+- **Phase 2 — Cart & checkout:** cart add/remove already work
+  (`cart += item` / `list remove item`); this phase is mostly BFF — cart
+  endpoints, cookie session, qty/notes via `:form action` (optionally P4),
+  discounts, checkout redirect. Render lines with P2. Closes the cart-sync gap.
+- **Phase 3 — Discovery:** filtering and live search input already ship via
+  `@loop … where` + `:bind`; this phase is the BFF search/recommendation
+  endpoints, pagination (P1/P2), and P3 only if full-catalog server search is
+  needed.
 - **Phase 4 — Customer & markets:** Customer Account API auth, orders/addresses,
   localization/`@inContext`, multi-currency, subscriptions.
 - **Phase 5 — Hardening:** webhook-driven incremental rebuilds, caching/ISR,
   rate-limit handling, perf-budget CI (extend the runtime-size test ethos),
   starter-template polish.
 
-Core primitive sequencing: **P1 first** (gates everything), then P2/P3 for
-Phase 2–3, P4/P5 alongside as their surfaces land.
+Core primitive sequencing: **P1 first** (gates everything else); P2 for cart/line
+rendering; P4 and the P5 extensions alongside their surfaces. P3 is optional.
 
 ---
 

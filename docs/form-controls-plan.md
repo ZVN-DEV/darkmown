@@ -1,182 +1,153 @@
-# Core form controls plan — full native input surface
+# Core form controls plan — full native control surface
 
-Status: planning (2026-06-14). Core Darkmown. Subsumes primitive **P5
-(`:select`)** from `docs/shopify-storefront-plan.md` — form controls are a
-general framework capability, not a storefront one.
+Status: planning (revised 2026-06-14 against **v0.7.0**). Core Darkmown.
+Generalizes the storefront's P5 idea — form controls are a general framework
+capability, not a storefront one.
+
+> **Revised:** v0.6.0 already shipped **`:bind <state>`** — a live two-way
+> `<input>`. This plan is no longer "add two-way binding"; it is "complete the
+> control surface around the binding that already exists."
 
 ## Goal
 
-Every native browser form control is expressible in Markdown, with live
-two-way binding to state, so Darkmown is a fully functional framework rather
-than one with a single submit-capture `:input`.
+Every native browser form control is expressible in Markdown with live two-way
+binding, so Darkmown is a fully functional framework — not one that binds only
+single-line text `<input>`s.
 
-## Where we are
+## Where we actually are (v0.7.0)
 
-- `:input name [type=X] [attrs] [flags]` (`src/compiler.js:484-509`) emits one
-  `<input>`. `type=` is already passed through, but the attribute whitelist
-  (`:503`) is generic (`placeholder|value|min|max|step|pattern|autocomplete`)
-  and the flag whitelist (`:492`) is `required|autofocus|disabled|readonly`.
-- Inputs are **submit-capture only**: values reach state through
-  `data-wd-form` FormData when the form submits (`src/runtime.js`). There is no
-  live binding, no `<select>`, no `<textarea>`, no checkbox/radio grouping.
+Three input-ish paths exist today:
 
-## Design thesis (respects "one syntax, never add alternates")
+1. **`:bind <state>`** (`src/compiler.js`, `handleBind`) — live two-way
+   `<input>`. Writes state on every keystroke; reflects state back when the
+   field is **not** focused (`document.activeElement !== input` in
+   `src/runtime.js`). Delegated single `input` listener. **Limits:** `<input>`
+   only; `type=` passthrough; attrs only `placeholder`, `autocomplete`; flags
+   only `required`, `autofocus`; **bare state identifier only** (no dotted
+   paths); no `<select>`/`<textarea>`; no checkbox/radio groups.
+2. **`:input <name> [type=X] [attrs] [flags]`** (`handleInput`) — a
+   **submit-capture** `<input>` inside `:form`; reaches state via `data-wd-form`
+   FormData on submit, not live. Wider attr whitelist than `:bind`
+   (`placeholder value min max step pattern autocomplete`; flags
+   `required autofocus disabled readonly`).
+3. **`:submit "Label"`** — the form's submit button.
 
-The invariant in `CLAUDE.md` — *"One interpolation syntax. Never add alternates."*
-— governs this. So:
+### The duality problem (decide first)
 
-1. **`:input` stays the single directive for every `<input>` element.** All
-   native types are `:input … type=X`. We do **not** add `:email`, `:number`,
-   `:color`, `:range`, `:checkbox`, `:date`, etc. Variety comes from `type=`,
-   not from new directives.
-2. **New directives only for elements that are not `<input>`:** `:select`
-   (+ `:option`) and `:textarea`. These are genuinely different HTML elements;
-   `type=` cannot produce them.
-3. **Structural / display-only elements stay raw HTML.** `.wd` already allows
-   inline HTML (see `<main>`, `<button class>` in `site/pages/*.wd`). `<label>`,
-   `<fieldset>`, `<legend>`, `<output>`, `<progress>`, `<meter>`, `<datalist>`
-   need no directive unless they bind state. Directives are reserved for
-   controls that **capture or reflect state**; everything else is just HTML.
+We now have **two `<input>` directives** — `:input` (submit-capture) and
+`:bind` (live two-way). That is exactly the "alternate syntax" the `CLAUDE.md`
+invariant warns against. Before expanding either, reconcile them. Options:
 
-This keeps the new surface to: an expanded `:input`, plus `:select`/`:option`
-and `:textarea`, plus one binding keyword shared by all of them.
+- **A — Merge:** one `:input` directive; `bind=<state>` makes it live, its
+  absence keeps submit-capture. Deprecate the standalone `:bind`. Cleanest
+  long-term; one mental model. Cost: migrates the `:bind` surface shipped in
+  0.6.0.
+- **B — Keep both, draw a bright line:** `:bind` = live single control,
+  `:input` = form-field. Document the split. Lower churn; keeps two directives.
 
-## The core new capability: two-way binding (`bind`)
+**Recommendation: A**, phased so `:bind` keeps working as an alias during a
+deprecation window. Picking this shapes every section below, so it is the gating
+decision.
 
-The thing that makes the framework "fully functional" is live binding, not more
-input types. One keyword, on every control:
+## Design thesis (respects "never add alternates")
 
-```
-:state email = ""
-:input email type=email bind=email placeholder="you@example.com"
+1. **One directive per HTML element, variety via `type=`.** All `<input>`
+   types are `type=X` on the unified input directive — never `:email`,
+   `:number`, `:checkbox`, `:date`, etc.
+2. **New directives only for non-`<input>` elements:** `:select` (+ `:option`)
+   and `:textarea`.
+3. **Structural/display elements stay raw HTML.** `.wd` already allows inline
+   HTML. `<label>`, `<fieldset>`, `<output>`, `<progress>`, `<meter>`,
+   `<datalist>` need no directive unless they bind state.
 
-You typed: { email }
-```
+## Work items (all build on the existing `:bind` runtime)
 
-- `bind=name` (or `bind=cart.note`, dotted path) links the control's value to
-  declared state, **both ways**: user input writes state; state writes update
-  the control.
-- Compiles to a `data-wd-input-bind="<key>"` attribute (and `data-wd-bind-prop`
-  to say whether it syncs `.value`, `.checked`, or multi-`<select>` values).
-- Without `bind`, behavior is unchanged — the control is still captured at form
-  submit via `data-wd-form`. `bind` is additive and opt-in, so existing pages
-  and the no-JS native-POST path are untouched.
+### F1 — Full `<input>` type + attribute matrix
 
-### Per-type binding semantics
-
-| Control | Reads/writes | Notes |
-|---|---|---|
-| text/email/url/tel/search/password/number/date family/color | `.value` | number/date may coerce on read |
-| `range` | `.value` | same as number |
-| `checkbox` (single) | `.checked` (boolean) | |
-| `checkbox` (group, same `bind`) | array of checked `value`s | |
-| `radio` (group, same `bind`) | selected `value` | |
-| `file` | read-only `FileList` ref | bind reflects selection; can't set |
-| `select` (single) | selected `value` | |
-| `select multiple` | array of selected values | |
-| `textarea` | `.value` | |
-
-## Complete `<input>` type + attribute matrix
-
-`:input` accepts all native types. Validation = a per-type attribute whitelist
-(compile-time, in the spirit of the existing whitelists at `compiler.js:492,503`).
+Extend the input directive (per decision A/B) to all native types with
+**per-type attribute whitelists** — compile-time, no eval, matching the existing
+whitelist style.
 
 - **Types:** `text search tel url email password number range date month week
-  time datetime-local color checkbox radio file hidden button submit reset
-  image`.
-- **Universal attrs:** `name value placeholder required disabled readonly
-  autofocus autocomplete form bind`.
-- **Type-gated attrs (rejected on wrong type, with a corrective error):**
-  - text-ish (`text search tel url email password`): `minlength maxlength
-    pattern size spellcheck list`
-  - numeric/temporal (`number range date month week time datetime-local`):
-    `min max step`
-  - `email`, `file`: `multiple`
-  - `file`: `accept capture`
-  - `checkbox`, `radio`: `checked` (flag)
-  - `image`: `src alt width height`
+  time datetime-local color checkbox radio file hidden`.
+- **Universal:** `name value placeholder required disabled readonly autofocus
+  autocomplete`.
+- **Type-gated (error on wrong type):** text-ish → `minlength maxlength pattern
+  size spellcheck list`; numeric/temporal → `min max step`; `email`/`file` →
+  `multiple`; `file` → `accept capture`; `checkbox`/`radio` → `checked`.
 
-Errors keep the current style: file path + `Use: …` suggestion.
+Pure compiler work; no runtime change. The `:bind` runtime already syncs
+`.value`, so text/number/date/color/range bind for free once attrs are allowed.
 
-## New directives
+### F2 — `.checked` and grouped binding (runtime delta)
 
-### `:select`
+Checkbox/radio need the runtime to sync `.checked`, not `.value`, and groups
+need array / selected-value semantics. This is the **only meaningful runtime
+addition** and it touches the 5 KB budget.
+
+- single `checkbox` ↔ boolean; `checkbox` group (same bind) ↔ array of `value`s;
+  `radio` group ↔ selected `value`.
+- Runtime: branch the existing `data-wd-bind-input` sync on input type; one
+  small helper for group arrays. The delegated `input` listener already exists.
+- **Budget:** current runtime is well under 5120 B gzipped (`tests/size.test.js`,
+  ~2 KB per the changelog). Measure in the same PR; if group logic threatens the
+  cap, ship single checkbox/radio first, defer groups.
+
+### F3 — `:select` / `:option` and `:textarea`
+
+New elements, bindable through the same mechanism.
 
 ```
-:select size bind=size
+:state size = "M"
+:select size
 :option "Small" value=S
-:option "Medium" value=M selected
-:option "Large" value=L
+:option "Medium" value=M
 :endselect
+
+:state draft = ""
+:textarea draft rows=5 placeholder="Your message"
 ```
 
-- Attrs: `name`, `bind`, flags `multiple required disabled`, `size=N`.
-- Options two ways: explicit `:option` children **or** sourced from state via
-  the existing loop concept (`@loop sizes into s` wrapping `:option`), so a
-  dynamic list reuses `@loop` rather than inventing option-list syntax.
-- `:option` attrs: `value`, `label`, flags `selected disabled`.
+- `:select` syncs selected `value` (and array for `multiple`); options inline
+  via `:option` **or** sourced from state by wrapping with the existing
+  `@loop` (reuse, don't invent option-list syntax — and `@loop … where` already
+  filters them).
+- `:textarea` syncs `.value`; attrs `rows cols wrap minlength maxlength`.
+- Runtime: extend the `data-wd-bind-input` query/sync to also match
+  `select`/`textarea` (they already fire `input`/`change`).
 
-### `:textarea`
+### F4 — Dotted-path bind targets
 
-```
-:textarea message bind=draft rows=5 placeholder="Your message"
-```
-
-- Attrs: `name`, `bind`, `rows`, `cols`, `placeholder`, `minlength`,
-  `maxlength`, `wrap`, flags `required readonly disabled autofocus`.
-
-## Runtime budget (the constraint that bites)
-
-Live binding adds runtime: input/change listeners that write state, and a
-state→DOM sync path for the bound controls. The runtime is **CI-capped under
-5 KB gzipped** (`tests/size.test.js`). Plan:
-
-- One delegated `input`/`change` listener at document level, not per-control —
-  keeps bytes flat regardless of control count.
-- Reuse the existing text-bind subscription machinery for state→control sync;
-  binding is "text bind, but the target is `.value`/`.checked`."
-- Multi-select / checkbox-group array handling is the only genuinely new logic;
-  keep it in one small helper.
-- Measure against the budget in the same PR; if it threatens 5 KB, ship
-  single-value binding first and defer group/multi semantics.
-
-## Validation & safety
-
-- Per-type attribute whitelists, compile-time, no eval (matches existing
-  directive grammar).
-- `bind` targets must resolve to declared `:state` (same rule as actions /
-  `:computed` references), else a compile error.
-- Static pages with no `bind` and no other state stay `runtime: false` — a
-  bare `:input`/`:select`/`:textarea` inside a native-POST `:form action` ships
-  zero JS, preserving the progressive-enhancement story.
+`:bind cart.note` / `:select buyer.country`. The binding key is currently a bare
+identifier; allow dotted paths, routed through the same safe `getPath`
+(`constructor`/`prototype`/`__proto__` rejected). Compiler + a small runtime
+path-set helper.
 
 ## Phasing
 
-1. **Expand `:input`** — full type list + type-gated attribute whitelists.
-   No runtime change; pure compiler. Ships alone.
-2. **`bind` (two-way)** — runtime binding for single-value controls
-   (text/number/date/color/checkbox-single/radio). The headline capability.
-3. **`:select`/`:option` + `:textarea`** — new elements, with `bind`.
-4. **Group/array binding** — checkbox groups, `select multiple`. Last because
-   it carries the most runtime weight.
+1. **Decide the duality (A vs B)** — gates naming for everything else.
+2. **F1** — type + attribute matrix. Pure compiler, no runtime delta. Ships
+   alone, immediately widens what binds.
+3. **F3** — `:select`/`:textarea` (single-value). Mostly compiler + a query
+   widening in the runtime.
+4. **F2** — checkbox/radio `.checked` + groups. The runtime-heavy item; measure
+   against 5 KB.
+5. **F4** — dotted-path targets.
 
-## Tests
+## Tests (extend, don't duplicate)
 
 - Each input type emits correct `type=` + only its allowed attrs; wrong-type
-  attr errors.
-- `bind` round-trips: typing updates `{ state }`; `:button -> state = "x"`
-  updates the control.
-- `:select`/`:option` (static and `@loop`-sourced); `:textarea` bind.
-- Checkbox/radio group → array / selected value.
-- A `bind`-free control inside `:form action` stays `runtime: false`.
-- Runtime size stays under 5 KB gzipped (`tests/size.test.js`).
+  attr errors with a corrective message.
+- `:bind`/unified input round-trip (already covered for text — extend to
+  number/date/color/checkbox/radio/select/textarea).
+- `:select` static + `@loop`-sourced + `@loop … where`-filtered; `multiple` →
+  array. `:textarea` bind.
+- A bind-free control inside `:form action` stays `runtime: false`.
+- `tests/size.test.js` still passes (< 5120 B gzipped) after F2.
 
 ## Open decisions
 
-- **Binding keyword:** `bind=name` (proposed) vs. reusing `{ }` syntax somehow.
-  Recommend a distinct `bind` keyword — interpolation is read-only output; a
-  control is read/write, so conflating them is misleading.
-- **Group binding in v1 or deferred** — depends on the 5 KB measurement.
-- **Display binding** (`<output>`/`<progress>`/`<meter>` reflecting state):
-  out of scope as directives; achievable today with `{ state }` in raw HTML
-  attributes if/when attribute interpolation is added (separate question).
+- **Duality A vs B** (above) — the gating call.
+- **Group binding in v1 vs deferred** — depends on the F2 byte measurement.
+- **Display binding** (`<output>`/`<progress>`/`<meter>` reflecting state) —
+  out of scope as directives; revisit if attribute interpolation lands.

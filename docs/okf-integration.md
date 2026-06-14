@@ -30,11 +30,11 @@ correctness fix and a prerequisite for the rest.
 
 ### Problem
 
-`parseFrontmatter` (`src/compiler.js:89-101`) is line-based and scalar-only.
-Today `tags: [sales, revenue]` is stored as the literal **string**
-`"[sales, revenue]"`. OKF's `tags` is an array, so clean interop needs real
-array parsing. This is worth doing regardless of OKF — it is a genuine gap in
-the frontmatter parser.
+`parseFrontmatter` (`src/compiler.js`, `handleFrontmatter`) is line-based and
+scalar-only — **confirmed unchanged as of v0.7.0**. Today `tags: [sales,
+revenue]` is stored as the literal **string** `"[sales, revenue]"`. OKF's `tags`
+is an array, so clean interop needs real array parsing. This is worth doing
+regardless of OKF — it is a genuine gap in the frontmatter parser.
 
 ### Change
 
