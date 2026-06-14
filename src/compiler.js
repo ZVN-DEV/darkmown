@@ -82,7 +82,9 @@ function compileFile(file, context, stack, scope, comp, sections, loopItem) {
     return { meta, html: md.render(body, {}) };
   }
 
-  const ctx = { file, context, stack: [...stack, real], scope, comp, sections, loopItem };
+  // Expose this file's frontmatter to the body under `meta` so `{ meta.title }`,
+  // `{ meta.tags }`, and `@loop meta.tags into tag` resolve as static values.
+  const ctx = { file, context, stack: [...stack, real], scope: createScope(scope, { meta }), comp, sections, loopItem };
   return { meta, html: compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx) };
 }
 
@@ -95,9 +97,47 @@ export function parseFrontmatter(raw) {
   const meta = {};
   for (const line of front.split("\n")) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (match) meta[match[1]] = stripQuotes(match[2]);
+    if (match) meta[match[1]] = parseFrontmatterValue(match[2]);
   }
   return { meta, body };
+}
+
+// Frontmatter values are scalars, except an inline flow array `[a, b, c]`.
+// Block sequences (`- item` on following lines) are intentionally out of scope —
+// the parser stays single-pass and line-based.
+function parseFrontmatterValue(raw) {
+  const value = raw.trim();
+  if (value.startsWith("[") && value.endsWith("]")) return parseInlineArray(value);
+  return stripQuotes(value);
+}
+
+function parseInlineArray(raw) {
+  const inner = raw.slice(1, -1);
+  if (inner.trim() === "") return [];
+  const items = [];
+  let buf = "";
+  let quote = null;
+  let quoted = false;
+  const push = () => {
+    items.push(quoted ? buf : buf.trim());
+    buf = "";
+    quoted = false;
+  };
+  for (const char of inner) {
+    if (quote) {
+      if (char === quote) quote = null;
+      else buf += char;
+    } else if ((char === '"' || char === "'") && buf.trim() === "") {
+      quote = char;
+      quoted = true;
+    } else if (char === ",") {
+      push();
+    } else {
+      buf += char;
+    }
+  }
+  push();
+  return items;
 }
 
 // ---------------------------------------------------------------------------
@@ -868,7 +908,9 @@ function resolveBindingHtml(expr, ctx) {
 
   const staticValue = lookupVar(ctx.scope, head);
   if (staticValue.found) {
-    return escapeHtml(getPath(staticValue.value, segs.slice(1)) ?? "");
+    const resolved = getPath(staticValue.value, segs.slice(1));
+    if (Array.isArray(resolved)) return escapeHtml(resolved.join(", "));
+    return escapeHtml(resolved ?? "");
   }
 
   const key = resolveStateKey(head, ctx);

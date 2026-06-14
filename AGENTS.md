@@ -27,6 +27,8 @@ Commands: `darkmown dev`, `darkmown build`, `darkmown serve`.
 
 `{ name }` or `{ name.path }`. Resolves in order: loop item → in-scope value → declared `:state` → otherwise literal text. **Declare state before you bind it** — compilation is line-based, top to bottom, so a `{ x }` or `:if x` must come *after* the `:state x` (or the `:form into x`) that creates it.
 
+The page's frontmatter is in scope as `meta`: `{ meta.title }` prints a field, `{ meta.tags }` joins an array with `, `, and `@loop meta.tags into tag` iterates a frontmatter array (build-time, stays static). Frontmatter arrays are inline only — `tags: [a, b, "x, y"]`; a value without a leading `[` is a plain string.
+
 ## Directives — the complete set (nothing else exists)
 
 ### State and buttons

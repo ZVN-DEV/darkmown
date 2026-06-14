@@ -54,7 +54,23 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 
 - In-scope static values (include arguments, loop values) resolve at build time.
 - Declared `:state` becomes a live binding.
+- The page's own frontmatter is in scope as `meta` — `{ meta.title }` prints a field.
 - Anything else stays literal text — braces in prose never break a page or pull in the runtime.
+
+## Frontmatter
+
+YAML-style `key: value` frontmatter between `---` fences. Values are strings, plus inline arrays:
+
+```wd
+---
+title: Customers
+tags: [sales, revenue, "q1, q2"]
+---
+```
+
+- `{ meta.title }` prints a scalar; `{ meta.tags }` prints an array joined with `, `.
+- `@loop meta.tags into tag` iterates an array field at build time (stays static, zero-JS).
+- Arrays are inline flow only (`[a, b]`); quoted items keep internal commas (`"q1, q2"`). A value without a leading `[` stays a plain string.
 
 ## Loops
 
