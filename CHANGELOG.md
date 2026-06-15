@@ -57,7 +57,7 @@ All notable changes to Darkmown are documented here. Versions follow [semver](ht
 - `:if item.path` inside reactive loops (per-row branches).
 - `window.wd` escape hatch for colocated `.js`.
 - `::: section` containers with scoped state; keyed loop reconciliation.
-- View transitions via `transitions: true` frontmatter.
+- View transitions via `transitions: true` frontmatter. **(Disabled since: cross-document `@view-transition` render-blocked deployed pages, hanging navigation. `transitions` is currently hardcoded off in `src/compiler.js`; reintroduction is tracked pending proper activation fallbacks.)**
 - Real CommonMark parsing (markdown-it); strict `.md` (directives stay plain text).
 - `@loop … into … @endloop` — the one loop, replacing `@repeat` and `:for`.
 - Dev server rebuilds in a child process (always-fresh modules).
