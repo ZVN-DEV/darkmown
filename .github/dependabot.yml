@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Root package — runtime (markdown-it) and dev (playwright) dependencies.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+
+  # VS Code extension has its own manifest and lockfile.
+  - package-ecosystem: npm
+    directory: "/editors/vscode"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+
+  # Keep the GitHub Actions used by CI and Release pinned and current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions

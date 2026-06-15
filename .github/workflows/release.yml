@@ -19,6 +19,43 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+      # Supply-chain guard: prove the PUBLISHED TARBALL actually works before we
+      # publish it. `npm pack` honours the `files` allowlist, so this catches
+      # missing-file / bad-glob regressions that unit tests can't see — install
+      # the exact bytes that would ship, scaffold a project against them, build,
+      # and assert the build produced HTML.
+      - name: Pack and smoke-test the tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Build the tarball exactly as `npm publish` would and capture its name.
+          TARBALL="$(npm pack --silent)"
+          TARBALL_ABS="$PWD/$TARBALL"
+          echo "Packed tarball: $TARBALL_ABS"
+
+          # Fresh, empty workspace outside the repo so nothing leaks in.
+          WORK="$(mktemp -d)"
+          cd "$WORK"
+
+          # Scaffold a new project using the packed CLI (npm exec installs the
+          # tarball into a temp prefix and runs its `darkmown` bin — no registry).
+          npm exec --yes --package="$TARBALL_ABS" -- darkmown init demo
+          cd demo
+
+          # Install the local tarball into the scaffolded project (the scaffold
+          # pins a registry version that does not exist until we actually publish),
+          # so the build runs against the exact bytes we are about to publish.
+          npm install --no-audit --no-fund "$TARBALL_ABS"
+
+          # Build via the project's own installed bin and assert the canonical
+          # output exists and is non-empty.
+          npx --no-install darkmown build
+
+          test -s dist/index.html || { echo "::error::pack smoke-test failed: dist/index.html missing or empty"; exit 1; }
+          echo "Pack smoke-test passed: dist/index.html built from the published tarball."
+
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
