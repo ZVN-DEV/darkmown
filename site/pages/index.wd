@@ -10,7 +10,7 @@ description: Build full websites in plain Markdown. Routing, state, server calls
 <section class="hero">
   <p class="eyebrow">The Markdown framework</p>
 
-# Markdown that runs
+# Markdown that runs.
 
 Not just pages — **full websites**. Routing, state, server calls, embeds, and reactive islands, all from plain Markdown files. No JavaScript or CSS required. Your docs and your code are all just text.
 

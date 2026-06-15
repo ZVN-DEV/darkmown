@@ -15,12 +15,19 @@ tokens
   gap .5rem 1rem
   align-items center
   padding 1rem 2rem
+  max-width 100%
+  box-sizing border-box
   border-bottom 1px solid $line
   bg rgba(251,250,247,.85)
   backdrop-filter blur(8px)
   position sticky
   top 0
   z-index 10
+
+@media (max-width: 600px)
+  .topnav
+    padding .85rem 1rem
+    gap .4rem .85rem
 
 .topnav strong
   color $warm
