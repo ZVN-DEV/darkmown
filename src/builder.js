@@ -6,16 +6,36 @@ import { createPaths } from "./config.js";
 import { discoverRoutes, outputPathForRoute } from "./router.js";
 import { compileSkin } from "./skin.js";
 
+/**
+ * @typedef {import("./config.js").Paths} Paths
+ * @typedef {import("./compiler.js").Assets} Assets
+ */
+
+/**
+ * A built route entry written to `dist/routes.json`.
+ * @typedef {object} RouteManifestEntry
+ * @property {string} route Public route path.
+ * @property {string} file Source file path, relative to cwd, POSIX-separated.
+ * @property {{ skins: string[], scripts: string[], runtime: boolean }} assets
+ */
+
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Compile the whole site under `cwd` into `dist`, returning the route manifest.
+ * @param {string} [cwd] Project working directory (defaults to `process.cwd()`).
+ * @returns {{ routes: RouteManifestEntry[], distRoot: string }}
+ */
 export function buildSite(cwd = process.cwd()) {
   const paths = createPaths(cwd);
   fs.rmSync(paths.distRoot, { recursive: true, force: true });
   fs.mkdirSync(paths.distRoot, { recursive: true });
   emitShelfAssets(paths);
   const routes = discoverRoutes(paths.routesRoot);
+  /** @type {RouteManifestEntry[]} */
   const manifest = [];
 
+  /** @type {Set<string>} */
   const warned = new Set();
 
   for (const route of routes) {
@@ -45,12 +65,41 @@ export function buildSite(cwd = process.cwd()) {
   return { routes: manifest, distRoot: paths.distRoot };
 }
 
+/**
+ * Strip JSDoc `/** ... *\/` blocks from the runtime before it ships.
+ * The source keeps full type annotations (for `checkJs` + `.d.ts`), but the
+ * browser never needs to download them — this keeps the shipped runtime lean
+ * and the gzip budget honest (measured against what users actually receive).
+ * Only `/** ... *\/` blocks are removed; code and string literals are untouched.
+ * @param {string} source
+ * @returns {string}
+ */
+export function stripRuntimeComments(source) {
+  return source
+    // Remove the JSDoc block text only — never the surrounding newlines, so an
+    // inline `/** @type {x} */ code` keeps its line and never glues onto a
+    // preceding `//` comment.
+    .replace(/\/\*\*[\s\S]*?\*\//g, "")
+    // Drop the now blank/whitespace-only lines the removed blocks leave behind.
+    .replace(/^[ \t]*\n/gm, "");
+}
+
+/**
+ * @param {Paths} paths
+ * @returns {void}
+ */
 function emitRuntime(paths) {
   const out = path.join(paths.distRoot, "__wd/runtime.js");
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.copyFileSync(path.join(moduleDir, "runtime.js"), out);
+  const source = fs.readFileSync(path.join(moduleDir, "runtime.js"), "utf8");
+  fs.writeFileSync(out, stripRuntimeComments(source));
 }
 
+/**
+ * @param {Assets} assets
+ * @param {Paths} paths
+ * @returns {void}
+ */
 function emitAssets(assets, paths) {
   for (const [source, href] of assets.files) {
     const out = path.join(paths.distRoot, href);
@@ -63,6 +112,11 @@ function emitAssets(assets, paths) {
   }
 }
 
+/**
+ * Copy non-page shelf assets (JSON data, media) into `dist/__wd`.
+ * @param {Paths} paths
+ * @returns {void}
+ */
 function emitShelfAssets(paths) {
   if (!fs.existsSync(paths.shelfRoot)) return;
   for (const file of walk(paths.shelfRoot)) {
@@ -76,7 +130,12 @@ function emitShelfAssets(paths) {
   }
 }
 
+/**
+ * @param {string} dir
+ * @returns {string[]}
+ */
 function walk(dir) {
+  /** @type {string[]} */
   const files = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const abs = path.join(dir, entry.name);

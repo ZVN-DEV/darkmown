@@ -7,5 +7,10 @@ dist/
 .vercel
 /*.png
 
+# Playwright e2e artifacts (browser binaries live in node_modules / OS cache)
+test-results/
+playwright-report/
+/playwright/.cache
+
 # Local agent worktrees & session state
 .claude/

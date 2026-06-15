@@ -133,3 +133,161 @@ a
   display block
   color $accent
   font-size .9rem
+
+/* ── vs-Markdoc comparison ───────────────────────────────────────── */
+
+.versus
+  display grid
+  grid-template-columns 1fr 1fr
+  gap 1.25rem
+  align-items start
+  margin 2.5rem 0 1rem
+
+.vs-card
+  border 1px solid $line
+  radius $radius
+  bg $panel
+  padding 1.25rem 1.25rem 1.1rem
+  display flex
+  flex-direction column
+  min-width 0
+
+.vs-card.vs-dark
+  bg #fbf7ef
+  border 1px solid #e3d8c4
+  box-shadow 0 1px 0 #efe7d6
+
+.vs-head
+  display flex
+  align-items baseline
+  justify-content space-between
+  gap .75rem
+  margin-bottom .85rem
+
+.vs-tag
+  font-family ui-monospace, SFMono-Regular, Menlo, monospace
+  font-size .72rem
+  font-weight 700
+  text-transform uppercase
+  letter-spacing .08em
+  padding .25rem .55rem
+  radius 999px
+
+.vs-tag-wd
+  color white
+  bg $accent
+
+.vs-tag-md
+  color $muted
+  bg #efece3
+  border 1px solid $line
+
+.vs-sub
+  font-family ui-monospace, SFMono-Regular, Menlo, monospace
+  font-size .82rem
+  color $muted
+
+.vs-card pre
+  margin .25rem 0 0
+  font-size .82rem
+  line-height 1.55
+
+.vs-live-label
+  margin 1rem 0 .35rem
+  font-size .88rem
+  color $muted
+  font-style italic
+
+.vs-live
+  border 1px dashed #cdbfa6
+  radius $radius
+  bg #fffdf8
+  padding 1rem 1.1rem .85rem
+  margin .15rem 0 0
+
+.vs-live input[data-wd-bind-input]
+  width 100%
+  box-sizing border-box
+  font inherit
+  font-size .95rem
+  padding .55rem .7rem
+  border 1px solid $line
+  radius 6px
+  bg white
+  margin 0 0 .75rem
+
+.vs-live .product
+  display flex
+  align-items center
+  justify-content space-between
+  gap .75rem
+  padding .5rem .7rem
+  margin .35rem 0
+  bg $panel
+  border 1px solid $line
+  radius 6px
+  font-size .95rem
+
+.vs-live .product p
+  margin 0
+
+.vs-live .product button
+  border 0
+  bg $accent
+  color white
+  font inherit
+  font-size .82rem
+  padding .35rem .7rem
+  radius 6px
+  cursor pointer
+  flex-shrink 0
+
+.vs-live .product button:hover
+  bg #11514a
+
+.vs-live > p:last-of-type
+  margin .85rem 0 0
+  font-size .95rem
+
+.vs-needs
+  margin 1rem 0 0
+  padding 1rem 1.1rem
+  border-left 3px solid $warm
+  bg #fcf4ef
+  radius 6px
+
+.vs-needs strong
+  color $warm
+  font-size .92rem
+
+.vs-needs pre
+  margin .7rem 0 .6rem
+  font-size .78rem
+
+.vs-needs-foot
+  display block
+  font-size .85rem
+  color $muted
+
+.vs-caption
+  margin auto 0 0
+  padding-top 1rem
+  font-style italic
+  color $ink
+  font-size .95rem
+
+.vs-card.vs-dark .vs-caption
+  color $accent
+
+/* Secondary value-prop row, demoted below the comparison */
+
+.props
+  margin 1.5rem 0 0
+
+.props h2
+  margin-top 1.5rem
+
+@media (max-width: 720px)
+  .versus
+    grid-template-columns 1fr
+    gap 1rem

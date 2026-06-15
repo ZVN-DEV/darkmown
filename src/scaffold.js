@@ -5,6 +5,11 @@ const darkmownVersion = JSON.parse(
   fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version;
 
+/**
+ * Scaffold a new Darkmown project into `root`, creating files that don't exist.
+ * @param {string} root Absolute path to the target project directory.
+ * @returns {{ root: string }}
+ */
 export function initProject(root) {
   fs.mkdirSync(root, { recursive: true });
   writeNew(root, "package.json", JSON.stringify({
@@ -128,6 +133,13 @@ export function initProject(root) {
   return { root };
 }
 
+/**
+ * Write a file relative to `root` only if it does not already exist.
+ * @param {string} root Project root directory.
+ * @param {string} file Path relative to `root`.
+ * @param {string} content File contents (a trailing newline is added).
+ * @returns {void}
+ */
 function writeNew(root, file, content) {
   const target = path.join(root, file);
   if (fs.existsSync(target)) return;
