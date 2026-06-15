@@ -19,7 +19,7 @@ There is no build step for the framework itself — `src/` is plain ESM JavaScri
 - `src/compiler.js` — the heart: directive parsing, markdown-it integration, interpolation, scopes
 - `src/runtime.js` — the browser runtime (keyed loops, bindings, fetch, forms). **Budget: < 5 KB gzipped**, enforced in CI
 - `src/skin.js` — `.skin` → CSS
-- `src/router.js` / `src/builder.js` / `src/server.js` / `src/cli.js` / `src/dev.js` / `src/scaffold.js` — routing, build, static serving, CLI, dev reload, `init`
+- `src/router.js` / `src/builder.js` / `src/statics.js` / `src/cli.js` / `src/dev.js` / `src/scaffold.js` — routing, build, static serving, CLI, dev reload, `init`
 - `site/` — the demo site (also the dogfood: every feature must be demonstrated here)
 - `tests/` — `node --test` suites; behavioral tests preferred
 
