@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "removeComments": false,
+    "outDir": "types"
+  },
+  "include": [
+    "src/builder.js",
+    "src/compiler.js",
+    "src/router.js",
+    "src/skin.js",
+    "src/scaffold.js",
+    "src/config.js",
+    "src/statics.js",
+    "src/dev.js"
+  ]
+}

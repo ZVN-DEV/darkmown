@@ -8,11 +8,29 @@ const aliases = new Map([
 // `font` is aliased to font-family for the common `font <stack>` case, but the
 // real CSS `font` shorthand (`font 16px/1.4 system-ui`) must pass through. If
 // the value looks like a shorthand (leads with a size or contains `/`), keep it.
+/**
+ * @param {string} prop
+ * @param {string[]} rest
+ * @returns {string}
+ */
 function resolveProp(prop, rest) {
   if (prop === "font" && (/^[\d.]/.test(rest[0] || "") || rest.join(" ").includes("/"))) return "font";
   return aliases.get(prop) || prop;
 }
 
+/**
+ * A nesting frame in the indentation stack.
+ * @typedef {object} SkinFrame
+ * @property {number} indent
+ * @property {string | null} selector
+ * @property {string} [media]
+ */
+
+/**
+ * Compile indentation-based `.skin` source into CSS.
+ * @param {string} source
+ * @returns {string}
+ */
 export function compileSkin(source) {
   const lines = source
     .replace(/\r\n?/g, "\n")
@@ -26,11 +44,15 @@ export function compileSkin(source) {
       // digit is real content; punctuation-only lines are skipped.
       return /[A-Za-z0-9]/.test(t);
     })
-    .map((raw) => ({ indent: raw.match(/^\s*/)[0].length, text: raw.trim() }));
+    .map((raw) => ({ indent: (raw.match(/^\s*/)?.[0] ?? "").length, text: raw.trim() }));
 
+  /** @type {SkinFrame[]} */
   const stack = [];
+  /** @type {string[]} */
   const css = [];
+  /** @type {number | null} */
   let tokenIndent = null;
+  /** @type {string[]} */
   const rootVars = [];
 
   for (let i = 0; i < lines.length; i++) {
@@ -51,7 +73,7 @@ export function compileSkin(source) {
     }
 
     if (tokenIndent !== null && indent <= tokenIndent) tokenIndent = null;
-    while (stack.length && stack.at(-1).indent >= indent) stack.pop();
+    while (stack.length && (stack.at(-1)?.indent ?? -1) >= indent) stack.pop();
 
     if (opensBlock) {
       const parent = stack.at(-1)?.selector;
@@ -78,12 +100,18 @@ export function compileSkin(source) {
   return css.join("\n");
 }
 
+/**
+ * Combine a selector with its parent (handles `&` nesting and comma lists).
+ * @param {string} text
+ * @param {string | null | undefined} parent
+ * @returns {string}
+ */
 function normalizeSelector(text, parent) {
   const selector = text === "page" ? "body" : text;
   if (!parent || parent === ":root") return selector;
   return selector
     .split(",")
-    .map((part) => {
+    .map((/** @type {string} */ part) => {
       const clean = part.trim();
       return clean.startsWith("&") ? clean.replace("&", parent) : `${parent} ${clean}`;
     })

@@ -209,6 +209,8 @@ Loading…
 
 Reactive pages expose `window.wd` — `wd.get(key)`, `wd.set(key, value)`, `wd.state`, `wd.render()` — so colocated `.js` can do anything the directives can't. Section-scoped keys are addressed as `sectionId:name`.
 
+Set `window.wd.debug = true` (it defaults to `false`) to log any `:computed` or `@loop … where` expression that fails to evaluate to the console — useful while authoring reactive pages.
+
 ## Editor support
 
 A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown. Install it from source by building a `.vsix`: `cd editors/vscode && npx @vscode/vsce package`, then `code --install-extension darkmown-*.vsix`. A Marketplace listing is coming soon.

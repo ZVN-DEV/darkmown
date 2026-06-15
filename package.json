@@ -10,13 +10,18 @@
   "bin": {
     "darkmown": "./src/cli.js"
   },
+  "types": "./types/index.d.ts",
   "scripts": {
     "build": "node src/cli.js build",
     "dev": "node src/cli.js dev",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "typecheck": "tsc --noEmit",
+    "types": "tsc -p tsconfig.types.json",
+    "prepublishOnly": "npm test"
   },
   "files": [
     "src",
+    "types",
     "site",
     "docs",
     "AGENTS.md",
@@ -47,5 +52,10 @@
     "zero-js",
     "reactive"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.19.21",
+    "typescript": "^5.9.3"
+  }
 }
