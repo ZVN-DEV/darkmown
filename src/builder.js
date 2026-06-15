@@ -66,13 +66,33 @@ export function buildSite(cwd = process.cwd()) {
 }
 
 /**
+ * Strip JSDoc `/** ... *\/` blocks from the runtime before it ships.
+ * The source keeps full type annotations (for `checkJs` + `.d.ts`), but the
+ * browser never needs to download them — this keeps the shipped runtime lean
+ * and the gzip budget honest (measured against what users actually receive).
+ * Only `/** ... *\/` blocks are removed; code and string literals are untouched.
+ * @param {string} source
+ * @returns {string}
+ */
+export function stripRuntimeComments(source) {
+  return source
+    // Remove the JSDoc block text only — never the surrounding newlines, so an
+    // inline `/** @type {x} */ code` keeps its line and never glues onto a
+    // preceding `//` comment.
+    .replace(/\/\*\*[\s\S]*?\*\//g, "")
+    // Drop the now blank/whitespace-only lines the removed blocks leave behind.
+    .replace(/^[ \t]*\n/gm, "");
+}
+
+/**
  * @param {Paths} paths
  * @returns {void}
  */
 function emitRuntime(paths) {
   const out = path.join(paths.distRoot, "__wd/runtime.js");
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.copyFileSync(path.join(moduleDir, "runtime.js"), out);
+  const source = fs.readFileSync(path.join(moduleDir, "runtime.js"), "utf8");
+  fs.writeFileSync(out, stripRuntimeComments(source));
 }
 
 /**

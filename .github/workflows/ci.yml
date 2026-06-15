@@ -89,10 +89,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: runtime.js must stay under 5KB gzipped
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: shipped runtime must stay under 5KB gzipped
         run: |
-          size=$(gzip -c src/runtime.js | wc -c)
-          echo "runtime.js gzipped: ${size} bytes (budget: 5120)"
+          size=$(gzip -c dist/__wd/runtime.js | wc -c)
+          echo "shipped runtime gzipped: ${size} bytes (budget: 5120)"
           test "$size" -lt 5120
 
   audit:

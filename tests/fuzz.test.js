@@ -67,16 +67,11 @@ function makeRng(seed) {
 
 const UNICODE_BITS = ["é", "你", "🙂", "​", "\t", "  ", "—", "ß", "क", "\\", "<x>", "&amp;"];
 const IDENTS = ["count", "items", "user", "cart", "x", "_y", "name", "total", "undeclared", "meta", "tag", "n"];
-// KNOWN BUG (reported, not fixed — src/ owned by another agent):
-// Interpolating an object/array-valued path as a bare leaf — e.g. `{ meta }` (the
-// frontmatter object) or `{ someListState }` (a `[...]`-valued :state) — stringifies
-// to the literal "[object Object]" in the output instead of erroring or rendering
-// nothing. Repro: a .wd page containing the single line `- { meta }` →
-//   "<ul>\n<li>[object Object]</li>\n</ul>\n"
-// The fix belongs in the interpolation resolver (treat a non-primitive leaf as an
-// error or empty). To keep the strict "[object Object]" invariant LIVE for every
-// other path, bare `{ ident }` interpolation draws only from names the generator
-// never binds to an object/array value.
+// Interpolating an object-valued path as a bare leaf — e.g. `{ meta }` — now throws
+// an actionable compile error (fixed in the interpolation resolver) instead of
+// emitting the literal "[object Object]". Arrays render as a ", "-joined list. The
+// fuzzer interpolates object-bound names freely: the invariant (string result OR a
+// path-tagged Error, never "[object Object]") holds either way.
 const SCALAR_LEAF_IDENTS = ["count", "x", "_y", "name", "total", "undeclared", "tag", "n"];
 const OBJECT_IDENTS = ["items", "cart", "user", "meta"]; // generator may bind these to arrays/objects
 const SCALAR_VALUES = ["0", "1", "42", "-3", "3.14", '"hi"', "true", "false", "null", "abc", ""];
@@ -97,7 +92,7 @@ function randLine(rng) {
     case 2: return `@loop ${id} into ${rng.pick(IDENTS)}`;
     case 3: return `@endloop`;
     case 4: return `@loop ${id} into ${rng.pick(IDENTS)} where ${randWhere(rng)}`;
-    case 5: return `- { ${rng.pick(SCALAR_LEAF_IDENTS)} }`;
+    case 5: return `- { ${rng.pick(IDENTS)} }`;
     case 6: return `{ ${rng.pick(OBJECT_IDENTS)}.${rng.pick(IDENTS)} }`;
     case 7: return `:if ${id}`;
     case 8: return `:else`;
@@ -194,27 +189,15 @@ function assertSafeHtml(html, repro, requireNonEmpty) {
   if (requireNonEmpty) assert.ok(html.length > 0, repro("HTML shell output was empty"));
 }
 
-// KNOWN BUG (reported, not fixed — src/ owned by another agent):
-// Two `:button` action errors in parseAction() omit the file path, violating the
-// CLAUDE.md invariant "Compile errors include file path + corrective suggestion".
-//   src/compiler.js:1014  `Unsupported button action "<raw>". += with non-number ...`
-//   src/compiler.js:1032  `Unsupported button action "<raw>". Supported actions: ...`
-// Minimal repro: a .wd page with  :button "X" -> badAction()
-// The fix is to append ` in ${ctx.file}` (and a corrective hint) like every sibling
-// throw in parseAction does. Until the src owner patches it, we allow ONLY these two
-// exact message shapes so the suite stays green without masking other path omissions.
-const KNOWN_PATHLESS_ERRORS = [
-  /^Unsupported button action ".*"\. Supported actions:/,
-  /^Unsupported button action ".*"\. \+= with non-number values requires a list state target\.$/
-];
-
+// Every compiler error must reference the offending file (CLAUDE.md invariant
+// "Compile errors include file path + corrective suggestion"). The two `:button`
+// action errors that previously omitted it are fixed in src/compiler.js, so this
+// is now enforced with no exceptions.
 function assertErrorNamesFile(err, file, repro) {
   assert.ok(err instanceof Error, repro(`threw a non-Error: ${String(err)}`));
   assert.ok(typeof err.message === "string" && err.message.length > 0, repro("Error had no message"));
-  if (KNOWN_PATHLESS_ERRORS.some((re) => re.test(err.message))) return;
-  // The vast majority of compiler errors must include the file path. Include-cycle /
-  // traversal errors use basenames. Accept either the full path or the basename so the
-  // invariant stays meaningful without being brittle.
+  // Include-cycle / traversal errors use basenames. Accept either the full path or
+  // the basename so the invariant stays meaningful without being brittle.
   const base = path.basename(file);
   assert.ok(
     err.message.includes(file) || err.message.includes(base),

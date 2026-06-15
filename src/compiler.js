@@ -1306,8 +1306,7 @@ function resolveBindingHtml(expr, ctx) {
   const staticValue = lookupVar(ctx.scope, head);
   if (staticValue.found) {
     const resolved = getPath(staticValue.value, segs.slice(1));
-    if (Array.isArray(resolved)) return escapeHtml(resolved.join(", "));
-    return escapeHtml(resolved ?? "");
+    return escapeHtml(interpolateLeaf(resolved, expr, ctx));
   }
 
   const key = resolveStateKey(head, ctx);
@@ -1316,10 +1315,28 @@ function resolveBindingHtml(expr, ctx) {
     const initial = getPath(ctx.comp.state.get(key), segs.slice(1));
     const rest = segs.slice(1).join(".");
     const pathAttr = rest ? ` data-wd-path="${escapeHtml(rest)}"` : "";
-    return `<span data-wd-bind="${key}"${pathAttr}>${escapeHtml(initial ?? "")}</span>`;
+    return `<span data-wd-bind="${key}"${pathAttr}>${escapeHtml(interpolateLeaf(initial, expr, ctx))}</span>`;
   }
 
   return null;
+}
+
+/**
+ * Render an interpolated value as text. Arrays join with ", " (matching the
+ * documented `{ meta.tags }` behavior); a bare object is a mistake — fail
+ * loudly with a fix rather than emitting "[object Object]".
+ * @param {unknown} value
+ * @param {string} expr
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function interpolateLeaf(value, expr, ctx) {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "object") {
+    throw new Error(`Cannot interpolate the object value "{ ${expr} }" in ${ctx.file}. Interpolate a field instead — e.g. { ${expr}.title } — or iterate it with @loop ${expr} into item.`);
+  }
+  return String(value);
 }
 
 /**
@@ -1430,7 +1447,7 @@ function parseAction(raw, ctx) {
     const value = parseActionLiteral(rhs);
     if (Array.isArray(ctx.comp.state.get(target))) return { op: "append", target, value };
     if (typeof value === "number") return { op: "add", target, value };
-    throw new Error(`Unsupported button action "${raw}". += with non-number values requires a list state target.`);
+    throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. += with non-number values requires a list state target — declare it "${add[1]} = []".`);
   }
   // Per-row: remove the current row from the list being looped — `todos remove todo`.
   const remove = expression.match(/^([A-Za-z_$][\w$]*)\s+remove\s+([A-Za-z_$][\w$]*)$/);
@@ -1448,7 +1465,7 @@ function parseAction(raw, ctx) {
   }
   const assign = expression.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
   if (assign) return { op: "set", target: resolveTarget(assign[1]), value: parseActionLiteral(assign[2]) };
-  throw new Error(`Unsupported button action "${raw}". Supported actions: count++, count--, count += 1, items += "value", name = "value", list remove item (in a loop), cart += item (in a loop).`);
+  throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. Supported actions: count++, count--, count += 1, items += "value", name = "value", list remove item (in a loop), cart += item (in a loop).`);
 }
 
 /**

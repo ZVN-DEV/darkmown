@@ -131,7 +131,7 @@ tags: [sales, revenue, "q1, q2"]
 
 ## Reactive directives
 
-Reactive pages opt into `/__wd/runtime.js` (~3.1 KB gzipped, under a CI-enforced 5 KB budget). Static pages do not.
+Reactive pages opt into `/__wd/runtime.js` (~3.2 KB gzipped, under a CI-enforced 5 KB budget). Static pages do not.
 
 ```wd
 :state count = 0
