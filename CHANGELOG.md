@@ -2,6 +2,17 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.8.2 — 2026-06-14
+
+Honesty, hardening, and polish pass — every claim in the docs is now backed by shipped code.
+
+- **Security:** new per-page `html: false` frontmatter opt-out routes that page's Markdown through a strict renderer that escapes raw HTML — the mitigation for compiling untrusted/user-submitted content (default stays `html: true` for trusted authors). README and SECURITY.md now warn prominently that untrusted Markdown must be sanitized. `escapeHtml` also escapes single quotes.
+- **Runtime:** state changes now batch into a single render per tick (`requestAnimationFrame`, falling back to a microtask), so rapid `:bind` input no longer re-runs the reconciler on every keystroke; the final state always renders and the public `wd.render()` stays synchronous. Opt-in `window.wd.debug` surfaces warnings for failed `:computed` / `where` expressions that were previously silent.
+- **Tests:** first runtime/DOM test suite — keyed loop reconcile (node reuse on add/remove/reorder), `getPath` prototype-pollution rejection, loop-key collisions, and render batching — loading the real runtime via `node:vm`, no new dependencies. Suite grew 83 → 98.
+- **Compiler:** unterminated frontmatter now throws an actionable error with the file path instead of silently swallowing the page; empty `---`/`---` blocks parse cleanly.
+- **Docs & claims:** view transitions are now correctly described as parked/disabled (they were advertised but hardcoded off); the "no eval" wording is corrected (`:computed` and `where` compile to a whitelisted grammar run via `new Function`, never raw user content); runtime size corrected to the true ~3.1 KB gzipped across all surfaces; `:note`/`:try`/`:sprint` documented as demo-only; `docs/cli.md` scaffold output synced; VS Code install instructions corrected (build from source; Marketplace listing pending).
+- **Site & tooling:** landing-page whitespace fixed (removed the forced `60vh` hero band); mobile nav no longer overflows; tagline locked to "Markdown that runs."; regenerated `package-lock.json` identity (`@zvndev/darkmown`).
+
 ## 0.8.1 — 2026-06-14
 
 - Fix: a quoted array item that follows `, ` no longer keeps a leading space — `tags: [a, "b, c"]` parses to `["a", "b, c"]`, not `["a", " b, c"]`.
@@ -33,7 +44,7 @@ All notable changes to Darkmown are documented here. Versions follow [semver](ht
 - **Nested `:if` over loop items.** Conditionals inside a reactive `@loop` now nest — an inner `:if` resolves after the outer branch, per row, both at build time (balanced-region pre-render) and at runtime (recursive fill). Previously the compiler threw "not supported yet"; the loop-template fill no longer relies on a non-greedy regex that broke on nesting.
 - **VS Code extension** (`editors/vscode`): syntax highlighting, snippets, and folding for `.wd` and `.skin` files. Grammars are tested through the real VS Code tokenizer (vscode-textmate) in CI.
 - New `/app/` demo — a whole live app in one `.wd` file: static build-time loop, fetched data looped with nested conditionals, a persistent counter with a computed milestone, and a form that round-trips to a real server. It is the framework's elevator pitch as a single page.
-- Site: landing page repositioned around the core wedge ("Markdown that runs" — full reactive websites in plain Markdown). `description`/Open Graph/Twitter meta tags now emit from frontmatter. Runtime-size claims corrected to the true ~2 KB; mobile nav wraps instead of overflowing.
+- Site: landing page repositioned around the core wedge ("Markdown that runs" — full reactive websites in plain Markdown). `description`/Open Graph/Twitter meta tags now emit from frontmatter.
 
 ## 0.4.0 — 2026-06-11
 
@@ -57,7 +68,7 @@ All notable changes to Darkmown are documented here. Versions follow [semver](ht
 - `:if item.path` inside reactive loops (per-row branches).
 - `window.wd` escape hatch for colocated `.js`.
 - `::: section` containers with scoped state; keyed loop reconciliation.
-- View transitions via `transitions: true` frontmatter.
+- View transitions via `transitions: true` frontmatter. **(Disabled since: cross-document `@view-transition` render-blocked deployed pages, hanging navigation. `transitions` is currently hardcoded off in `src/compiler.js`; reintroduction is tracked pending proper activation fallbacks.)**
 - Real CommonMark parsing (markdown-it); strict `.md` (directives stay plain text).
 - `@loop … into … @endloop` — the one loop, replacing `@repeat` and `:for`.
 - Dev server rebuilds in a child process (always-fresh modules).

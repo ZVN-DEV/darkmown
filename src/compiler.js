@@ -5,6 +5,20 @@ import MarkdownIt from "markdown-it";
 const md = new MarkdownIt({ html: true });
 md.use(bindingPlugin);
 
+// Raw HTML in markdown passes through by default (a documented design choice).
+// Pages can opt out with frontmatter `html: false` for untrusted content; the
+// stricter instance is built lazily so the default path stays a single instance.
+let mdNoHtml = null;
+function selectMd(meta) {
+  // Frontmatter scalars stay strings (no coercion), so accept both forms.
+  if (meta?.html !== false && meta?.html !== "false") return md;
+  if (!mdNoHtml) {
+    mdNoHtml = new MarkdownIt({ html: false });
+    mdNoHtml.use(bindingPlugin);
+  }
+  return mdNoHtml;
+}
+
 const pageIncludeExtensions = [".md", ".wd"];
 
 export function compilePage(file, context) {
@@ -74,24 +88,27 @@ function compileFile(file, context, stack, scope, comp, sections, loopItem) {
   }
 
   const raw = fs.readFileSync(file, "utf8");
-  const { meta, body } = parseFrontmatter(raw);
+  const { meta, body } = parseFrontmatter(raw, file);
   collectColocatedAssets(file, context, comp.assets);
 
   if (path.extname(file) === ".md") {
     scanMarkdownHints(body, file, comp);
-    return { meta, html: md.render(body, {}) };
+    return { meta, html: selectMd(meta).render(body, {}) };
   }
 
   // Expose this file's frontmatter to the body under `meta` so `{ meta.title }`,
   // `{ meta.tags }`, and `@loop meta.tags into tag` resolve as static values.
-  const ctx = { file, context, stack: [...stack, real], scope: createScope(scope, { meta }), comp, sections, loopItem };
+  const ctx = { file, context, stack: [...stack, real], scope: createScope(scope, { meta }), comp, sections, loopItem, md: selectMd(meta) };
   return { meta, html: compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx) };
 }
 
-export function parseFrontmatter(raw) {
+export function parseFrontmatter(raw, file) {
   if (!raw.startsWith("---\n")) return { meta: {}, body: raw };
-  const end = raw.indexOf("\n---", 4);
-  if (end === -1) return { meta: {}, body: raw };
+  const end = raw.indexOf("\n---", 3);
+  if (end === -1) {
+    const where = file ? ` in ${file}` : "";
+    throw new Error(`Unterminated frontmatter${where}: opening "---" has no closing "---". Use: --- on its own line to open and another --- to close, then the page body.`);
+  }
   const front = raw.slice(4, end).trim();
   const body = raw.slice(end + 4).replace(/^\n/, "");
   const meta = {};
@@ -462,6 +479,7 @@ function handleComputed(line, ctx) {
     const read = (key, path) => getPath(ctx.comp.state.get(key), path ? path.split(".") : []);
     initial = new Function("S", `return (${expr});`)(read);
   } catch {
+    console.warn(`:computed "${match[2].trim()}" in ${ctx.file} could not be evaluated at build time; falling back to null. Check the expression.`);
     initial = null;
   }
   const key = declareState(match[1], initial ?? null, ctx);
@@ -731,6 +749,7 @@ function evalPredicate(body, item, ctx) {
     const S = (k, r) => getPath(ctx.comp.state.get(k), r ? r.split(".") : []);
     return Boolean(new Function("I", "S", "C", `return (${body});`)(I, S, containsHelper));
   } catch {
+    console.warn(`@loop where predicate "${body}" in ${ctx.file} could not be evaluated at build time; treating the row as excluded. Check the condition.`);
     return false;
   }
 }
@@ -878,7 +897,7 @@ function renderDemoDirective(line) {
 // ---------------------------------------------------------------------------
 
 function renderProse(text, ctx) {
-  return md.render(text, { resolveBinding: (expr) => resolveBindingHtml(expr, ctx) });
+  return (ctx.md ?? md).render(text, { resolveBinding: (expr) => resolveBindingHtml(expr, ctx) });
 }
 
 function bindingPlugin(mdInstance) {
@@ -1141,5 +1160,6 @@ export function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }

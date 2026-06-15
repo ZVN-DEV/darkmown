@@ -31,18 +31,15 @@ Count: { count }
 
 ## Install
 
-From the Marketplace (search "Darkmown"), or install the packaged `.vsix`:
-
-```sh
-code --install-extension darkmown-0.1.0.vsix
-```
-
-## Building from source
+Build the extension from source and install the packaged `.vsix`:
 
 ```sh
 cd editors/vscode
 npx @vscode/vsce package
+code --install-extension darkmown-*.vsix
 ```
+
+A Marketplace listing is coming soon; it is not published yet.
 
 ## License
 
