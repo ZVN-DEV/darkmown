@@ -18,7 +18,7 @@ Not just pages — **full websites**. Routing, state, server calls, embeds, and 
 <a class="btn" href="/docs/">Read the docs</a>
 </section>
 
-:note "Static pages ship zero JavaScript. The moment a page asks for reactivity, one ~2 KB runtime loads — never before. JS optional, CSS optional, always."
+:note "Static pages ship zero JavaScript. The moment a page asks for reactivity, one ~3.1 KB runtime loads — never before. JS optional, CSS optional, always."
 
 ## A whole framework, in text
 

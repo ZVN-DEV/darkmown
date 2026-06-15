@@ -6,3 +6,6 @@ dist/
 .playwright-mcp/
 .vercel
 /*.png
+
+# Local agent worktrees & session state
+.claude/

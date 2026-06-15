@@ -104,7 +104,7 @@ function compileFile(file, context, stack, scope, comp, sections, loopItem) {
 
 export function parseFrontmatter(raw, file) {
   if (!raw.startsWith("---\n")) return { meta: {}, body: raw };
-  const end = raw.indexOf("\n---", 4);
+  const end = raw.indexOf("\n---", 3);
   if (end === -1) {
     const where = file ? ` in ${file}` : "";
     throw new Error(`Unterminated frontmatter${where}: opening "---" has no closing "---". Use: --- on its own line to open and another --- to close, then the page body.`);
