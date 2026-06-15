@@ -83,6 +83,48 @@ test("@loop over a frontmatter array unrolls at build time and stays static", ()
   assert.doesNotMatch(page.html, /data-wd-loop/);
 });
 
+// ---------------------------------------------------------------------------
+// Malformed frontmatter: opened-but-unclosed throws; no-frontmatter is fine
+// ---------------------------------------------------------------------------
+
+test("an opened-but-unclosed frontmatter block throws an actionable error", () => {
+  assert.throws(
+    () => parseFrontmatter("---\ntitle: Oops\nbody with no closing fence"),
+    /Unterminated frontmatter[\s\S]*Use:/
+  );
+});
+
+test("the unterminated-frontmatter error names the file when given one", () => {
+  assert.throws(
+    () => parseFrontmatter("---\ntitle: Oops\nno close", "/site/pages/index.wd"),
+    /\/site\/pages\/index\.wd/
+  );
+});
+
+test("a file with no frontmatter at all is left untouched (no error)", () => {
+  const raw = "Just a plain body, no leading fence.";
+  assert.deepEqual(parseFrontmatter(raw), { meta: {}, body: raw });
+});
+
+// ---------------------------------------------------------------------------
+// html passthrough opt-out: default passes raw HTML, `html: false` strips it
+// ---------------------------------------------------------------------------
+
+test("raw HTML in a .md body passes through by default", () => {
+  const root = fixture();
+  write(root, "site/pages/index.md", '<div class="raw">hi</div>\n');
+  const page = compilePage(path.join(root, "site/pages/index.md"), createPaths(root));
+  assert.match(page.html, /<div class="raw">hi<\/div>/);
+});
+
+test("frontmatter html: false escapes raw HTML in a .md body", () => {
+  const root = fixture();
+  write(root, "site/pages/index.md", '---\nhtml: false\n---\n<div class="raw">hi</div>\n');
+  const page = compilePage(path.join(root, "site/pages/index.md"), createPaths(root));
+  assert.doesNotMatch(page.html, /<div class="raw">/);
+  assert.match(page.html, /&lt;div/);
+});
+
 function fixture() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "wd-frontmatter-"));
 }
