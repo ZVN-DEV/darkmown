@@ -2,6 +2,17 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.9.0 — 2026-06-15
+
+The "proof + full test pyramid" release: prove the moat on the homepage, test everything from unit to browser e2e, and pass a gold-standard open-source audit.
+
+- **Landing: the vs-Markdoc proof.** The homepage is now a side-by-side comparison — the real `.wd` source for a live search-filter + add-to-cart store rendered working on the page, next to the equivalent Markdoc (which has no native loop and needs a React component + hydration for interactivity). The homepage is now itself a reactive `.wd` app; `/markdown/` and `/docs/` stay static (zero JS) to prove the static path.
+- **Full test pyramid.** Unit + integration backfill (grammar whitelists, skin compiler, interpolation, router, every compile-error path), a zero-dependency CLI/pipeline e2e (`darkmown init` → build → serve → fetch → assert), real-browser e2e via Playwright (`npm run test:e2e`), and a seeded property/fuzz suite (5,000 cases/run) for the parser and expression validators. The zero-dep `npm test` suite grew from 98 to ~200 checks; coverage is ~96% lines, gated at 80% in CI.
+- **The fuzzer earned its keep:** it found two real bugs, now fixed — two `:button` action errors that omitted the file path, and bare object interpolation (`{ meta }`) emitting `[object Object]` instead of an actionable error. Arrays now join with `, ` consistently.
+- **Type safety.** Source stays plain JavaScript but is fully type-checked via JSDoc + `checkJs` (`npm run typecheck`, gated in CI), and ships `.d.ts` declarations. `typescript` is a dev-only dependency; the runtime stays zero-dependency.
+- **Lean shipped runtime.** JSDoc is stripped from the runtime on emit, so the browser still downloads ~3.2 KB gzipped even though the source carries full type annotations. The size budget now measures the shipped artifact.
+- **Gold-standard hardening (46.5/50 audit).** Release pack-smoke test before publish, `prepublishOnly` guard, `dependabot` (npm + GitHub Actions), CI `concurrency` cancellation, `.github/` PR + issue templates, `CODEOWNERS`, a short `CODE_OF_CONDUCT.md`, an exposed/documented `window.wd.debug`, and repo-root tidy-up.
+
 ## 0.8.2 — 2026-06-14
 
 Honesty, hardening, and polish pass — every claim in the docs is now backed by shipped code.
