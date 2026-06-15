@@ -1,6 +1,6 @@
 ---
-title: Darkmown — Markdown that runs
-description: Build full websites in plain Markdown. Routing, state, server calls, includes, and reactive islands — no JavaScript or CSS required. Your docs and your code are all just text.
+title: Darkmown — Markdown that runs, not Markdown that needs React
+description: A live store widget — search filter, add-to-cart, running total — written as one Markdown file that runs. The same outcome in Markdoc needs a React component, hydration, and a build step. Compare them side by side.
 ---
 
 @include /nav.wd
@@ -8,17 +8,105 @@ description: Build full websites in plain Markdown. Routing, state, server calls
 <main>
 
 <section class="hero">
-  <p class="eyebrow">The Markdown framework</p>
+  <p class="eyebrow">Darkmown vs. Markdoc</p>
 
-# Markdown that runs.
+# Markdown that runs. Not Markdown that needs React.
 
-Not just pages — **full websites**. Routing, state, server calls, embeds, and reactive islands, all from plain Markdown files. No JavaScript or CSS required. Your docs and your code are all just text.
+The left file is Markdown. It is also a running app — a live search filter, add-to-cart, and a running total. The right file is the closest Markdoc can get on its own: a static list. To make it do what the left one already does, you add a React component, hydration, and a build step.
 
 <a class="btn primary" href="/app/">See a whole app in one file</a>
 <a class="btn" href="/docs/">Read the docs</a>
 </section>
 
-:note "Static pages ship zero JavaScript. The moment a page asks for reactivity, one ~3.1 KB runtime loads — never before. JS optional, CSS optional, always."
+<section class="versus">
+
+::: div .vs-card .vs-dark
+<header class="vs-head"><span class="vs-tag vs-tag-wd">Darkmown</span><span class="vs-sub">store.wd</span></header>
+
+```wd
+:state products = [{"id":1,"name":"Aurora Lamp","price":49},{"id":2,"name":"Briza Fan","price":39},{"id":3,"name":"Cove Speaker","price":89},{"id":4,"name":"Dune Mug","price":12}]
+:state cart = []
+:state q = ""
+:computed count = cart.length
+
+:bind q placeholder="Search products…"
+
+@loop products into p where p.name contains q
+::: card .product
+**{ p.name }** — ${ p.price }
+:button "Add" -> cart += p
+:::
+@endloop
+
+Cart: { count } item(s)
+```
+
+<p class="vs-live-label">↓ and here is that exact file, running</p>
+
+::: div .vs-live
+:state products = [{"id":1,"name":"Aurora Lamp","price":49},{"id":2,"name":"Briza Fan","price":39},{"id":3,"name":"Cove Speaker","price":89},{"id":4,"name":"Dune Mug","price":12}]
+:state cart = []
+:state q = ""
+:computed count = cart.length
+
+:bind q placeholder="Search products…"
+
+@loop products into p where p.name contains q
+::: card .product
+**{ p.name }** — ${ p.price }
+:button "Add" -> cart += p
+:::
+@endloop
+
+Cart: **{ count }** item(s)
+:::
+
+<p class="vs-caption">This is the whole file. It runs.</p>
+:::
+
+::: div .vs-card
+<header class="vs-head"><span class="vs-tag vs-tag-md">Markdoc</span><span class="vs-sub">store.md</span></header>
+
+```text
+{% if $products %}
+- **Aurora Lamp** — $49
+- **Briza Fan** — $39
+- **Cove Speaker** — $89
+- **Dune Mug** — $12
+{% /if %}
+```
+
+<p class="vs-live-label">Markdoc has <code>{% if %}</code>, <code>{% partial %}</code>, and <code>$variables</code> — but no loop tag, so each row is written by hand and the list is static. To filter, add to a cart, or total it, you reach for code:</p>
+
+::: div .vs-needs
+<strong>+ store-widget.jsx</strong> — a React component, registered as a custom tag:
+
+```jsx
+const tags = { store: { render: 'Store' } };
+Markdoc.renderers.react(content, React, {
+  components: { Store } // your filter + cart + total live here
+});
+```
+
+<span class="vs-needs-foot">…plus a React + hydration runtime shipped to the browser, and the build step that wires the tag to the component.</span>
+:::
+
+<p class="vs-caption">Same outcome needs a React component.</p>
+:::
+
+</section>
+
+:note "Static pages ship zero JavaScript. The moment a page asks for reactivity — like this very homepage — one ~3.1 KB runtime loads, never before. JS optional, CSS optional, always."
+
+<section class="props">
+
+## Three rules, no escape hatch
+
+- **Zero-JS static.** A page with no state ships no framework JavaScript. `/markdown/` and `/docs/` prove it — open them and check the network tab.
+- **One runtime.** Every reactive page shares the same ~3.1 KB runtime. No per-component bundles, no hydration tax that scales with your UI.
+- **One loop, one binding.** `@loop … into …` is the only loop; `{ name }` is the only interpolation. Nothing else to learn, nothing else to misuse.
+
+</section>
 
 ## A whole framework, in text
 
@@ -78,3 +166,4 @@ Darkmown itself was built by a small agent team. The board below is a live `@loo
 @include /sprint-loop.wd
 
 </main>
+</content>
