@@ -29,7 +29,9 @@ if (command === "help" || command === "--help" || command === "-h") {
   const port = Number(process.env.PORT || 5173);
   const distRoot = path.join(process.cwd(), "dist");
   buildSite();
+  /** @type {Set<import("node:http").ServerResponse>} */
   const clients = new Set();
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
   let timer;
 
   // Rebuild in a child process so changes to Darkmown's own src/ always load
@@ -94,7 +96,7 @@ if (command === "help" || command === "--help" || command === "-h") {
       serveDev(distRoot, url, res);
     } catch (error) {
       res.writeHead(500, { "content-type": "text/plain" });
-      res.end(error.stack || String(error));
+      res.end((error instanceof Error && error.stack) || String(error));
     }
   });
   server.listen(port, () => {
@@ -117,6 +119,12 @@ if (command === "help" || command === "--help" || command === "-h") {
   process.exit(1);
 }
 
+/**
+ * @param {string} distRoot
+ * @param {string} url
+ * @param {import("node:http").ServerResponse} res
+ * @returns {void}
+ */
 function serveDev(distRoot, url, res) {
   const file = resolvePublicFile(distRoot, url);
   if (!file || !fs.existsSync(file)) {
@@ -132,6 +140,11 @@ function serveDev(distRoot, url, res) {
   fs.createReadStream(file).pipe(res);
 }
 
+/**
+ * @param {Set<import("node:http").ServerResponse>} clients
+ * @param {string} message
+ * @returns {void}
+ */
 function broadcast(clients, message) {
   for (const client of clients) client.write(message);
 }

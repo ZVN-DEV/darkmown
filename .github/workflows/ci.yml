@@ -38,6 +38,18 @@ jobs:
       # Zero-dep node:test coverage; fails if total line coverage drops below 80%.
       - run: npm run test:cov -- --test-coverage-lines=80
 
+  typecheck:
+    name: Type check (JSDoc + checkJs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
   e2e:
     name: Browser e2e (Playwright)
     runs-on: ubuntu-latest

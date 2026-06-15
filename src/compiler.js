@@ -2,13 +2,90 @@ import fs from "node:fs";
 import path from "node:path";
 import MarkdownIt from "markdown-it";
 
+/**
+ * @typedef {import("./config.js").Paths} Paths
+ */
+
+/**
+ * Frontmatter values are scalars or inline arrays of scalars.
+ * @typedef {string | number | boolean | null | Array<string | number | boolean | null>} FrontmatterValue
+ */
+
+/**
+ * Parsed page frontmatter, keyed by field name.
+ * @typedef {Record<string, FrontmatterValue>} Meta
+ */
+
+/**
+ * Collected output assets for a compiled document.
+ * @typedef {object} Assets
+ * @property {Set<string>} skins Public hrefs of compiled skin stylesheets.
+ * @property {Set<string>} scripts Public hrefs of colocated page scripts.
+ * @property {Map<string, string>} files Source path → public href for emitted assets.
+ * @property {boolean} runtime Whether the reactive runtime is required.
+ */
+
+/**
+ * Per-document compilation accumulator shared across includes/sections.
+ * @typedef {object} Compilation
+ * @property {Assets} assets
+ * @property {Map<string, unknown>} state Declared state keys → initial values.
+ * @property {string[]} warnings Non-fatal authoring hints.
+ * @property {number} sectionCounter Counter for auto-generated section ids.
+ */
+
+/**
+ * A lexical scope chain for static interpolation values (include args, loop vars).
+ * @typedef {object} Scope
+ * @property {Scope | null} parent
+ * @property {Record<string, unknown>} vars
+ */
+
+/**
+ * Per-file compile context threaded through the directive handlers.
+ * @typedef {object} Ctx
+ * @property {string} file Absolute path to the file being compiled.
+ * @property {Paths} context Resolved project paths.
+ * @property {string[]} stack Include stack (real paths) for cycle detection.
+ * @property {Scope} scope Static value scope chain.
+ * @property {Compilation} comp Shared compilation accumulator.
+ * @property {string[]} sections Active section-id scope chain.
+ * @property {string | null} loopItem Name of the current reactive loop item, if any.
+ * @property {string} [loopKey] State key of the list being looped, if any.
+ * @property {MarkdownIt} [md] Markdown-it instance selected for this file.
+ */
+
+/**
+ * A compiled page document.
+ * @typedef {object} CompiledDocument
+ * @property {Meta} meta
+ * @property {string} html
+ * @property {Assets} assets
+ * @property {string[]} warnings
+ */
+
+/**
+ * A compiled page: the document plus its full HTML shell.
+ * @typedef {object} CompiledPage
+ * @property {Meta} meta
+ * @property {string} html
+ * @property {Assets} assets
+ * @property {string[]} warnings
+ */
+
 const md = new MarkdownIt({ html: true });
 md.use(bindingPlugin);
 
 // Raw HTML in markdown passes through by default (a documented design choice).
 // Pages can opt out with frontmatter `html: false` for untrusted content; the
 // stricter instance is built lazily so the default path stays a single instance.
+/** @type {MarkdownIt | null} */
 let mdNoHtml = null;
+/**
+ * Pick the markdown-it instance for a page (raw HTML on by default, off with `html: false`).
+ * @param {Meta} [meta]
+ * @returns {MarkdownIt}
+ */
 function selectMd(meta) {
   // Frontmatter scalars stay strings (no coercion), so accept both forms.
   if (meta?.html !== false && meta?.html !== "false") return md;
@@ -21,6 +98,12 @@ function selectMd(meta) {
 
 const pageIncludeExtensions = [".md", ".wd"];
 
+/**
+ * Compile a page source file into a full HTML document plus its assets.
+ * @param {string} file Absolute path to the source `.md`/`.wd` file.
+ * @param {Paths} context Resolved project paths.
+ * @returns {CompiledPage}
+ */
 export function compilePage(file, context) {
   const compiled = compileDocument(file, context);
   const title = compiled.meta.title || "Darkmown";
@@ -62,12 +145,21 @@ ${scripts}
   };
 }
 
+/**
+ * Compile a source file into its body HTML, frontmatter, and assets (no page shell).
+ * @param {string} file Absolute path to the source file.
+ * @param {Paths} context Resolved project paths.
+ * @param {string[]} [stack] Include stack for cycle detection.
+ * @param {Record<string, unknown>} [vars] Initial static scope variables.
+ * @returns {CompiledDocument}
+ */
 export function compileDocument(file, context, stack = [], vars = {}) {
   const comp = createCompilation();
   const result = compileFile(file, context, stack, createScope(null, vars), comp, [], null);
   return { meta: result.meta, html: result.html, assets: comp.assets, warnings: comp.warnings };
 }
 
+/** @returns {Compilation} */
 function createCompilation() {
   return {
     assets: { skins: new Set(), scripts: new Set(), files: new Map(), runtime: false },
@@ -77,10 +169,26 @@ function createCompilation() {
   };
 }
 
+/**
+ * @param {Scope | null} parent
+ * @param {Record<string, unknown>} [vars]
+ * @returns {Scope}
+ */
 function createScope(parent, vars = {}) {
   return { parent, vars: { ...vars } };
 }
 
+/**
+ * Compile a single file: parse frontmatter, collect assets, render body.
+ * @param {string} file
+ * @param {Paths} context
+ * @param {string[]} stack
+ * @param {Scope} scope
+ * @param {Compilation} comp
+ * @param {string[]} sections
+ * @param {string | null} loopItem
+ * @returns {{ meta: Meta, html: string }}
+ */
 function compileFile(file, context, stack, scope, comp, sections, loopItem) {
   const real = fs.realpathSync(file);
   if (stack.includes(real)) {
@@ -98,10 +206,17 @@ function compileFile(file, context, stack, scope, comp, sections, loopItem) {
 
   // Expose this file's frontmatter to the body under `meta` so `{ meta.title }`,
   // `{ meta.tags }`, and `@loop meta.tags into tag` resolve as static values.
+  /** @type {Ctx} */
   const ctx = { file, context, stack: [...stack, real], scope: createScope(scope, { meta }), comp, sections, loopItem, md: selectMd(meta) };
   return { meta, html: compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx) };
 }
 
+/**
+ * Split a raw file into its frontmatter `meta` and `body`.
+ * @param {string} raw Full file contents.
+ * @param {string} [file] Source path, used only for error messages.
+ * @returns {{ meta: Meta, body: string }}
+ */
 export function parseFrontmatter(raw, file) {
   if (!raw.startsWith("---\n")) return { meta: {}, body: raw };
   const end = raw.indexOf("\n---", 3);
@@ -111,6 +226,7 @@ export function parseFrontmatter(raw, file) {
   }
   const front = raw.slice(4, end).trim();
   const body = raw.slice(end + 4).replace(/^\n/, "");
+  /** @type {Meta} */
   const meta = {};
   for (const line of front.split("\n")) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
@@ -122,15 +238,24 @@ export function parseFrontmatter(raw, file) {
 // Frontmatter values are scalars, except an inline flow array `[a, b, c]`.
 // Block sequences (`- item` on following lines) are intentionally out of scope —
 // the parser stays single-pass and line-based.
+/**
+ * @param {string} raw
+ * @returns {FrontmatterValue}
+ */
 function parseFrontmatterValue(raw) {
   const value = raw.trim();
   if (value.startsWith("[") && value.endsWith("]")) return parseInlineArray(value);
   return stripQuotes(value);
 }
 
+/**
+ * @param {string} raw
+ * @returns {string[]}
+ */
 function parseInlineArray(raw) {
   const inner = raw.slice(1, -1);
   if (inner.trim() === "") return [];
+  /** @type {string[]} */
   const items = [];
   let buf = "";
   let quote = null;
@@ -162,8 +287,16 @@ function parseInlineArray(raw) {
 // Block parser: directives + prose segments
 // ---------------------------------------------------------------------------
 
+/**
+ * Parse a `.wd` body line-by-line into HTML, mixing directives and prose.
+ * @param {string[]} lines
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function compileBody(lines, ctx) {
+  /** @type {string[]} */
   const out = [];
+  /** @type {string[]} */
   let prose = [];
   let fence = null;
 
@@ -280,7 +413,17 @@ function compileBody(lines, ctx) {
   return out.join("\n");
 }
 
+/**
+ * Capture lines from an opener until a matching close token, honoring nesting and fences.
+ * @param {string[]} lines
+ * @param {number} start Index of the opening line.
+ * @param {RegExp} openRe Pattern that re-opens a nested block.
+ * @param {string} endToken Literal closing token (e.g. `@endloop`).
+ * @param {string} file Source path for errors.
+ * @returns {{ body: string[], end: number }}
+ */
 function scanBlock(lines, start, openRe, endToken, file) {
+  /** @type {string[]} */
   const body = [];
   let depth = 0;
   let fence = null;
@@ -307,7 +450,15 @@ function scanBlock(lines, start, openRe, endToken, file) {
   throw new Error(`Missing ${endToken} for "${lines[start]}" in ${file}`);
 }
 
+/**
+ * Capture the body of a `:::` container up to its matching close, honoring nesting.
+ * @param {string[]} lines
+ * @param {number} start Index of the opening line.
+ * @param {string} file Source path for errors.
+ * @returns {{ body: string[], end: number }}
+ */
 function scanContainer(lines, start, file) {
+  /** @type {string[]} */
   const body = [];
   let depth = 0;
   let fence = null;
@@ -339,8 +490,17 @@ function scanContainer(lines, start, file) {
   throw new Error(`Missing closing ::: for "${lines[start]}" in ${file}`);
 }
 
+/**
+ * Split an `:if … :else … :endif` block into its two branches.
+ * @param {string[]} lines
+ * @param {number} start Index of the `:if` line.
+ * @param {string} file Source path for errors.
+ * @returns {{ truthy: string[], falsy: string[], end: number }}
+ */
 function scanConditional(lines, start, file) {
+  /** @type {string[]} */
   const truthy = [];
+  /** @type {string[]} */
   const falsy = [];
   let current = truthy;
   let depth = 0;
@@ -376,6 +536,11 @@ function scanConditional(lines, start, file) {
 // Directive handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleInclude(line, ctx) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
   if (!match) throw new Error(`Malformed @include in ${ctx.file}: ${line}`);
@@ -386,7 +551,13 @@ function handleInclude(line, ctx) {
   return child.html;
 }
 
+/**
+ * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {Record<string, unknown>}
+ */
 function parseIncludeArgs(raw, ctx) {
+  /** @type {Record<string, unknown>} */
   const args = {};
   const re = /([A-Za-z0-9_-]+)=("[^"]*"|'[^']*'|\{[^}]*\}|\S+)/g;
   for (const match of raw.matchAll(re)) {
@@ -405,12 +576,19 @@ function parseIncludeArgs(raw, ctx) {
   return args;
 }
 
+/**
+ * @param {string} header
+ * @param {string[]} bodyLines
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleContainer(header, bodyLines, ctx) {
   const tokens = header.split(/\s+/);
   let tag = "section";
+  /** @type {string[]} */
   let extraClass = [];
   let id = "";
-  let nameToken = tokens[0] && !tokens[0].startsWith("#") && !tokens[0].startsWith(".") ? tokens.shift() : "section";
+  let nameToken = tokens[0] && !tokens[0].startsWith("#") && !tokens[0].startsWith(".") ? tokens.shift() ?? "section" : "section";
   if (nameToken !== "section") {
     tag = "div";
     extraClass.push(nameToken);
@@ -435,6 +613,11 @@ function handleContainer(header, bodyLines, ctx) {
   return `<${tag}${idAttr}${classAttr}>\n${inner}\n</${tag}>`;
 }
 
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleState(line, ctx) {
   const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+persist)?$/);
   if (!match) throw new Error(`Malformed :state in ${ctx.file}: ${line}`);
@@ -444,6 +627,13 @@ function handleState(line, ctx) {
   return `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
 }
 
+/**
+ * Register a state key in the current section scope, enabling the runtime.
+ * @param {string} name
+ * @param {unknown} value
+ * @param {Ctx} ctx
+ * @returns {string} The fully-qualified state key.
+ */
 function declareState(name, value, ctx) {
   if (ctx.loopItem) throw new Error(`State cannot be declared inside a reactive @loop body (${ctx.file})`);
   const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${name}` : name;
@@ -453,6 +643,11 @@ function declareState(name, value, ctx) {
   return key;
 }
 
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleFetch(line, ctx) {
   const match = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+?)(\s+when=visible)?\s*$/);
   if (!match) {
@@ -465,17 +660,29 @@ function handleFetch(line, ctx) {
   return `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"${when}></span>`;
 }
 
+/**
+ * @param {string} key
+ * @param {Ctx} ctx
+ * @returns {void}
+ */
 function declareErrorState(key, ctx) {
   const errorKey = `${key}_error`;
   if (!ctx.comp.state.has(errorKey)) ctx.comp.state.set(errorKey, null);
 }
 
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleComputed(line, ctx) {
   const match = line.match(/^:computed\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
   if (!match) throw new Error(`Malformed :computed in ${ctx.file}: ${line}. Use: :computed total = items.length * 4`);
   const expr = compileComputedExpr(match[2].trim(), ctx);
+  /** @type {unknown} */
   let initial;
   try {
+    /** @param {string} key @param {string} [path] */
     const read = (key, path) => getPath(ctx.comp.state.get(key), path ? path.split(".") : []);
     initial = new Function("S", `return (${expr});`)(read);
   } catch {
@@ -486,7 +693,14 @@ function handleComputed(line, ctx) {
   return `<span data-wd-computed data-wd-computed-key="${key}" data-wd-computed-expr="${escapeHtml(expr)}"></span><script type="application/json" data-wd-state>${safeScriptJson({ [key]: initial ?? null })}</script>`;
 }
 
+/**
+ * Compile a `:computed` expression into safe JS over the `S(key, path)` reader.
+ * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function compileComputedExpr(raw, ctx) {
+  /** @type {string[]} */
   const strings = [];
   let expr = raw.replace(/"[^"\\]*"|'[^'\\]*'/g, (literal) => {
     strings.push(`"${literal.slice(1, -1)}"`);
@@ -520,6 +734,12 @@ function compileComputedExpr(raw, ctx) {
   return expr.replace(/__WDSTR(\d+)__/g, (_, index) => strings[Number(index)]);
 }
 
+/**
+ * @param {string} line
+ * @param {string[]} bodyLines
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleForm(line, bodyLines, ctx) {
   let rest = line.slice(":form".length).trim();
   const action = rest.match(/action="([^"]+)"/)?.[1];
@@ -545,6 +765,11 @@ function handleForm(line, bodyLines, ctx) {
   return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: null })}</script><form data-wd-form="${key}"${actionAttrs}>${inner}</form>`;
 }
 
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleInput(line, ctx) {
   const match = line.match(/^:input\s+([A-Za-z_][\w-]*)\s*(.*)$/);
   if (!match) throw new Error(`Malformed :input in ${ctx.file}: ${line}`);
@@ -575,6 +800,11 @@ function handleInput(line, ctx) {
 // :bind <state> [placeholder="…"] [type=…] — a live two-way input bound to a
 // declared :state. Updates state on every keystroke; reflects state back when
 // not focused. The state must be declared first (with :state).
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleBind(line, ctx) {
   const match = line.match(/^:bind\s+([A-Za-z_$][\w$]*)\s*(.*)$/);
   if (!match) throw new Error(`Malformed :bind in ${ctx.file}: ${line}. Use: :bind query placeholder="Search"`);
@@ -604,12 +834,22 @@ function handleBind(line, ctx) {
   return `<input type="${escapeHtml(type)}" data-wd-bind-input="${key}"${valueAttr} ${attrs.join(" ")}>`;
 }
 
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleSubmit(line, ctx) {
   const match = line.match(/^:submit\s+"([^"]+)"\s*$/);
   if (!match) throw new Error(`Malformed :submit in ${ctx.file}: ${line}. Use: :submit "Label"`);
   return `<button type="submit">${escapeHtml(match[1])}</button>`;
 }
 
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleButton(line, ctx) {
   const match = line.match(/^:button\s+"([^"]+)"\s*->\s*(.+)$/);
   if (!match) throw new Error(`Malformed :button in ${ctx.file}: ${line}`);
@@ -619,6 +859,13 @@ function handleButton(line, ctx) {
   return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${valueAttr}>${escapeHtml(match[1])}</button>`;
 }
 
+/**
+ * @param {string} line
+ * @param {string[]} truthyLines
+ * @param {string[]} falsyLines
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleIf(line, truthyLines, falsyLines, ctx) {
   const match = line.match(/^:if\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*$/);
   if (!match) throw new Error(`Malformed :if in ${ctx.file}: ${line}. Use ":if name" with a :state or in-scope value.`);
@@ -653,6 +900,12 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
   return `<div data-wd-if="${key}"${pathAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
 }
 
+/**
+ * @param {string} line
+ * @param {string[]} bodyLines
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function handleLoop(line, bodyLines, ctx) {
   const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(?:\s+where\s+(.+?))?\s*$/);
   if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. Use: @loop <things> into <thing> [where <predicate>]`);
@@ -688,6 +941,21 @@ function handleLoop(line, bodyLines, ctx) {
 // A static source (JSON file / in-scope value). No `where`, or a `where` that
 // only reads the loop item → filter at build time and stay zero-JS. A `where`
 // that reads :state → becomes a reactive filtered loop with the rows baked in.
+/**
+ * A compiled `@loop … where` predicate.
+ * @typedef {object} Predicate
+ * @property {string} body Safe JS boolean expression over `I()`/`S()`/`C()`.
+ * @property {boolean} refsState Whether the predicate reads declared state.
+ */
+
+/**
+ * @param {unknown[]} rows
+ * @param {string} itemName
+ * @param {string[]} bodyLines
+ * @param {Ctx} ctx
+ * @param {Predicate | null} where
+ * @returns {string}
+ */
 function loopOverData(rows, itemName, bodyLines, ctx, where) {
   if (!where) return staticUnroll(rows, itemName, bodyLines, ctx);
   if (!where.refsState) return staticUnroll(rows.filter((row) => evalPredicate(where.body, row, ctx)), itemName, bodyLines, ctx);
@@ -697,8 +965,15 @@ function loopOverData(rows, itemName, bodyLines, ctx, where) {
 // Compile a `where` predicate to a safe JS boolean expression over I()/S()/C().
 // Conditions (operand <op> operand) join with `and`/`or`; operands are loop-item
 // paths, declared :state, numbers, or strings. No identifiers survive un-mapped.
+/**
+ * @param {string} raw
+ * @param {string} itemName
+ * @param {Ctx} ctx
+ * @returns {Predicate}
+ */
 function compilePredicate(raw, itemName, ctx) {
   const parts = raw.split(/\s+(and|or)\s+/i);
+  /** @type {string[]} */
   const pieces = [];
   let refsState = false;
   for (let i = 0; i < parts.length; i++) {
@@ -710,6 +985,12 @@ function compilePredicate(raw, itemName, ctx) {
   return { body: pieces.join(" "), refsState };
 }
 
+/**
+ * @param {string} cond
+ * @param {string} itemName
+ * @param {Ctx} ctx
+ * @returns {{ expr: string, usesState: boolean }}
+ */
 function compileCondition(cond, itemName, ctx) {
   const m = cond.match(/^(.+?)\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
   if (!m) throw new Error(`Malformed where-condition "${cond}" in ${ctx.file}. Use: ${itemName}.field contains state, or ${itemName}.field <op> value.`);
@@ -721,6 +1002,12 @@ function compileCondition(cond, itemName, ctx) {
   return { expr: `${left.code} ${op} ${right.code}`, usesState };
 }
 
+/**
+ * @param {string} tok
+ * @param {string} itemName
+ * @param {Ctx} ctx
+ * @returns {{ code: string, usesState: boolean }}
+ */
 function compileOperand(tok, itemName, ctx) {
   if (/^"[^"]*"$/.test(tok) || /^'[^']*'$/.test(tok)) return { code: JSON.stringify(tok.slice(1, -1)), usesState: false };
   if (/^-?\d+(?:\.\d+)?$/.test(tok)) return { code: tok, usesState: false };
@@ -741,11 +1028,21 @@ function compileOperand(tok, itemName, ctx) {
   return { code: `S(${JSON.stringify(key)}${rest ? `, ${JSON.stringify(rest)}` : ""})`, usesState: true };
 }
 
+/** @param {unknown} a @param {unknown} b @returns {boolean} */
 const containsHelper = (a, b) => String(a ?? "").toLowerCase().includes(String(b ?? "").toLowerCase());
 
+/**
+ * Evaluate a compiled predicate against a row at build time.
+ * @param {string} body
+ * @param {unknown} item
+ * @param {Ctx} ctx
+ * @returns {boolean}
+ */
 function evalPredicate(body, item, ctx) {
   try {
+    /** @param {string} [p] */
     const I = (p) => getPath(item, p ? p.split(".") : []);
+    /** @param {string} k @param {string} [r] */
     const S = (k, r) => getPath(ctx.comp.state.get(k), r ? r.split(".") : []);
     return Boolean(new Function("I", "S", "C", `return (${body});`)(I, S, containsHelper));
   } catch {
@@ -754,6 +1051,13 @@ function evalPredicate(body, item, ctx) {
   }
 }
 
+/**
+ * @param {unknown[]} rows
+ * @param {string} itemName
+ * @param {string[]} bodyLines
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function staticUnroll(rows, itemName, bodyLines, ctx) {
   const out = [];
   for (const row of rows) {
@@ -763,9 +1067,19 @@ function staticUnroll(rows, itemName, bodyLines, ctx) {
   return out.join("\n");
 }
 
+/**
+ * Emit a reactive loop region (template + initial rows) for the runtime.
+ * @param {string | null} key State key of the list, or null for baked data.
+ * @param {string} itemName
+ * @param {string[]} bodyLines
+ * @param {Ctx} ctx
+ * @param {{ where?: Predicate, data?: unknown[] } | null} [opts]
+ * @returns {string}
+ */
 function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   ctx.comp.assets.runtime = true;
-  const templateCtx = { ...ctx, loopItem: itemName, loopKey: key, scope: createScope(ctx.scope) };
+  /** @type {Ctx} */
+  const templateCtx = { ...ctx, loopItem: itemName, loopKey: key ?? undefined, scope: createScope(ctx.scope) };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
 
   let wrapperTag = "div";
@@ -780,11 +1094,14 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
 
   const where = opts?.where || null;
   const baked = opts?.data || null;       // rows for a static source filtered by state
-  const allRows = key ? (Array.isArray(ctx.comp.state.get(key)) ? ctx.comp.state.get(key) : []) : (baked || []);
-  const rows = where ? allRows.filter((row) => evalPredicate(where.body, row, ctx)) : allRows;
+  const stateRows = key ? ctx.comp.state.get(key) : null;
+  /** @type {unknown[]} */
+  const allRows = key ? (Array.isArray(stateRows) ? stateRows : []) : (baked || []);
+  const rows = where ? allRows.filter((/** @type {unknown} */ row) => evalPredicate(where.body, row, ctx)) : allRows;
+  /** @type {Map<string, number>} */
   const counts = new Map();
   const initial = rows
-    .map((item) => {
+    .map((/** @type {unknown} */ item) => {
       const itemKey = loopKeyOf(item, counts);
       return fillTemplateString(withLoopKey(itemTemplate, itemKey), item);
     })
@@ -795,10 +1112,20 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   return `<div data-wd-loop="${key || ""}"${whereAttr}${dataAttr}><template data-wd-loop-template>${itemTemplate}</template><${wrapperTag} data-wd-loop-out>${initial}</${wrapperTag}></div>`;
 }
 
+/**
+ * @param {string} template
+ * @param {string} itemKey
+ * @returns {string}
+ */
 function withLoopKey(template, itemKey) {
   return template.replace(/^<([a-zA-Z][a-zA-Z0-9-]*)/, `<$1 data-wd-loop-key="${escapeHtml(itemKey)}"`);
 }
 
+/**
+ * @param {string} template
+ * @param {unknown} item
+ * @returns {string}
+ */
 function fillTemplateString(template, item) {
   // Resolve per-item :if regions first (recursively, so nested conditionals are
   // pre-rendered for the initial paint), then fill the plain text bindings.
@@ -808,6 +1135,11 @@ function fillTemplateString(template, item) {
 // Walk the string resolving only the OUTERMOST data-wd-each-if regions; each
 // chosen branch is recursed so nested conditionals resolve too. The <template>
 // markup is left pristine so the runtime can keep toggling branches.
+/**
+ * @param {string} str
+ * @param {unknown} item
+ * @returns {string}
+ */
 function fillEachIfRegions(str, item) {
   const marker = '<span data-wd-each-if ';
   let result = "";
@@ -822,8 +1154,13 @@ function fillEachIfRegions(str, item) {
   }
 }
 
+/**
+ * @param {string} region
+ * @param {unknown} item
+ * @returns {string}
+ */
 function fillOneEachIf(region, item) {
-  const path = (region.match(/^<span data-wd-each-if data-wd-path="([^"]*)">/) || [, ""])[1];
+  const path = (region.match(/^<span data-wd-each-if data-wd-path="([^"]*)">/) || ["", ""])[1];
   const trueStart = region.indexOf("<template data-wd-if-true>");
   const trueEnd = matchElement(region, trueStart, "template");
   const falseStart = region.indexOf("<template data-wd-if-false>", trueEnd);
@@ -837,6 +1174,11 @@ function fillOneEachIf(region, item) {
   return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item)}</span></span>`;
 }
 
+/**
+ * @param {string} str
+ * @param {unknown} item
+ * @returns {string}
+ */
 function fillEachText(str, item) {
   return str.replace(/<span data-wd-each(?: data-wd-path="([^"]*)")?><\/span>/g, (_, p) => {
     const value = p ? getPath(item, p.split(".")) : item;
@@ -848,6 +1190,12 @@ function fillEachText(str, item) {
 // Return the index just past the balanced close of the element of `tag` that
 // begins at `start`. Counts nested same-tag opens/closes so regions that embed
 // their own spans/templates (nested :if) match correctly.
+/**
+ * @param {string} str
+ * @param {number} start
+ * @param {string} tag
+ * @returns {number}
+ */
 function matchElement(str, start, tag) {
   const openPrefix = `<${tag}`;
   const closeTag = `</${tag}>`;
@@ -869,16 +1217,27 @@ function matchElement(str, start, tag) {
   return str.length;
 }
 
+/**
+ * Stable per-render key for a loop row, disambiguating duplicates with `#n`.
+ * @param {unknown} item
+ * @param {Map<string, number>} counts Mutable seen-count accumulator.
+ * @returns {string}
+ */
 export function loopKeyOf(item, counts) {
   const base =
     item && typeof item === "object"
-      ? String(item.id ?? item.key ?? JSON.stringify(item))
+      ? String(/** @type {Record<string, unknown>} */ (item).id ?? /** @type {Record<string, unknown>} */ (item).key ?? JSON.stringify(item))
       : String(item);
   const seen = counts.get(base) || 0;
   counts.set(base, seen + 1);
   return seen ? `${base}#${seen}` : base;
 }
 
+/**
+ * Render the documentation-demo directives (`:try`, `:note`, `:sprint`).
+ * @param {string} line
+ * @returns {string}
+ */
 function renderDemoDirective(line) {
   const tryMatch = line.match(/^:try\s+"([^"]+)"\s+href="([^"]+)"$/);
   if (tryMatch) return `<a class="try-card" href="${tryMatch[2]}"><span>Try</span>${escapeHtml(tryMatch[1])}</a>`;
@@ -896,10 +1255,21 @@ function renderDemoDirective(line) {
 // Interpolation: one syntax, { name } / { name.path }
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {string} text
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
 function renderProse(text, ctx) {
-  return (ctx.md ?? md).render(text, { resolveBinding: (expr) => resolveBindingHtml(expr, ctx) });
+  return (ctx.md ?? md).render(text, { resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx) });
 }
 
+/**
+ * markdown-it plugin: turns `{ name.path }` into an inline `html_inline` token
+ * whose content comes from the env's `resolveBinding` callback.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
 function bindingPlugin(mdInstance) {
   mdInstance.inline.ruler.push("wd_binding", (state, silent) => {
     if (state.src.charCodeAt(state.pos) !== 0x7b /* { */) return false;
@@ -917,6 +1287,13 @@ function bindingPlugin(mdInstance) {
   });
 }
 
+/**
+ * Resolve a `{ name.path }` binding to HTML: loop item span, static value, or
+ * a reactive bind span. Returns null when nothing in scope matches.
+ * @param {string} expr
+ * @param {Ctx} ctx
+ * @returns {string | null}
+ */
 function resolveBindingHtml(expr, ctx) {
   const segs = expr.split(".");
   const head = segs[0];
@@ -945,13 +1322,27 @@ function resolveBindingHtml(expr, ctx) {
   return null;
 }
 
+/**
+ * Walk the scope chain for a top-level variable.
+ * @param {Scope} scope
+ * @param {string} name
+ * @returns {{ found: true, value: unknown } | { found: false }}
+ */
 function lookupVar(scope, name) {
-  for (let current = scope; current; current = current.parent) {
+  /** @type {Scope | null} */
+  let current = scope;
+  for (; current; current = current.parent) {
     if (name in current.vars) return { found: true, value: current.vars[name] };
   }
   return { found: false };
 }
 
+/**
+ * Resolve a dotted path against the static scope chain.
+ * @param {string} expr
+ * @param {Ctx} ctx
+ * @returns {{ found: true, value: unknown } | { found: false }}
+ */
 function lookupPath(expr, ctx) {
   const segs = expr.split(".");
   const head = lookupVar(ctx.scope, segs[0]);
@@ -959,7 +1350,14 @@ function lookupPath(expr, ctx) {
   return { found: true, value: getPath(head.value, segs.slice(1)) };
 }
 
+/**
+ * Safely read a dotted path off a value, rejecting prototype-pollution segments.
+ * @param {unknown} value
+ * @param {string[]} segments
+ * @returns {unknown}
+ */
 function getPath(value, segments) {
+  /** @type {any} */
   let current = value;
   for (const segment of segments) {
     if (current == null) return undefined;
@@ -969,6 +1367,12 @@ function getPath(value, segments) {
   return current;
 }
 
+/**
+ * Resolve a bare state name to its fully-qualified key, walking section scopes.
+ * @param {string} name
+ * @param {Ctx} ctx
+ * @returns {string | null}
+ */
 function resolveStateKey(name, ctx) {
   for (let i = ctx.sections.length - 1; i >= 0; i--) {
     const key = `${ctx.sections[i]}:${name}`;
@@ -981,8 +1385,23 @@ function resolveStateKey(name, ctx) {
 // Actions
 // ---------------------------------------------------------------------------
 
+/**
+ * A parsed `:button` action.
+ * @typedef {object} Action
+ * @property {string} op Runtime operation (inc/dec/add/append/set/remove/append-row).
+ * @property {string} target State key the action mutates.
+ * @property {unknown} [value] Literal value for value-carrying ops.
+ */
+
+/**
+ * Parse a `:button` action expression into a validated `{ op, target, value }`.
+ * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {Action}
+ */
 function parseAction(raw, ctx) {
   const expression = raw.trim();
+  /** @param {string} name @returns {string} */
   const resolveTarget = (name) => {
     const key = resolveStateKey(name, ctx);
     if (!key) {
@@ -1032,6 +1451,10 @@ function parseAction(raw, ctx) {
   throw new Error(`Unsupported button action "${raw}". Supported actions: count++, count--, count += 1, items += "value", name = "value", list remove item (in a loop), cart += item (in a loop).`);
 }
 
+/**
+ * @param {string} raw
+ * @returns {unknown}
+ */
 function parseActionLiteral(raw) {
   const value = raw.trim();
   if (/^["'].*["']$/.test(value)) return stripQuotes(value);
@@ -1053,6 +1476,13 @@ function parseActionLiteral(raw) {
 // Includes / assets
 // ---------------------------------------------------------------------------
 
+/**
+ * Register a page's colocated `.skin`/`.js` siblings as emitted assets.
+ * @param {string} file
+ * @param {Paths} context
+ * @param {Assets} assets
+ * @returns {void}
+ */
 function collectColocatedAssets(file, context, assets) {
   const ext = path.extname(file);
   const stem = file.slice(0, -ext.length);
@@ -1068,6 +1498,14 @@ function collectColocatedAssets(file, context, assets) {
   }
 }
 
+/**
+ * Resolve an include spec to an absolute path inside `site/pages` or `site/_`.
+ * @param {string} spec Include target (may be quoted).
+ * @param {string} fromFile File requesting the include.
+ * @param {Paths} context
+ * @param {boolean} [allowAny] Allow non-page extensions (e.g. JSON for `@loop`).
+ * @returns {string}
+ */
 function resolveInclude(spec, fromFile, context, allowAny = false) {
   const clean = stripQuotes(spec);
   const candidates = [];
@@ -1089,6 +1527,11 @@ function resolveInclude(spec, fromFile, context, allowAny = false) {
   throw new Error(`Could not resolve include "${spec}" from ${fromFile}`);
 }
 
+/**
+ * @param {string} file
+ * @param {Paths} context
+ * @returns {boolean}
+ */
 function isAllowedInclude(file, context) {
   const roots = [context.routesRoot, context.shelfRoot].map((root) => path.resolve(root));
   return roots.some((root) => file === root || file.startsWith(`${root}${path.sep}`));
@@ -1098,6 +1541,13 @@ function isAllowedInclude(file, context) {
 // Plain .md hints
 // ---------------------------------------------------------------------------
 
+/**
+ * Warn when a plain `.md` file contains `.wd`-only syntax that stays inert.
+ * @param {string} body
+ * @param {string} file
+ * @param {Compilation} comp
+ * @returns {void}
+ */
 function scanMarkdownHints(body, file, comp) {
   let fence = null;
   for (const line of body.split("\n")) {
@@ -1124,10 +1574,19 @@ function scanMarkdownHints(body, file, comp) {
 // Literals
 // ---------------------------------------------------------------------------
 
+/**
+ * JSON-encode a value for an inline `<script>`, escaping `<` to stay HTML-safe.
+ * @param {unknown} value
+ * @returns {string}
+ */
 function safeScriptJson(value) {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
+/**
+ * @param {string} raw
+ * @returns {unknown}
+ */
 function parseStateValue(raw) {
   const value = raw.trim();
   if (/^["'].*["']$/.test(value)) return stripQuotes(value);
@@ -1142,6 +1601,10 @@ function parseStateValue(raw) {
   }
 }
 
+/**
+ * @param {string} raw
+ * @returns {string | number | boolean}
+ */
 function parseScalar(raw) {
   const trimmed = raw.trim();
   if (/^["']/.test(trimmed)) return stripQuotes(trimmed);
@@ -1151,10 +1614,19 @@ function parseScalar(raw) {
   return trimmed;
 }
 
+/**
+ * @param {string} [value]
+ * @returns {string}
+ */
 function stripQuotes(value) {
   return value?.replace(/^["']|["']$/g, "") ?? "";
 }
 
+/**
+ * Escape a value for safe inclusion in HTML text and attribute contexts.
+ * @param {unknown} value
+ * @returns {string}
+ */
 export function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
