@@ -16,8 +16,10 @@ darkmown help
 
 Creates a minimal Darkmown site with:
 
+- `package.json` (pins the current `@zvndev/darkmown` version)
 - `site/pages/index.wd`
 - `site/pages/index.skin`
+- `site/pages/about.md`
 - `site/_/nav.wd`
 - `README.md`
 

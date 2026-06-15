@@ -1,8 +1,8 @@
 # Darkmown
 
-**[darkmown.com](https://darkmown.com)** · markdown, rearranged.
+**[darkmown.com](https://darkmown.com)** · Markdown that runs.
 
-Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around 2 KB gzipped (CI-enforced under 5 KB).
+Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~2.9 KB gzipped (CI-enforced under 5 KB).
 
 ## Quick start
 
@@ -45,7 +45,7 @@ npm run dev    # live demo site — the same site that runs darkmown.com
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~2 KB gzipped, CI-enforced under 5 KB).
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~2.9 KB gzipped, CI-enforced under 5 KB).
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Interpolation
@@ -100,7 +100,7 @@ Add `where <predicate>` to filter a loop. Conditions compare a loop-item field a
 @endloop
 ```
 
-Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive substring match. The predicate is a compile-time-validated whitelist — only item paths, declared `:state`, numbers, and `"strings"` are allowed (no arbitrary expressions, no `eval`).
+Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive substring match. The predicate is a compile-time-validated whitelist — only item paths, declared `:state`, numbers, and `"strings"` are allowed (no arbitrary expressions). Raw user content is never evaluated; the validated predicate compiles to a whitelisted grammar that runs via `new Function`.
 
 **The source decides reactivity, just like the loop itself.** If the predicate only reads the row, the filter runs at build time and the page stays **zero-JS**. If the predicate reads a `:state` value, the loop becomes reactive and re-filters live as that state changes — a live search in pure Markdown:
 
@@ -211,7 +211,15 @@ Reactive pages expose `window.wd` — `wd.get(key)`, `wd.set(key, value)`, `wd.s
 
 ## Editor support
 
-A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown. Build it with `cd editors/vscode && npx @vscode/vsce package`, or install the published extension from the Marketplace (search "Darkmown").
+A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown. Install it from source by building a `.vsix`: `cd editors/vscode && npx @vscode/vsce package`, then `code --install-extension darkmown-*.vsix`. A Marketplace listing is coming soon.
+
+## Security
+
+Darkmown renders Markdown with `html: true`, so **raw HTML in your content passes through verbatim** — by design, like every Markdown site generator. Treat content files as trusted input.
+
+> **The single biggest footgun:** do not compile untrusted or user-submitted Markdown without sanitizing it first. There is no built-in sanitizer.
+
+Directive actions and `:computed`/`@loop … where` expressions are never `eval`'d as raw user content — they compile to a whitelisted grammar (item paths, declared `:state`, numbers, strings) that runs via `new Function`. See [SECURITY.md](SECURITY.md) for the full security model.
 
 ## Spec status
 
