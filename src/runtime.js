@@ -36,16 +36,22 @@ function getPath(value, path) {
 
 const computedDefs = [...document.querySelectorAll("[data-wd-computed]")].map((node) => ({
   key: node.getAttribute("data-wd-computed-key"),
+  expr: node.getAttribute("data-wd-computed-expr"),
   evaluate: new Function("S", `return (${node.getAttribute("data-wd-computed-expr")});`)
 }));
+
+function warn(expr, error) {
+  if (window.wd && window.wd.debug) console.warn(`[wd] expression failed: ${expr}`, error);
+}
 
 function recompute() {
   const read = (key, path) => getPath(state[key], path);
   for (const def of computedDefs) {
     try {
       state[def.key] = def.evaluate(read);
-    } catch {
+    } catch (error) {
       state[def.key] = undefined;
+      warn(def.expr, error);
     }
   }
 }
@@ -89,7 +95,7 @@ function fillItem(node, item) {
   }
 }
 
-function render() {
+function renderNow() {
   recompute();
   for (const node of document.querySelectorAll("[data-wd-if]")) {
     const value = getPath(state[node.getAttribute("data-wd-if")], node.getAttribute("data-wd-path"));
@@ -112,9 +118,14 @@ function render() {
     const where = region.getAttribute("data-wd-loop-where");
     if (where) {
       const predicate = loopPredicate(where);
-      list = list.filter((item) =>
-        predicate((path) => getPath(item, path), (k, r) => getPath(state[k], r || ""), containsFn)
-      );
+      list = list.filter((item) => {
+        try {
+          return predicate((path) => getPath(item, path), (k, r) => getPath(state[k], r || ""), containsFn);
+        } catch (error) {
+          warn(where, error);
+          return false;
+        }
+      });
     }
 
     const existing = new Map();
@@ -147,6 +158,19 @@ function render() {
   for (const input of document.querySelectorAll("[data-wd-bind-input]")) {
     if (document.activeElement !== input) input.value = state[input.getAttribute("data-wd-bind-input")] ?? "";
   }
+}
+
+// Coalesce rapid state mutations into one render on the next tick. Each scheduled
+// pass always reads the latest state, so the final update is never dropped.
+const schedule = typeof requestAnimationFrame === "function" ? requestAnimationFrame : queueMicrotask;
+let scheduled = false;
+function render() {
+  if (scheduled) return;
+  scheduled = true;
+  schedule(() => {
+    scheduled = false;
+    renderNow();
+  });
 }
 
 document.addEventListener("input", (event) => {
@@ -274,7 +298,7 @@ window.wd = {
     savePersisted();
     render();
   },
-  render
+  render: renderNow
 };
 
-render();
+renderNow();
