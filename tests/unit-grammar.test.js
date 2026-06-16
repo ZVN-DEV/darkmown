@@ -356,9 +356,15 @@ function rtMatch(node, selector) {
   return true;
 }
 
+// A pending fetch call recorded by the stub: the requested URL plus resolve/
+// reject hooks the harness drives to settle responses in a chosen ORDER.
+// @typedef {{ url: string, resolve(body:any):void, fail(err:any):void }} PendingFetch
+
 // Build a sandbox around the real runtime. `seeds` becomes a data-wd-state
 // script; `persisted` pre-loads localStorage to test the persist-override path.
-function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {} } = {}) {
+// `fetches` declares <… data-wd-fetch> marker nodes (one per entry) so the real
+// startFetch lifecycle runs on load; the returned `fetchStub` drives responses.
+function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {}, fetches = [] } = {}) {
   const root = new RtEl("body");
   const stateScript = new RtEl("script");
   stateScript.setAttribute("data-wd-state", "");
@@ -371,6 +377,13 @@ function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {} } =
     if (name in ephemeral) s.setAttribute("data-wd-store-ephemeral", "");
     s.textContent = JSON.stringify(value);
     root.appendChild(s);
+  }
+  // Each fetch marker carries the data-wd-fetch-* attributes the runtime reads.
+  for (const f of fetches) {
+    const node = new RtEl("div");
+    node.setAttribute("data-wd-fetch", "");
+    for (const [k, v] of Object.entries(f)) node.setAttribute("data-wd-fetch-" + k, String(v));
+    root.appendChild(node);
   }
 
   const listeners = {};
@@ -386,9 +399,28 @@ function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {} } =
     setItem: (k, v) => store.set(k, String(v)),
     removeItem: (k) => store.delete(k)
   };
+  // Controllable fetch stub: every call appends a PendingFetch the test settles
+  // by index. Returns a Response-like { ok, status, text() } so the real
+  // httpJson core (fetch → text → JSON.parse) runs unchanged.
+  /** @type {PendingFetch[]} */
+  const calls = [];
+  const fetchStub = (url) => new Promise((res, rej) => {
+    calls.push({
+      url,
+      resolve: (body) => res({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(body)) }),
+      fail: (err) => rej(err instanceof Error ? err : new Error(String(err)))
+    });
+  });
+  // Timer stub: collect callbacks so the harness can flush retries/debounces
+  // deterministically (delay ignored). clearTimeout cancels by id.
+  const timers = new Map();
+  let timerId = 0;
+  const setTimeout = (fn) => { const id = ++timerId; timers.set(id, fn); return id; };
+  const clearTimeout = (id) => timers.delete(id);
   const sandbox = {
     document, localStorage, console, JSON, structuredClone,
-    Object, Array, Number, String, Map, Set, Boolean, Function, queueMicrotask
+    Object, Array, Number, String, Map, Set, Boolean, Function, Promise,
+    Error, encodeURIComponent, fetch: fetchStub, setTimeout, clearTimeout, queueMicrotask
   };
   // The runtime registers `window.addEventListener("storage", …)` for cross-tab
   // :store sync; the sandbox window is the sandbox itself, so collect listeners
@@ -398,10 +430,28 @@ function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {} } =
   vm.createContext(sandbox);
   vm.runInContext(runtimeSource, sandbox);
 
+  // Pump the microtask queue enough times for the runtime's chained awaits
+  // (fetch → text → JSON.parse → render) to fully settle before assertions.
+  const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+
   return {
     root,
     state: sandbox.wd.state,
     store,
+    // Recorded fetch calls (oldest first); each has .url/.resolve/.fail.
+    fetchCalls: calls,
+    // Settle a recorded fetch by index, then let its .then/.catch chain run.
+    async resolveFetch(i, body) { calls[i].resolve(body); await flush(); },
+    async failFetch(i, err) { calls[i].fail(err); await flush(); },
+    // Run every queued timer callback (retries, debounces), then flush.
+    async runTimers() {
+      const due = [...timers.values()];
+      timers.clear();
+      for (const fn of due) fn();
+      await flush();
+    },
+    // Drain pending microtasks so runtime promise chains settle before asserts.
+    flush,
     // Simulate another tab writing localStorage: dispatch a `storage` event.
     fireStorage(key, newValue) {
       for (const fn of listeners.storage || []) fn({ key, newValue });
@@ -637,4 +687,64 @@ test("a storage event whose value equals current state is a no-op (echo guard)",
   // Re-broadcasting the identical value must not throw or change anything.
   h.fireStorage("wd:store:cart", JSON.stringify(["a"]));
   eq(h.state.cart, ["a"]);
+});
+
+// ---------------------------------------------------------------------------
+// :fetch lifecycle — generation guard (stale-write race), URL encoding,
+// retry budget, empty detection, and the malformed cross-tab parse guard.
+// Driven against the REAL startFetch via the controllable fetch/timer stubs.
+// ---------------------------------------------------------------------------
+
+test("a slow older fetch never overwrites a newer one (generation guard)", async () => {
+  // One marker → fetches on load (gen 1). A refetch supersedes it (gen 2).
+  const h = rtSandbox({ fetches: [{ key: "data", url: "/api" }] });
+  assert.equal(h.fetchCalls.length, 1, "initial load fired one request");
+  h.click("refetch", "data"); // bumps the node's generation, fires a 2nd request
+  assert.equal(h.fetchCalls.length, 2, "refetch fired a second request");
+  // Settle the NEWER request first, then the OLDER one LAST.
+  await h.resolveFetch(1, { v: "new" });
+  await h.resolveFetch(0, { v: "old" });
+  eq(h.state.data, { v: "new" }, "stale older response was discarded");
+});
+
+test("a malformed cross-tab storage value does not throw and leaves state unchanged", () => {
+  const h = rtSandbox({ stores: { cart: ["keep"] } });
+  // Corrupt/foreign value for a known store key — must be swallowed, not thrown.
+  assert.doesNotThrow(() => h.fireStorage("wd:store:cart", "{not json"));
+  eq(h.state.cart, ["keep"], "state unchanged after a bad parse");
+});
+
+test("a dynamic URL dependency is percent-encoded into the request URL", async () => {
+  const h = rtSandbox({
+    seeds: { q: "a/b&c" },
+    fetches: [{ key: "search", url: "/api?term={q}", deps: "q" }]
+  });
+  await h.flush();
+  assert.equal(h.fetchCalls.length, 1);
+  assert.equal(h.fetchCalls[0].url, "/api?term=a%2Fb%26c", "slash and ampersand encoded");
+});
+
+test("retry=2 performs exactly three attempts before setting name_error", async () => {
+  const h = rtSandbox({ fetches: [{ key: "data", url: "/api", retry: 2 }] });
+  assert.equal(h.fetchCalls.length, 1, "attempt 1 on load");
+  await h.failFetch(0, "boom");
+  await h.runTimers();
+  assert.equal(h.fetchCalls.length, 2, "attempt 2 after first retry");
+  await h.failFetch(1, "boom");
+  await h.runTimers();
+  assert.equal(h.fetchCalls.length, 3, "attempt 3 after second retry");
+  await h.failFetch(2, "boom");
+  await h.runTimers();
+  assert.equal(h.fetchCalls.length, 3, "no fourth attempt — retry budget exhausted");
+  assert.ok(h.state.data_error, "name_error set after the final failure");
+  assert.equal(h.state.data_loading, false, "loading cleared on terminal error");
+});
+
+test("an empty-object response sets name_empty = true", async () => {
+  const h = rtSandbox({ fetches: [{ key: "data", url: "/api" }] });
+  await h.resolveFetch(0, {});
+  eq(h.state.data, {}, "value stored");
+  assert.equal(h.state.data_empty, true, "isEmpty({}) drives the empty flag");
+  assert.equal(h.state.data_loading, false);
+  assert.equal(h.state.data_error, null);
 });

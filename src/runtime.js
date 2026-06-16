@@ -28,9 +28,8 @@ for (const script of document.querySelectorAll("script[data-wd-store]")) {
   if (!script.hasAttribute("data-wd-store-ephemeral")) storeKeys.add(name);
 }
 
-// Frozen snapshot of declared seeds, captured BEFORE localStorage overrides them
-// below. `reset` deep-clones from here so a persisted key/store returns to its
-// declared value, not its last persisted one.
+// Frozen seed snapshot, taken BEFORE localStorage overrides below, so `reset`
+// deep-clones the declared value — not the last persisted one.
 /** @type {Record<string, any>} */
 const initials = Object.freeze(JSON.parse(JSON.stringify(state)));
 
@@ -57,7 +56,8 @@ function savePersisted() {
 window.addEventListener("storage", (event) => {
   const name = event.key && event.key.startsWith("wd:store:") ? event.key.slice(9) : "";
   if (!storeKeys.has(name) || event.newValue == null) return;
-  const next = JSON.parse(event.newValue);
+  let next;
+  try { next = JSON.parse(event.newValue); } catch { return; }
   if (JSON.stringify(next) === JSON.stringify(state[name])) return;
   state[name] = next;
   render();
@@ -203,8 +203,8 @@ function loopKeyOf(item, counts) {
  * @returns {void}
  */
 function fillItem(node, item, meta = {}) {
-  // querySelectorAll does not descend into <template> content, so this only sees
-  // the outermost regions; recursing into each injected branch fills the rest.
+  // querySelectorAll skips <template> content, so this sees only the outermost
+  // regions; recursing into each injected branch fills the rest.
   for (const region of node.querySelectorAll("[data-wd-each-if]")) {
     const m = region.getAttribute("data-wd-meta");
     const value = m ? meta[m] : getPath(item, region.getAttribute("data-wd-path"));
@@ -428,9 +428,8 @@ function applyAction(action, op, target, value) {
   }
   if (op === "append-row") {
     const row = clickedRow(action);
-    // Clone the row so each appended line is a distinct object — otherwise adding
-    // the same source row twice yields two identical references and a later
-    // remove (filter by !== ref) would delete both lines.
+    // Clone so each appended line is a distinct object — else a shared ref
+    // means a later remove (filter !== ref) deletes both lines.
     if (row && row.item !== undefined) {
       const copy = row.item && typeof row.item === "object" ? structuredClone(row.item) : row.item;
       put([...arr(), copy]);
@@ -488,10 +487,14 @@ document.addEventListener("submit", (event) => {
  * Run the full `:fetch` lifecycle for a marker node: interpolate the URL from
  * state, skip when a dependency is empty, flip `*_loading`, fetch with an
  * AbortController timeout + flat retry, then write value/`*_empty` or `*_error`.
- * @param {Element} node
+ * @param {FetchNode} node
  * @returns {void}
  */
 function startFetch(node) {
+  // Per-node generation token: a refetch bumps it; superseded writes bail.
+  const gen = node.__wdGen = (node.__wdGen || 0) + 1;
+  /** @returns {boolean} stale once a newer fetch superseded this one */
+  const dead = () => gen !== node.__wdGen;
   /** @param {string} n @returns {string} */
   const g = (n) => node.getAttribute("data-wd-fetch-" + n) || "";
   const key = g("key");
@@ -501,7 +504,7 @@ function startFetch(node) {
   const url = g("url").replace(/\{\s*([\w$.]+)\s*\}/g, (_, p) => {
     const v = getPath(state, p);
     if (v == null || v === "") missing = true;
-    return String(v ?? "");
+    return encodeURIComponent(String(v ?? ""));
   });
   if (missing) return set("_loading", false);
 
@@ -523,12 +526,14 @@ function startFetch(node) {
     const timer = timeout && ctrl ? setTimeout(() => ctrl.abort(), timeout) : 0;
     httpJson(url, init).then((value) => {
       clearTimeout(timer);
+      if (dead()) return;
       state[key] = value;
       state[key + "_empty"] = isEmpty(value);
       state[key + "_error"] = null;
       set("_loading", false);
     }).catch((error) => {
       clearTimeout(timer);
+      if (dead()) return;
       if (tries-- > 0) return void setTimeout(attempt, 200);
       state[key + "_error"] = String(error);
       set("_loading", false);
@@ -537,8 +542,9 @@ function startFetch(node) {
   attempt();
 }
 
-/** A fetch marker carrying its last dependency snapshot for refetch diffing. */
-/** @typedef {Element & { __wdSnap?: string }} FetchNode */
+/** A fetch marker carrying its last dependency snapshot for refetch diffing and
+ * a generation token so a superseded in-flight response/retry bails on write. */
+/** @typedef {Element & { __wdSnap?: string, __wdGen?: number }} FetchNode */
 /** @type {FetchNode[]} */
 const fetchNodes = [...document.querySelectorAll("[data-wd-fetch]")];
 /** @param {FetchNode} node @returns {string} */
