@@ -103,6 +103,44 @@ A `:button` inside a reactive loop can act on its own row — the basis for cart
 
 `cart += product` appends a copy of the current row to another `:state` list; `cart remove line` removes the current row from the list being looped. Both are checked against the enclosing loop at compile time — no JavaScript.
 
+### Sorting, paging, and meta variables
+
+Shape a loop with clauses in a fixed order after `into`: `where`, then `sort by`, `reverse`, `offset`, `limit`.
+
+```wd
+@loop /posts.json into post sort by post.date desc limit 5
+{ $number }. { post.title }
+@endloop
+```
+
+- `sort by <key> [asc|desc]` — the key must start with the loop item (`post.date`). Numbers sort numerically; anything else sorts as text. `asc` is the default.
+- `reverse` flips the order; `offset N` / `limit N` slice it. `N` can be an integer or a `:state`/`:store` key, which makes paging reactive (`limit pageSize`).
+
+Every row exposes meta variables — `{ $index }` (0-based), `{ $number }` (1-based), `{ $first }`, `{ $last }`, `{ $count }` — usable in interpolation and `:if`:
+
+```wd
+@loop products into product
+:if $first
+**Top pick:**
+:endif
+{ $number } of { $count } — { product.name }
+@endloop
+```
+
+### Empty lists with `@empty`
+
+Add an `@empty` branch to render a fallback when the loop produces no rows (after filtering and slicing):
+
+```wd
+@loop todos into todo
+- { todo.title }
+@empty
+Nothing left to do.
+@endloop
+```
+
+These clauses stay build-time when the source and every argument are static — a sorted, limited loop over a JSON file ships zero JS. The loop turns reactive only when the source or a clause reads `:state`/`:store`/`:fetch` data.
+
 ## Interpolation
 
 One syntax everywhere: `{ name }` or `{ name.path }`.
@@ -157,12 +195,70 @@ Count is still zero.
 
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in a colocated `.js` file.
 
-## Data, forms, and persistence
+### Button actions
 
-- `:fetch name from "url"` declares state and fills it from JSON over the network. Shelf `.json` files are served at `/__wd/data/`.
+A `:button "Label" -> action` mutates one `:state` or `:store` value. The vocabulary is the same for both:
+
+- Numbers: `n++`, `n--`, `n += 5`, `n -= 2`
+- Set / toggle: `name = value`, `flag toggle`
+- Arrays: `list append v` (or `list += v`), `list prepend v`, `list toggle v`, `list remove v`, `list clear`
+- Objects: `obj merge other`, `obj delete "key"`
+- Universal: `name reset` restores the declared starting value
+
+Values are literals — a `"string"`, number, `true`/`false`/`null`, or inline JSON. Targets may be dotted paths (`cart.count++`), and one button can run several actions separated by `;` (applied in order, rendered once):
+
+```wd
+:button "Add to cart" -> cart.count++ ; cart.total += 9
+```
+
+`list toggle v` and `list remove v` match by value, which is exact for strings and numbers but not for object members — remove row objects with the per-row `remove` action instead.
+
+## Fetching data
+
+`:fetch name from "url"` declares state and fills it from JSON over the network. Shelf `.json` files are served at `/__wd/data/`. Each fetch auto-declares four states you can branch on: `name`, `name_loading`, `name_error`, and `name_empty`.
+
+```wd
+:fetch team from "/__wd/data/team.json" timeout=8000 retry=2
+
+:if team_loading
+Loading…
+:else
+:if team_error
+Couldn't load the team: { team_error }
+:else
+@loop team into member
+- { member.name }
+@empty
+No team members yet.
+@endloop
+:endif
+:endif
+```
+
+Options after the URL: `method=` (default `GET`), `when=load|visible`, `timeout=<ms>`, `retry=<N>`, `headers=<key>`, and `body=<key>` (the last two name a `:state`/`:store` key). A URL can interpolate state (`"/api/users/{ userId }"`) and re-fetches automatically when that state changes; trigger a reload by hand with `:button "Reload" -> team refetch`. Loop a sub-path of fetched data with a dotted source — `@loop team.members into member`.
+
+## Global state — `:store`
+
+`:store` is global, durable, and shared across browser tabs — the right home for a cart, a theme, or a signed-in user. Unlike `:state`, it is never section-scoped and persists by default.
+
+```wd
+:store cart = []
+
+:button "Add" -> cart += {"id": 1, "name": "Aurora"}
+
+You have { cart } items.
+```
+
+- Saved to localStorage under `wd:store:<name>` and reloaded on the next visit; changes sync live to other open tabs.
+- The declared value is a **seed**, used only the first time — afterward the persisted value wins.
+- Same value grammar and the same button actions as `:state`.
+- Add `ephemeral` for an in-memory store that resets on reload: `:store sidebarOpen = false ephemeral`.
+
+## Forms and persistence
+
 - `:form into name` captures submits straight into state — no backend. `:form action="/url"` emits a plain native form with zero JS instead.
 - `:input field placeholder="…" required` and `:submit "Label"` build the form body.
-- `:state cart = [] persist` survives reloads via localStorage.
+- `:state cart = [] persist` survives reloads via localStorage on a single page; use `:store` for state shared across pages and tabs.
 - `:if item.path` works inside reactive loops for per-row branches, and conditionals nest — an inner `:if` resolves after the outer branch, staying reactive.
 - Reactive pages expose `window.wd` (`get`, `set`, `state`, `render`) so colocated `.js` can do anything directives can't. Section state is addressed as `sectionId:name`.
 
@@ -176,6 +272,6 @@ See it all live on the [Data & Forms page](/data/).
 
 ## Spec status
 
-The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:fetch`, `:form` (including server round-trips), `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/). Still on the roadmap: a first-party server runtime (`site/api/`), HTML-fragment swaps, and `@loop` over fetched sub-paths. See `docs/spec-alignment.md` in the package for the full audit.
+The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:store`, the full `:fetch` lifecycle (loading/error/empty states, dynamic URLs, `refetch`, and dotted loop sources), `:form` (including server round-trips), loop ergonomics (`sort by`/`limit`/`offset`/`reverse`/`@empty` and `$index`/`$number`/`$first`/`$last`/`$count`), `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/). Still on the roadmap: a first-party server runtime (`site/api/`) and HTML-fragment swaps. See `docs/spec-alignment.md` in the package for the full audit.
 
 </main>
