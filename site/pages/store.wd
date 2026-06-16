@@ -1,0 +1,53 @@
+---
+title: Global store
+---
+
+@include /nav.wd
+
+<main>
+
+# Global store
+
+`:store` is durable, page-global state. It persists to `localStorage` under the
+`wd:store:` prefix, rehydrates on load, and syncs across tabs through the
+`storage` event — no backend, no wiring. Add `ephemeral` to opt a store out of
+persistence entirely.
+
+::: section #shop
+:store cart = []
+
+## A durable cart
+
+This cart is a `:store`, so it survives a full reload and mirrors into every open
+tab. Add a couple of items, refresh the page, and the count holds.
+
+Cart: { cart.length }
+
+:button "Add to cart" -> cart append {"id": "sticker", "name": "Sticker", "price": 4}
+:button "Reset cart" -> cart reset
+
+@loop cart into line
+::: card .line
+{ line.name } — ${ line.price }
+:::
+@empty
+The cart is empty. Add something, then reload — it stays.
+@endloop
+
+`Reset cart` runs `-> cart reset`, which restores the **declared** seed (`[]`),
+not the last persisted value — and writes that seed back to storage.
+:::
+
+## An ephemeral draft
+
+`:store draft = "" ephemeral` is in-memory only. It is bound two-way to the
+input and echoed below, but nothing reaches `localStorage`, so a reload wipes it
+clean.
+
+:store draft = "" ephemeral
+
+:bind draft placeholder="Type a draft note…"
+
+Draft says: **{ draft }**
+
+</main>
