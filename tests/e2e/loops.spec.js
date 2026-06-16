@@ -35,11 +35,12 @@ test.describe("/loops/ — loop ergonomics in a real browser", () => {
   });
 
   test("a sort-direction toggle flips ascending/descending", async ({ page }) => {
-    const rows = page.locator('[data-wd-loop="people"] [data-wd-loop-key]');
-    const before = (await rows.allInnerTexts())[0];
+    const first = page.locator('[data-wd-loop="people"] [data-wd-loop-key]').first();
+    const before = await first.innerText();
     await page.getByRole("button", { name: /sort/i }).click();
-    const after = (await rows.allInnerTexts())[0];
-    expect(after).not.toEqual(before); // direction flipped → first row changed
+    // The runtime coalesces renders on requestAnimationFrame, so assert with a
+    // web-first matcher that retries until the reconcile lands (no fixed wait).
+    await expect(first).not.toHaveText(before);
   });
 
   test("offset + limit slice the rendered window", async ({ page }) => {
