@@ -150,6 +150,10 @@ function makeSandbox(rootBuilder, { withRAF = false } = {}) {
     sandbox.requestAnimationFrame = (fn) => { sandbox.__rafQueue.push(fn); return sandbox.__rafQueue.length; };
     sandbox.__rafQueue = [];
   }
+  // The runtime registers a `window.addEventListener("storage", …)` for cross-tab
+  // :store sync; the sandbox window is the sandbox itself, so expose the same
+  // listener registry there. `fire(type, target)` drives both document + window.
+  sandbox.addEventListener = (type, fn) => { (listeners[type] ||= []).push(fn); };
   sandbox.window = sandbox;
 
   vm.createContext(sandbox);

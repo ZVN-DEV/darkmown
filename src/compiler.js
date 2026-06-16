@@ -30,6 +30,7 @@ import MarkdownIt from "markdown-it";
  * @typedef {object} Compilation
  * @property {Assets} assets
  * @property {Map<string, unknown>} state Declared state keys → initial values.
+ * @property {Set<string>} stores Page-global store names (a subset of state keys).
  * @property {string[]} warnings Non-fatal authoring hints.
  * @property {number} sectionCounter Counter for auto-generated section ids.
  */
@@ -165,6 +166,7 @@ function createCompilation() {
   return {
     assets: { skins: new Set(), scripts: new Set(), files: new Map(), runtime: false },
     state: new Map(),
+    stores: new Set(),
     warnings: [],
     sectionCounter: 0
   };
@@ -347,6 +349,11 @@ function compileBody(lines, ctx) {
     if (/^:state\s/.test(line)) {
       flush();
       out.push(handleState(line, ctx));
+      continue;
+    }
+    if (/^:store\s/.test(line)) {
+      flush();
+      out.push(handleStore(line, ctx));
       continue;
     }
     if (/^:fetch\s/.test(line)) {
@@ -669,11 +676,44 @@ function handleState(line, ctx) {
  */
 function declareState(name, value, ctx) {
   if (ctx.loopItem) throw new Error(`State cannot be declared inside a reactive @loop body (${ctx.file})`);
+  if (ctx.comp.stores.has(name)) throw new Error(`State "${name}" collides with a :store of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`);
   const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${name}` : name;
   if (ctx.comp.state.has(key)) throw new Error(`State "${name}" is declared twice in the same scope (${ctx.file})`);
   ctx.comp.state.set(key, value);
   ctx.comp.assets.runtime = true;
   return key;
+}
+
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function handleStore(line, ctx) {
+  const match = line.match(/^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+ephemeral)?$/);
+  if (!match) throw new Error(`Malformed :store in ${ctx.file}: ${line}. Use: :store name = value [ephemeral]`);
+  const value = parseStateValue(match[2]);
+  const name = declareStore(match[1], value, ctx);
+  const ephemeral = match[3] ? " data-wd-store-ephemeral" : "";
+  return `<script type="application/json" data-wd-store="${name}"${ephemeral}>${safeScriptJson(value)}</script>`;
+}
+
+/**
+ * Register a page-global store. The bare name is added to `comp.state` so every
+ * resolver (interpolation, :if, @loop, :computed, actions) sees it, and tracked
+ * in `comp.stores` for collision checks. Never section-scoped.
+ * @param {string} name
+ * @param {unknown} value
+ * @param {Ctx} ctx
+ * @returns {string} The store name (also its bare state key).
+ */
+function declareStore(name, value, ctx) {
+  if (ctx.comp.stores.has(name)) throw new Error(`Store "${name}" is declared twice in ${ctx.file}. Use: :store name = value`);
+  if (ctx.comp.state.has(name)) throw new Error(`Store "${name}" collides with a :state of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`);
+  ctx.comp.stores.add(name);
+  ctx.comp.state.set(name, value);
+  ctx.comp.assets.runtime = true;
+  return name;
 }
 
 /**

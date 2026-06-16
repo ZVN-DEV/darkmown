@@ -703,6 +703,81 @@ test(":state persist marks the state script for localStorage", () => {
   assert.match(page.html, /data-wd-target="cart:items"/);
 });
 
+// ---------------------------------------------------------------------------
+// :store — durable, page-global, cross-tab state
+// ---------------------------------------------------------------------------
+
+test(":store declares a global store, emits a store script, and turns the page reactive", () => {
+  const page = compileWd([
+    ":store cart = []",
+    "{ cart.length } items"
+  ]);
+  assert.match(page.html, /<script type="application\/json" data-wd-store="cart">\[\]<\/script>/);
+  assert.match(page.html, /<span data-wd-bind="cart" data-wd-path="length">0<\/span>/);
+  assert.equal(page.assets.runtime, true);
+});
+
+test(":store ephemeral adds the ephemeral marker and still seeds the value", () => {
+  const page = compileWd([
+    ":store draft = 1 ephemeral"
+  ]);
+  assert.match(page.html, /<script type="application\/json" data-wd-store="draft" data-wd-store-ephemeral>1<\/script>/);
+});
+
+test(":store keys resolve in interpolation, :if, @loop, and actions", () => {
+  const page = compileWd([
+    ':store cart = [{"id": 1, "title": "One"}]',
+    "{ cart.length }",
+    ":if cart",
+    "Has cart",
+    ":endif",
+    "@loop cart into item",
+    "- { item.title }",
+    "@endloop",
+    ':button "Clear" -> cart clear'
+  ]);
+  assert.match(page.html, /data-wd-bind="cart" data-wd-path="length"/);
+  assert.match(page.html, /data-wd-if="cart"/);
+  assert.match(page.html, /data-wd-loop="cart"/);
+  assert.match(page.html, /data-wd-action="clear" data-wd-target="cart"/);
+});
+
+test(":store stays page-global (bare name) even inside a section", () => {
+  const page = compileWd([
+    "::: section #shop",
+    ":store cart = []",
+    "{ cart.length }",
+    ":::"
+  ]);
+  assert.match(page.html, /data-wd-store="cart"/);
+  assert.doesNotMatch(page.html, /data-wd-store="shop:cart"/);
+  assert.match(page.html, /data-wd-bind="cart" data-wd-path="length"/);
+});
+
+test(":store rejects a duplicate declaration with a Use: suggestion", () => {
+  compileWdThrows([
+    ":store cart = []",
+    ":store cart = {}"
+  ], /declared twice[\s\S]*Use: :store name = value/);
+});
+
+test(":store and :state declaring the same name collide with a Use: suggestion", () => {
+  compileWdThrows([
+    ":store cart = []",
+    ":state cart = 0"
+  ], /collides[\s\S]*Use: :store name = value/);
+  compileWdThrows([
+    ":state cart = 0",
+    ":store cart = []"
+  ], /collides[\s\S]*Use: :store name = value/);
+});
+
+test(":store rejects an invalid name with a Use: suggestion", () => {
+  compileWdThrows([
+    ":store 9bad = []"
+  ], /Use: :store name = value/);
+});
+
 test(":if over loop items renders per-item branches at compile time", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", [
