@@ -52,6 +52,7 @@ import MarkdownIt from "markdown-it";
  * @property {string[]} sections Active section-id scope chain.
  * @property {string | null} loopItem Name of the current reactive loop item, if any.
  * @property {string} [loopKey] State key of the list being looped, if any.
+ * @property {boolean} [loopMeta] Inside a loop body, so `$index`/`$first`/… are valid.
  * @property {MarkdownIt} [md] Markdown-it instance selected for this file.
  */
 
@@ -329,7 +330,8 @@ function compileBody(lines, ctx) {
     if (/^@loop\s/.test(line)) {
       flush();
       const block = scanBlock(lines, i, /^@loop\s/, "@endloop", ctx.file);
-      out.push(handleLoop(line, block.body, ctx));
+      const split = splitEmptyBranch(block.body);
+      out.push(handleLoop(line, split.body, split.empty, ctx));
       i = block.end;
       continue;
     }
@@ -448,6 +450,37 @@ function scanBlock(lines, start, openRe, endToken, file) {
     body.push(line);
   }
   throw new Error(`Missing ${endToken} for "${lines[start]}" in ${file}`);
+}
+
+/**
+ * Split a `@loop` body at a top-level `@empty` into the rows body and the empty
+ * branch. Honors nested `@loop … @endloop` (so an inner loop's `@empty` is not
+ * mistaken for the outer one) and fenced code.
+ * @param {string[]} body
+ * @returns {{ body: string[], empty: string[] | null }}
+ */
+function splitEmptyBranch(body) {
+  /** @type {string[]} */
+  const rows = [];
+  /** @type {string[] | null} */
+  let empty = null;
+  let target = rows;
+  let depth = 0;
+  let fence = null;
+  for (const line of body) {
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      target.push(line);
+      continue;
+    }
+    if (fenceMatch) { fence = fenceMatch[1]; target.push(line); continue; }
+    if (/^@loop\s/.test(line)) depth++;
+    if (line.trim() === "@endloop") depth--;
+    if (depth === 0 && line.trim() === "@empty") { empty = []; target = empty; continue; }
+    target.push(line);
+  }
+  return { body: rows, empty };
 }
 
 /**
@@ -872,6 +905,17 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
   const segs = match[1].split(".");
   const head = segs[0];
 
+  // Per-row meta vars in :if — only valid inside a loop.
+  if (LOOP_META[head]) {
+    if (!ctx.loopMeta) throw new Error(`":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`);
+    if (ctx.loopItem) {
+      const truthy = compileBody(truthyLines, ctx).trim();
+      const falsy = compileBody(falsyLines, ctx).trim();
+      return `<span data-wd-each-if data-wd-meta="${LOOP_META[head]}"><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
+    }
+    // static: the meta boolean is in scope — fall through to the static branch below.
+  }
+
   const staticValue = lookupVar(ctx.scope, head);
   if (staticValue.found) {
     const active = Boolean(getPath(staticValue.value, segs.slice(1)));
@@ -900,24 +944,116 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
   return `<div data-wd-if="${key}"${pathAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
 }
 
+// The fixed corrective suggestion shown for any malformed @loop header.
+const LOOP_USAGE = "Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N]";
+
+// Reserved per-row meta variables, mapped to their runtime marker token.
+/** @type {Record<string, string>} */
+const LOOP_META = { $index: "index", $number: "number", $first: "first", $last: "last", $count: "count" };
+
+/**
+ * Parse the optional clause tail of a `@loop` header in FIXED order:
+ * `[where P] [sort by key [asc|desc]] [reverse] [offset N] [limit N]`.
+ * @param {string} tail Everything after `@loop src into item`.
+ * @param {string} itemName
+ * @param {Ctx} ctx
+ * @returns {{ where: string|null, sort: {key:string,dir:string}|null, reverse: boolean, offset: NumArg|null, limit: NumArg|null, refsState: boolean }}
+ */
+function parseLoopClauses(tail, itemName, ctx) {
+  // Peel clauses off the END in reverse fixed-order (limit, offset, reverse,
+  // sort by). Parsing from the tail avoids mistaking a state operand named
+  // `limit`/`offset` inside the `where` predicate for a clause keyword. Whatever
+  // remains must be `where …` (or empty); a clause keyword surviving in the
+  // remainder means the author wrote the clauses out of order.
+  let s = tail.trim();
+  /** @type {{key:string,dir:string}|null} */ let sort = null;
+  let reverse = false;
+  /** @type {NumArg|null} */ let offset = null;
+  /** @type {NumArg|null} */ let limit = null;
+  let refsState = false;
+  /** @returns {never} */
+  const bad = () => { throw new Error(`Malformed @loop clause in ${ctx.file}: "${tail.trim()}". ${LOOP_USAGE}`); };
+
+  let m = s.match(/(^|\s)limit\s+(\d+|[A-Za-z_$][\w$]*)$/);
+  if (m) { limit = parseNumArg(m[2], ctx); refsState = refsState || limit.kind === "key"; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+
+  m = s.match(/(^|\s)offset\s+(\d+|[A-Za-z_$][\w$]*)$/);
+  if (m) { offset = parseNumArg(m[2], ctx); refsState = refsState || offset.kind === "key"; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+
+  m = s.match(/(^|\s)reverse$/);
+  if (m) { reverse = true; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+
+  m = s.match(/(^|\s)sort\s+by\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\s+(asc|desc))?$/);
+  if (m) {
+    const segs = m[2].split(".");
+    if (segs[0] !== itemName) throw new Error(`@loop sort key "${m[2]}" must start with the loop item "${itemName}" in ${ctx.file}. ${LOOP_USAGE}`);
+    const rest = segs.slice(1);
+    if (rest.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+      throw new Error(`Sort key "${m[2]}" is not allowed in @loop (${ctx.file})`);
+    }
+    sort = { key: rest.join("."), dir: m[3] || "asc" };
+    s = s.slice(0, s.length - m[0].length + m[1].length).trim();
+  }
+
+  /** @type {string|null} */ let where = null;
+  if (s.length) {
+    m = s.match(/^where\s+(.+)$/);
+    if (!m) return bad(); // leftover non-where text → clauses written out of order
+    where = m[1].trim();
+    // `sort by`/`reverse` are never valid where operands; their presence in the
+    // predicate means a clause was written before `where` finished (wrong order).
+    if (/(^|\s)(sort\s+by\s|reverse(\s|$))/.test(where)) bad();
+  }
+  return { where, sort, reverse, offset, limit, refsState };
+}
+
+/**
+ * A loop offset/limit argument: a non-negative integer literal or a state key.
+ * @typedef {{ kind: "literal", value: number } | { kind: "key", value: string }} NumArg
+ */
+
+/**
+ * @param {string} tok
+ * @param {Ctx} ctx
+ * @returns {NumArg}
+ */
+function parseNumArg(tok, ctx) {
+  if (/^\d+$/.test(tok)) return { kind: "literal", value: Number(tok) };
+  if (/^[A-Za-z_$][\w$]*$/.test(tok)) {
+    const key = resolveStateKey(tok, ctx);
+    if (!key) throw new Error(`@loop offset/limit "${tok}" in ${ctx.file} is neither a non-negative integer nor a declared :state. ${LOOP_USAGE}`);
+    return { kind: "key", value: key };
+  }
+  throw new Error(`@loop offset/limit "${tok}" in ${ctx.file} is invalid. ${LOOP_USAGE}`);
+}
+
+/** @param {NumArg} arg @returns {string} */
+function numArgAttr(arg) {
+  return arg.kind === "literal" ? String(arg.value) : `key:${arg.value}`;
+}
+
 /**
  * @param {string} line
  * @param {string[]} bodyLines
+ * @param {string[] | null} emptyLines
  * @param {Ctx} ctx
  * @returns {string}
  */
-function handleLoop(line, bodyLines, ctx) {
-  const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(?:\s+where\s+(.+?))?\s*$/);
-  if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. Use: @loop <things> into <thing> [where <predicate>]`);
+function handleLoop(line, bodyLines, emptyLines, ctx) {
+  const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(\s+.+?)?\s*$/);
+  if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. ${LOOP_USAGE}`);
   const source = stripQuotes(match[1].trim());
   const itemName = match[2];
-  const where = match[3] ? compilePredicate(match[3].trim(), itemName, ctx) : null;
+  const clauses = match[3] ? parseLoopClauses(match[3], itemName, ctx) : { where: null, sort: null, reverse: false, offset: null, limit: null, refsState: false };
+  const where = clauses.where ? compilePredicate(clauses.where, itemName, ctx) : null;
+  /** @type {LoopOpts} */
+  const opts = { where, sort: clauses.sort, reverse: clauses.reverse, offset: clauses.offset, limit: clauses.limit, empty: emptyLines, clauseRefsState: clauses.refsState };
 
   if (source.startsWith("/") || source.startsWith("./") || source.startsWith("../") || source.endsWith(".json")) {
     const dataFile = resolveInclude(source, ctx.file, ctx.context, true);
     const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
-    return loopOverData(rows, itemName, bodyLines, ctx, where);
+    return loopOverData(rows, itemName, bodyLines, ctx, opts);
   }
 
   const resolved = lookupPath(source, ctx);
@@ -925,12 +1061,20 @@ function handleLoop(line, bodyLines, ctx) {
     if (!Array.isArray(resolved.value)) {
       throw new Error(`@loop ${source} in ${ctx.file} found an in-scope value, but it is not a list`);
     }
-    return loopOverData(resolved.value, itemName, bodyLines, ctx, where);
+    return loopOverData(resolved.value, itemName, bodyLines, ctx, opts);
   }
 
-  if (/^[A-Za-z_$][\w$]*$/.test(source)) {
-    const key = resolveStateKey(source, ctx);
-    if (key) return reactiveLoop(key, itemName, bodyLines, ctx, where ? { where } : null);
+  // A bare name OR a dotted path resolving to declared :state (e.g. team.members).
+  const segs = source.split(".");
+  if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(source)) {
+    if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+      throw new Error(`@loop source "${source}" is not allowed in ${ctx.file}`);
+    }
+    const key = resolveStateKey(segs[0], ctx);
+    if (key) {
+      const fullKey = segs.length > 1 ? `${key}.${segs.slice(1).join(".")}` : key;
+      return reactiveLoop(fullKey, itemName, bodyLines, ctx, opts);
+    }
   }
 
   throw new Error(
@@ -949,17 +1093,58 @@ function handleLoop(line, bodyLines, ctx) {
  */
 
 /**
+ * Loop clause configuration shared by the static and reactive paths.
+ * @typedef {object} LoopOpts
+ * @property {Predicate | null} where
+ * @property {{ key: string, dir: string } | null} sort
+ * @property {boolean} reverse
+ * @property {NumArg | null} offset
+ * @property {NumArg | null} limit
+ * @property {string[] | null} empty Empty-branch body lines, if any.
+ * @property {boolean} clauseRefsState Whether offset/limit reference state.
+ */
+
+/**
+ * Build-time pipeline over already-resolved rows: filter → sort → reverse →
+ * offset → limit. Used when source + every clause arg are static.
+ * @param {unknown[]} rows
+ * @param {Predicate | null} where
+ * @param {LoopOpts} opts
+ * @param {Ctx} ctx
+ * @returns {unknown[]}
+ */
+function pipelineRows(rows, where, opts, ctx) {
+  let list = where ? rows.filter((row) => evalPredicate(where.body, row, ctx)) : rows.slice();
+  if (opts.sort) {
+    const k = opts.sort.key;
+    const dir = opts.sort.dir === "desc" ? -1 : 1;
+    list = list.map((value, index) => ({ value, index })).sort((a, b) => {
+      const av = getPath(a.value, k ? k.split(".") : []);
+      const bv = getPath(b.value, k ? k.split(".") : []);
+      let c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+      return (c || a.index - b.index) * dir;
+    }).map((w) => w.value);
+  }
+  if (opts.reverse) list.reverse();
+  const off = opts.offset && opts.offset.kind === "literal" ? opts.offset.value : 0;
+  if (off) list = list.slice(off);
+  if (opts.limit && opts.limit.kind === "literal") list = list.slice(0, opts.limit.value);
+  return list;
+}
+
+/**
  * @param {unknown[]} rows
  * @param {string} itemName
  * @param {string[]} bodyLines
  * @param {Ctx} ctx
- * @param {Predicate | null} where
+ * @param {LoopOpts} opts
  * @returns {string}
  */
-function loopOverData(rows, itemName, bodyLines, ctx, where) {
-  if (!where) return staticUnroll(rows, itemName, bodyLines, ctx);
-  if (!where.refsState) return staticUnroll(rows.filter((row) => evalPredicate(where.body, row, ctx)), itemName, bodyLines, ctx);
-  return reactiveLoop(null, itemName, bodyLines, ctx, { where, data: rows });
+function loopOverData(rows, itemName, bodyLines, ctx, opts) {
+  // Reactive when the where reads state OR an offset/limit references a state key.
+  const reactive = (opts.where && opts.where.refsState) || opts.clauseRefsState;
+  if (reactive) return reactiveLoop(null, itemName, bodyLines, ctx, { ...opts, data: rows });
+  return staticUnroll(pipelineRows(rows, opts.where, opts, ctx), itemName, bodyLines, ctx, opts.empty);
 }
 
 // Compile a `where` predicate to a safe JS boolean expression over I()/S()/C().
@@ -1056,30 +1241,36 @@ function evalPredicate(body, item, ctx) {
  * @param {string} itemName
  * @param {string[]} bodyLines
  * @param {Ctx} ctx
+ * @param {string[] | null} [empty] Empty-branch body, rendered when 0 rows.
  * @returns {string}
  */
-function staticUnroll(rows, itemName, bodyLines, ctx) {
+function staticUnroll(rows, itemName, bodyLines, ctx, empty = null) {
+  if (rows.length === 0 && empty) return compileBody(empty, { ...ctx, loopMeta: true });
   const out = [];
-  for (const row of rows) {
-    const rowCtx = { ...ctx, scope: createScope(ctx.scope, { [itemName]: row }) };
+  const count = rows.length;
+  for (let i = 0; i < count; i++) {
+    const meta = { $index: i, $number: i + 1, $first: i === 0, $last: i === count - 1, $count: count };
+    const rowCtx = { ...ctx, loopMeta: true, scope: createScope(ctx.scope, { [itemName]: rows[i], ...meta }) };
     out.push(compileBody(bodyLines, rowCtx));
   }
   return out.join("\n");
 }
 
 /**
- * Emit a reactive loop region (template + initial rows) for the runtime.
- * @param {string | null} key State key of the list, or null for baked data.
+ * Emit a reactive loop region (template + initial rows + clause config) for the
+ * runtime. `key` may be a dotted path (e.g. `team.members`); the runtime reads
+ * it via getPath. `opts` carries where/sort/reverse/offset/limit/empty.
+ * @param {string | null} key State key/path of the list, or null for baked data.
  * @param {string} itemName
  * @param {string[]} bodyLines
  * @param {Ctx} ctx
- * @param {{ where?: Predicate, data?: unknown[] } | null} [opts]
+ * @param {Partial<LoopOpts> & { data?: unknown[] } | null} [opts]
  * @returns {string}
  */
 function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   ctx.comp.assets.runtime = true;
   /** @type {Ctx} */
-  const templateCtx = { ...ctx, loopItem: itemName, loopKey: key ?? undefined, scope: createScope(ctx.scope) };
+  const templateCtx = { ...ctx, loopItem: itemName, loopKey: key ?? undefined, loopMeta: true, scope: createScope(ctx.scope) };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
 
   let wrapperTag = "div";
@@ -1093,23 +1284,44 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   }
 
   const where = opts?.where || null;
+  const sort = opts?.sort || null;
+  const reverse = opts?.reverse || false;
+  const offset = opts?.offset || null;
+  const limit = opts?.limit || null;
+  const emptyLines = opts?.empty || null;
   const baked = opts?.data || null;       // rows for a static source filtered by state
-  const stateRows = key ? ctx.comp.state.get(key) : null;
+  // Resolve the (possibly dotted) source for the initial paint.
+  const segs = key ? key.split(".") : [];
+  const stateRows = key ? getPath(ctx.comp.state.get(segs[0]), segs.slice(1)) : null;
   /** @type {unknown[]} */
   const allRows = key ? (Array.isArray(stateRows) ? stateRows : []) : (baked || []);
-  const rows = where ? allRows.filter((/** @type {unknown} */ row) => evalPredicate(where.body, row, ctx)) : allRows;
+  // Initial paint runs the same pipeline the runtime will, reading state-key
+  // offset/limit from their current declared values.
+  /** @param {NumArg|null} a */
+  const num = (a) => a ? (a.kind === "literal" ? a.value : Number(ctx.comp.state.get(a.value) ?? 0)) : null;
+  const rows = pipelineRows(allRows, where, { where, sort, reverse, offset: offset && offset.kind === "key" ? { kind: "literal", value: num(offset) || 0 } : offset, limit: limit && limit.kind === "key" ? { kind: "literal", value: num(limit) ?? allRows.length } : limit, empty: null, clauseRefsState: false }, ctx);
   /** @type {Map<string, number>} */
   const counts = new Map();
+  const count = rows.length;
   const initial = rows
-    .map((/** @type {unknown} */ item) => {
+    .map((/** @type {unknown} */ item, i) => {
       const itemKey = loopKeyOf(item, counts);
-      return fillTemplateString(withLoopKey(itemTemplate, itemKey), item);
+      const meta = { index: i, number: i + 1, first: i === 0, last: i === count - 1, count };
+      return fillTemplateString(withLoopKey(itemTemplate, itemKey), item, meta);
     })
     .join("");
 
-  const whereAttr = where ? ` data-wd-loop-where="${escapeHtml(where.body)}"` : "";
-  const dataAttr = baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "";
-  return `<div data-wd-loop="${key || ""}"${whereAttr}${dataAttr}><template data-wd-loop-template>${itemTemplate}</template><${wrapperTag} data-wd-loop-out>${initial}</${wrapperTag}></div>`;
+  const emptyTemplate = emptyLines ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>` : "";
+  const initialOut = count === 0 && emptyLines ? compileBody(emptyLines, { ...ctx, loopMeta: true }).trim() : initial;
+
+  const attrs =
+    (where ? ` data-wd-loop-where="${escapeHtml(where.body)}"` : "") +
+    (sort ? ` data-wd-loop-sort="${escapeHtml(sort.key)}" data-wd-loop-sort-dir="${sort.dir}"` : "") +
+    (reverse ? ` data-wd-loop-reverse` : "") +
+    (offset ? ` data-wd-loop-offset="${numArgAttr(offset)}"` : "") +
+    (limit ? ` data-wd-loop-limit="${numArgAttr(limit)}"` : "") +
+    (baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "");
+  return `<div data-wd-loop="${escapeHtml(key || "")}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out>${initialOut}</${wrapperTag}></div>`;
 }
 
 /**
@@ -1124,12 +1336,26 @@ function withLoopKey(template, itemKey) {
 /**
  * @param {string} template
  * @param {unknown} item
+ * @param {Record<string, unknown>} [meta] Per-row meta values for the initial paint.
  * @returns {string}
  */
-function fillTemplateString(template, item) {
+function fillTemplateString(template, item, meta = {}) {
   // Resolve per-item :if regions first (recursively, so nested conditionals are
-  // pre-rendered for the initial paint), then fill the plain text bindings.
-  return fillEachText(fillEachIfRegions(template, item), item);
+  // pre-rendered for the initial paint), then fill text binds and meta markers.
+  return fillEachMeta(fillEachText(fillEachIfRegions(template, item, meta), item), meta);
+}
+
+/**
+ * Fill `<span data-wd-each-meta="…">` markers with their per-row value.
+ * @param {string} str
+ * @param {Record<string, unknown>} meta
+ * @returns {string}
+ */
+function fillEachMeta(str, meta) {
+  return str.replace(/<span data-wd-each-meta="([a-z]+)"><\/span>/g, (_, name) => {
+    const value = name in meta ? meta[name] : "";
+    return `<span data-wd-each-meta="${name}">${escapeHtml(value ?? "")}</span>`;
+  });
 }
 
 // Walk the string resolving only the OUTERMOST data-wd-each-if regions; each
@@ -1138,9 +1364,10 @@ function fillTemplateString(template, item) {
 /**
  * @param {string} str
  * @param {unknown} item
+ * @param {Record<string, unknown>} [meta]
  * @returns {string}
  */
-function fillEachIfRegions(str, item) {
+function fillEachIfRegions(str, item, meta = {}) {
   const marker = '<span data-wd-each-if ';
   let result = "";
   let i = 0;
@@ -1149,7 +1376,7 @@ function fillEachIfRegions(str, item) {
     if (start === -1) return result + str.slice(i);
     result += str.slice(i, start);
     const end = matchElement(str, start, "span");
-    result += fillOneEachIf(str.slice(start, end), item);
+    result += fillOneEachIf(str.slice(start, end), item, meta);
     i = end;
   }
 }
@@ -1157,9 +1384,11 @@ function fillEachIfRegions(str, item) {
 /**
  * @param {string} region
  * @param {unknown} item
+ * @param {Record<string, unknown>} meta
  * @returns {string}
  */
-function fillOneEachIf(region, item) {
+function fillOneEachIf(region, item, meta) {
+  const metaMatch = region.match(/^<span data-wd-each-if data-wd-meta="([a-z]+)">/);
   const path = (region.match(/^<span data-wd-each-if data-wd-path="([^"]*)">/) || ["", ""])[1];
   const trueStart = region.indexOf("<template data-wd-if-true>");
   const trueEnd = matchElement(region, trueStart, "template");
@@ -1169,9 +1398,10 @@ function fillOneEachIf(region, item) {
   const close = "</template>".length;
   const truthy = region.slice(trueStart + open, trueEnd - close);
   const falsy = region.slice(falseStart + "<template data-wd-if-false>".length, falseEnd - close);
-  const branch = getPath(item, path ? path.split(".") : []) ? truthy : falsy;
+  const test = metaMatch ? Boolean(meta[metaMatch[1]]) : Boolean(getPath(item, path ? path.split(".") : []));
+  const branch = test ? truthy : falsy;
   const head = region.slice(0, falseEnd);
-  return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item)}</span></span>`;
+  return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item, meta)}</span></span>`;
 }
 
 /**
@@ -1297,6 +1527,13 @@ function bindingPlugin(mdInstance) {
 function resolveBindingHtml(expr, ctx) {
   const segs = expr.split(".");
   const head = segs[0];
+
+  // Per-row meta vars ($index/$number/$first/$last/$count) — only inside a loop.
+  if (LOOP_META[head]) {
+    if (!ctx.loopMeta) throw new Error(`"{ ${expr} }" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Move it into a loop body, or rename your value.`);
+    if (ctx.loopItem) return `<span data-wd-each-meta="${LOOP_META[head]}"></span>`; // reactive: filled per row
+    // static: the value is in scope (injected by staticUnroll); fall through.
+  }
 
   if (ctx.loopItem && head === ctx.loopItem) {
     const rest = segs.slice(1).join(".");
