@@ -17,9 +17,12 @@
     "test": "node --test tests/*.test.js",
     "test:cov": "node --test --experimental-test-coverage tests/*.test.js",
     "test:e2e": "playwright test",
+    "test:extension": "npm --prefix editors/vscode ci && npm --prefix editors/vscode test",
+    "pack:extension": "cd editors/vscode && npx --yes @vscode/vsce package",
     "typecheck": "tsc --noEmit",
     "types": "tsc -p tsconfig.types.json",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "smoke": "node scripts/smoke-consumer.mjs"
   },
   "files": [
     "src",
@@ -48,7 +51,7 @@
     "type": "git",
     "url": "git+https://github.com/ZVN-DEV/darkmown.git"
   },
-  "homepage": "https://github.com/ZVN-DEV/darkmown#readme",
+  "homepage": "https://darkmown.com",
   "bugs": {
     "url": "https://github.com/ZVN-DEV/darkmown/issues"
   },

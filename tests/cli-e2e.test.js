@@ -120,6 +120,9 @@ test("full user journey: init -> build -> serve -> fetch", { timeout: STEP_TIMEO
 
     const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
     const rootPkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+    assert.equal(pkg.name, path.basename(root).toLowerCase());
+    assert.equal(pkg.private, true);
+    assert.equal(pkg.scripts.preview, "darkmown serve");
     assert.equal(pkg.devDependencies["@zvndev/darkmown"], `^${rootPkg.version}`);
   });
 

@@ -44,7 +44,7 @@ This audit compares the current Darkmown implementation with the original MARROW
 - **Adapter-style Tier 2 (decided):** Darkmown does not own a server. `:form action="/url" into reply` posts urlencoded via fetch and lands the JSON reply in state, degrading to a plain native POST without JS. Sessions ride on `:fetch` plus ordinary cookies against any backend. A first-party `site/api/` runtime stays open as a future option if a real project demands it.
 - **Dev error overlay:** failed rebuilds render the compiler error in the browser; the overlay clears on the next good build.
 - **`darkmown serve`:** local preview of the built `dist`, no dev client injected.
-- **Packaging:** v0.3.0, license UNLICENSED pending a licensing decision, scaffold pins the live version, npm pack contents covered by tests.
+- **Packaging:** v0.3.0 introduced package metadata and pack tests; the current public package is MIT licensed and scaffolded projects pin the live Darkmown version.
 
 ## Stage 6 additions (2026-06-13)
 
@@ -69,10 +69,10 @@ The compiler recognizes three directives — `:note`, `:try`, and `:sprint` — 
 - First-party server runtime (`site/api/`), HTML-fragment `swap` semantics, and cart server sync — parked behind the adapter decision until a real project needs them.
 - `@loop` over fetch sub-paths (looping a path *inside* fetched state rather than top-level state).
 - **View transitions:** re-enabling `transitions: true` with proper activation fallbacks (disabled today — see Stage 4), plus `@starting-style` emission and browser fallbacks for older engines.
-- Editor tooling, richer diagnostics, and an actual npm publish (needs a license decision).
+- Richer diagnostics and package-consumer QA in regular CI. Editor tooling exists as a source-installable VS Code extension; public Marketplace/Open VSX distribution remains a launch/distribution follow-up.
 
 ## Current claim
 
 Darkmown is faithful to the core thesis: Markdown remains the authoring center, static pages ship zero framework JavaScript, and reactive behavior compiles into tiny direct-DOM islands only where declared. The extension is the feature gate, the loop is one concept with progressive disclosure, and state scopes to document structure.
 
-It is not yet the full production framework described in the original document.
+The public npm package is published as `@zvndev/darkmown`, the project is MIT licensed, and the remaining gaps are explicitly scoped as post-launch product/distribution work rather than missing v0.9 claims.

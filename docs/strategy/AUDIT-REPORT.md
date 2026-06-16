@@ -1,5 +1,7 @@
 # Darkmown — Audit Report
 
+> Historical baseline from the pre-v0.9 hardening sprint. Resolved findings here may no longer be current launch blockers; use `docs/gold-standard-audit.md` as the current launch-readiness scorecard.
+
 Source: product-review run 2026-06-14 (inherited into product-sprint).
 Overall rating at audit time: **7/10** (strong pre-1.0 framework, single author, ~36 commits over 4 days, 83 tests passing).
 

@@ -176,6 +176,6 @@ See it all live on the [Data & Forms page](/data/).
 
 ## Spec status
 
-The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:fetch`, `:form` (including server round-trips), `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/). Still on the roadmap: a first-party server runtime (`site/api/`), HTML-fragment swaps, and nested `:if` over loop items. See `docs/spec-alignment.md` in the package for the full audit.
+The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:fetch`, `:form` (including server round-trips), `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/). Still on the roadmap: a first-party server runtime (`site/api/`), HTML-fragment swaps, and `@loop` over fetched sub-paths. See `docs/spec-alignment.md` in the package for the full audit.
 
 </main>

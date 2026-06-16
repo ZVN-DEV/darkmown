@@ -20,8 +20,9 @@ if (command === "help" || command === "--help" || command === "-h") {
 } else if (command === "init") {
   const target = process.argv[3] || ".";
   const result = initProject(path.resolve(process.cwd(), target));
-  console.log(`Created Darkmown project at ${path.relative(process.cwd(), result.root) || "."}`);
-  console.log(`Next: cd ${path.relative(process.cwd(), result.root) || "."} && npm install && npm run dev`);
+  const relativeRoot = path.relative(process.cwd(), result.root) || ".";
+  console.log(`Created Darkmown project at ${relativeRoot}`);
+  console.log(`Next: ${nextStep(relativeRoot)}`);
 } else if (command === "build") {
   const result = buildSite();
   console.log(`Built ${result.routes.length} routes into ${path.relative(process.cwd(), result.distRoot)}`);
@@ -157,6 +158,7 @@ Usage:
   darkmown dev          Start the live compiler dev server
   darkmown build        Compile site/pages into dist
   darkmown serve        Preview the built dist locally
+  darkmown version      Print the installed Darkmown version
   darkmown help         Show this help
 
 Authoring:
@@ -166,4 +168,14 @@ Authoring:
   *.skin              Colocated indentation-based CSS
   *.js                Colocated page behavior
 `);
+}
+
+
+/**
+ * @param {string} relativeRoot
+ * @returns {string}
+ */
+function nextStep(relativeRoot) {
+  if (relativeRoot === ".") return "npm install && npm run dev";
+  return `cd ${relativeRoot} && npm install && npm run dev`;
 }

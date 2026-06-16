@@ -27,7 +27,8 @@ The package is `@zvndev/darkmown`; the command it installs is plain `darkmown`.
 ```sh
 npm install
 npm test
-npm run dev    # live demo site — the same site that runs darkmown.com
+npm run smoke   # pack, install, scaffold, and build a temporary consumer app
+npm run dev     # live demo site — the same site that runs darkmown.com
 ```
 
 ## Commands
@@ -36,6 +37,7 @@ npm run dev    # live demo site — the same site that runs darkmown.com
 - `darkmown dev` starts the live compiler with browser reload and an in-browser error overlay when a build fails.
 - `darkmown build` writes static output to `dist`.
 - `darkmown serve` previews the built `dist` locally.
+- `darkmown version` prints the installed package version.
 - `darkmown help` prints CLI usage.
 
 ## Authoring model
@@ -76,14 +78,16 @@ tags: [sales, revenue, "q1, q2"]
 
 `@loop <things> into <thing>` is the only loop. The source decides the behavior:
 
+A JSON-file loop is unrolled at build time; includes inside inherit the loop value. A `:state` list loop is reactive and patched by key.
+
 ```wd
-@loop /features.json into card     <- JSON file: unrolled at build time
-@include /feature-card.wd          <- includes inherit the loop value
+@loop /features.json into card
+@include /feature-card.wd
 @endloop
 
 :state todos = [{"id": 1, "title": "Route pages"}]
 
-@loop todos into todo              <- :state list: reactive, patched by key
+@loop todos into todo
 - { todo.title }
 @endloop
 ```
@@ -119,7 +123,7 @@ Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive sub
 
 ### Editable lists — per-row actions
 
-A `:button` inside a reactive `@loop` can act on its own row. Two row actions exist:
+A `:button` inside a reactive `@loop` can act on its own row. `cart += product` carries the current row into another list; `cart remove line` drops the current row from the looped list:
 
 ```wd
 :state products = [{"id": 1, "name": "Aurora", "price": 49}]
@@ -128,14 +132,14 @@ A `:button` inside a reactive `@loop` can act on its own row. Two row actions ex
 @loop products into product
 ::: card
 **{ product.name }** — ${ product.price }
-:button "Add to cart" -> cart += product    <- carry this row into another list
+:button "Add to cart" -> cart += product
 :::
 @endloop
 
 @loop cart into line
 ::: card
 { line.name }
-:button "Remove" -> cart remove line          <- drop this row from the looped list
+:button "Remove" -> cart remove line
 :::
 @endloop
 ```
@@ -213,7 +217,7 @@ Set `window.wd.debug = true` (it defaults to `false`) to log any `:computed` or 
 
 ## Editor support
 
-A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown. Install it from source by building a `.vsix`: `cd editors/vscode && npx @vscode/vsce package`, then `code --install-extension darkmown-*.vsix`. A Marketplace listing is coming soon.
+A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown. For launch, it is source-installable: build a `.vsix` with `npm run pack:extension`, then install `editors/vscode/darkmown-*.vsix` with VS Code. Marketplace/Open VSX publishing is tracked as post-launch distribution work, so the public package does not imply store availability yet.
 
 ## Security
 

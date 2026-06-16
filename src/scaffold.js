@@ -13,9 +13,12 @@ const darkmownVersion = JSON.parse(
 export function initProject(root) {
   fs.mkdirSync(root, { recursive: true });
   writeNew(root, "package.json", JSON.stringify({
+    name: packageNameFromRoot(root),
+    private: true,
     scripts: {
       dev: "darkmown dev",
-      build: "darkmown build"
+      build: "darkmown build",
+      preview: "darkmown serve"
     },
     devDependencies: {
       "@zvndev/darkmown": `^${darkmownVersion}`
@@ -145,4 +148,20 @@ function writeNew(root, file, content) {
   if (fs.existsSync(target)) return;
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, `${content}\n`);
+}
+
+
+/**
+ * Derive a safe default npm package name from the scaffold target directory.
+ * @param {string} root Absolute target directory.
+ * @returns {string}
+ */
+function packageNameFromRoot(root) {
+  const base = path.basename(root) || "darkmown-site";
+  const normalized = base
+    .toLowerCase()
+    .replace(/^@/, "")
+    .replace(/[^a-z0-9._~-]+/g, "-")
+    .replace(/^[._-]+|[._-]+$/g, "");
+  return normalized || "darkmown-site";
 }

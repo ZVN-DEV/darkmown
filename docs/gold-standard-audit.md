@@ -1,44 +1,44 @@
 # Darkmown — Gold-Standard Open-Source Audit
 
-Date: 2026-06-15 · Branch: `sprint/v0.9.0-proof-and-tests` · ~2,070 LOC src, 3,378 LOC tests (1.63:1)
+Date: 2026-06-16 · Package: `@zvndev/darkmown@0.9.0` · Status: launch-readiness scorecard
 
 ## Summary
-Darkmown is an unusually mature pre-1.0, single-author framework. Audited across 10 gold-standard dimensions, it scores **46.5/50** — a clear pass. The remaining gaps are cheap P1/P2 boilerplate (types, fuzz test, release smoke-test, dependabot, community files), not structural problems.
 
-## Scorecard
+Darkmown is a mature pre-1.0 Markdown framework with the launch-critical trust pieces in place: typed public surface, unit/e2e/fuzz coverage, Dependabot, community files, release provenance, package smoke testing, and a public npm package. Audited across 10 gold-standard dimensions, it scores **48.5/50**. The remaining work is launch polish, not structural readiness.
+
+## Current scorecard
 
 | Dimension | Score | Key finding |
 |-----------|-------|-------------|
-| Testing | 5/5 | 1.63:1 test ratio, 96.5% coverage, behavioral e2e, node:vm DOM stub (zero-dep). Gap: no fuzz test. |
-| Error Handling | 5/5 | Nearly every throw carries file path + `Use:` fix; dev/prod split via `wd.debug`. |
-| CI/CD | 5/5 | 8 parallel jobs, concurrency-cancel + npm cache, new e2e + coverage jobs. |
-| Build System | 5/5 | `dist/` not committed, deterministic build, runtime 3182 B gz (38% under budget). |
-| Security | 5/5 | 0 vulns, 1 runtime dep, exemplary SECURITY.md + html:true footgun warning. Gap: no dependabot. |
-| Code Organization | 4.5/5 | Clean acyclic modules, each single-purpose. `compiler.js` (1165 LOC) is the one split candidate (deferred — risky pre-release). |
-| Tech Debt | 4.5/5 | ~0 TODOs/kLOC; view-transitions parking is exemplary. Gap: no issue link for it; repo-root clutter. |
-| Documentation | 4.5/5 | Excellent README/CHANGELOG/spec-alignment + dual CLAUDE.md/AGENTS.md. Gap: no CoC/PR/issue templates/CODEOWNERS. |
-| Release Engineering | 4/5 | Tag publish + provenance + great CHANGELOG. Gap: no pack smoke-test, no prepublishOnly. |
-| Developer Experience | 4/5 | 3-command hello-world, great hot reload. Gap: no type safety on the published surface. |
+| Testing | 5/5 | Unit, integration, fuzz, runtime DOM, CLI e2e, and Playwright browser tests are present; runtime size stays under the 5 KB gzip budget. |
+| Error Handling | 5/5 | Compiler and CLI failures name the file/path and usually include a corrective `Use:` hint; dev/prod behavior is separated. |
+| CI/CD | 5/5 | CI covers node tests, coverage, typecheck, e2e, build, size, audit, and editor grammar checks. |
+| Build System | 5/5 | Deterministic `dist/` output, generated route manifest, colocated assets, and package tarball smoke coverage. |
+| Security | 5/5 | One runtime dependency, high-severity audit gate, Dependabot for npm/actions, and documented `html:true` tradeoffs. |
+| Code Organization | 4.5/5 | Modules are focused and acyclic; `src/compiler.js` remains the main future split candidate, deferred to avoid pre-launch churn. |
+| Tech Debt | 4.5/5 | View transitions are intentionally parked with regression coverage; larger server/runtime ideas are documented as future scope. |
+| Documentation | 5/5 | README, CLI docs, spec alignment, changelog, contribution guide, code of conduct, issue/PR templates, and CODEOWNERS are present. |
+| Release Engineering | 5/5 | Public scoped package, MIT license, `prepublishOnly`, provenance release flow, and packed-consumer smoke test are in place. |
+| Developer Experience | 4.5/5 | Three-command quick start, live reload, scaffold, syntax grammar, and generated types are present; editor distribution remains source-install until a Marketplace/Open VSX release is cut. |
 
-**Overall: 46.5/50**
+**Overall: 48.5/50**
 
-## Improvement plan (Stage 3 of v0.9.0 sprint)
+## Launch-readiness notes
 
-**P1 (done this sprint):**
-1. **Types** — `tsconfig.json` (`allowJs`+`checkJs`+`noEmit`+`strict`), JSDoc on exported functions, generated `.d.ts`, CI `typecheck` job. Adds `typescript` as a dev-only dep (runtime stays zero-dep). [DX 4→5]
-2. **Fuzz test** — seeded property test: random `.wd` directive bodies + `:computed`/`where` expressions assert "compile produces valid HTML or throws a path-tagged Error — never crashes, never emits undefined." [Testing gap closed]
-3. **Release pack smoke-test** — `npm pack` → install tarball in temp dir → `darkmown init && build` → assert `dist/index.html`, gating publish. [Release 4→5]
-4. **`.github/dependabot.yml`** — npm (root + editors/vscode) + github-actions, weekly. [Security gap closed]
+- Public package metadata is live for `@zvndev/darkmown@0.9.0` and the project uses the MIT license.
+- The v0.9 surface includes `@loop where`, `:bind`, per-row loop actions, nested `:if` in loop rows, `:fetch`, `:form`, `:computed`, persisted state, and scoped `window.wd` debugging.
+- Static `.md` and non-reactive `.wd` pages still ship zero Darkmown runtime; reactive pages opt into the small shared runtime only when directives require it.
+- Editor support is real as a source-installable VS Code extension with grammar tests. Marketplace/Open VSX publishing is post-launch distribution work, not an implementation gap.
 
-**P2 (done this sprint):**
-5. `"prepublishOnly": "npm test"` guard.
-6. Document + expose `window.wd.debug`.
-7. `.github/PULL_REQUEST_TEMPLATE.md` + issue templates (mirror CONTRIBUTING's pre-PR checklist).
-8. Short custom `CODE_OF_CONDUCT.md` (pledge + contact; not the full Covenant).
-9. `.github/CODEOWNERS`.
-10. Fix CONTRIBUTING.md repo-map drift (`src/server.js` → `src/statics.js`).
-11. Repo-root hygiene: move sprint/audit markdown into `docs/`, gitignore screenshots.
+## Remaining launch polish
 
-**P3 (deferred — noted for later):**
-- Split `compiler.js` into `frontmatter.js`/`predicate.js`/`loop-fill.js` (moderate refactor; risky right before release).
-- Playwright firefox/webkit projects; pin GitHub Actions to SHAs; `extension` CI job → `npm ci` + cache.
+1. Keep public docs and demo roadmap data aligned with shipped behavior before every release.
+2. Make the scaffold and CLI docs showcase the distinctive reactive features without bloating first-run complexity.
+3. Decide and document extension distribution channels before advertising Marketplace availability.
+4. Continue package-content audits so shipped demo/source files are intentional.
+
+## Deferred non-blockers
+
+- Split `src/compiler.js` into smaller compiler phases after launch.
+- Reintroduce view transitions only with browser fallback evidence.
+- Explore first-party server/runtime features (`site/api/`, fragment swaps, server-side cart/session sync) as post-launch product bets.

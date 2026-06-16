@@ -209,7 +209,7 @@ function assertErrorNamesFile(err, file, repro) {
 // Test 1: directive-body fuzz against the real public API.
 // ---------------------------------------------------------------------------
 
-test("fuzz: compilePage/compileDocument never crash and never emit undefined", () => {
+test("fuzz: compilePage/compileDocument never crash and never emit undefined", () => withExpectedCompilerWarnings(() => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-fuzz-"));
   // A couple of include targets so @include sometimes resolves and sometimes cycles.
   fs.mkdirSync(path.join(root, "site/_"), { recursive: true });
@@ -251,13 +251,13 @@ test("fuzz: compilePage/compileDocument never crash and never emit undefined", (
   // degenerate and the test would be vacuous.
   assert.ok(compiled > 0, `expected some inputs to compile (got ${compiled})`);
   assert.ok(rejected > 0, `expected some malformed inputs to be rejected (got ${rejected})`);
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Test 2: expression-whitelist fuzz — dangerous tokens never reach new Function.
 // ---------------------------------------------------------------------------
 
-test("fuzz: :computed / where reject dangerous expressions; safe ones emit only helper calls", () => {
+test("fuzz: :computed / where reject dangerous expressions; safe ones emit only helper calls", () => withExpectedCompilerWarnings(() => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-fuzz-expr-"));
   fs.mkdirSync(path.join(root, "site/pages"), { recursive: true });
   const context = createPaths(root);
@@ -314,7 +314,7 @@ test("fuzz: :computed / where reject dangerous expressions; safe ones emit only 
   // least some safe expressions must compile. Both prove the whitelist is live.
   assert.ok(dangerRejected > 0, `expected dangerous expressions to be rejected (got ${dangerRejected})`);
   assert.ok(safeAccepted > 0, `expected some safe expressions to compile (got ${safeAccepted})`);
-});
+}));
 
 // Pull the decoded `data-wd-computed-expr` artifacts out of compiled HTML.
 function extractComputedExprs(html) {
@@ -354,3 +354,18 @@ test("fuzz: PRNG is deterministic and reproducible for a given seed", () => {
   for (let i = 0; i < 50; i++) if (c.float() !== d.float()) { diverged = true; break; }
   assert.ok(diverged, "distinct seeds must produce distinct streams");
 });
+
+
+function withExpectedCompilerWarnings(fn) {
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    const message = String(args[0] ?? "");
+    if (message.includes(":computed ") && message.includes("could not be evaluated at build time")) return;
+    originalWarn(...args);
+  };
+  try {
+    return fn();
+  } finally {
+    console.warn = originalWarn;
+  }
+}

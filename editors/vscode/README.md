@@ -31,15 +31,19 @@ Count: { count }
 
 ## Install
 
-Build the extension from source and install the packaged `.vsix`:
+The extension is source-installable for launch. Build it from the repository root or from this folder, then install the packaged `.vsix`:
 
 ```sh
-cd editors/vscode
+# From the repository root
+npm run pack:extension
+code --install-extension editors/vscode/darkmown-*.vsix
+
+# Or from this folder
 npx @vscode/vsce package
 code --install-extension darkmown-*.vsix
 ```
 
-A Marketplace listing is coming soon; it is not published yet.
+Marketplace/Open VSX publishing is a post-launch distribution task; this README intentionally documents source installation until store listings exist.
 
 ## License
 
