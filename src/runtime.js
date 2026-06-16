@@ -149,21 +149,24 @@ function loopKeyOf(item, counts) {
 }
 
 /**
- * Fill a cloned loop row node: resolve per-item `:if` regions and text binds.
+ * Fill a cloned loop row node: resolve per-item `:if` regions (item- and
+ * meta-driven), text binds, and per-row meta markers.
  * @param {Element} node
  * @param {any} item
+ * @param {Record<string, any>} [meta] Per-row meta values (index/number/…).
  * @returns {void}
  */
-function fillItem(node, item) {
+function fillItem(node, item, meta = {}) {
   // querySelectorAll does not descend into <template> content, so this only sees
   // the outermost regions; recursing into each injected branch fills the rest.
   for (const region of node.querySelectorAll("[data-wd-each-if]")) {
-    const value = getPath(item, region.getAttribute("data-wd-path"));
+    const m = region.getAttribute("data-wd-meta");
+    const value = m ? meta[m] : getPath(item, region.getAttribute("data-wd-path"));
     const output = region.querySelector("[data-wd-each-if-out]");
     if (!output) continue;
     const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector(value ? "template[data-wd-if-true]" : "template[data-wd-if-false]"));
     output.innerHTML = template?.innerHTML || "";
-    fillItem(output, item);
+    fillItem(output, item, meta);
   }
   const targets = node.matches("[data-wd-each]")
     ? [node, ...node.querySelectorAll("[data-wd-each]")]
@@ -171,6 +174,48 @@ function fillItem(node, item) {
   for (const target of targets) {
     target.textContent = getPath(item, target.getAttribute("data-wd-path")) ?? "";
   }
+  for (const marker of node.querySelectorAll("[data-wd-each-meta]")) {
+    marker.textContent = meta[marker.getAttribute("data-wd-each-meta") || ""] ?? "";
+  }
+}
+
+/**
+ * Read a loop offset/limit attribute that is a literal int or a `key:<name>`
+ * referencing state. Returns null when the attribute is absent.
+ * @param {Element} region
+ * @param {string} name
+ * @returns {number | null}
+ */
+function loopNum(region, name) {
+  const raw = region.getAttribute(name);
+  if (raw == null) return null;
+  return raw.startsWith("key:") ? Number(state[raw.slice(4)] ?? 0) : Number(raw);
+}
+
+/**
+ * Apply sort → reverse → offset → limit to an already-filtered list, reading
+ * clause config off the region. Stable; numeric vs localeCompare comparator.
+ * @param {any[]} list
+ * @param {Element} region
+ * @returns {any[]}
+ */
+function pipeline(list, region) {
+  const sort = region.getAttribute("data-wd-loop-sort");
+  if (sort != null) {
+    const dir = region.getAttribute("data-wd-loop-sort-dir") === "desc" ? -1 : 1;
+    list = list.map((value, index) => ({ value, index })).sort((a, b) => {
+      const av = getPath(a.value, sort || null);
+      const bv = getPath(b.value, sort || null);
+      const c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+      return (c || a.index - b.index) * dir;
+    }).map((w) => w.value);
+  }
+  if (region.hasAttribute("data-wd-loop-reverse")) list.reverse();
+  const off = loopNum(region, "data-wd-loop-offset");
+  if (off) list = list.slice(off);
+  const lim = loopNum(region, "data-wd-loop-limit");
+  if (lim != null) list = list.slice(0, lim);
+  return list;
 }
 
 /**
@@ -194,11 +239,13 @@ function renderNow() {
   for (const region of document.querySelectorAll("[data-wd-loop]")) {
     const key = region.getAttribute("data-wd-loop");
     const data = region.getAttribute("data-wd-loop-data");
-    const rows = key ? state[key] : (data ? JSON.parse(data) : []);
+    // Source may be a dotted path (e.g. team.members) read off state via getPath.
+    const dot = key ? key.indexOf(".") : -1;
+    const rows = key ? (dot < 0 ? state[key] : getPath(state[key.slice(0, dot)], key.slice(dot + 1))) : (data ? JSON.parse(data) : []);
     const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-template]"));
     const out = region.querySelector("[data-wd-loop-out]");
     if (!template || !out) continue;
-    let list = Array.isArray(rows) ? rows : [];
+    let list = Array.isArray(rows) ? rows.slice() : [];
     const where = region.getAttribute("data-wd-loop-where");
     if (where) {
       const predicate = loopPredicate(where);
@@ -211,6 +258,19 @@ function renderNow() {
         }
       });
     }
+    list = pipeline(list, region);
+
+    // Empty branch: clone the [data-wd-loop-empty] template into the output.
+    const emptyTpl = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-empty]"));
+    if (!list.length && emptyTpl) {
+      if (out.getAttribute("data-wd-empty") !== "1") {
+        out.textContent = "";
+        for (const child of [...emptyTpl.content.children]) out.appendChild(child.cloneNode(true));
+        out.setAttribute("data-wd-empty", "1");
+      }
+      continue;
+    }
+    if (out.getAttribute("data-wd-empty") === "1") { out.textContent = ""; out.removeAttribute("data-wd-empty"); }
 
     /** @type {Map<string, WdRow>} */
     const existing = new Map();
@@ -221,7 +281,9 @@ function renderNow() {
     const counts = new Map();
     /** @type {Set<string>} */
     const used = new Set();
-    for (const item of list) {
+    const count = list.length;
+    for (let i = 0; i < count; i++) {
+      const item = list[i];
       const key = loopKeyOf(item, counts);
       let node = existing.get(key);
       if (!node || used.has(key)) {
@@ -230,7 +292,7 @@ function renderNow() {
         node.setAttribute("data-wd-loop-key", key);
       }
       used.add(key);
-      fillItem(node, item);
+      fillItem(node, item, { index: i, number: i + 1, first: i === 0, last: i === count - 1, count });
       node.__wdItem = item; // let per-row actions resolve which row was clicked
       out.appendChild(node);
     }
