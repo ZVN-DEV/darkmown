@@ -2,6 +2,16 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.10.0 — 2026-06-15
+
+Launch-readiness: every public claim is now backed by runnable evidence instead of stale copy.
+
+- **Provable docs.** README, `docs/cli.md`, `docs/spec-alignment.md`, and the gold-standard audit are re-synced to the shipped code — loop semantics, the build-time vs reactive split, and per-row `:button` actions (`cart += product` carries the row into another list; `cart remove line` drops it) are documented exactly as they compile. A docs-snippet test compiles the README/docs examples so the copy can't drift from the code again.
+- **Consumer smoke script.** `npm run smoke` packs the tarball, installs it into a throwaway project, scaffolds, and builds it the way a real consumer would — the same supply-chain check the release workflow runs, now available locally.
+- **CLI + scaffold polish.** `darkmown version` prints the installed package version; first-run scaffold output and CLI guidance now match the docs.
+- **Editor + packaging scripts.** `npm run test:extension` and `npm run pack:extension` build and tokenize-test the VS Code grammar from the repo root; the extension ships its own `LICENSE` and a corrected README.
+- **`homepage` now points at https://darkmown.com.**
+
 ## 0.9.0 — 2026-06-15
 
 The "proof + full test pyramid" release: prove the moat on the homepage, test everything from unit to browser e2e, and pass a gold-standard open-source audit.
