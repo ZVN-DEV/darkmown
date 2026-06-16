@@ -21,6 +21,12 @@ for (const script of document.querySelectorAll("script[data-wd-state]")) {
   if (persist) persistKeys.add(persist);
 }
 
+// Frozen snapshot of declared seeds, captured BEFORE localStorage overrides them
+// below. `reset` deep-clones from here so a persisted key returns to its declared
+// value, not its last persisted one.
+/** @type {Record<string, any>} */
+const initials = Object.freeze(JSON.parse(JSON.stringify(state)));
+
 for (const key of persistKeys) {
   const stored = localStorage.getItem(`wd:${key}`);
   if (stored === null) continue;
@@ -52,6 +58,27 @@ function getPath(value, path) {
     current = current[segment];
   }
   return current;
+}
+
+/**
+ * Safely write a value at a dotted path, creating plain objects for missing
+ * intermediates and rejecting prototype-pollution segments at every level.
+ * @param {any} obj
+ * @param {string} path
+ * @param {any} value
+ * @returns {void}
+ */
+function setPath(obj, path, value) {
+  const segs = path.split(".");
+  const last = segs.pop() || "";
+  let cur = obj;
+  for (const seg of segs) {
+    if (seg === "constructor" || seg === "prototype" || seg === "__proto__") return;
+    if (cur[seg] == null || typeof cur[seg] !== "object") cur[seg] = {};
+    cur = cur[seg];
+  }
+  if (last === "constructor" || last === "prototype" || last === "__proto__") return;
+  cur[last] = value;
 }
 
 const computedDefs = [...document.querySelectorAll("[data-wd-computed]")].map((node) => ({
@@ -255,19 +282,34 @@ function clickedRow(el) {
   return { srcKey: region.getAttribute("data-wd-loop"), item: row.__wdItem };
 }
 
-document.addEventListener("click", (event) => {
-  const action = /** @type {Element} */ (event.target)?.closest("[data-wd-action]");
-  if (!action) return;
-  const op = action.getAttribute("data-wd-action");
-  const target = action.getAttribute("data-wd-target") || "";
-  const rawValue = action.getAttribute("data-wd-value");
-  const value = rawValue === null ? undefined : JSON.parse(rawValue);
-
-  if (op === "inc") state[target] = Number(state[target] ?? 0) + 1;
-  if (op === "dec") state[target] = Number(state[target] ?? 0) - 1;
-  if (op === "add") state[target] = Number(state[target] ?? 0) + Number(value);
-  if (op === "append") state[target] = [...(Array.isArray(state[target]) ? state[target] : []), value];
-  if (op === "set") state[target] = value;
+/**
+ * Apply one parsed action `{op,target,value}` against state. Targets are dotted
+ * paths read via getPath / written via setPath; a bare name is a 1-segment path.
+ * @param {Element} action The clicked element (for loop-row resolution).
+ * @param {string} op
+ * @param {string} target
+ * @param {any} value
+ * @returns {void}
+ */
+function applyAction(action, op, target, value) {
+  /** @param {any} v */
+  const put = (v) => setPath(state, target, v);
+  const cur = getPath(state, target);
+  const arr = () => (Array.isArray(cur) ? cur : []);
+  if (op === "inc") put(Number(cur ?? 0) + 1);
+  if (op === "dec") put(Number(cur ?? 0) - 1);
+  if (op === "add") put(Number(cur ?? 0) + Number(value));
+  if (op === "sub") put(Number(cur ?? 0) - Number(value));
+  if (op === "toggle") put(!cur);
+  if (op === "set") put(value);
+  if (op === "append") put([...arr(), value]);
+  if (op === "prepend") put([value, ...arr()]);
+  if (op === "member-toggle") put(arr().includes(value) ? arr().filter((/** @type {any} */ x) => x !== value) : [...arr(), value]);
+  if (op === "remove-value") put(arr().filter((/** @type {any} */ x) => x !== value));
+  if (op === "clear") put(Array.isArray(cur) ? [] : {});
+  if (op === "merge") put({ ...(cur && typeof cur === "object" ? cur : {}), ...(typeof value === "string" ? getPath(state, value) : value) });
+  if (op === "delete") { if (cur && typeof cur === "object") { delete cur[value]; put(cur); } }
+  if (op === "reset") put(structuredClone(initials[target]));
   if (op === "remove") {
     const row = clickedRow(action);
     if (row && row.srcKey) state[row.srcKey] = (Array.isArray(state[row.srcKey]) ? state[row.srcKey] : []).filter((/** @type {any} */ x) => x !== row.item);
@@ -279,8 +321,20 @@ document.addEventListener("click", (event) => {
     // remove (filter by !== ref) would delete both lines.
     if (row && row.item !== undefined) {
       const copy = row.item && typeof row.item === "object" ? structuredClone(row.item) : row.item;
-      state[target] = [...(Array.isArray(state[target]) ? state[target] : []), copy];
+      put([...arr(), copy]);
     }
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const action = /** @type {Element} */ (event.target)?.closest("[data-wd-action],[data-wd-actions]");
+  if (!action) return;
+  const seq = action.getAttribute("data-wd-actions");
+  if (seq) {
+    for (const a of JSON.parse(seq)) applyAction(action, a.op, a.target || "", a.value);
+  } else {
+    const rawValue = action.getAttribute("data-wd-value");
+    applyAction(action, action.getAttribute("data-wd-action") || "", action.getAttribute("data-wd-target") || "", rawValue === null ? undefined : JSON.parse(rawValue));
   }
   savePersisted();
   render();

@@ -855,6 +855,9 @@ function handleButton(line, ctx) {
   if (!match) throw new Error(`Malformed :button in ${ctx.file}: ${line}`);
   ctx.comp.assets.runtime = true;
   const action = parseAction(match[2], ctx);
+  if (Array.isArray(action)) {
+    return `<button type="button" data-wd-actions="${escapeHtml(JSON.stringify(action))}">${escapeHtml(match[1])}</button>`;
+  }
   const valueAttr = action.value === undefined ? "" : ` data-wd-value="${escapeHtml(JSON.stringify(action.value))}"`;
   return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${valueAttr}>${escapeHtml(match[1])}</button>`;
 }
@@ -1385,6 +1388,22 @@ function getPath(value, segments) {
 }
 
 /**
+ * Validate a dotted path shape, rejecting prototype-pollution segments at every
+ * level. Shared by actions/loops/fetch. Throws with a corrective `Use:` hint.
+ * @param {string} path Dotted path, e.g. `cart.items`.
+ * @param {Ctx} ctx
+ * @param {string} use Corrective suggestion for the error message.
+ * @returns {string[]} The validated segments.
+ */
+function validatePath(path, ctx, use) {
+  const segs = path.split(".");
+  if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+    throw new Error(`Path segment in "${path}" is not allowed in ${ctx.file}. Use: ${use}`);
+  }
+  return segs;
+}
+
+/**
  * Resolve a bare state name to its fully-qualified key, walking section scopes.
  * @param {string} name
  * @param {Ctx} ctx
@@ -1405,35 +1424,56 @@ function resolveStateKey(name, ctx) {
 /**
  * A parsed `:button` action.
  * @typedef {object} Action
- * @property {string} op Runtime operation (inc/dec/add/append/set/remove/append-row).
- * @property {string} target State key the action mutates.
+ * @property {string} op Runtime operation (inc/dec/add/sub/append/prepend/set/toggle/member-toggle/remove/remove-value/clear/merge/delete/reset/append-row).
+ * @property {string} target State key (possibly dotted) the action mutates.
  * @property {unknown} [value] Literal value for value-carrying ops.
  */
 
+const ACTION_USE =
+  'Use: name++, name--, n += k, n -= k, name = v, flag toggle, list append/prepend v, list toggle v, list remove v, x clear, obj merge other, obj delete key, name reset — chain with ";".';
+
 /**
- * Parse a `:button` action expression into a validated `{ op, target, value }`.
+ * Parse a `:button` action expression into a validated `{ op, target, value }`,
+ * or — when `;`-separated — an ordered array of them applied in sequence.
  * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {Action | Action[]}
+ */
+function parseAction(raw, ctx) {
+  const parts = raw.split(";").map((p) => p.trim()).filter(Boolean);
+  if (parts.length > 1) return parts.map((part) => parseSingleAction(part, raw, ctx));
+  return parseSingleAction(raw.trim(), raw, ctx);
+}
+
+/**
+ * Parse one (non-`;`) action expression into a validated `{ op, target, value }`.
+ * Targets may be dotted paths (`cart.count`); a bare name is a 1-segment path.
+ * @param {string} expression
+ * @param {string} raw The full original action source (for error context).
  * @param {Ctx} ctx
  * @returns {Action}
  */
-function parseAction(raw, ctx) {
-  const expression = raw.trim();
+function parseSingleAction(expression, raw, ctx) {
+  const PATH = "[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*";
   /** @param {string} name @returns {string} */
   const resolveTarget = (name) => {
-    const key = resolveStateKey(name, ctx);
+    const segs = validatePath(name, ctx, ACTION_USE);
+    const key = resolveStateKey(segs[0], ctx);
     if (!key) {
-      throw new Error(`Button action targets unknown state "${name}" in ${ctx.file}. Declare it first with :state ${name} = ...`);
+      throw new Error(`Button action targets unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`);
     }
-    return key;
+    return [key, ...segs.slice(1)].join(".");
   };
 
-  const increment = expression.match(/^([A-Za-z_$][\w$]*)\+\+$/);
+  const increment = expression.match(new RegExp(`^(${PATH})\\+\\+$`));
   if (increment) return { op: "inc", target: resolveTarget(increment[1]) };
-  const decrement = expression.match(/^([A-Za-z_$][\w$]*)--$/);
+  const decrement = expression.match(new RegExp(`^(${PATH})--$`));
   if (decrement) return { op: "dec", target: resolveTarget(decrement[1]) };
+  const sub = expression.match(new RegExp(`^(${PATH})\\s*-=\\s*(.+)$`));
+  if (sub) return { op: "sub", target: resolveTarget(sub[1]), value: parseActionLiteral(sub[2]) };
   // Per-row: carry the current loop item into another list — `cart += product`.
   // Only inside a reactive @loop; the runtime resolves the row from the DOM.
-  const add = expression.match(/^([A-Za-z_$][\w$]*)\s*\+=\s*(.+)$/);
+  const add = expression.match(new RegExp(`^(${PATH})\\s*\\+=\\s*(.+)$`));
   if (add) {
     const rhs = add[2].trim();
     if (ctx.loopItem && rhs === ctx.loopItem) {
@@ -1449,23 +1489,62 @@ function parseAction(raw, ctx) {
     if (typeof value === "number") return { op: "add", target, value };
     throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. += with non-number values requires a list state target — declare it "${add[1]} = []".`);
   }
-  // Per-row: remove the current row from the list being looped — `todos remove todo`.
-  const remove = expression.match(/^([A-Za-z_$][\w$]*)\s+remove\s+([A-Za-z_$][\w$]*)$/);
-  if (remove) {
-    if (!ctx.loopItem) {
-      throw new Error(`Button action "${raw}" is only valid inside a reactive @loop in ${ctx.file}. Use: :button "Remove" -> list remove item`);
-    }
-    if (remove[2] !== ctx.loopItem) {
-      throw new Error(`Button action "${raw}" must remove the loop item "${ctx.loopItem}" in ${ctx.file}, not "${remove[2]}".`);
-    }
-    if (!ctx.loopKey || resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
-      throw new Error(`Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`);
-    }
-    return { op: "remove", target: ctx.loopKey };
+  // `flag toggle` (no operand) → boolean flip; `list toggle v` → member-toggle.
+  const toggle = expression.match(new RegExp(`^(${PATH})\\s+toggle(?:\\s+(.+))?$`));
+  if (toggle) {
+    const target = resolveTarget(toggle[1]);
+    if (toggle[2] === undefined) return { op: "toggle", target };
+    return { op: "member-toggle", target, value: parseActionLiteral(toggle[2]) };
   }
-  const assign = expression.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+  const prepend = expression.match(new RegExp(`^(${PATH})\\s+(?:append|prepend)\\s+(.+)$`));
+  if (prepend) {
+    const op = expression.includes(" prepend ") ? "prepend" : "append";
+    return { op, target: resolveTarget(prepend[1]), value: parseActionLiteral(prepend[2]) };
+  }
+  // Per-row: remove the current row from the list being looped — `todos remove todo`.
+  // Disambiguation: operand IS the loop item name → `remove` (current row);
+  // otherwise the operand is a value → `remove-value`.
+  const remove = expression.match(new RegExp(`^(${PATH})\\s+remove\\s+(.+)$`));
+  if (remove) {
+    const operand = remove[2].trim();
+    if (ctx.loopItem && operand === ctx.loopItem) {
+      if (!ctx.loopKey || resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
+        throw new Error(`Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`);
+      }
+      return { op: "remove", target: ctx.loopKey };
+    }
+    return { op: "remove-value", target: resolveTarget(remove[1]), value: parseActionLiteral(operand) };
+  }
+  const clear = expression.match(new RegExp(`^(${PATH})\\s+clear$`));
+  if (clear) return { op: "clear", target: resolveTarget(clear[1]) };
+  const merge = expression.match(new RegExp(`^(${PATH})\\s+merge\\s+(.+)$`));
+  if (merge) return { op: "merge", target: resolveTarget(merge[1]), value: parseMergeOperand(merge[2], ctx) };
+  const del = expression.match(new RegExp(`^(${PATH})\\s+delete\\s+(.+)$`));
+  if (del) return { op: "delete", target: resolveTarget(del[1]), value: parseActionLiteral(del[2]) };
+  const reset = expression.match(new RegExp(`^(${PATH})\\s+reset$`));
+  if (reset) return { op: "reset", target: resolveTarget(reset[1]) };
+  const assign = expression.match(new RegExp(`^(${PATH})\\s*=\\s*(.+)$`));
   if (assign) return { op: "set", target: resolveTarget(assign[1]), value: parseActionLiteral(assign[2]) };
-  throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. Supported actions: count++, count--, count += 1, items += "value", name = "value", list remove item (in a loop), cart += item (in a loop).`);
+  throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. ${ACTION_USE}`);
+}
+
+/**
+ * `merge` operand: either an inline JSON object literal, or a state/store key
+ * name (emitted as a string the runtime resolves via getPath).
+ * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {unknown}
+ */
+function parseMergeOperand(raw, ctx) {
+  const value = raw.trim();
+  if (/^[A-Za-z_$][\w$]*$/.test(value)) {
+    const key = resolveStateKey(value, ctx);
+    if (!key) throw new Error(`Button action merge targets unknown state "${value}" in ${ctx.file}. Declare it first with :state ${value} = ...`);
+    return key;
+  }
+  const parsed = parseActionLiteral(value);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  throw new Error(`Unsupported merge operand "${raw}" in ${ctx.file}. Use: obj merge other (a state key or an inline {…} object).`);
 }
 
 /**
@@ -1483,10 +1562,10 @@ function parseActionLiteral(raw) {
     try {
       return JSON.parse(value);
     } catch {
-      throw new Error(`Unsupported action literal "${raw}". Use a quoted string, number, boolean, null, or valid JSON.`);
+      throw new Error(`Unsupported action literal "${raw}". Use: a quoted string, number, boolean, null, or valid JSON.`);
     }
   }
-  throw new Error(`Unsupported action literal "${raw}". Use a quoted string, number, boolean, null, or valid JSON.`);
+  throw new Error(`Unsupported action literal "${raw}". Use: a quoted string, number, boolean, null, or valid JSON.`);
 }
 
 // ---------------------------------------------------------------------------

@@ -530,6 +530,104 @@ function write(root, file, content) {
 }
 
 // ---------------------------------------------------------------------------
+// parseAction — expanded action vocabulary + dotted targets + ;-sequences
+// ---------------------------------------------------------------------------
+
+function compileWd(lines) {
+  const root = fixture();
+  write(root, "site/pages/index.wd", lines.join("\n"));
+  return compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+}
+
+function compileWdThrows(lines, re) {
+  const root = fixture();
+  write(root, "site/pages/index.wd", lines.join("\n"));
+  assert.throws(() => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)), re);
+}
+
+test("parseAction compiles the full new vocabulary to the right ops", () => {
+  const page = compileWd([
+    ":state n = 10",
+    ":state flag = false",
+    ":state list = []",
+    ":state obj = {}",
+    ':button "Sub" -> n -= 3',
+    ':button "Toggle" -> flag toggle',
+    ':button "Prepend" -> list prepend "a"',
+    ':button "Member" -> list toggle "x"',
+    ':button "RemoveVal" -> list remove "x"',
+    ':button "ClearList" -> list clear',
+    ':button "Merge" -> obj merge {"a": 1}',
+    ':button "Delete" -> obj delete "a"',
+    ':button "Reset" -> n reset'
+  ]);
+  assert.match(page.html, /data-wd-action="sub" data-wd-target="n" data-wd-value="3"/);
+  assert.match(page.html, /data-wd-action="toggle" data-wd-target="flag"/);
+  assert.match(page.html, /data-wd-action="prepend" data-wd-target="list" data-wd-value="&quot;a&quot;"/);
+  assert.match(page.html, /data-wd-action="member-toggle" data-wd-target="list" data-wd-value="&quot;x&quot;"/);
+  assert.match(page.html, /data-wd-action="remove-value" data-wd-target="list" data-wd-value="&quot;x&quot;"/);
+  assert.match(page.html, /data-wd-action="clear" data-wd-target="list"/);
+  assert.match(page.html, /data-wd-action="merge" data-wd-target="obj" data-wd-value="\{&quot;a&quot;:1\}"/);
+  assert.match(page.html, /data-wd-action="delete" data-wd-target="obj" data-wd-value="&quot;a&quot;"/);
+  assert.match(page.html, /data-wd-action="reset" data-wd-target="n"/);
+});
+
+test("parseAction accepts dotted targets for inc and set", () => {
+  const page = compileWd([
+    ':state cart = {"count": 0}',
+    ':state user = {"name": ""}',
+    ':button "Inc" -> cart.count++',
+    ':button "Name" -> user.name = "x"'
+  ]);
+  assert.match(page.html, /data-wd-action="inc" data-wd-target="cart.count"/);
+  assert.match(page.html, /data-wd-action="set" data-wd-target="user.name" data-wd-value="&quot;x&quot;"/);
+});
+
+test("parseAction merge accepts a state-key operand", () => {
+  const page = compileWd([
+    ':state a = {}',
+    ':state b = {"x": 1}',
+    ':button "Merge" -> a merge b'
+  ]);
+  assert.match(page.html, /data-wd-action="merge" data-wd-target="a" data-wd-value="&quot;b&quot;"/);
+});
+
+test("parseAction parses a ;-separated sequence into an ordered data-wd-actions array", () => {
+  const page = compileWd([
+    ":state cart = []",
+    ":state count = 0",
+    ':button "AddBoth" -> cart append "item"; count++'
+  ]);
+  assert.match(page.html, /data-wd-actions=/);
+  const m = page.html.match(/data-wd-actions="([^"]+)"/);
+  assert.ok(m, "emits a data-wd-actions attribute");
+  const seq = JSON.parse(m[1].replace(/&quot;/g, '"'));
+  assert.deepEqual(seq, [
+    { op: "append", target: "cart", value: "item" },
+    { op: "inc", target: "count" }
+  ]);
+});
+
+test("parseAction rejects a dotted target with a poison segment, naming Use:", () => {
+  compileWdThrows([
+    ":state obj = {}",
+    ':button "Bad" -> obj.__proto__.x = 1'
+  ], /not allowed[\s\S]*Use:/);
+});
+
+test("parseAction rejects an unparseable operand with a Use: suggestion", () => {
+  compileWdThrows([
+    ":state n = 0",
+    ':button "Bad" -> n -= notanumber'
+  ], /Use:/);
+});
+
+test("parseAction reset/toggle/clear validate that the target is declared state", () => {
+  compileWdThrows([':button "Bad" -> ghost reset'], /unknown state "ghost"[\s\S]*Declare it first/);
+  compileWdThrows([':button "Bad" -> ghost toggle'], /unknown state "ghost"[\s\S]*Declare it first/);
+});
+
+// ---------------------------------------------------------------------------
 // Stage 3: fetch, forms, persistence, loop-item conditionals
 // ---------------------------------------------------------------------------
 
