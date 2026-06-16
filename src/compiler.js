@@ -681,19 +681,9 @@ function declareState(name, value, ctx) {
  * @param {Ctx} ctx
  * @returns {string}
  */
-function handleFetch(line, ctx) {
-  const match = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+?)(\s+when=visible)?\s*$/);
-  if (!match) {
-    throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. Use: :fetch posts from "/api/posts.json" [when=visible]`);
-  }
-  const key = declareState(match[1], null, ctx);
-  declareErrorState(key, ctx);
-  const url = stripQuotes(match[2]);
-  const when = match[3] ? ` data-wd-fetch-when="visible"` : "";
-  return `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"${when}></span>`;
-}
-
 /**
+ * Seed a `<name>_error` state key (null) if absent. Shared by :fetch and the
+ * round-trip :form so error fallbacks have a key to bind.
  * @param {string} key
  * @param {Ctx} ctx
  * @returns {void}
@@ -701,6 +691,83 @@ function handleFetch(line, ctx) {
 function declareErrorState(key, ctx) {
   const errorKey = `${key}_error`;
   if (!ctx.comp.state.has(errorKey)) ctx.comp.state.set(errorKey, null);
+}
+
+const FETCH_USE =
+  'Use: :fetch name from "url" [method=…] [timeout=ms] [retry=N] [when=visible] [headers=key] [body=key]';
+
+/**
+ * Parse a keyword-arg `:fetch` directive into a lifecycle-aware marker.
+ * Auto-declares four state keys (value/error/loading/empty), seeds them, and
+ * emits `data-wd-fetch-*` attributes (url/method/when/timeout/retry/headers/
+ * body/deps) consumed by the runtime's `startFetch`.
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function handleFetch(line, ctx) {
+  const head = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+)\s*(.*)$/);
+  if (!head) throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. ${FETCH_USE}`);
+  const name = head[1];
+  const url = stripQuotes(head[2]);
+  /** @type {Record<string, string>} */
+  const opts = {};
+  for (const part of head[3].trim().split(/\s+/).filter(Boolean)) {
+    const kv = part.match(/^([A-Za-z]+)=(.+)$/);
+    if (!kv) throw new Error(`Unknown :fetch option "${part}" in ${ctx.file}. ${FETCH_USE}`);
+    const optName = kv[1];
+    if (!["method", "when", "timeout", "retry", "headers", "body"].includes(optName)) {
+      throw new Error(`Unknown :fetch option "${optName}" in ${ctx.file}. ${FETCH_USE}`);
+    }
+    opts[optName] = stripQuotes(kv[2]);
+  }
+
+  if (opts.method && !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(opts.method.toUpperCase())) {
+    throw new Error(`:fetch method "${opts.method}" is not allowed in ${ctx.file}. ${FETCH_USE}`);
+  }
+  if (opts.when && !["load", "visible"].includes(opts.when)) {
+    throw new Error(`:fetch when "${opts.when}" is not allowed in ${ctx.file}. ${FETCH_USE}`);
+  }
+  for (const n of ["timeout", "retry"]) {
+    if (opts[n] !== undefined && !/^\d+$/.test(opts[n])) {
+      throw new Error(`:fetch ${n} must be a non-negative integer in ${ctx.file}. ${FETCH_USE}`);
+    }
+  }
+
+  // Extract `{ path }` dependency keys from the URL (validated against poison
+  // segments). The runtime fills them from state on each (re)fetch.
+  /** @type {string[]} */
+  const deps = [];
+  for (const dep of url.matchAll(/\{\s*([A-Za-z_$][\w$.]*)\s*\}/g)) {
+    validatePath(dep[1], ctx, FETCH_USE);
+    const headKey = dep[1].split(".")[0];
+    if (!deps.includes(headKey)) deps.push(headKey);
+  }
+
+  // Auto-declare the four lifecycle keys. `name` is declared via declareState
+  // (collision-checked); the derived keys are seeded directly.
+  const key = declareState(name, null, ctx);
+  /** @type {Record<string, unknown>} */
+  const seeds = { [key]: null };
+  for (const [suffix, seed] of [["_error", null], ["_loading", false], ["_empty", false]]) {
+    const k = `${key}${suffix}`;
+    if (!ctx.comp.state.has(k)) ctx.comp.state.set(k, seed);
+    seeds[k] = seed;
+  }
+
+  /** @param {string} n @param {string | null | false | undefined} v */
+  const attr = (n, v) => (v != null && v !== false && v !== "" ? ` data-wd-fetch-${n}="${escapeHtml(v)}"` : "");
+  const marker =
+    `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"` +
+    attr("method", opts.method && opts.method.toUpperCase()) +
+    attr("when", opts.when === "visible" ? "visible" : "") +
+    attr("timeout", opts.timeout) +
+    attr("retry", opts.retry) +
+    attr("headers", opts.headers && resolveStateKey(opts.headers, ctx)) +
+    attr("body", opts.body && resolveStateKey(opts.body, ctx)) +
+    attr("deps", deps.join(",")) +
+    `></span>`;
+  return `<script type="application/json" data-wd-state>${safeScriptJson(seeds)}</script>${marker}`;
 }
 
 /**
@@ -1760,6 +1827,10 @@ function parseSingleAction(expression, raw, ctx) {
   if (del) return { op: "delete", target: resolveTarget(del[1]), value: parseActionLiteral(del[2]) };
   const reset = expression.match(new RegExp(`^(${PATH})\\s+reset$`));
   if (reset) return { op: "reset", target: resolveTarget(reset[1]) };
+  // `name refetch` re-invokes the matching :fetch node. The target is the fetch
+  // key (bare name); the runtime finds the [data-wd-fetch-key] node and re-runs.
+  const refetch = expression.match(new RegExp(`^(${PATH})\\s+refetch$`));
+  if (refetch) return { op: "refetch", target: resolveTarget(refetch[1]) };
   const assign = expression.match(new RegExp(`^(${PATH})\\s*=\\s*(.+)$`));
   if (assign) return { op: "set", target: resolveTarget(assign[1]), value: parseActionLiteral(assign[2]) };
   throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. ${ACTION_USE}`);

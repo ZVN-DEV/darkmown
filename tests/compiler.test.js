@@ -916,3 +916,126 @@ test(":fetch and round-trip :form auto-declare their _error keys for display", (
   assert.match(page.html, /data-wd-if="reply_error"/);
   assert.match(page.html, /data-wd-bind="reply_error"/);
 });
+
+// ---------------------------------------------------------------------------
+// Stage 5: fetch lifecycle — loading/empty, options, dynamic URL, refetch
+// ---------------------------------------------------------------------------
+
+test(":fetch auto-declares four lifecycle state keys (value/error/loading/empty)", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch team from "/x.json"',
+    "",
+    ":if team_loading",
+    "Loading…",
+    ":endif",
+    ":if team_empty",
+    "Nothing here.",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  // Seeds: value null, error null, loading false, empty false (all four seeded
+  // into one state script so the lifecycle regions resolve before the fetch).
+  assert.match(page.html, /data-wd-state>\{"team":null,"team_error":null,"team_loading":false,"team_empty":false\}/);
+  // The reactive regions resolve the auto-declared keys.
+  assert.match(page.html, /data-wd-if="team_loading"/);
+  assert.match(page.html, /data-wd-if="team_empty"/);
+});
+
+test(":fetch keyword args emit url/method/when/timeout/retry/headers/body/deps", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state hdrs = {}',
+    ':state payload = {}',
+    ':fetch save from "/api/save" method=POST timeout=4000 retry=2 when=visible headers=hdrs body=payload'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-fetch-key="save"/);
+  assert.match(page.html, /data-wd-fetch-url="\/api\/save"/);
+  assert.match(page.html, /data-wd-fetch-method="POST"/);
+  assert.match(page.html, /data-wd-fetch-when="visible"/);
+  assert.match(page.html, /data-wd-fetch-timeout="4000"/);
+  assert.match(page.html, /data-wd-fetch-retry="2"/);
+  assert.match(page.html, /data-wd-fetch-headers="hdrs"/);
+  assert.match(page.html, /data-wd-fetch-body="payload"/);
+});
+
+test(":fetch extracts { } URL interpolation deps into data-wd-fetch-deps", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state userId = 1',
+    ':fetch user from "/u/{ userId }"'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  // URL retains the interpolation marker for the runtime to fill in.
+  assert.match(page.html, /data-wd-fetch-url="\/u\/\{ userId \}"/);
+  assert.match(page.html, /data-wd-fetch-deps="userId"/);
+});
+
+test(":fetch with a plain URL emits no deps attribute", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", ':fetch team from "/x.json"');
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.doesNotMatch(page.html, /data-wd-fetch-deps=/);
+});
+
+test(":fetch rejects unknown options with a corrective Use: hint", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch team from "/x.json" bogus=1');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Use: :fetch name from "url" \[method=…\] \[timeout=ms\] \[retry=N\] \[when=visible\] \[headers=key\] \[body=key\]/
+  );
+});
+
+test(":fetch rejects an invalid method", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch team from "/x.json" method=FETCH');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /method/
+  );
+});
+
+test(":fetch rejects a non-integer timeout/retry", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch team from "/x.json" timeout=soon');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /timeout/
+  );
+});
+
+test(":fetch URL deps reject prototype-pollution path segments", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch x from "/y/{ __proto__.polluted }"');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /not allowed/
+  );
+});
+
+test("button -> name refetch parses to a refetch action op", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch team from "/x.json"',
+    ':button "Reload" -> team refetch'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-action="refetch"/);
+  assert.match(page.html, /data-wd-target="team"/);
+});
+
+test("@loop over a dotted fetched source resolves end to end", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch payload from "/x.json"',
+    "",
+    "@loop payload.items into row",
+    "- { row.name }",
+    "@endloop"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-loop="payload\.items"/);
+  assert.match(page.html, /data-wd-each data-wd-path="name"/);
+});

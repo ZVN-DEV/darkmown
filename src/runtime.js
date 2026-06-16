@@ -81,6 +81,32 @@ function setPath(obj, path, value) {
   cur[last] = value;
 }
 
+/**
+ * Empty for fetch purposes: null/undefined, an empty array, or an object with
+ * no own keys. Drives the `name_empty` lifecycle flag.
+ * @param {any} v
+ * @returns {boolean}
+ */
+function isEmpty(v) {
+  return v == null || (typeof v === "object" && (Array.isArray(v) ? v.length : Object.keys(v).length) === 0);
+}
+
+/**
+ * Shared HTTP→JSON core for `:fetch` and the round-trip `:form`. Sends the
+ * request, throws on non-2xx, and parses the body as JSON (falling back to a
+ * `{status,body}` wrapper for non-JSON responses). Unifying both callers keeps
+ * the runtime under budget.
+ * @param {string} url
+ * @param {RequestInit} [init]
+ * @returns {Promise<any>}
+ */
+async function httpJson(url, init) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  try { return JSON.parse(text); } catch { return { status: response.status, body: text }; }
+}
+
 const computedDefs = [...document.querySelectorAll("[data-wd-computed]")].map((node) => ({
   key: node.getAttribute("data-wd-computed-key") || "",
   expr: node.getAttribute("data-wd-computed-expr") || "",
@@ -239,7 +265,7 @@ function renderNow() {
   for (const region of document.querySelectorAll("[data-wd-loop]")) {
     const key = region.getAttribute("data-wd-loop");
     const data = region.getAttribute("data-wd-loop-data");
-    // Source may be a dotted path (e.g. team.members) read off state via getPath.
+    /** Source may be a dotted path (e.g. team.members) read off state via getPath. */
     const dot = key ? key.indexOf(".") : -1;
     const rows = key ? (dot < 0 ? state[key] : getPath(state[key.slice(0, dot)], key.slice(dot + 1))) : (data ? JSON.parse(data) : []);
     const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-template]"));
@@ -310,8 +336,10 @@ function renderNow() {
   }
 }
 
-// Coalesce rapid state mutations into one render on the next tick. Each scheduled
-// pass always reads the latest state, so the final update is never dropped.
+/**
+ * Coalesce rapid state mutations into one render on the next tick. Each scheduled
+ * pass always reads the latest state, so the final update is never dropped.
+ */
 const schedule = typeof requestAnimationFrame === "function" ? requestAnimationFrame : queueMicrotask;
 let scheduled = false;
 function render() {
@@ -329,11 +357,12 @@ document.addEventListener("input", (event) => {
   state[input.getAttribute("data-wd-bind-input") || ""] = input.value;
   savePersisted();
   render();
+  checkRefetch();
 });
 
-// The clicked button's row: the nearest reconciled loop node carries its item.
 /**
  * Resolve the loop source and row item for a clicked element, if inside a loop.
+ * The clicked button's row is the nearest reconciled loop node; it carries its item.
  * @param {Element} el
  * @returns {{ srcKey: string | null, item: any } | null}
  */
@@ -372,6 +401,7 @@ function applyAction(action, op, target, value) {
   if (op === "merge") put({ ...(cur && typeof cur === "object" ? cur : {}), ...(typeof value === "string" ? getPath(state, value) : value) });
   if (op === "delete") { if (cur && typeof cur === "object") { delete cur[value]; put(cur); } }
   if (op === "reset") put(structuredClone(initials[target]));
+  if (op === "refetch") { const n = document.querySelector(`[data-wd-fetch-key="${target}"]`); if (n) startFetch(n); }
   if (op === "remove") {
     const row = clickedRow(action);
     if (row && row.srcKey) state[row.srcKey] = (Array.isArray(state[row.srcKey]) ? state[row.srcKey] : []).filter((/** @type {any} */ x) => x !== row.item);
@@ -400,6 +430,7 @@ document.addEventListener("click", (event) => {
   }
   savePersisted();
   render();
+  checkRefetch();
 });
 
 document.addEventListener("submit", (event) => {
@@ -416,20 +447,12 @@ document.addEventListener("submit", (event) => {
     return;
   }
 
-  fetch(action, {
+  httpJson(action, {
     method: form.getAttribute("method") || "post",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(/** @type {any} */ (new FormData(form))).toString()
   })
-    .then(async (response) => {
-      const text = await response.text();
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      let value;
-      try {
-        value = JSON.parse(text);
-      } catch {
-        value = { status: response.status, body: text };
-      }
+    .then((value) => {
       state[key] = value;
       state[`${key}_error`] = null;
       savePersisted();
@@ -442,29 +465,86 @@ document.addEventListener("submit", (event) => {
 });
 
 /**
- * Kick off a `:fetch` request and write the result (or error) into state.
+ * Run the full `:fetch` lifecycle for a marker node: interpolate the URL from
+ * state, skip when a dependency is empty, flip `*_loading`, fetch with an
+ * AbortController timeout + flat retry, then write value/`*_empty` or `*_error`.
  * @param {Element} node
  * @returns {void}
  */
 function startFetch(node) {
-  const key = node.getAttribute("data-wd-fetch-key") || "";
-  fetch(node.getAttribute("data-wd-fetch-url") || "")
-    .then((response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json();
-    })
-    .then((value) => {
+  /** @param {string} n @returns {string} */
+  const g = (n) => node.getAttribute("data-wd-fetch-" + n) || "";
+  const key = g("key");
+  /** @param {string} s @param {any} v */
+  const set = (s, v) => { state[key + s] = v; render(); };
+  let missing = false;
+  const url = g("url").replace(/\{\s*([\w$.]+)\s*\}/g, (_, p) => {
+    const v = getPath(state, p);
+    if (v == null || v === "") missing = true;
+    return String(v ?? "");
+  });
+  if (missing) return set("_loading", false);
+
+  const headers = g("headers");
+  const body = g("body");
+  const method = g("method") || "GET";
+  const timeout = Number(g("timeout"));
+  let tries = Number(g("retry"));
+  state[key + "_error"] = null;
+  set("_loading", true);
+
+  const attempt = () => {
+    /** @type {RequestInit} */
+    const init = { method };
+    if (headers) init.headers = state[headers] || {};
+    if (body && method !== "GET") init.body = JSON.stringify(state[body] ?? null);
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    if (ctrl) init.signal = ctrl.signal;
+    const timer = timeout && ctrl ? setTimeout(() => ctrl.abort(), timeout) : 0;
+    httpJson(url, init).then((value) => {
+      clearTimeout(timer);
       state[key] = value;
-      state[`${key}_error`] = null;
-      render();
-    })
-    .catch((error) => {
-      state[`${key}_error`] = String(error);
-      render();
+      state[key + "_empty"] = isEmpty(value);
+      state[key + "_error"] = null;
+      set("_loading", false);
+    }).catch((error) => {
+      clearTimeout(timer);
+      if (tries-- > 0) return void setTimeout(attempt, 200);
+      state[key + "_error"] = String(error);
+      set("_loading", false);
     });
+  };
+  attempt();
 }
 
-for (const node of document.querySelectorAll("[data-wd-fetch]")) {
+/** A fetch marker carrying its last dependency snapshot for refetch diffing. */
+/** @typedef {Element & { __wdSnap?: string }} FetchNode */
+/** @type {FetchNode[]} */
+const fetchNodes = [...document.querySelectorAll("[data-wd-fetch]")];
+/** @param {FetchNode} node @returns {string} */
+const depSnapshot = (node) => (node.getAttribute("data-wd-fetch-deps") || "").split(",").filter(Boolean).map((d) => JSON.stringify(getPath(state, d))).join("|");
+
+/** @type {any} */
+let refetchTimer = 0;
+/**
+ * After a mutation render, debounce-refetch any fetch node whose URL deps
+ * changed. Snapshots live on the node, so no extra bookkeeping structure.
+ * @returns {void}
+ */
+function checkRefetch() {
+  /** @type {FetchNode[]} */
+  const due = [];
+  for (const node of fetchNodes) {
+    const snap = depSnapshot(node);
+    if (snap && snap !== node.__wdSnap) { node.__wdSnap = snap; due.push(node); }
+  }
+  if (!due.length) return;
+  clearTimeout(refetchTimer);
+  refetchTimer = setTimeout(() => { for (const node of due) startFetch(node); }, 150);
+}
+
+for (const node of fetchNodes) {
+  node.__wdSnap = depSnapshot(node);
   if (node.getAttribute("data-wd-fetch-when") === "visible" && "IntersectionObserver" in window) {
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -477,8 +557,10 @@ for (const node of document.querySelectorAll("[data-wd-fetch]")) {
   }
 }
 
-// Public escape hatch on `window.wd`. Set `window.wd.debug = true` to log failing
-// computed/where expressions to the console.
+/**
+ * Public escape hatch on `window.wd`. Set `window.wd.debug = true` to log failing
+ * computed/where expressions to the console.
+ */
 /** @type {any} */ (window).wd = {
   state,
   debug: false,
