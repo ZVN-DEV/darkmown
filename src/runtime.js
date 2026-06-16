@@ -420,7 +420,7 @@ function applyAction(action, op, target, value) {
   if (op === "clear") put(Array.isArray(cur) ? [] : {});
   if (op === "merge") put({ ...(cur && typeof cur === "object" ? cur : {}), ...(typeof value === "string" ? getPath(state, value) : value) });
   if (op === "delete") { if (cur && typeof cur === "object") { delete cur[value]; put(cur); } }
-  if (op === "reset") put(structuredClone(initials[target]));
+  if (op === "reset") put(structuredClone(getPath(initials, target)));
   if (op === "refetch") { const n = document.querySelector(`[data-wd-fetch-key="${target}"]`); if (n) startFetch(n); }
   if (op === "remove") {
     const row = clickedRow(action);

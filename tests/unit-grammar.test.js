@@ -548,6 +548,15 @@ test("dotted targets work for inc and set", () => {
   assert.equal(h.state.user.name, "Kirby");
 });
 
+test("reset on a dotted target restores the declared seed leaf (not undefined)", () => {
+  const h = rtSandbox({ seeds: { cart: { count: 5, items: ["a"] } } });
+  h.click("inc", "cart.count");
+  assert.equal(h.state.cart.count, 6);
+  h.click("reset", "cart.count");
+  assert.equal(h.state.cart.count, 5, "dotted reset walks initials to the seed leaf");
+  assert.deepEqual(h.state.cart.items, ["a"], "sibling keys untouched");
+});
+
 test("existing ops (inc/dec/add/append/set) keep working unchanged", () => {
   const h = rtSandbox({ seeds: { n: 0, tags: [], name: "" } });
   h.click("inc", "n");
