@@ -14,16 +14,23 @@
 const state = {};
 /** @type {Set<string>} */
 const persistKeys = new Set();
+/** @type {Set<string>} Non-ephemeral :store names, persisted under wd:store:<name>. */
+const storeKeys = new Set();
 
 for (const script of document.querySelectorAll("script[data-wd-state]")) {
   Object.assign(state, JSON.parse(script.textContent || "{}"));
   const persist = script.getAttribute("data-wd-persist");
   if (persist) persistKeys.add(persist);
 }
+for (const script of document.querySelectorAll("script[data-wd-store]")) {
+  const name = script.getAttribute("data-wd-store") || "";
+  state[name] = JSON.parse(script.textContent || "null");
+  if (!script.hasAttribute("data-wd-store-ephemeral")) storeKeys.add(name);
+}
 
 // Frozen snapshot of declared seeds, captured BEFORE localStorage overrides them
-// below. `reset` deep-clones from here so a persisted key returns to its declared
-// value, not its last persisted one.
+// below. `reset` deep-clones from here so a persisted key/store returns to its
+// declared value, not its last persisted one.
 /** @type {Record<string, any>} */
 const initials = Object.freeze(JSON.parse(JSON.stringify(state)));
 
@@ -36,12 +43,25 @@ for (const key of persistKeys) {
     localStorage.removeItem(`wd:${key}`);
   }
 }
+for (const name of storeKeys) {
+  const stored = localStorage.getItem(`wd:store:${name}`);
+  if (stored === null) localStorage.setItem(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
+  else try { state[name] = JSON.parse(stored); } catch { /* keep seed */ }
+}
 
 function savePersisted() {
-  for (const key of persistKeys) {
-    localStorage.setItem(`wd:${key}`, JSON.stringify(state[key] ?? null));
-  }
+  for (const key of persistKeys) localStorage.setItem(`wd:${key}`, JSON.stringify(state[key] ?? null));
+  for (const name of storeKeys) localStorage.setItem(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
 }
+
+window.addEventListener("storage", (event) => {
+  const name = event.key && event.key.startsWith("wd:store:") ? event.key.slice(9) : "";
+  if (!storeKeys.has(name) || event.newValue == null) return;
+  const next = JSON.parse(event.newValue);
+  if (JSON.stringify(next) === JSON.stringify(state[name])) return;
+  state[name] = next;
+  render();
+});
 
 /**
  * Safely read a dotted path off a value, rejecting prototype-pollution segments.

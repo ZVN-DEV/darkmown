@@ -358,12 +358,20 @@ function rtMatch(node, selector) {
 
 // Build a sandbox around the real runtime. `seeds` becomes a data-wd-state
 // script; `persisted` pre-loads localStorage to test the persist-override path.
-function rtSandbox({ seeds = {}, persisted = {} } = {}) {
+function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {} } = {}) {
   const root = new RtEl("body");
   const stateScript = new RtEl("script");
   stateScript.setAttribute("data-wd-state", "");
   stateScript.textContent = JSON.stringify(seeds);
   root.appendChild(stateScript);
+  // Each :store renders its own <script data-wd-store="name"> seed.
+  for (const [name, value] of Object.entries({ ...stores, ...ephemeral })) {
+    const s = new RtEl("script");
+    s.setAttribute("data-wd-store", name);
+    if (name in ephemeral) s.setAttribute("data-wd-store-ephemeral", "");
+    s.textContent = JSON.stringify(value);
+    root.appendChild(s);
+  }
 
   const listeners = {};
   const document = {
@@ -382,6 +390,10 @@ function rtSandbox({ seeds = {}, persisted = {} } = {}) {
     document, localStorage, console, JSON, structuredClone,
     Object, Array, Number, String, Map, Set, Boolean, Function, queueMicrotask
   };
+  // The runtime registers `window.addEventListener("storage", …)` for cross-tab
+  // :store sync; the sandbox window is the sandbox itself, so collect listeners
+  // here too. `fireStorage(key, newValue)` drives that handler.
+  sandbox.addEventListener = (type, fn) => { (listeners[type] ||= []).push(fn); };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(runtimeSource, sandbox);
@@ -390,6 +402,10 @@ function rtSandbox({ seeds = {}, persisted = {} } = {}) {
     root,
     state: sandbox.wd.state,
     store,
+    // Simulate another tab writing localStorage: dispatch a `storage` event.
+    fireStorage(key, newValue) {
+      for (const fn of listeners.storage || []) fn({ key, newValue });
+    },
     // Append an action button under an optional parent (e.g. a loop row), click it.
     click(op, target, value, { parent } = {}) {
       const btn = new RtEl("button");
@@ -552,4 +568,64 @@ test("a ;-separated action sequence applies in order then renders once", () => {
   ]);
   eq(h.state.cart, ["item"]);
   assert.equal(h.state.count, 1);
+});
+
+// ---------------------------------------------------------------------------
+// :store — runtime hydration, persistence, cross-tab sync, reset-to-seed
+// ---------------------------------------------------------------------------
+
+test("store hydrates from its seed and writes wd:store:<name> when absent", () => {
+  const h = rtSandbox({ stores: { cart: [] } });
+  eq(h.state.cart, []);
+  assert.equal(h.store.get("wd:store:cart"), "[]", "seeds localStorage on first load");
+});
+
+test("store hydrates from an existing wd:store:<name> over the seed", () => {
+  const h = rtSandbox({ stores: { cart: [] }, persisted: { "wd:store:cart": ["x"] } });
+  eq(h.state.cart, ["x"], "stored value wins over the declared seed");
+});
+
+test("mutating a store writes back to wd:store:<name>", () => {
+  const h = rtSandbox({ stores: { cart: [] } });
+  h.click("append", "cart", "sticker");
+  eq(h.state.cart, ["sticker"]);
+  eq(JSON.parse(h.store.get("wd:store:cart")), ["sticker"], "persisted after mutation");
+});
+
+test("ephemeral store is in-memory only — never touches localStorage", () => {
+  const h = rtSandbox({ ephemeral: { draft: "hi" } });
+  assert.equal(h.state.draft, "hi");
+  assert.equal(h.store.has("wd:store:draft"), false, "no seed written");
+  h.click("set", "draft", "edited");
+  assert.equal(h.store.has("wd:store:draft"), false, "no write-back");
+});
+
+test("reset returns a persisted store to its DECLARED seed, not its stored value", () => {
+  const h = rtSandbox({ stores: { cart: [] }, persisted: { "wd:store:cart": ["old"] } });
+  eq(h.state.cart, ["old"]);
+  h.click("reset", "cart");
+  eq(h.state.cart, [], "reset restores the declared seed");
+});
+
+test("a storage event from another tab updates the store and re-renders", () => {
+  const h = rtSandbox({ stores: { cart: [] } });
+  h.fireStorage("wd:store:cart", JSON.stringify(["fromTabA"]));
+  eq(h.state.cart, ["fromTabA"], "cross-tab value applied");
+});
+
+test("a storage event for an unknown / ephemeral key is ignored", () => {
+  const h = rtSandbox({ ephemeral: { draft: "" }, stores: { cart: [] } });
+  h.fireStorage("wd:store:draft", JSON.stringify("leak"));
+  assert.equal(h.state.draft, "", "ephemeral store not synced cross-tab");
+  h.fireStorage("wd:other", JSON.stringify(1));
+  // Unrelated keys do not throw and do not write state.
+  assert.equal(h.state["wd:other"], undefined);
+});
+
+test("a storage event whose value equals current state is a no-op (echo guard)", () => {
+  const h = rtSandbox({ stores: { cart: [] } });
+  h.click("append", "cart", "a");
+  // Re-broadcasting the identical value must not throw or change anything.
+  h.fireStorage("wd:store:cart", JSON.stringify(["a"]));
+  eq(h.state.cart, ["a"]);
 });
