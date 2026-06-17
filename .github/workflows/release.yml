@@ -22,7 +22,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       # Zero-dep node:test coverage; matches the CI line coverage gate.
-      - run: npm run test:cov -- --test-coverage-lines=80
+      - run: npm run test:cov
       - run: npm run build
       - run: npm run runtime:size
       - run: npm audit --audit-level=high
