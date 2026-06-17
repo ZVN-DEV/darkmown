@@ -68,7 +68,7 @@ Nice — you are tracking the whole near-term roadmap.
 
 ## A form that talks to a real server
 
-This form posts to a live serverless function and shows the reply. With JavaScript it is a `fetch`; without it, the exact same markup is a native POST — Darkmown adapts to your backend instead of owning one:
+This form posts to the demo echo endpoint and shows the reply. With JavaScript it is a `fetch`; without it, the exact same markup is a native POST. On Vercel/dev the sample endpoint replies; on static-only hosts, point `action=` at your own backend — Darkmown adapts instead of owning one:
 
 :form action="/__wd/echo" into reply
 :input note placeholder="Tell us what you'd build with this"
