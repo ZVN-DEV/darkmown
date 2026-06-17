@@ -24,7 +24,7 @@ if (result.stderr) process.stderr.write(result.stderr);
 if (result.status !== 0) process.exit(result.status ?? 1);
 
 const output = `${result.stdout}\n${result.stderr}`;
-const match = output.match(/#\s+all files\s+\|\s+([0-9.]+)/);
+const match = output.match(/(?:#|ℹ)?\s*all files\s+\|\s+([0-9.]+)/);
 if (!match) {
   console.error("Could not find the total line coverage row in node:test output.");
   process.exit(1);
