@@ -16,10 +16,10 @@ Everything on this page — the prose, the fetched list, the badges, the form, t
 This whole section is plain Markdown. The list below is unrolled **at build time** from a JSON file — it renders into HTML with no runtime at all:
 
 @loop /features.json into feature
-- **{ feature.name }** — { feature.detail }
+- **{ feature.title }** — { feature.body }
 @endloop
 
-<aside class="boundary">If you deleted everything below this line, this page would ship <strong>zero</strong> bytes of JavaScript. Everything above is static HTML. Below is where the one ~2&nbsp;KB runtime loads — and only because the document asks for it.</aside>
+<aside class="boundary">If you deleted everything below this line, this page would ship <strong>zero</strong> bytes of JavaScript. Everything above is static HTML. Below is where the one ~4.7&nbsp;KB gzipped runtime loads (CI-enforced under 5 KB) — and only because the document asks for it.</aside>
 
 ## Fetched data, looped, with nested conditions
 
