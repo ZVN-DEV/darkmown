@@ -4,3 +4,8 @@ pages_build_output_dir = "dist"
 
 [build]
 command = "npm run build"
+
+# This Cloudflare Pages target serves the static dist/ output only.
+# It does not provide the demo /__wd/echo endpoint; Vercel wires that
+# path to api/echo.js via vercel.json. Add a Pages Function before
+# presenting server-backed demo forms as supported on Cloudflare.
