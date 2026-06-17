@@ -2,6 +2,12 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.11.1 — 2026-06-17
+
+Maintenance release. No functional changes since 0.11.0.
+
+- **Fully comment-free shipped runtime.** The last two inline comments in `src/runtime.js` are converted to a strippable form, so the emitted `runtime.js` now contains zero comments (the source stays fully documented). The reactive runtime is ~4.7 KB gzipped.
+
 ## 0.11.0 — 2026-06-16
 
 Three big `.wd` capabilities for building real apps — global state, a full fetch lifecycle, and complete loop ergonomics — plus a leaner runtime.

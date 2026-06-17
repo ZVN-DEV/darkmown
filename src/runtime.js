@@ -45,7 +45,7 @@ for (const key of persistKeys) {
 for (const name of storeKeys) {
   const stored = localStorage.getItem(`wd:store:${name}`);
   if (stored === null) localStorage.setItem(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
-  else try { state[name] = JSON.parse(stored); } catch { /* keep seed */ }
+  else try { state[name] = JSON.parse(stored); } catch { /** keep seed */ }
 }
 
 function savePersisted() {
@@ -347,7 +347,7 @@ function renderNow() {
       }
       used.add(key);
       fillItem(node, item, { index: i, number: i + 1, first: i === 0, last: i === count - 1, count });
-      node.__wdItem = item; // let per-row actions resolve which row was clicked
+      node.__wdItem = item; /** let per-row actions resolve which row was clicked */
       out.appendChild(node);
     }
     for (const [key, node] of existing) {
