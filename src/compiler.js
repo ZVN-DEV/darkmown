@@ -400,7 +400,7 @@ function compileBody(lines, ctx) {
       i = block.end;
       continue;
     }
-    const demo = renderDemoDirective(line);
+    const demo = renderDemoDirective(line, ctx);
     if (demo) {
       flush();
       out.push(demo);
@@ -924,7 +924,7 @@ function handleInput(line, ctx) {
       type = value;
       continue;
     }
-    if (!["placeholder", "value", "min", "max", "step", "pattern", "autocomplete"].includes(token[1])) {
+    if (!["placeholder", "value", "min", "max", "step", "pattern", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
       throw new Error(`Unknown :input attribute "${token[1]}" in ${ctx.file}`);
     }
     attrs.push(`${token[1]}="${escapeHtml(value)}"`);
@@ -959,7 +959,7 @@ function handleBind(line, ctx) {
     }
     const value = stripQuotes(token[2]);
     if (token[1] === "type") { type = value; continue; }
-    if (!["placeholder", "autocomplete"].includes(token[1])) {
+    if (!["placeholder", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
       throw new Error(`Unknown :bind attribute "${token[1]}" in ${ctx.file}`);
     }
     attrs.push(`${token[1]}="${escapeHtml(value)}"`);
@@ -1571,11 +1571,15 @@ export function loopKeyOf(item, counts) {
 /**
  * Render the documentation-demo directives (`:try`, `:note`, `:sprint`).
  * @param {string} line
+ * @param {Ctx} ctx
  * @returns {string}
  */
-function renderDemoDirective(line) {
+function renderDemoDirective(line, ctx) {
   const tryMatch = line.match(/^:try\s+"([^"]+)"\s+href="([^"]+)"$/);
-  if (tryMatch) return `<a class="try-card" href="${tryMatch[2]}"><span>Try</span>${escapeHtml(tryMatch[1])}</a>`;
+  if (tryMatch) {
+    const href = validateDemoHref(tryMatch[2], ctx);
+    return `<a class="try-card" href="${escapeHtml(href)}"><span>Try</span>${escapeHtml(tryMatch[1])}</a>`;
+  }
   const note = line.match(/^:note\s+"([^"]+)"$/);
   if (note) return `<aside class="note">${escapeHtml(note[1])}</aside>`;
   const sprint = line.match(/^:sprint\s+min=(\d+)\s+max=(\d+)\s+roles="([^"]+)"$/);
@@ -1584,6 +1588,30 @@ function renderDemoDirective(line) {
     return `<section class="sprint-board" data-min="${sprint[1]}" data-max="${sprint[2]}">${roles.map((role) => `<article><strong>${escapeHtml(role)}</strong><span>active lane</span></article>`).join("")}</section>`;
   }
   return "";
+}
+
+/**
+ * Validate demo-card links without adding arbitrary URL passthrough.
+ * @param {string} href
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function validateDemoHref(href, ctx) {
+  const value = href.trim();
+  if (value !== href || /[\u0000-\u001F\u007F]/.test(value)) {
+    throw new Error(`Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`);
+  }
+  if (value.startsWith("//")) {
+    throw new Error(`Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http: or https: explicitly.`);
+  }
+  if (value.startsWith("/") || value.startsWith("./") || value.startsWith("../") || value.startsWith("#")) {
+    return value;
+  }
+  const scheme = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
+  if (scheme && ["http", "https", "mailto"].includes(scheme[1].toLowerCase())) {
+    return value;
+  }
+  throw new Error(`Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`);
 }
 
 // ---------------------------------------------------------------------------
