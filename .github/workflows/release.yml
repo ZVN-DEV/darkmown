@@ -18,7 +18,15 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run typecheck
+      # Zero-dep node:test coverage; matches the CI line coverage gate.
+      - run: npm run test:cov -- --test-coverage-lines=80
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run build
+      - run: npm run runtime:size
+      - run: npm audit --audit-level=high
+      - run: npm run test:extension
 
       # Supply-chain guard: prove the PUBLISHED TARBALL actually works before we
       # publish it. `npm pack` honours the `files` allowlist, so this catches
