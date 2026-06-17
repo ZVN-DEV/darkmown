@@ -5,7 +5,30 @@ on:
     tags: ["v*"]
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Zero-dep node:test coverage; matches the CI line coverage gate.
+      - run: npm run test:cov -- --test-coverage-lines=80
+      - run: npm run build
+      - run: npm run runtime:size
+      - run: npm audit --audit-level=high
+
   publish:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,7 +41,9 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run test:extension
 
       # Supply-chain guard: prove the PUBLISHED TARBALL actually works before we
       # publish it. `npm pack` honours the `files` allowlist, so this catches

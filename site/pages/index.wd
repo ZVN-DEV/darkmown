@@ -96,14 +96,14 @@ Markdoc.renderers.react(content, React, {
 
 </section>
 
-:note "Static pages ship zero JavaScript. The moment a page asks for reactivity — like this very homepage — one ~3.2 KB runtime loads, never before. JS optional, CSS optional, always."
+:note "Static pages ship zero JavaScript. The moment a page asks for reactivity — like this very homepage — one ~4.7 KB gzipped runtime loads (CI-enforced under 5 KB), never before. JS optional, CSS optional, always."
 
 <section class="props">
 
 ## Three rules, no escape hatch
 
 - **Zero-JS static.** A page with no state ships no framework JavaScript. `/markdown/` and `/docs/` prove it — open them and check the network tab.
-- **One runtime.** Every reactive page shares the same ~3.2 KB runtime. No per-component bundles, no hydration tax that scales with your UI.
+- **One runtime.** Every reactive page shares the same ~4.7 KB gzipped runtime, CI-enforced under 5 KB. No per-component bundles, no hydration tax that scales with your UI.
 - **One loop, one binding.** `@loop … into …` is the only loop; `{ name }` is the only interpolation. Nothing else to learn, nothing else to misuse.
 
 </section>
@@ -151,18 +151,10 @@ This button is powered by `site/pages/index.js`, discovered by matching the page
 
 ## Deploy in one click
 
-`npm run build` emits a plain static `dist/` — no server, no special runtime — so it deploys anywhere that serves files. This very site is a Darkmown build:
+`npm run build` emits a plain static `dist/` — no server, no special runtime — so it deploys anywhere that serves files. This very site is a Darkmown build. The demo form posts to Darkmown's dev/Vercel echo endpoint; on static-only hosts, point `action=` at your own backend or remove that demo.
 
 <a class="btn primary" href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy to Vercel</a>
-<a class="btn" href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy to Cloudflare</a>
+<a class="btn" href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy static to Cloudflare</a>
 <a class="btn" href="https://github.com/ZVN-DEV/darkmown">Star on GitHub</a>
-
-## Built in the open
-
-Darkmown itself was built by a small agent team. The board below is a live `@loop` over real data — itself a demo of the framework rendering this page:
-
-:sprint min=4 max=6 roles="PM, Development, Research, Testing, Review"
-
-@include /sprint-loop.wd
 
 </main>

@@ -73,3 +73,9 @@ npm run smoke
 ```
 
 The smoke script packs the local tarball, installs the packed CLI in a temporary driver project, scaffolds a consumer app through that installed bin, installs the same tarball into the app, builds it, verifies the reactive home route, and verifies the plain `.md` about route stays zero-JS.
+
+## Deployment notes
+
+### Cloudflare Pages
+
+`wrangler.toml` builds and deploys the static `dist/` output for Cloudflare Pages. That configuration does **not** provide the demo `/__wd/echo` endpoint used by server-backed form examples; Vercel handles that route separately through `vercel.json` and `api/echo.js`. Add a Cloudflare Pages Function before advertising that demo endpoint on Cloudflare.

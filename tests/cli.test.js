@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -44,6 +44,29 @@ test("init scaffolds without overwriting and uses publishable dependency spec", 
   assert.equal(fs.existsSync(path.join(target, "README.md")), true);
 });
 
+test("serve binds to loopback by default and reports HOST overrides", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-serve-host-"));
+  fs.mkdirSync(path.join(root, "dist"));
+  fs.writeFileSync(path.join(root, "dist/index.html"), "<h1>ok</h1>");
+
+  const defaultOutput = await readServerBanner(root, "serve", "Darkmown preview of dist", { PORT: "0" });
+  assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:0/);
+
+  const overrideOutput = await readServerBanner(root, "serve", "Darkmown preview of dist", { PORT: "0", HOST: "localhost" });
+  assert.match(overrideOutput, /http:\/\/localhost:0/);
+});
+
+test("dev binds to loopback by default and reports HOST overrides", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-dev-host-"));
+  fs.mkdirSync(path.join(root, "site/pages"), { recursive: true });
+  fs.writeFileSync(path.join(root, "site/pages/index.wd"), "# Dev host test\n");
+
+  const defaultOutput = await readServerBanner(root, "dev", "Darkmown dev server ready", { PORT: "0" });
+  assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:0/);
+
+  const overrideOutput = await readServerBanner(root, "dev", "Darkmown dev server ready", { PORT: "0", HOST: "localhost" });
+  assert.match(overrideOutput, /http:\/\/localhost:0/);
+});
 
 test("init in the current directory prints a direct next step", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-init-current-"));
@@ -52,3 +75,50 @@ test("init in the current directory prints a direct next step", () => {
   assert.match(output, /Next: npm install && npm run dev/);
   assert.doesNotMatch(output, /cd \. &&/);
 });
+
+/**
+ * @param {string} cwd
+ * @param {"dev" | "serve"} command
+ * @param {string} banner
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {Promise<string>}
+ */
+function readServerBanner(cwd, command, banner, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, command], {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let output = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      settle(new Error(`Timed out waiting for ${command} banner. Output: ${output}`));
+    }, 5000);
+
+    const settle = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill();
+      if (error) reject(error);
+      else resolve(output);
+    };
+
+    child.stdout.on("data", (chunk) => {
+      output += chunk;
+      if (output.includes(banner)) settle();
+    });
+    child.stderr.on("data", (chunk) => {
+      output += chunk;
+    });
+    child.on("error", (error) => {
+      settle(error);
+    });
+    child.on("exit", (code) => {
+      if (!settled && !output.includes(banner)) {
+        settle(new Error(`${command} exited with ${code}. Output: ${output}`));
+      }
+    });
+  });
+}

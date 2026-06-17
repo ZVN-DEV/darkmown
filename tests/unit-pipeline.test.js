@@ -66,6 +66,27 @@ test(":input emits type, attributes, and boolean flags", () => {
   assert.match(page.html, /<input type="email" name="email" placeholder="you@x.com" required autofocus>/);
 });
 
+test(":input emits escaped accessibility attributes", () => {
+  const page = compile([
+    ":form into f",
+    ':input email aria-label="Email <address> & contact" aria-describedby="email-help&more"',
+    ':submit "Go"',
+    ":endform"
+  ]);
+  assert.match(page.html, /aria-label="Email &lt;address&gt; &amp; contact"/);
+  assert.match(page.html, /aria-describedby="email-help&amp;more"/);
+});
+
+test(":bind emits escaped accessibility attributes", () => {
+  const page = compile([
+    ':state query = ""',
+    ':bind query placeholder="Search" aria-label="Search <site> & docs" aria-describedby="search-help&hint"'
+  ]);
+  assert.match(page.html, /data-wd-bind-input="query"/);
+  assert.match(page.html, /aria-label="Search &lt;site&gt; &amp; docs"/);
+  assert.match(page.html, /aria-describedby="search-help&amp;hint"/);
+});
+
 test(":input rejects an unknown attribute", () => {
   compileThrows([
     ":form into f",
@@ -262,6 +283,21 @@ test(":try, :note, and :sprint demo directives render their markup", () => {
   assert.match(page.html, /<aside class="note">Heads up<\/aside>/);
   assert.match(page.html, /<section class="sprint-board" data-min="2" data-max="5">/);
   assert.match(page.html, /<article><strong>PM<\/strong>/);
+});
+
+test(":try escapes safe hrefs and allows whitelisted schemes", () => {
+  const page = compile([
+    ':try "Docs" href="https://example.com/docs?a=1&b=2"',
+    ':try "Mail" href="mailto:hello@example.com"',
+    ':try "Hash" href="#intro"'
+  ]);
+  assert.match(page.html, /href="https:\/\/example\.com\/docs\?a=1&amp;b=2"/);
+  assert.match(page.html, /href="mailto:hello@example\.com"/);
+  assert.match(page.html, /href="#intro"/);
+});
+
+test(":try rejects dangerous href schemes", () => {
+  compileThrows(':try "Bad" href="javascript:alert(1)"', /Unsafe :try href[\s\S]*Use a relative URL/);
 });
 
 // --- safeScriptJson escaping (via state script tag) -------------------------
