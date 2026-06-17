@@ -2,6 +2,16 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.11.0 — 2026-06-16
+
+Three big `.wd` capabilities for building real apps — global state, a full fetch lifecycle, and complete loop ergonomics — plus a leaner runtime.
+
+- **Global state — `:store`.** `:store cart = []` is durable by default (localStorage), synced across browser tabs in real time, and global by name; opt out of persistence with `ephemeral`. Button actions gained a full vocabulary — `toggle`, `prepend`, `merge`, `delete`, `clear`, `member-toggle`, `remove`/`remove-value`, and `reset` (back to the declared seed) — all working on `:state` and `:store`, with dotted-path targets (`cart.count++`) and `;`-separated multi-action buttons.
+- **Fetch lifecycle.** `:fetch` now exposes `name_loading` and `name_empty` alongside `name_error`, so loading → error → empty → data renders with plain `:if`. URLs interpolate state (`/api/users/{ id }`) and auto-refetch when their inputs change; new `timeout`, `retry`, `method`, `headers`, and `body` options; a `refetch` action; and `@loop` now reads a dotted sub-path of fetched data (`@loop data.items into x`).
+- **Loop ergonomics.** `@loop … sort by key [asc|desc] reverse offset N limit N` (offset/limit accept a `:state` key for reactive paging), per-row `$index` / `$number` / `$first` / `$last` / `$count`, and an `@empty` branch for zero rows. Static loops still resolve at build time and ship zero JS.
+- **Leaner runtime.** The shipped runtime now strips whole-line `//` comments in addition to JSDoc (still no minification — identifiers, structure, and whitespace are preserved), so the source stays fully commented while the download shrinks. Even with all three features above, the reactive runtime is ~4.7 KB gzipped, comfortably under the 5 KB budget.
+- **Security.** The prototype-pollution guard is now a single source of truth shared by the path reader and writer; dotted action targets and dynamic fetch URLs are guarded and URL-encoded.
+
 ## 0.10.0 — 2026-06-15
 
 Launch-readiness: every public claim is now backed by runnable evidence instead of stale copy.
