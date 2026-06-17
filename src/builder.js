@@ -66,21 +66,26 @@ export function buildSite(cwd = process.cwd()) {
 }
 
 /**
- * Strip JSDoc `/** ... *\/` blocks from the runtime before it ships.
- * The source keeps full type annotations (for `checkJs` + `.d.ts`), but the
- * browser never needs to download them — this keeps the shipped runtime lean
- * and the gzip budget honest (measured against what users actually receive).
- * Only `/** ... *\/` blocks are removed; code and string literals are untouched.
+ * Strip developer comments from the runtime before it ships. The source keeps
+ * full JSDoc type annotations (for `checkJs` + `.d.ts`) and explanatory comments
+ * so it stays readable; the browser downloads neither. This keeps the shipped
+ * runtime lean and the gzip budget honest (measured against what users receive),
+ * WITHOUT minifying — identifiers, structure, and whitespace are all preserved.
+ *
+ * Two passes, each conservative: `/** ... *\/` JSDoc blocks, then whole-line
+ * `//` comments (a line that is nothing but a comment). Trailing `//` after code
+ * and `//` inside strings/URLs are deliberately left untouched, so no string
+ * literal is ever harmed.
  * @param {string} source
  * @returns {string}
  */
 export function stripRuntimeComments(source) {
   return source
-    // Remove the JSDoc block text only — never the surrounding newlines, so an
-    // inline `/** @type {x} */ code` keeps its line and never glues onto a
-    // preceding `//` comment.
+    // JSDoc blocks — type annotations the browser never needs.
     .replace(/\/\*\*[\s\S]*?\*\//g, "")
-    // Drop the now blank/whitespace-only lines the removed blocks leave behind.
+    // Whole-line `//` comments — developer notes that don't belong in the download.
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    // Drop the now blank/whitespace-only lines the removals leave behind.
     .replace(/^[ \t]*\n/gm, "");
 }
 
