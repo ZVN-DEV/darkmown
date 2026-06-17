@@ -64,6 +64,14 @@ window.addEventListener("storage", (event) => {
 });
 
 /**
+ * True for prototype-pollution path segments that must never be read or written.
+ * Single source of truth for the rejected-key list (used by getPath + setPath).
+ * @param {string} segment
+ * @returns {boolean}
+ */
+const unsafeKey = (segment) => segment === "__proto__" || segment === "constructor" || segment === "prototype";
+
+/**
  * Safely read a dotted path off a value, rejecting prototype-pollution segments.
  * @param {any} value
  * @param {string | null} path
@@ -74,7 +82,7 @@ function getPath(value, path) {
   let current = value;
   for (const segment of path.split(".")) {
     if (current == null) return undefined;
-    if (segment === "constructor" || segment === "prototype" || segment === "__proto__") return undefined;
+    if (unsafeKey(segment)) return undefined;
     current = current[segment];
   }
   return current;
@@ -93,11 +101,11 @@ function setPath(obj, path, value) {
   const last = segs.pop() || "";
   let cur = obj;
   for (const seg of segs) {
-    if (seg === "constructor" || seg === "prototype" || seg === "__proto__") return;
+    if (unsafeKey(seg)) return;
     if (cur[seg] == null || typeof cur[seg] !== "object") cur[seg] = {};
     cur = cur[seg];
   }
-  if (last === "constructor" || last === "prototype" || last === "__proto__") return;
+  if (unsafeKey(last)) return;
   cur[last] = value;
 }
 
