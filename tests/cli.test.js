@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -44,6 +44,17 @@ test("init scaffolds without overwriting and uses publishable dependency spec", 
   assert.equal(fs.existsSync(path.join(target, "README.md")), true);
 });
 
+test("serve binds to loopback by default and reports HOST overrides", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-serve-host-"));
+  fs.mkdirSync(path.join(root, "dist"));
+  fs.writeFileSync(path.join(root, "dist/index.html"), "<h1>ok</h1>");
+
+  const defaultOutput = await readServeBanner(root, { PORT: "0" });
+  assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:0/);
+
+  const overrideOutput = await readServeBanner(root, { PORT: "0", HOST: "localhost" });
+  assert.match(overrideOutput, /http:\/\/localhost:0/);
+});
 
 test("init in the current directory prints a direct next step", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-init-current-"));
@@ -52,3 +63,47 @@ test("init in the current directory prints a direct next step", () => {
   assert.match(output, /Next: npm install && npm run dev/);
   assert.doesNotMatch(output, /cd \. &&/);
 });
+
+/**
+ * @param {string} cwd
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {Promise<string>}
+ */
+function readServeBanner(cwd, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, "serve"], {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let output = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Timed out waiting for serve banner. Output: ${output}`));
+    }, 3000);
+
+    const finish = () => {
+      clearTimeout(timer);
+      child.kill();
+      resolve(output);
+    };
+
+    child.stdout.on("data", (chunk) => {
+      output += chunk;
+      if (output.includes("Darkmown preview of dist")) finish();
+    });
+    child.stderr.on("data", (chunk) => {
+      output += chunk;
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("exit", (code) => {
+      if (!output.includes("Darkmown preview of dist")) {
+        clearTimeout(timer);
+        reject(new Error(`Serve exited with ${code}. Output: ${output}`));
+      }
+    });
+  });
+}
