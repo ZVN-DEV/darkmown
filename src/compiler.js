@@ -30,6 +30,7 @@ import MarkdownIt from "markdown-it";
  * @typedef {object} Compilation
  * @property {Assets} assets
  * @property {Map<string, unknown>} state Declared state keys → initial values.
+ * @property {Set<string>} stores Page-global store names (a subset of state keys).
  * @property {string[]} warnings Non-fatal authoring hints.
  * @property {number} sectionCounter Counter for auto-generated section ids.
  */
@@ -52,6 +53,7 @@ import MarkdownIt from "markdown-it";
  * @property {string[]} sections Active section-id scope chain.
  * @property {string | null} loopItem Name of the current reactive loop item, if any.
  * @property {string} [loopKey] State key of the list being looped, if any.
+ * @property {boolean} [loopMeta] Inside a loop body, so `$index`/`$first`/… are valid.
  * @property {MarkdownIt} [md] Markdown-it instance selected for this file.
  */
 
@@ -164,6 +166,7 @@ function createCompilation() {
   return {
     assets: { skins: new Set(), scripts: new Set(), files: new Map(), runtime: false },
     state: new Map(),
+    stores: new Set(),
     warnings: [],
     sectionCounter: 0
   };
@@ -329,7 +332,8 @@ function compileBody(lines, ctx) {
     if (/^@loop\s/.test(line)) {
       flush();
       const block = scanBlock(lines, i, /^@loop\s/, "@endloop", ctx.file);
-      out.push(handleLoop(line, block.body, ctx));
+      const split = splitEmptyBranch(block.body);
+      out.push(handleLoop(line, split.body, split.empty, ctx));
       i = block.end;
       continue;
     }
@@ -345,6 +349,11 @@ function compileBody(lines, ctx) {
     if (/^:state\s/.test(line)) {
       flush();
       out.push(handleState(line, ctx));
+      continue;
+    }
+    if (/^:store\s/.test(line)) {
+      flush();
+      out.push(handleStore(line, ctx));
       continue;
     }
     if (/^:fetch\s/.test(line)) {
@@ -448,6 +457,37 @@ function scanBlock(lines, start, openRe, endToken, file) {
     body.push(line);
   }
   throw new Error(`Missing ${endToken} for "${lines[start]}" in ${file}`);
+}
+
+/**
+ * Split a `@loop` body at a top-level `@empty` into the rows body and the empty
+ * branch. Honors nested `@loop … @endloop` (so an inner loop's `@empty` is not
+ * mistaken for the outer one) and fenced code.
+ * @param {string[]} body
+ * @returns {{ body: string[], empty: string[] | null }}
+ */
+function splitEmptyBranch(body) {
+  /** @type {string[]} */
+  const rows = [];
+  /** @type {string[] | null} */
+  let empty = null;
+  let target = rows;
+  let depth = 0;
+  let fence = null;
+  for (const line of body) {
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      target.push(line);
+      continue;
+    }
+    if (fenceMatch) { fence = fenceMatch[1]; target.push(line); continue; }
+    if (/^@loop\s/.test(line)) depth++;
+    if (line.trim() === "@endloop") depth--;
+    if (depth === 0 && line.trim() === "@empty") { empty = []; target = empty; continue; }
+    target.push(line);
+  }
+  return { body: rows, empty };
 }
 
 /**
@@ -636,6 +676,7 @@ function handleState(line, ctx) {
  */
 function declareState(name, value, ctx) {
   if (ctx.loopItem) throw new Error(`State cannot be declared inside a reactive @loop body (${ctx.file})`);
+  if (ctx.comp.stores.has(name)) throw new Error(`State "${name}" collides with a :store of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`);
   const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${name}` : name;
   if (ctx.comp.state.has(key)) throw new Error(`State "${name}" is declared twice in the same scope (${ctx.file})`);
   ctx.comp.state.set(key, value);
@@ -648,19 +689,36 @@ function declareState(name, value, ctx) {
  * @param {Ctx} ctx
  * @returns {string}
  */
-function handleFetch(line, ctx) {
-  const match = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+?)(\s+when=visible)?\s*$/);
-  if (!match) {
-    throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. Use: :fetch posts from "/api/posts.json" [when=visible]`);
-  }
-  const key = declareState(match[1], null, ctx);
-  declareErrorState(key, ctx);
-  const url = stripQuotes(match[2]);
-  const when = match[3] ? ` data-wd-fetch-when="visible"` : "";
-  return `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"${when}></span>`;
+function handleStore(line, ctx) {
+  const match = line.match(/^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+ephemeral)?$/);
+  if (!match) throw new Error(`Malformed :store in ${ctx.file}: ${line}. Use: :store name = value [ephemeral]`);
+  const value = parseStateValue(match[2]);
+  const name = declareStore(match[1], value, ctx);
+  const ephemeral = match[3] ? " data-wd-store-ephemeral" : "";
+  return `<script type="application/json" data-wd-store="${name}"${ephemeral}>${safeScriptJson(value)}</script>`;
 }
 
 /**
+ * Register a page-global store. The bare name is added to `comp.state` so every
+ * resolver (interpolation, :if, @loop, :computed, actions) sees it, and tracked
+ * in `comp.stores` for collision checks. Never section-scoped.
+ * @param {string} name
+ * @param {unknown} value
+ * @param {Ctx} ctx
+ * @returns {string} The store name (also its bare state key).
+ */
+function declareStore(name, value, ctx) {
+  if (ctx.comp.stores.has(name)) throw new Error(`Store "${name}" is declared twice in ${ctx.file}. Use: :store name = value`);
+  if (ctx.comp.state.has(name)) throw new Error(`Store "${name}" collides with a :state of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`);
+  ctx.comp.stores.add(name);
+  ctx.comp.state.set(name, value);
+  ctx.comp.assets.runtime = true;
+  return name;
+}
+
+/**
+ * Seed a `<name>_error` state key (null) if absent. Shared by :fetch and the
+ * round-trip :form so error fallbacks have a key to bind.
  * @param {string} key
  * @param {Ctx} ctx
  * @returns {void}
@@ -668,6 +726,83 @@ function handleFetch(line, ctx) {
 function declareErrorState(key, ctx) {
   const errorKey = `${key}_error`;
   if (!ctx.comp.state.has(errorKey)) ctx.comp.state.set(errorKey, null);
+}
+
+const FETCH_USE =
+  'Use: :fetch name from "url" [method=…] [timeout=ms] [retry=N] [when=visible] [headers=key] [body=key]';
+
+/**
+ * Parse a keyword-arg `:fetch` directive into a lifecycle-aware marker.
+ * Auto-declares four state keys (value/error/loading/empty), seeds them, and
+ * emits `data-wd-fetch-*` attributes (url/method/when/timeout/retry/headers/
+ * body/deps) consumed by the runtime's `startFetch`.
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function handleFetch(line, ctx) {
+  const head = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+)\s*(.*)$/);
+  if (!head) throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. ${FETCH_USE}`);
+  const name = head[1];
+  const url = stripQuotes(head[2]);
+  /** @type {Record<string, string>} */
+  const opts = {};
+  for (const part of head[3].trim().split(/\s+/).filter(Boolean)) {
+    const kv = part.match(/^([A-Za-z]+)=(.+)$/);
+    if (!kv) throw new Error(`Unknown :fetch option "${part}" in ${ctx.file}. ${FETCH_USE}`);
+    const optName = kv[1];
+    if (!["method", "when", "timeout", "retry", "headers", "body"].includes(optName)) {
+      throw new Error(`Unknown :fetch option "${optName}" in ${ctx.file}. ${FETCH_USE}`);
+    }
+    opts[optName] = stripQuotes(kv[2]);
+  }
+
+  if (opts.method && !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(opts.method.toUpperCase())) {
+    throw new Error(`:fetch method "${opts.method}" is not allowed in ${ctx.file}. ${FETCH_USE}`);
+  }
+  if (opts.when && !["load", "visible"].includes(opts.when)) {
+    throw new Error(`:fetch when "${opts.when}" is not allowed in ${ctx.file}. ${FETCH_USE}`);
+  }
+  for (const n of ["timeout", "retry"]) {
+    if (opts[n] !== undefined && !/^\d+$/.test(opts[n])) {
+      throw new Error(`:fetch ${n} must be a non-negative integer in ${ctx.file}. ${FETCH_USE}`);
+    }
+  }
+
+  // Extract `{ path }` dependency keys from the URL (validated against poison
+  // segments). The runtime fills them from state on each (re)fetch.
+  /** @type {string[]} */
+  const deps = [];
+  for (const dep of url.matchAll(/\{\s*([A-Za-z_$][\w$.]*)\s*\}/g)) {
+    validatePath(dep[1], ctx, FETCH_USE);
+    const headKey = dep[1].split(".")[0];
+    if (!deps.includes(headKey)) deps.push(headKey);
+  }
+
+  // Auto-declare the four lifecycle keys. `name` is declared via declareState
+  // (collision-checked); the derived keys are seeded directly.
+  const key = declareState(name, null, ctx);
+  /** @type {Record<string, unknown>} */
+  const seeds = { [key]: null };
+  for (const [suffix, seed] of [["_error", null], ["_loading", false], ["_empty", false]]) {
+    const k = `${key}${suffix}`;
+    if (!ctx.comp.state.has(k)) ctx.comp.state.set(k, seed);
+    seeds[k] = seed;
+  }
+
+  /** @param {string} n @param {string | null | false | undefined} v */
+  const attr = (n, v) => (v != null && v !== false && v !== "" ? ` data-wd-fetch-${n}="${escapeHtml(v)}"` : "");
+  const marker =
+    `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"` +
+    attr("method", opts.method && opts.method.toUpperCase()) +
+    attr("when", opts.when === "visible" ? "visible" : "") +
+    attr("timeout", opts.timeout) +
+    attr("retry", opts.retry) +
+    attr("headers", opts.headers && resolveStateKey(opts.headers, ctx)) +
+    attr("body", opts.body && resolveStateKey(opts.body, ctx)) +
+    attr("deps", deps.join(",")) +
+    `></span>`;
+  return `<script type="application/json" data-wd-state>${safeScriptJson(seeds)}</script>${marker}`;
 }
 
 /**
@@ -855,6 +990,9 @@ function handleButton(line, ctx) {
   if (!match) throw new Error(`Malformed :button in ${ctx.file}: ${line}`);
   ctx.comp.assets.runtime = true;
   const action = parseAction(match[2], ctx);
+  if (Array.isArray(action)) {
+    return `<button type="button" data-wd-actions="${escapeHtml(JSON.stringify(action))}">${escapeHtml(match[1])}</button>`;
+  }
   const valueAttr = action.value === undefined ? "" : ` data-wd-value="${escapeHtml(JSON.stringify(action.value))}"`;
   return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${valueAttr}>${escapeHtml(match[1])}</button>`;
 }
@@ -871,6 +1009,17 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
   if (!match) throw new Error(`Malformed :if in ${ctx.file}: ${line}. Use ":if name" with a :state or in-scope value.`);
   const segs = match[1].split(".");
   const head = segs[0];
+
+  // Per-row meta vars in :if — only valid inside a loop.
+  if (LOOP_META[head]) {
+    if (!ctx.loopMeta) throw new Error(`":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`);
+    if (ctx.loopItem) {
+      const truthy = compileBody(truthyLines, ctx).trim();
+      const falsy = compileBody(falsyLines, ctx).trim();
+      return `<span data-wd-each-if data-wd-meta="${LOOP_META[head]}"><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
+    }
+    // static: the meta boolean is in scope — fall through to the static branch below.
+  }
 
   const staticValue = lookupVar(ctx.scope, head);
   if (staticValue.found) {
@@ -900,24 +1049,116 @@ function handleIf(line, truthyLines, falsyLines, ctx) {
   return `<div data-wd-if="${key}"${pathAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
 }
 
+// The fixed corrective suggestion shown for any malformed @loop header.
+const LOOP_USAGE = "Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N]";
+
+// Reserved per-row meta variables, mapped to their runtime marker token.
+/** @type {Record<string, string>} */
+const LOOP_META = { $index: "index", $number: "number", $first: "first", $last: "last", $count: "count" };
+
+/**
+ * Parse the optional clause tail of a `@loop` header in FIXED order:
+ * `[where P] [sort by key [asc|desc]] [reverse] [offset N] [limit N]`.
+ * @param {string} tail Everything after `@loop src into item`.
+ * @param {string} itemName
+ * @param {Ctx} ctx
+ * @returns {{ where: string|null, sort: {key:string,dir:string}|null, reverse: boolean, offset: NumArg|null, limit: NumArg|null, refsState: boolean }}
+ */
+function parseLoopClauses(tail, itemName, ctx) {
+  // Peel clauses off the END in reverse fixed-order (limit, offset, reverse,
+  // sort by). Parsing from the tail avoids mistaking a state operand named
+  // `limit`/`offset` inside the `where` predicate for a clause keyword. Whatever
+  // remains must be `where …` (or empty); a clause keyword surviving in the
+  // remainder means the author wrote the clauses out of order.
+  let s = tail.trim();
+  /** @type {{key:string,dir:string}|null} */ let sort = null;
+  let reverse = false;
+  /** @type {NumArg|null} */ let offset = null;
+  /** @type {NumArg|null} */ let limit = null;
+  let refsState = false;
+  /** @returns {never} */
+  const bad = () => { throw new Error(`Malformed @loop clause in ${ctx.file}: "${tail.trim()}". ${LOOP_USAGE}`); };
+
+  let m = s.match(/(^|\s)limit\s+(\d+|[A-Za-z_$][\w$]*)$/);
+  if (m) { limit = parseNumArg(m[2], ctx); refsState = refsState || limit.kind === "key"; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+
+  m = s.match(/(^|\s)offset\s+(\d+|[A-Za-z_$][\w$]*)$/);
+  if (m) { offset = parseNumArg(m[2], ctx); refsState = refsState || offset.kind === "key"; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+
+  m = s.match(/(^|\s)reverse$/);
+  if (m) { reverse = true; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+
+  m = s.match(/(^|\s)sort\s+by\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\s+(asc|desc))?$/);
+  if (m) {
+    const segs = m[2].split(".");
+    if (segs[0] !== itemName) throw new Error(`@loop sort key "${m[2]}" must start with the loop item "${itemName}" in ${ctx.file}. ${LOOP_USAGE}`);
+    const rest = segs.slice(1);
+    if (rest.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+      throw new Error(`Sort key "${m[2]}" is not allowed in @loop (${ctx.file})`);
+    }
+    sort = { key: rest.join("."), dir: m[3] || "asc" };
+    s = s.slice(0, s.length - m[0].length + m[1].length).trim();
+  }
+
+  /** @type {string|null} */ let where = null;
+  if (s.length) {
+    m = s.match(/^where\s+(.+)$/);
+    if (!m) return bad(); // leftover non-where text → clauses written out of order
+    where = m[1].trim();
+    // `sort by`/`reverse` are never valid where operands; their presence in the
+    // predicate means a clause was written before `where` finished (wrong order).
+    if (/(^|\s)(sort\s+by\s|reverse(\s|$))/.test(where)) bad();
+  }
+  return { where, sort, reverse, offset, limit, refsState };
+}
+
+/**
+ * A loop offset/limit argument: a non-negative integer literal or a state key.
+ * @typedef {{ kind: "literal", value: number } | { kind: "key", value: string }} NumArg
+ */
+
+/**
+ * @param {string} tok
+ * @param {Ctx} ctx
+ * @returns {NumArg}
+ */
+function parseNumArg(tok, ctx) {
+  if (/^\d+$/.test(tok)) return { kind: "literal", value: Number(tok) };
+  if (/^[A-Za-z_$][\w$]*$/.test(tok)) {
+    const key = resolveStateKey(tok, ctx);
+    if (!key) throw new Error(`@loop offset/limit "${tok}" in ${ctx.file} is neither a non-negative integer nor a declared :state. ${LOOP_USAGE}`);
+    return { kind: "key", value: key };
+  }
+  throw new Error(`@loop offset/limit "${tok}" in ${ctx.file} is invalid. ${LOOP_USAGE}`);
+}
+
+/** @param {NumArg} arg @returns {string} */
+function numArgAttr(arg) {
+  return arg.kind === "literal" ? String(arg.value) : `key:${arg.value}`;
+}
+
 /**
  * @param {string} line
  * @param {string[]} bodyLines
+ * @param {string[] | null} emptyLines
  * @param {Ctx} ctx
  * @returns {string}
  */
-function handleLoop(line, bodyLines, ctx) {
-  const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(?:\s+where\s+(.+?))?\s*$/);
-  if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. Use: @loop <things> into <thing> [where <predicate>]`);
+function handleLoop(line, bodyLines, emptyLines, ctx) {
+  const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(\s+.+?)?\s*$/);
+  if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. ${LOOP_USAGE}`);
   const source = stripQuotes(match[1].trim());
   const itemName = match[2];
-  const where = match[3] ? compilePredicate(match[3].trim(), itemName, ctx) : null;
+  const clauses = match[3] ? parseLoopClauses(match[3], itemName, ctx) : { where: null, sort: null, reverse: false, offset: null, limit: null, refsState: false };
+  const where = clauses.where ? compilePredicate(clauses.where, itemName, ctx) : null;
+  /** @type {LoopOpts} */
+  const opts = { where, sort: clauses.sort, reverse: clauses.reverse, offset: clauses.offset, limit: clauses.limit, empty: emptyLines, clauseRefsState: clauses.refsState };
 
   if (source.startsWith("/") || source.startsWith("./") || source.startsWith("../") || source.endsWith(".json")) {
     const dataFile = resolveInclude(source, ctx.file, ctx.context, true);
     const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
-    return loopOverData(rows, itemName, bodyLines, ctx, where);
+    return loopOverData(rows, itemName, bodyLines, ctx, opts);
   }
 
   const resolved = lookupPath(source, ctx);
@@ -925,12 +1166,20 @@ function handleLoop(line, bodyLines, ctx) {
     if (!Array.isArray(resolved.value)) {
       throw new Error(`@loop ${source} in ${ctx.file} found an in-scope value, but it is not a list`);
     }
-    return loopOverData(resolved.value, itemName, bodyLines, ctx, where);
+    return loopOverData(resolved.value, itemName, bodyLines, ctx, opts);
   }
 
-  if (/^[A-Za-z_$][\w$]*$/.test(source)) {
-    const key = resolveStateKey(source, ctx);
-    if (key) return reactiveLoop(key, itemName, bodyLines, ctx, where ? { where } : null);
+  // A bare name OR a dotted path resolving to declared :state (e.g. team.members).
+  const segs = source.split(".");
+  if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(source)) {
+    if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+      throw new Error(`@loop source "${source}" is not allowed in ${ctx.file}`);
+    }
+    const key = resolveStateKey(segs[0], ctx);
+    if (key) {
+      const fullKey = segs.length > 1 ? `${key}.${segs.slice(1).join(".")}` : key;
+      return reactiveLoop(fullKey, itemName, bodyLines, ctx, opts);
+    }
   }
 
   throw new Error(
@@ -949,17 +1198,58 @@ function handleLoop(line, bodyLines, ctx) {
  */
 
 /**
+ * Loop clause configuration shared by the static and reactive paths.
+ * @typedef {object} LoopOpts
+ * @property {Predicate | null} where
+ * @property {{ key: string, dir: string } | null} sort
+ * @property {boolean} reverse
+ * @property {NumArg | null} offset
+ * @property {NumArg | null} limit
+ * @property {string[] | null} empty Empty-branch body lines, if any.
+ * @property {boolean} clauseRefsState Whether offset/limit reference state.
+ */
+
+/**
+ * Build-time pipeline over already-resolved rows: filter → sort → reverse →
+ * offset → limit. Used when source + every clause arg are static.
+ * @param {unknown[]} rows
+ * @param {Predicate | null} where
+ * @param {LoopOpts} opts
+ * @param {Ctx} ctx
+ * @returns {unknown[]}
+ */
+function pipelineRows(rows, where, opts, ctx) {
+  let list = where ? rows.filter((row) => evalPredicate(where.body, row, ctx)) : rows.slice();
+  if (opts.sort) {
+    const k = opts.sort.key;
+    const dir = opts.sort.dir === "desc" ? -1 : 1;
+    list = list.map((value, index) => ({ value, index })).sort((a, b) => {
+      const av = getPath(a.value, k ? k.split(".") : []);
+      const bv = getPath(b.value, k ? k.split(".") : []);
+      let c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+      return (c || a.index - b.index) * dir;
+    }).map((w) => w.value);
+  }
+  if (opts.reverse) list.reverse();
+  const off = opts.offset && opts.offset.kind === "literal" ? opts.offset.value : 0;
+  if (off) list = list.slice(off);
+  if (opts.limit && opts.limit.kind === "literal") list = list.slice(0, opts.limit.value);
+  return list;
+}
+
+/**
  * @param {unknown[]} rows
  * @param {string} itemName
  * @param {string[]} bodyLines
  * @param {Ctx} ctx
- * @param {Predicate | null} where
+ * @param {LoopOpts} opts
  * @returns {string}
  */
-function loopOverData(rows, itemName, bodyLines, ctx, where) {
-  if (!where) return staticUnroll(rows, itemName, bodyLines, ctx);
-  if (!where.refsState) return staticUnroll(rows.filter((row) => evalPredicate(where.body, row, ctx)), itemName, bodyLines, ctx);
-  return reactiveLoop(null, itemName, bodyLines, ctx, { where, data: rows });
+function loopOverData(rows, itemName, bodyLines, ctx, opts) {
+  // Reactive when the where reads state OR an offset/limit references a state key.
+  const reactive = (opts.where && opts.where.refsState) || opts.clauseRefsState;
+  if (reactive) return reactiveLoop(null, itemName, bodyLines, ctx, { ...opts, data: rows });
+  return staticUnroll(pipelineRows(rows, opts.where, opts, ctx), itemName, bodyLines, ctx, opts.empty);
 }
 
 // Compile a `where` predicate to a safe JS boolean expression over I()/S()/C().
@@ -1056,30 +1346,36 @@ function evalPredicate(body, item, ctx) {
  * @param {string} itemName
  * @param {string[]} bodyLines
  * @param {Ctx} ctx
+ * @param {string[] | null} [empty] Empty-branch body, rendered when 0 rows.
  * @returns {string}
  */
-function staticUnroll(rows, itemName, bodyLines, ctx) {
+function staticUnroll(rows, itemName, bodyLines, ctx, empty = null) {
+  if (rows.length === 0 && empty) return compileBody(empty, { ...ctx, loopMeta: true });
   const out = [];
-  for (const row of rows) {
-    const rowCtx = { ...ctx, scope: createScope(ctx.scope, { [itemName]: row }) };
+  const count = rows.length;
+  for (let i = 0; i < count; i++) {
+    const meta = { $index: i, $number: i + 1, $first: i === 0, $last: i === count - 1, $count: count };
+    const rowCtx = { ...ctx, loopMeta: true, scope: createScope(ctx.scope, { [itemName]: rows[i], ...meta }) };
     out.push(compileBody(bodyLines, rowCtx));
   }
   return out.join("\n");
 }
 
 /**
- * Emit a reactive loop region (template + initial rows) for the runtime.
- * @param {string | null} key State key of the list, or null for baked data.
+ * Emit a reactive loop region (template + initial rows + clause config) for the
+ * runtime. `key` may be a dotted path (e.g. `team.members`); the runtime reads
+ * it via getPath. `opts` carries where/sort/reverse/offset/limit/empty.
+ * @param {string | null} key State key/path of the list, or null for baked data.
  * @param {string} itemName
  * @param {string[]} bodyLines
  * @param {Ctx} ctx
- * @param {{ where?: Predicate, data?: unknown[] } | null} [opts]
+ * @param {Partial<LoopOpts> & { data?: unknown[] } | null} [opts]
  * @returns {string}
  */
 function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   ctx.comp.assets.runtime = true;
   /** @type {Ctx} */
-  const templateCtx = { ...ctx, loopItem: itemName, loopKey: key ?? undefined, scope: createScope(ctx.scope) };
+  const templateCtx = { ...ctx, loopItem: itemName, loopKey: key ?? undefined, loopMeta: true, scope: createScope(ctx.scope) };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
 
   let wrapperTag = "div";
@@ -1093,23 +1389,44 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   }
 
   const where = opts?.where || null;
+  const sort = opts?.sort || null;
+  const reverse = opts?.reverse || false;
+  const offset = opts?.offset || null;
+  const limit = opts?.limit || null;
+  const emptyLines = opts?.empty || null;
   const baked = opts?.data || null;       // rows for a static source filtered by state
-  const stateRows = key ? ctx.comp.state.get(key) : null;
+  // Resolve the (possibly dotted) source for the initial paint.
+  const segs = key ? key.split(".") : [];
+  const stateRows = key ? getPath(ctx.comp.state.get(segs[0]), segs.slice(1)) : null;
   /** @type {unknown[]} */
   const allRows = key ? (Array.isArray(stateRows) ? stateRows : []) : (baked || []);
-  const rows = where ? allRows.filter((/** @type {unknown} */ row) => evalPredicate(where.body, row, ctx)) : allRows;
+  // Initial paint runs the same pipeline the runtime will, reading state-key
+  // offset/limit from their current declared values.
+  /** @param {NumArg|null} a */
+  const num = (a) => a ? (a.kind === "literal" ? a.value : Number(ctx.comp.state.get(a.value) ?? 0)) : null;
+  const rows = pipelineRows(allRows, where, { where, sort, reverse, offset: offset && offset.kind === "key" ? { kind: "literal", value: num(offset) || 0 } : offset, limit: limit && limit.kind === "key" ? { kind: "literal", value: num(limit) ?? allRows.length } : limit, empty: null, clauseRefsState: false }, ctx);
   /** @type {Map<string, number>} */
   const counts = new Map();
+  const count = rows.length;
   const initial = rows
-    .map((/** @type {unknown} */ item) => {
+    .map((/** @type {unknown} */ item, i) => {
       const itemKey = loopKeyOf(item, counts);
-      return fillTemplateString(withLoopKey(itemTemplate, itemKey), item);
+      const meta = { index: i, number: i + 1, first: i === 0, last: i === count - 1, count };
+      return fillTemplateString(withLoopKey(itemTemplate, itemKey), item, meta);
     })
     .join("");
 
-  const whereAttr = where ? ` data-wd-loop-where="${escapeHtml(where.body)}"` : "";
-  const dataAttr = baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "";
-  return `<div data-wd-loop="${key || ""}"${whereAttr}${dataAttr}><template data-wd-loop-template>${itemTemplate}</template><${wrapperTag} data-wd-loop-out>${initial}</${wrapperTag}></div>`;
+  const emptyTemplate = emptyLines ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>` : "";
+  const initialOut = count === 0 && emptyLines ? compileBody(emptyLines, { ...ctx, loopMeta: true }).trim() : initial;
+
+  const attrs =
+    (where ? ` data-wd-loop-where="${escapeHtml(where.body)}"` : "") +
+    (sort ? ` data-wd-loop-sort="${escapeHtml(sort.key)}" data-wd-loop-sort-dir="${sort.dir}"` : "") +
+    (reverse ? ` data-wd-loop-reverse` : "") +
+    (offset ? ` data-wd-loop-offset="${numArgAttr(offset)}"` : "") +
+    (limit ? ` data-wd-loop-limit="${numArgAttr(limit)}"` : "") +
+    (baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "");
+  return `<div data-wd-loop="${escapeHtml(key || "")}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out>${initialOut}</${wrapperTag}></div>`;
 }
 
 /**
@@ -1124,12 +1441,26 @@ function withLoopKey(template, itemKey) {
 /**
  * @param {string} template
  * @param {unknown} item
+ * @param {Record<string, unknown>} [meta] Per-row meta values for the initial paint.
  * @returns {string}
  */
-function fillTemplateString(template, item) {
+function fillTemplateString(template, item, meta = {}) {
   // Resolve per-item :if regions first (recursively, so nested conditionals are
-  // pre-rendered for the initial paint), then fill the plain text bindings.
-  return fillEachText(fillEachIfRegions(template, item), item);
+  // pre-rendered for the initial paint), then fill text binds and meta markers.
+  return fillEachMeta(fillEachText(fillEachIfRegions(template, item, meta), item), meta);
+}
+
+/**
+ * Fill `<span data-wd-each-meta="…">` markers with their per-row value.
+ * @param {string} str
+ * @param {Record<string, unknown>} meta
+ * @returns {string}
+ */
+function fillEachMeta(str, meta) {
+  return str.replace(/<span data-wd-each-meta="([a-z]+)"><\/span>/g, (_, name) => {
+    const value = name in meta ? meta[name] : "";
+    return `<span data-wd-each-meta="${name}">${escapeHtml(value ?? "")}</span>`;
+  });
 }
 
 // Walk the string resolving only the OUTERMOST data-wd-each-if regions; each
@@ -1138,9 +1469,10 @@ function fillTemplateString(template, item) {
 /**
  * @param {string} str
  * @param {unknown} item
+ * @param {Record<string, unknown>} [meta]
  * @returns {string}
  */
-function fillEachIfRegions(str, item) {
+function fillEachIfRegions(str, item, meta = {}) {
   const marker = '<span data-wd-each-if ';
   let result = "";
   let i = 0;
@@ -1149,7 +1481,7 @@ function fillEachIfRegions(str, item) {
     if (start === -1) return result + str.slice(i);
     result += str.slice(i, start);
     const end = matchElement(str, start, "span");
-    result += fillOneEachIf(str.slice(start, end), item);
+    result += fillOneEachIf(str.slice(start, end), item, meta);
     i = end;
   }
 }
@@ -1157,9 +1489,11 @@ function fillEachIfRegions(str, item) {
 /**
  * @param {string} region
  * @param {unknown} item
+ * @param {Record<string, unknown>} meta
  * @returns {string}
  */
-function fillOneEachIf(region, item) {
+function fillOneEachIf(region, item, meta) {
+  const metaMatch = region.match(/^<span data-wd-each-if data-wd-meta="([a-z]+)">/);
   const path = (region.match(/^<span data-wd-each-if data-wd-path="([^"]*)">/) || ["", ""])[1];
   const trueStart = region.indexOf("<template data-wd-if-true>");
   const trueEnd = matchElement(region, trueStart, "template");
@@ -1169,9 +1503,10 @@ function fillOneEachIf(region, item) {
   const close = "</template>".length;
   const truthy = region.slice(trueStart + open, trueEnd - close);
   const falsy = region.slice(falseStart + "<template data-wd-if-false>".length, falseEnd - close);
-  const branch = getPath(item, path ? path.split(".") : []) ? truthy : falsy;
+  const test = metaMatch ? Boolean(meta[metaMatch[1]]) : Boolean(getPath(item, path ? path.split(".") : []));
+  const branch = test ? truthy : falsy;
   const head = region.slice(0, falseEnd);
-  return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item)}</span></span>`;
+  return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item, meta)}</span></span>`;
 }
 
 /**
@@ -1298,6 +1633,13 @@ function resolveBindingHtml(expr, ctx) {
   const segs = expr.split(".");
   const head = segs[0];
 
+  // Per-row meta vars ($index/$number/$first/$last/$count) — only inside a loop.
+  if (LOOP_META[head]) {
+    if (!ctx.loopMeta) throw new Error(`"{ ${expr} }" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Move it into a loop body, or rename your value.`);
+    if (ctx.loopItem) return `<span data-wd-each-meta="${LOOP_META[head]}"></span>`; // reactive: filled per row
+    // static: the value is in scope (injected by staticUnroll); fall through.
+  }
+
   if (ctx.loopItem && head === ctx.loopItem) {
     const rest = segs.slice(1).join(".");
     return `<span data-wd-each${rest ? ` data-wd-path="${escapeHtml(rest)}"` : ""}></span>`;
@@ -1385,6 +1727,22 @@ function getPath(value, segments) {
 }
 
 /**
+ * Validate a dotted path shape, rejecting prototype-pollution segments at every
+ * level. Shared by actions/loops/fetch. Throws with a corrective `Use:` hint.
+ * @param {string} path Dotted path, e.g. `cart.items`.
+ * @param {Ctx} ctx
+ * @param {string} use Corrective suggestion for the error message.
+ * @returns {string[]} The validated segments.
+ */
+function validatePath(path, ctx, use) {
+  const segs = path.split(".");
+  if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+    throw new Error(`Path segment in "${path}" is not allowed in ${ctx.file}. Use: ${use}`);
+  }
+  return segs;
+}
+
+/**
  * Resolve a bare state name to its fully-qualified key, walking section scopes.
  * @param {string} name
  * @param {Ctx} ctx
@@ -1405,35 +1763,56 @@ function resolveStateKey(name, ctx) {
 /**
  * A parsed `:button` action.
  * @typedef {object} Action
- * @property {string} op Runtime operation (inc/dec/add/append/set/remove/append-row).
- * @property {string} target State key the action mutates.
+ * @property {string} op Runtime operation (inc/dec/add/sub/append/prepend/set/toggle/member-toggle/remove/remove-value/clear/merge/delete/reset/append-row).
+ * @property {string} target State key (possibly dotted) the action mutates.
  * @property {unknown} [value] Literal value for value-carrying ops.
  */
 
+const ACTION_USE =
+  'Use: name++, name--, n += k, n -= k, name = v, flag toggle, list append/prepend v, list toggle v, list remove v, x clear, obj merge other, obj delete key, name reset — chain with ";".';
+
 /**
- * Parse a `:button` action expression into a validated `{ op, target, value }`.
+ * Parse a `:button` action expression into a validated `{ op, target, value }`,
+ * or — when `;`-separated — an ordered array of them applied in sequence.
  * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {Action | Action[]}
+ */
+function parseAction(raw, ctx) {
+  const parts = raw.split(";").map((p) => p.trim()).filter(Boolean);
+  if (parts.length > 1) return parts.map((part) => parseSingleAction(part, raw, ctx));
+  return parseSingleAction(raw.trim(), raw, ctx);
+}
+
+/**
+ * Parse one (non-`;`) action expression into a validated `{ op, target, value }`.
+ * Targets may be dotted paths (`cart.count`); a bare name is a 1-segment path.
+ * @param {string} expression
+ * @param {string} raw The full original action source (for error context).
  * @param {Ctx} ctx
  * @returns {Action}
  */
-function parseAction(raw, ctx) {
-  const expression = raw.trim();
+function parseSingleAction(expression, raw, ctx) {
+  const PATH = "[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*";
   /** @param {string} name @returns {string} */
   const resolveTarget = (name) => {
-    const key = resolveStateKey(name, ctx);
+    const segs = validatePath(name, ctx, ACTION_USE);
+    const key = resolveStateKey(segs[0], ctx);
     if (!key) {
-      throw new Error(`Button action targets unknown state "${name}" in ${ctx.file}. Declare it first with :state ${name} = ...`);
+      throw new Error(`Button action targets unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`);
     }
-    return key;
+    return [key, ...segs.slice(1)].join(".");
   };
 
-  const increment = expression.match(/^([A-Za-z_$][\w$]*)\+\+$/);
+  const increment = expression.match(new RegExp(`^(${PATH})\\+\\+$`));
   if (increment) return { op: "inc", target: resolveTarget(increment[1]) };
-  const decrement = expression.match(/^([A-Za-z_$][\w$]*)--$/);
+  const decrement = expression.match(new RegExp(`^(${PATH})--$`));
   if (decrement) return { op: "dec", target: resolveTarget(decrement[1]) };
+  const sub = expression.match(new RegExp(`^(${PATH})\\s*-=\\s*(.+)$`));
+  if (sub) return { op: "sub", target: resolveTarget(sub[1]), value: parseActionLiteral(sub[2]) };
   // Per-row: carry the current loop item into another list — `cart += product`.
   // Only inside a reactive @loop; the runtime resolves the row from the DOM.
-  const add = expression.match(/^([A-Za-z_$][\w$]*)\s*\+=\s*(.+)$/);
+  const add = expression.match(new RegExp(`^(${PATH})\\s*\\+=\\s*(.+)$`));
   if (add) {
     const rhs = add[2].trim();
     if (ctx.loopItem && rhs === ctx.loopItem) {
@@ -1449,23 +1828,66 @@ function parseAction(raw, ctx) {
     if (typeof value === "number") return { op: "add", target, value };
     throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. += with non-number values requires a list state target — declare it "${add[1]} = []".`);
   }
-  // Per-row: remove the current row from the list being looped — `todos remove todo`.
-  const remove = expression.match(/^([A-Za-z_$][\w$]*)\s+remove\s+([A-Za-z_$][\w$]*)$/);
-  if (remove) {
-    if (!ctx.loopItem) {
-      throw new Error(`Button action "${raw}" is only valid inside a reactive @loop in ${ctx.file}. Use: :button "Remove" -> list remove item`);
-    }
-    if (remove[2] !== ctx.loopItem) {
-      throw new Error(`Button action "${raw}" must remove the loop item "${ctx.loopItem}" in ${ctx.file}, not "${remove[2]}".`);
-    }
-    if (!ctx.loopKey || resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
-      throw new Error(`Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`);
-    }
-    return { op: "remove", target: ctx.loopKey };
+  // `flag toggle` (no operand) → boolean flip; `list toggle v` → member-toggle.
+  const toggle = expression.match(new RegExp(`^(${PATH})\\s+toggle(?:\\s+(.+))?$`));
+  if (toggle) {
+    const target = resolveTarget(toggle[1]);
+    if (toggle[2] === undefined) return { op: "toggle", target };
+    return { op: "member-toggle", target, value: parseActionLiteral(toggle[2]) };
   }
-  const assign = expression.match(/^([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+  const prepend = expression.match(new RegExp(`^(${PATH})\\s+(?:append|prepend)\\s+(.+)$`));
+  if (prepend) {
+    const op = expression.includes(" prepend ") ? "prepend" : "append";
+    return { op, target: resolveTarget(prepend[1]), value: parseActionLiteral(prepend[2]) };
+  }
+  // Per-row: remove the current row from the list being looped — `todos remove todo`.
+  // Disambiguation: operand IS the loop item name → `remove` (current row);
+  // otherwise the operand is a value → `remove-value`.
+  const remove = expression.match(new RegExp(`^(${PATH})\\s+remove\\s+(.+)$`));
+  if (remove) {
+    const operand = remove[2].trim();
+    if (ctx.loopItem && operand === ctx.loopItem) {
+      if (!ctx.loopKey || resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
+        throw new Error(`Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`);
+      }
+      return { op: "remove", target: ctx.loopKey };
+    }
+    return { op: "remove-value", target: resolveTarget(remove[1]), value: parseActionLiteral(operand) };
+  }
+  const clear = expression.match(new RegExp(`^(${PATH})\\s+clear$`));
+  if (clear) return { op: "clear", target: resolveTarget(clear[1]) };
+  const merge = expression.match(new RegExp(`^(${PATH})\\s+merge\\s+(.+)$`));
+  if (merge) return { op: "merge", target: resolveTarget(merge[1]), value: parseMergeOperand(merge[2], ctx) };
+  const del = expression.match(new RegExp(`^(${PATH})\\s+delete\\s+(.+)$`));
+  if (del) return { op: "delete", target: resolveTarget(del[1]), value: parseActionLiteral(del[2]) };
+  const reset = expression.match(new RegExp(`^(${PATH})\\s+reset$`));
+  if (reset) return { op: "reset", target: resolveTarget(reset[1]) };
+  // `name refetch` re-invokes the matching :fetch node. The target is the fetch
+  // key (bare name); the runtime finds the [data-wd-fetch-key] node and re-runs.
+  const refetch = expression.match(new RegExp(`^(${PATH})\\s+refetch$`));
+  if (refetch) return { op: "refetch", target: resolveTarget(refetch[1]) };
+  const assign = expression.match(new RegExp(`^(${PATH})\\s*=\\s*(.+)$`));
   if (assign) return { op: "set", target: resolveTarget(assign[1]), value: parseActionLiteral(assign[2]) };
-  throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. Supported actions: count++, count--, count += 1, items += "value", name = "value", list remove item (in a loop), cart += item (in a loop).`);
+  throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. ${ACTION_USE}`);
+}
+
+/**
+ * `merge` operand: either an inline JSON object literal, or a state/store key
+ * name (emitted as a string the runtime resolves via getPath).
+ * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {unknown}
+ */
+function parseMergeOperand(raw, ctx) {
+  const value = raw.trim();
+  if (/^[A-Za-z_$][\w$]*$/.test(value)) {
+    const key = resolveStateKey(value, ctx);
+    if (!key) throw new Error(`Button action merge targets unknown state "${value}" in ${ctx.file}. Declare it first with :state ${value} = ...`);
+    return key;
+  }
+  const parsed = parseActionLiteral(value);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  throw new Error(`Unsupported merge operand "${raw}" in ${ctx.file}. Use: obj merge other (a state key or an inline {…} object).`);
 }
 
 /**
@@ -1483,10 +1905,10 @@ function parseActionLiteral(raw) {
     try {
       return JSON.parse(value);
     } catch {
-      throw new Error(`Unsupported action literal "${raw}". Use a quoted string, number, boolean, null, or valid JSON.`);
+      throw new Error(`Unsupported action literal "${raw}". Use: a quoted string, number, boolean, null, or valid JSON.`);
     }
   }
-  throw new Error(`Unsupported action literal "${raw}". Use a quoted string, number, boolean, null, or valid JSON.`);
+  throw new Error(`Unsupported action literal "${raw}". Use: a quoted string, number, boolean, null, or valid JSON.`);
 }
 
 // ---------------------------------------------------------------------------

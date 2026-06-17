@@ -43,6 +43,7 @@ class El {
   setAttribute(name, value) { this.attrs.set(name, String(value)); }
   getAttribute(name) { return this.attrs.has(name) ? this.attrs.get(name) : null; }
   hasAttribute(name) { return this.attrs.has(name); }
+  removeAttribute(name) { this.attrs.delete(name); }
   appendChild(node) {
     if (node.parent) node.parent.removeChild(node);
     node.parent = this;
@@ -149,6 +150,10 @@ function makeSandbox(rootBuilder, { withRAF = false } = {}) {
     sandbox.requestAnimationFrame = (fn) => { sandbox.__rafQueue.push(fn); return sandbox.__rafQueue.length; };
     sandbox.__rafQueue = [];
   }
+  // The runtime registers a `window.addEventListener("storage", …)` for cross-tab
+  // :store sync; the sandbox window is the sandbox itself, so expose the same
+  // listener registry there. `fire(type, target)` drives both document + window.
+  sandbox.addEventListener = (type, fn) => { (listeners[type] ||= []).push(fn); };
   sandbox.window = sandbox;
 
   vm.createContext(sandbox);
@@ -430,4 +435,166 @@ test("wd.render is a synchronous flush for manual / external callers", () => {
   h.sandbox.wd.render();
   assert.equal(h.renderCount, base + 1, "wd.render flushes immediately, not via RAF");
   assert.equal(out.children[0].textContent, "Sync");
+});
+
+// ---------------------------------------------------------------------------
+// TASK-2 (loops) — runtime pipeline: sort / reverse / offset / limit
+// ---------------------------------------------------------------------------
+
+// Build a loop region with clause attributes. The row proto binds a path (or the
+// whole item when path is null) so we can assert the rendered values + order.
+function clauseLoop(root, El, { key = "items", initial, path = "v", attrs = {}, empty = null } = {}) {
+  if (initial !== undefined) {
+    const script = new El("script");
+    script.setAttribute("data-wd-state", "");
+    script.textContent = JSON.stringify({ [key]: initial });
+    root.appendChild(script);
+  }
+  const region = new El("div");
+  region.setAttribute("data-wd-loop", key);
+  for (const [k, v] of Object.entries(attrs)) region.setAttribute(k, String(v));
+
+  const template = new El("template");
+  template.setAttribute("data-wd-loop-template", "");
+  const proto = new El("li");
+  proto.setAttribute("data-wd-each", "");
+  if (path) proto.setAttribute("data-wd-path", path);
+  template.content.appendChild(proto);
+  region.appendChild(template);
+
+  if (empty !== null) {
+    const emptyTpl = new El("template");
+    emptyTpl.setAttribute("data-wd-loop-empty", "");
+    const node = new El("p");
+    node.textContent = empty;
+    emptyTpl.content.appendChild(node);
+    region.appendChild(emptyTpl);
+  }
+
+  const out = new El("ul");
+  out.setAttribute("data-wd-loop-out", "");
+  region.appendChild(out);
+
+  root.appendChild(region);
+  return { region, out };
+}
+
+test("runtime sorts rows ascending by a path key", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = clauseLoop(root, El, {
+      initial: [{ id: 1, v: 3 }, { id: 2, v: 1 }, { id: 3, v: 2 }],
+      attrs: { "data-wd-loop-sort": "v", "data-wd-loop-sort-dir": "asc" }
+    }));
+  });
+  assert.deepEqual(out.children.map((n) => n.textContent), ["1", "2", "3"]);
+});
+
+test("runtime sorts rows descending and uses localeCompare for strings", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = clauseLoop(root, El, {
+      initial: [{ id: 1, v: "banana" }, { id: 2, v: "apple" }, { id: 3, v: "cherry" }],
+      attrs: { "data-wd-loop-sort": "v", "data-wd-loop-sort-dir": "desc" }
+    }));
+  });
+  assert.deepEqual(out.children.map((n) => n.textContent), ["cherry", "banana", "apple"]);
+});
+
+test("runtime applies reverse, then offset, then limit (pipeline order)", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = clauseLoop(root, El, {
+      initial: [{ id: 1, v: "a" }, { id: 2, v: "b" }, { id: 3, v: "c" }, { id: 4, v: "d" }],
+      attrs: { "data-wd-loop-reverse": "", "data-wd-loop-offset": "1", "data-wd-loop-limit": "2" }
+    }));
+  });
+  // reverse → d c b a ; offset 1 → c b a ; limit 2 → c b
+  assert.deepEqual(out.children.map((n) => n.textContent), ["c", "b"]);
+});
+
+test("runtime reads a state-key limit for reactive paging", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    const script = new El("script");
+    script.setAttribute("data-wd-state", "");
+    script.textContent = JSON.stringify({ pageSize: 2 });
+    root.appendChild(script);
+    ({ out } = clauseLoop(root, El, {
+      initial: [{ id: 1, v: "a" }, { id: 2, v: "b" }, { id: 3, v: "c" }],
+      attrs: { "data-wd-loop-limit": "key:pageSize" }
+    }));
+  });
+  assert.equal(out.children.length, 2, "limit pageSize=2 shows two rows");
+
+  h.sandbox.wd.state.pageSize = 3;
+  h.sandbox.wd.render();
+  assert.equal(out.children.length, 3, "bumping pageSize re-slices reactively");
+});
+
+test("runtime resolves a dotted loop source via getPath", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    const script = new El("script");
+    script.setAttribute("data-wd-state", "");
+    script.textContent = JSON.stringify({ team: { members: [{ id: 1, v: "Ann" }, { id: 2, v: "Bo" }] } });
+    root.appendChild(script);
+    ({ out } = clauseLoop(root, El, { key: "team.members" }));
+  });
+  assert.deepEqual(out.children.map((n) => n.textContent), ["Ann", "Bo"]);
+});
+
+// ---------------------------------------------------------------------------
+// TASK-2 (loops) — per-row meta vars + @empty
+// ---------------------------------------------------------------------------
+
+test("runtime fills per-row meta markers ($index/$number/$first/$last/$count)", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    const region = new El("div");
+    region.setAttribute("data-wd-loop", "items");
+    const template = new El("template");
+    template.setAttribute("data-wd-loop-template", "");
+    const proto = new El("li");
+    // a row that carries several meta markers
+    const idx = new El("span"); idx.setAttribute("data-wd-each-meta", "index");
+    const num = new El("span"); num.setAttribute("data-wd-each-meta", "number");
+    const cnt = new El("span"); cnt.setAttribute("data-wd-each-meta", "count");
+    proto.appendChild(idx); proto.appendChild(num); proto.appendChild(cnt);
+    template.content.appendChild(proto);
+    region.appendChild(template);
+    const outEl = new El("ul");
+    outEl.setAttribute("data-wd-loop-out", "");
+    region.appendChild(outEl);
+    const script = new El("script");
+    script.setAttribute("data-wd-state", "");
+    script.textContent = JSON.stringify({ items: [{ id: "a" }, { id: "b" }, { id: "c" }] });
+    root.appendChild(script);
+    root.appendChild(region);
+    out = outEl;
+  });
+  const metas = (row) => row.querySelectorAll("[data-wd-each-meta]").map((s) => [s.getAttribute("data-wd-each-meta"), s.textContent]);
+  assert.deepEqual(metas(out.children[0]), [["index", "0"], ["number", "1"], ["count", "3"]]);
+  assert.deepEqual(metas(out.children[2]), [["index", "2"], ["number", "3"], ["count", "3"]]);
+});
+
+test("runtime renders the @empty template when the post-pipeline list is empty", () => {
+  let out, region;
+  const h = makeSandbox((root, El) => {
+    ({ out, region } = clauseLoop(root, El, { initial: [], empty: "Nothing here." }));
+  });
+  // No rows + an empty template → the out container shows the empty content.
+  assert.equal(out.children.length, 1);
+  assert.equal(out.children[0].textContent, "Nothing here.");
+
+  // Add a row → empty branch is replaced by rendered rows.
+  h.sandbox.wd.state.items = [{ id: 1, v: "x" }];
+  h.sandbox.wd.render();
+  assert.deepEqual(out.children.map((n) => n.textContent), ["x"]);
+
+  // Remove all rows again → empty branch returns.
+  h.sandbox.wd.state.items = [];
+  h.sandbox.wd.render();
+  assert.equal(out.children.length, 1);
+  assert.equal(out.children[0].textContent, "Nothing here.");
 });

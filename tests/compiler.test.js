@@ -530,6 +530,104 @@ function write(root, file, content) {
 }
 
 // ---------------------------------------------------------------------------
+// parseAction — expanded action vocabulary + dotted targets + ;-sequences
+// ---------------------------------------------------------------------------
+
+function compileWd(lines) {
+  const root = fixture();
+  write(root, "site/pages/index.wd", lines.join("\n"));
+  return compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+}
+
+function compileWdThrows(lines, re) {
+  const root = fixture();
+  write(root, "site/pages/index.wd", lines.join("\n"));
+  assert.throws(() => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)), re);
+}
+
+test("parseAction compiles the full new vocabulary to the right ops", () => {
+  const page = compileWd([
+    ":state n = 10",
+    ":state flag = false",
+    ":state list = []",
+    ":state obj = {}",
+    ':button "Sub" -> n -= 3',
+    ':button "Toggle" -> flag toggle',
+    ':button "Prepend" -> list prepend "a"',
+    ':button "Member" -> list toggle "x"',
+    ':button "RemoveVal" -> list remove "x"',
+    ':button "ClearList" -> list clear',
+    ':button "Merge" -> obj merge {"a": 1}',
+    ':button "Delete" -> obj delete "a"',
+    ':button "Reset" -> n reset'
+  ]);
+  assert.match(page.html, /data-wd-action="sub" data-wd-target="n" data-wd-value="3"/);
+  assert.match(page.html, /data-wd-action="toggle" data-wd-target="flag"/);
+  assert.match(page.html, /data-wd-action="prepend" data-wd-target="list" data-wd-value="&quot;a&quot;"/);
+  assert.match(page.html, /data-wd-action="member-toggle" data-wd-target="list" data-wd-value="&quot;x&quot;"/);
+  assert.match(page.html, /data-wd-action="remove-value" data-wd-target="list" data-wd-value="&quot;x&quot;"/);
+  assert.match(page.html, /data-wd-action="clear" data-wd-target="list"/);
+  assert.match(page.html, /data-wd-action="merge" data-wd-target="obj" data-wd-value="\{&quot;a&quot;:1\}"/);
+  assert.match(page.html, /data-wd-action="delete" data-wd-target="obj" data-wd-value="&quot;a&quot;"/);
+  assert.match(page.html, /data-wd-action="reset" data-wd-target="n"/);
+});
+
+test("parseAction accepts dotted targets for inc and set", () => {
+  const page = compileWd([
+    ':state cart = {"count": 0}',
+    ':state user = {"name": ""}',
+    ':button "Inc" -> cart.count++',
+    ':button "Name" -> user.name = "x"'
+  ]);
+  assert.match(page.html, /data-wd-action="inc" data-wd-target="cart.count"/);
+  assert.match(page.html, /data-wd-action="set" data-wd-target="user.name" data-wd-value="&quot;x&quot;"/);
+});
+
+test("parseAction merge accepts a state-key operand", () => {
+  const page = compileWd([
+    ':state a = {}',
+    ':state b = {"x": 1}',
+    ':button "Merge" -> a merge b'
+  ]);
+  assert.match(page.html, /data-wd-action="merge" data-wd-target="a" data-wd-value="&quot;b&quot;"/);
+});
+
+test("parseAction parses a ;-separated sequence into an ordered data-wd-actions array", () => {
+  const page = compileWd([
+    ":state cart = []",
+    ":state count = 0",
+    ':button "AddBoth" -> cart append "item"; count++'
+  ]);
+  assert.match(page.html, /data-wd-actions=/);
+  const m = page.html.match(/data-wd-actions="([^"]+)"/);
+  assert.ok(m, "emits a data-wd-actions attribute");
+  const seq = JSON.parse(m[1].replace(/&quot;/g, '"'));
+  assert.deepEqual(seq, [
+    { op: "append", target: "cart", value: "item" },
+    { op: "inc", target: "count" }
+  ]);
+});
+
+test("parseAction rejects a dotted target with a poison segment, naming Use:", () => {
+  compileWdThrows([
+    ":state obj = {}",
+    ':button "Bad" -> obj.__proto__.x = 1'
+  ], /not allowed[\s\S]*Use:/);
+});
+
+test("parseAction rejects an unparseable operand with a Use: suggestion", () => {
+  compileWdThrows([
+    ":state n = 0",
+    ':button "Bad" -> n -= notanumber'
+  ], /Use:/);
+});
+
+test("parseAction reset/toggle/clear validate that the target is declared state", () => {
+  compileWdThrows([':button "Bad" -> ghost reset'], /unknown state "ghost"[\s\S]*Declare it first/);
+  compileWdThrows([':button "Bad" -> ghost toggle'], /unknown state "ghost"[\s\S]*Declare it first/);
+});
+
+// ---------------------------------------------------------------------------
 // Stage 3: fetch, forms, persistence, loop-item conditionals
 // ---------------------------------------------------------------------------
 
@@ -603,6 +701,81 @@ test(":state persist marks the state script for localStorage", () => {
   assert.match(page.html, /<script type="application\/json" data-wd-state data-wd-persist="cart:items">\{"cart:items":\[\]\}<\/script>/);
   assert.match(page.html, /data-wd-bind="cart:items" data-wd-path="length"/);
   assert.match(page.html, /data-wd-target="cart:items"/);
+});
+
+// ---------------------------------------------------------------------------
+// :store — durable, page-global, cross-tab state
+// ---------------------------------------------------------------------------
+
+test(":store declares a global store, emits a store script, and turns the page reactive", () => {
+  const page = compileWd([
+    ":store cart = []",
+    "{ cart.length } items"
+  ]);
+  assert.match(page.html, /<script type="application\/json" data-wd-store="cart">\[\]<\/script>/);
+  assert.match(page.html, /<span data-wd-bind="cart" data-wd-path="length">0<\/span>/);
+  assert.equal(page.assets.runtime, true);
+});
+
+test(":store ephemeral adds the ephemeral marker and still seeds the value", () => {
+  const page = compileWd([
+    ":store draft = 1 ephemeral"
+  ]);
+  assert.match(page.html, /<script type="application\/json" data-wd-store="draft" data-wd-store-ephemeral>1<\/script>/);
+});
+
+test(":store keys resolve in interpolation, :if, @loop, and actions", () => {
+  const page = compileWd([
+    ':store cart = [{"id": 1, "title": "One"}]',
+    "{ cart.length }",
+    ":if cart",
+    "Has cart",
+    ":endif",
+    "@loop cart into item",
+    "- { item.title }",
+    "@endloop",
+    ':button "Clear" -> cart clear'
+  ]);
+  assert.match(page.html, /data-wd-bind="cart" data-wd-path="length"/);
+  assert.match(page.html, /data-wd-if="cart"/);
+  assert.match(page.html, /data-wd-loop="cart"/);
+  assert.match(page.html, /data-wd-action="clear" data-wd-target="cart"/);
+});
+
+test(":store stays page-global (bare name) even inside a section", () => {
+  const page = compileWd([
+    "::: section #shop",
+    ":store cart = []",
+    "{ cart.length }",
+    ":::"
+  ]);
+  assert.match(page.html, /data-wd-store="cart"/);
+  assert.doesNotMatch(page.html, /data-wd-store="shop:cart"/);
+  assert.match(page.html, /data-wd-bind="cart" data-wd-path="length"/);
+});
+
+test(":store rejects a duplicate declaration with a Use: suggestion", () => {
+  compileWdThrows([
+    ":store cart = []",
+    ":store cart = {}"
+  ], /declared twice[\s\S]*Use: :store name = value/);
+});
+
+test(":store and :state declaring the same name collide with a Use: suggestion", () => {
+  compileWdThrows([
+    ":store cart = []",
+    ":state cart = 0"
+  ], /collides[\s\S]*Use: :store name = value/);
+  compileWdThrows([
+    ":state cart = 0",
+    ":store cart = []"
+  ], /collides[\s\S]*Use: :store name = value/);
+});
+
+test(":store rejects an invalid name with a Use: suggestion", () => {
+  compileWdThrows([
+    ":store 9bad = []"
+  ], /Use: :store name = value/);
 });
 
 test(":if over loop items renders per-item branches at compile time", () => {
@@ -817,4 +990,127 @@ test(":fetch and round-trip :form auto-declare their _error keys for display", (
   assert.match(page.html, /data-wd-bind="team_error"/);
   assert.match(page.html, /data-wd-if="reply_error"/);
   assert.match(page.html, /data-wd-bind="reply_error"/);
+});
+
+// ---------------------------------------------------------------------------
+// Stage 5: fetch lifecycle — loading/empty, options, dynamic URL, refetch
+// ---------------------------------------------------------------------------
+
+test(":fetch auto-declares four lifecycle state keys (value/error/loading/empty)", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch team from "/x.json"',
+    "",
+    ":if team_loading",
+    "Loading…",
+    ":endif",
+    ":if team_empty",
+    "Nothing here.",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  // Seeds: value null, error null, loading false, empty false (all four seeded
+  // into one state script so the lifecycle regions resolve before the fetch).
+  assert.match(page.html, /data-wd-state>\{"team":null,"team_error":null,"team_loading":false,"team_empty":false\}/);
+  // The reactive regions resolve the auto-declared keys.
+  assert.match(page.html, /data-wd-if="team_loading"/);
+  assert.match(page.html, /data-wd-if="team_empty"/);
+});
+
+test(":fetch keyword args emit url/method/when/timeout/retry/headers/body/deps", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state hdrs = {}',
+    ':state payload = {}',
+    ':fetch save from "/api/save" method=POST timeout=4000 retry=2 when=visible headers=hdrs body=payload'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-fetch-key="save"/);
+  assert.match(page.html, /data-wd-fetch-url="\/api\/save"/);
+  assert.match(page.html, /data-wd-fetch-method="POST"/);
+  assert.match(page.html, /data-wd-fetch-when="visible"/);
+  assert.match(page.html, /data-wd-fetch-timeout="4000"/);
+  assert.match(page.html, /data-wd-fetch-retry="2"/);
+  assert.match(page.html, /data-wd-fetch-headers="hdrs"/);
+  assert.match(page.html, /data-wd-fetch-body="payload"/);
+});
+
+test(":fetch extracts { } URL interpolation deps into data-wd-fetch-deps", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state userId = 1',
+    ':fetch user from "/u/{ userId }"'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  // URL retains the interpolation marker for the runtime to fill in.
+  assert.match(page.html, /data-wd-fetch-url="\/u\/\{ userId \}"/);
+  assert.match(page.html, /data-wd-fetch-deps="userId"/);
+});
+
+test(":fetch with a plain URL emits no deps attribute", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", ':fetch team from "/x.json"');
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.doesNotMatch(page.html, /data-wd-fetch-deps=/);
+});
+
+test(":fetch rejects unknown options with a corrective Use: hint", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch team from "/x.json" bogus=1');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Use: :fetch name from "url" \[method=…\] \[timeout=ms\] \[retry=N\] \[when=visible\] \[headers=key\] \[body=key\]/
+  );
+});
+
+test(":fetch rejects an invalid method", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch team from "/x.json" method=FETCH');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /method/
+  );
+});
+
+test(":fetch rejects a non-integer timeout/retry", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch team from "/x.json" timeout=soon');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /timeout/
+  );
+});
+
+test(":fetch URL deps reject prototype-pollution path segments", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch x from "/y/{ __proto__.polluted }"');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /not allowed/
+  );
+});
+
+test("button -> name refetch parses to a refetch action op", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch team from "/x.json"',
+    ':button "Reload" -> team refetch'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-action="refetch"/);
+  assert.match(page.html, /data-wd-target="team"/);
+});
+
+test("@loop over a dotted fetched source resolves end to end", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':fetch payload from "/x.json"',
+    "",
+    "@loop payload.items into row",
+    "- { row.name }",
+    "@endloop"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-loop="payload\.items"/);
+  assert.match(page.html, /data-wd-each data-wd-path="name"/);
 });

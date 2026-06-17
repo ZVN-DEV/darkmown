@@ -1,0 +1,86 @@
+---
+title: Loop ergonomics
+---
+
+@include /nav.wd
+
+<main>
+
+# Loop ergonomics
+
+One loop, fully equipped. `@loop` gains `sort by`, `offset`, `limit`, `reverse`,
+an `@empty` branch, and per-row meta variables (`{ $number }`, `{ $first }`,
+`{ $last }`, `{ $count }`) — all in plain Markdown, all reactive when the source
+or a clause argument is `:state`.
+
+:state people = [{"id": 1, "name": "Ada", "age": 36}, {"id": 2, "name": "Cyrus", "age": 71}, {"id": 3, "name": "Bao", "age": 29}, {"id": 4, "name": "Dax", "age": 52}, {"id": 5, "name": "Esme", "age": 44}]
+:state sortOffset = 0
+:state pageSize = 2
+:state query = ""
+:state recent = [{"id": 1, "label": "Item 1"}, {"id": 2, "label": "Item 2"}, {"id": 3, "label": "Item 3"}, {"id": 4, "label": "Item 4"}, {"id": 5, "label": "Item 5"}]
+
+## Sorted, numbered, with first / last markers
+
+`sort by p.age desc` orders the eldest first. Each row reads its position from
+the loop meta vars: `{ $number }` is the 1-based index, and `:if $first` /
+`:if $last` light up only on the boundary rows.
+
+@loop people into p sort by p.age desc offset sortOffset
+::: card .person-row
+**{ $number }. { p.name }** — age { p.age }
+:if $first
+(first)
+:endif
+:if $last
+(last)
+:endif
+:::
+@endloop
+
+The list above is sorted oldest-first. `offset` is wired to a `:state`, so a
+button can slide the window without a reload:
+
+:button "Sort: skip the eldest" -> sortOffset = 1
+:button "Reset order" -> sortOffset = 0
+
+## Reactive paging with `limit`
+
+`limit pageSize` reads a `:state` value, so paging is just a button that bumps
+the number. The runtime re-slices the same loop in place — no extra request, no
+reload.
+
+::: section #paged
+@loop people into p limit pageSize
+::: card .person-row
+{ p.name } — age { p.age }
+:::
+@endloop
+
+:button "Show more" -> pageSize += 2
+:button "Collapse" -> pageSize = 2
+:::
+
+## `where` + `@empty`
+
+`where` filters live as you type, and `@empty` renders the moment the filtered
+set hits zero rows — the one place a loop gets to say "nothing here":
+
+:bind query placeholder="Search people…"
+
+@loop people into p where p.name contains query
+::: card .person-row
+{ p.name }
+:::
+@empty
+No matches.
+@endloop
+
+## `reverse` flips the source order
+
+No sort key needed — `reverse` walks the list back to front:
+
+@loop recent into r reverse
+- { r.label }
+@endloop
+
+</main>

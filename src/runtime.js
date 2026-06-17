@@ -14,12 +14,24 @@
 const state = {};
 /** @type {Set<string>} */
 const persistKeys = new Set();
+/** @type {Set<string>} Non-ephemeral :store names, persisted under wd:store:<name>. */
+const storeKeys = new Set();
 
 for (const script of document.querySelectorAll("script[data-wd-state]")) {
   Object.assign(state, JSON.parse(script.textContent || "{}"));
   const persist = script.getAttribute("data-wd-persist");
   if (persist) persistKeys.add(persist);
 }
+for (const script of document.querySelectorAll("script[data-wd-store]")) {
+  const name = script.getAttribute("data-wd-store") || "";
+  state[name] = JSON.parse(script.textContent || "null");
+  if (!script.hasAttribute("data-wd-store-ephemeral")) storeKeys.add(name);
+}
+
+// Frozen seed snapshot, taken BEFORE localStorage overrides below, so `reset`
+// deep-clones the declared value — not the last persisted one.
+/** @type {Record<string, any>} */
+const initials = Object.freeze(JSON.parse(JSON.stringify(state)));
 
 for (const key of persistKeys) {
   const stored = localStorage.getItem(`wd:${key}`);
@@ -30,12 +42,26 @@ for (const key of persistKeys) {
     localStorage.removeItem(`wd:${key}`);
   }
 }
+for (const name of storeKeys) {
+  const stored = localStorage.getItem(`wd:store:${name}`);
+  if (stored === null) localStorage.setItem(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
+  else try { state[name] = JSON.parse(stored); } catch { /* keep seed */ }
+}
 
 function savePersisted() {
-  for (const key of persistKeys) {
-    localStorage.setItem(`wd:${key}`, JSON.stringify(state[key] ?? null));
-  }
+  for (const key of persistKeys) localStorage.setItem(`wd:${key}`, JSON.stringify(state[key] ?? null));
+  for (const name of storeKeys) localStorage.setItem(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
 }
+
+window.addEventListener("storage", (event) => {
+  const name = event.key && event.key.startsWith("wd:store:") ? event.key.slice(9) : "";
+  if (!storeKeys.has(name) || event.newValue == null) return;
+  let next;
+  try { next = JSON.parse(event.newValue); } catch { return; }
+  if (JSON.stringify(next) === JSON.stringify(state[name])) return;
+  state[name] = next;
+  render();
+});
 
 /**
  * Safely read a dotted path off a value, rejecting prototype-pollution segments.
@@ -52,6 +78,53 @@ function getPath(value, path) {
     current = current[segment];
   }
   return current;
+}
+
+/**
+ * Safely write a value at a dotted path, creating plain objects for missing
+ * intermediates and rejecting prototype-pollution segments at every level.
+ * @param {any} obj
+ * @param {string} path
+ * @param {any} value
+ * @returns {void}
+ */
+function setPath(obj, path, value) {
+  const segs = path.split(".");
+  const last = segs.pop() || "";
+  let cur = obj;
+  for (const seg of segs) {
+    if (seg === "constructor" || seg === "prototype" || seg === "__proto__") return;
+    if (cur[seg] == null || typeof cur[seg] !== "object") cur[seg] = {};
+    cur = cur[seg];
+  }
+  if (last === "constructor" || last === "prototype" || last === "__proto__") return;
+  cur[last] = value;
+}
+
+/**
+ * Empty for fetch purposes: null/undefined, an empty array, or an object with
+ * no own keys. Drives the `name_empty` lifecycle flag.
+ * @param {any} v
+ * @returns {boolean}
+ */
+function isEmpty(v) {
+  return v == null || (typeof v === "object" && (Array.isArray(v) ? v.length : Object.keys(v).length) === 0);
+}
+
+/**
+ * Shared HTTP→JSON core for `:fetch` and the round-trip `:form`. Sends the
+ * request, throws on non-2xx, and parses the body as JSON (falling back to a
+ * `{status,body}` wrapper for non-JSON responses). Unifying both callers keeps
+ * the runtime under budget.
+ * @param {string} url
+ * @param {RequestInit} [init]
+ * @returns {Promise<any>}
+ */
+async function httpJson(url, init) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  try { return JSON.parse(text); } catch { return { status: response.status, body: text }; }
 }
 
 const computedDefs = [...document.querySelectorAll("[data-wd-computed]")].map((node) => ({
@@ -122,21 +195,24 @@ function loopKeyOf(item, counts) {
 }
 
 /**
- * Fill a cloned loop row node: resolve per-item `:if` regions and text binds.
+ * Fill a cloned loop row node: resolve per-item `:if` regions (item- and
+ * meta-driven), text binds, and per-row meta markers.
  * @param {Element} node
  * @param {any} item
+ * @param {Record<string, any>} [meta] Per-row meta values (index/number/…).
  * @returns {void}
  */
-function fillItem(node, item) {
-  // querySelectorAll does not descend into <template> content, so this only sees
-  // the outermost regions; recursing into each injected branch fills the rest.
+function fillItem(node, item, meta = {}) {
+  // querySelectorAll skips <template> content, so this sees only the outermost
+  // regions; recursing into each injected branch fills the rest.
   for (const region of node.querySelectorAll("[data-wd-each-if]")) {
-    const value = getPath(item, region.getAttribute("data-wd-path"));
+    const m = region.getAttribute("data-wd-meta");
+    const value = m ? meta[m] : getPath(item, region.getAttribute("data-wd-path"));
     const output = region.querySelector("[data-wd-each-if-out]");
     if (!output) continue;
     const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector(value ? "template[data-wd-if-true]" : "template[data-wd-if-false]"));
     output.innerHTML = template?.innerHTML || "";
-    fillItem(output, item);
+    fillItem(output, item, meta);
   }
   const targets = node.matches("[data-wd-each]")
     ? [node, ...node.querySelectorAll("[data-wd-each]")]
@@ -144,6 +220,48 @@ function fillItem(node, item) {
   for (const target of targets) {
     target.textContent = getPath(item, target.getAttribute("data-wd-path")) ?? "";
   }
+  for (const marker of node.querySelectorAll("[data-wd-each-meta]")) {
+    marker.textContent = meta[marker.getAttribute("data-wd-each-meta") || ""] ?? "";
+  }
+}
+
+/**
+ * Read a loop offset/limit attribute that is a literal int or a `key:<name>`
+ * referencing state. Returns null when the attribute is absent.
+ * @param {Element} region
+ * @param {string} name
+ * @returns {number | null}
+ */
+function loopNum(region, name) {
+  const raw = region.getAttribute(name);
+  if (raw == null) return null;
+  return raw.startsWith("key:") ? Number(state[raw.slice(4)] ?? 0) : Number(raw);
+}
+
+/**
+ * Apply sort → reverse → offset → limit to an already-filtered list, reading
+ * clause config off the region. Stable; numeric vs localeCompare comparator.
+ * @param {any[]} list
+ * @param {Element} region
+ * @returns {any[]}
+ */
+function pipeline(list, region) {
+  const sort = region.getAttribute("data-wd-loop-sort");
+  if (sort != null) {
+    const dir = region.getAttribute("data-wd-loop-sort-dir") === "desc" ? -1 : 1;
+    list = list.map((value, index) => ({ value, index })).sort((a, b) => {
+      const av = getPath(a.value, sort || null);
+      const bv = getPath(b.value, sort || null);
+      const c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+      return (c || a.index - b.index) * dir;
+    }).map((w) => w.value);
+  }
+  if (region.hasAttribute("data-wd-loop-reverse")) list.reverse();
+  const off = loopNum(region, "data-wd-loop-offset");
+  if (off) list = list.slice(off);
+  const lim = loopNum(region, "data-wd-loop-limit");
+  if (lim != null) list = list.slice(0, lim);
+  return list;
 }
 
 /**
@@ -167,11 +285,13 @@ function renderNow() {
   for (const region of document.querySelectorAll("[data-wd-loop]")) {
     const key = region.getAttribute("data-wd-loop");
     const data = region.getAttribute("data-wd-loop-data");
-    const rows = key ? state[key] : (data ? JSON.parse(data) : []);
+    /** Source may be a dotted path (e.g. team.members) read off state via getPath. */
+    const dot = key ? key.indexOf(".") : -1;
+    const rows = key ? (dot < 0 ? state[key] : getPath(state[key.slice(0, dot)], key.slice(dot + 1))) : (data ? JSON.parse(data) : []);
     const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-template]"));
     const out = region.querySelector("[data-wd-loop-out]");
     if (!template || !out) continue;
-    let list = Array.isArray(rows) ? rows : [];
+    let list = Array.isArray(rows) ? rows.slice() : [];
     const where = region.getAttribute("data-wd-loop-where");
     if (where) {
       const predicate = loopPredicate(where);
@@ -184,6 +304,19 @@ function renderNow() {
         }
       });
     }
+    list = pipeline(list, region);
+
+    // Empty branch: clone the [data-wd-loop-empty] template into the output.
+    const emptyTpl = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-empty]"));
+    if (!list.length && emptyTpl) {
+      if (out.getAttribute("data-wd-empty") !== "1") {
+        out.textContent = "";
+        for (const child of [...emptyTpl.content.children]) out.appendChild(child.cloneNode(true));
+        out.setAttribute("data-wd-empty", "1");
+      }
+      continue;
+    }
+    if (out.getAttribute("data-wd-empty") === "1") { out.textContent = ""; out.removeAttribute("data-wd-empty"); }
 
     /** @type {Map<string, WdRow>} */
     const existing = new Map();
@@ -194,7 +327,9 @@ function renderNow() {
     const counts = new Map();
     /** @type {Set<string>} */
     const used = new Set();
-    for (const item of list) {
+    const count = list.length;
+    for (let i = 0; i < count; i++) {
+      const item = list[i];
       const key = loopKeyOf(item, counts);
       let node = existing.get(key);
       if (!node || used.has(key)) {
@@ -203,7 +338,7 @@ function renderNow() {
         node.setAttribute("data-wd-loop-key", key);
       }
       used.add(key);
-      fillItem(node, item);
+      fillItem(node, item, { index: i, number: i + 1, first: i === 0, last: i === count - 1, count });
       node.__wdItem = item; // let per-row actions resolve which row was clicked
       out.appendChild(node);
     }
@@ -221,8 +356,10 @@ function renderNow() {
   }
 }
 
-// Coalesce rapid state mutations into one render on the next tick. Each scheduled
-// pass always reads the latest state, so the final update is never dropped.
+/**
+ * Coalesce rapid state mutations into one render on the next tick. Each scheduled
+ * pass always reads the latest state, so the final update is never dropped.
+ */
 const schedule = typeof requestAnimationFrame === "function" ? requestAnimationFrame : queueMicrotask;
 let scheduled = false;
 function render() {
@@ -240,11 +377,12 @@ document.addEventListener("input", (event) => {
   state[input.getAttribute("data-wd-bind-input") || ""] = input.value;
   savePersisted();
   render();
+  checkRefetch();
 });
 
-// The clicked button's row: the nearest reconciled loop node carries its item.
 /**
  * Resolve the loop source and row item for a clicked element, if inside a loop.
+ * The clicked button's row is the nearest reconciled loop node; it carries its item.
  * @param {Element} el
  * @returns {{ srcKey: string | null, item: any } | null}
  */
@@ -255,35 +393,63 @@ function clickedRow(el) {
   return { srcKey: region.getAttribute("data-wd-loop"), item: row.__wdItem };
 }
 
-document.addEventListener("click", (event) => {
-  const action = /** @type {Element} */ (event.target)?.closest("[data-wd-action]");
-  if (!action) return;
-  const op = action.getAttribute("data-wd-action");
-  const target = action.getAttribute("data-wd-target") || "";
-  const rawValue = action.getAttribute("data-wd-value");
-  const value = rawValue === null ? undefined : JSON.parse(rawValue);
-
-  if (op === "inc") state[target] = Number(state[target] ?? 0) + 1;
-  if (op === "dec") state[target] = Number(state[target] ?? 0) - 1;
-  if (op === "add") state[target] = Number(state[target] ?? 0) + Number(value);
-  if (op === "append") state[target] = [...(Array.isArray(state[target]) ? state[target] : []), value];
-  if (op === "set") state[target] = value;
+/**
+ * Apply one parsed action `{op,target,value}` against state. Targets are dotted
+ * paths read via getPath / written via setPath; a bare name is a 1-segment path.
+ * @param {Element} action The clicked element (for loop-row resolution).
+ * @param {string} op
+ * @param {string} target
+ * @param {any} value
+ * @returns {void}
+ */
+function applyAction(action, op, target, value) {
+  /** @param {any} v */
+  const put = (v) => setPath(state, target, v);
+  const cur = getPath(state, target);
+  const arr = () => (Array.isArray(cur) ? cur : []);
+  if (op === "inc") put(Number(cur ?? 0) + 1);
+  if (op === "dec") put(Number(cur ?? 0) - 1);
+  if (op === "add") put(Number(cur ?? 0) + Number(value));
+  if (op === "sub") put(Number(cur ?? 0) - Number(value));
+  if (op === "toggle") put(!cur);
+  if (op === "set") put(value);
+  if (op === "append") put([...arr(), value]);
+  if (op === "prepend") put([value, ...arr()]);
+  if (op === "member-toggle") put(arr().includes(value) ? arr().filter((/** @type {any} */ x) => x !== value) : [...arr(), value]);
+  if (op === "remove-value") put(arr().filter((/** @type {any} */ x) => x !== value));
+  if (op === "clear") put(Array.isArray(cur) ? [] : {});
+  if (op === "merge") put({ ...(cur && typeof cur === "object" ? cur : {}), ...(typeof value === "string" ? getPath(state, value) : value) });
+  if (op === "delete") { if (cur && typeof cur === "object") { delete cur[value]; put(cur); } }
+  if (op === "reset") put(structuredClone(getPath(initials, target)));
+  if (op === "refetch") { const n = document.querySelector(`[data-wd-fetch-key="${target}"]`); if (n) startFetch(n); }
   if (op === "remove") {
     const row = clickedRow(action);
     if (row && row.srcKey) state[row.srcKey] = (Array.isArray(state[row.srcKey]) ? state[row.srcKey] : []).filter((/** @type {any} */ x) => x !== row.item);
   }
   if (op === "append-row") {
     const row = clickedRow(action);
-    // Clone the row so each appended line is a distinct object — otherwise adding
-    // the same source row twice yields two identical references and a later
-    // remove (filter by !== ref) would delete both lines.
+    // Clone so each appended line is a distinct object — else a shared ref
+    // means a later remove (filter !== ref) deletes both lines.
     if (row && row.item !== undefined) {
       const copy = row.item && typeof row.item === "object" ? structuredClone(row.item) : row.item;
-      state[target] = [...(Array.isArray(state[target]) ? state[target] : []), copy];
+      put([...arr(), copy]);
     }
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const action = /** @type {Element} */ (event.target)?.closest("[data-wd-action],[data-wd-actions]");
+  if (!action) return;
+  const seq = action.getAttribute("data-wd-actions");
+  if (seq) {
+    for (const a of JSON.parse(seq)) applyAction(action, a.op, a.target || "", a.value);
+  } else {
+    const rawValue = action.getAttribute("data-wd-value");
+    applyAction(action, action.getAttribute("data-wd-action") || "", action.getAttribute("data-wd-target") || "", rawValue === null ? undefined : JSON.parse(rawValue));
   }
   savePersisted();
   render();
+  checkRefetch();
 });
 
 document.addEventListener("submit", (event) => {
@@ -300,20 +466,12 @@ document.addEventListener("submit", (event) => {
     return;
   }
 
-  fetch(action, {
+  httpJson(action, {
     method: form.getAttribute("method") || "post",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(/** @type {any} */ (new FormData(form))).toString()
   })
-    .then(async (response) => {
-      const text = await response.text();
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      let value;
-      try {
-        value = JSON.parse(text);
-      } catch {
-        value = { status: response.status, body: text };
-      }
+    .then((value) => {
       state[key] = value;
       state[`${key}_error`] = null;
       savePersisted();
@@ -326,29 +484,93 @@ document.addEventListener("submit", (event) => {
 });
 
 /**
- * Kick off a `:fetch` request and write the result (or error) into state.
- * @param {Element} node
+ * Run the full `:fetch` lifecycle for a marker node: interpolate the URL from
+ * state, skip when a dependency is empty, flip `*_loading`, fetch with an
+ * AbortController timeout + flat retry, then write value/`*_empty` or `*_error`.
+ * @param {FetchNode} node
  * @returns {void}
  */
 function startFetch(node) {
-  const key = node.getAttribute("data-wd-fetch-key") || "";
-  fetch(node.getAttribute("data-wd-fetch-url") || "")
-    .then((response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json();
-    })
-    .then((value) => {
+  // Per-node generation token: a refetch bumps it; superseded writes bail.
+  const gen = node.__wdGen = (node.__wdGen || 0) + 1;
+  /** @returns {boolean} stale once a newer fetch superseded this one */
+  const dead = () => gen !== node.__wdGen;
+  /** @param {string} n @returns {string} */
+  const g = (n) => node.getAttribute("data-wd-fetch-" + n) || "";
+  const key = g("key");
+  /** @param {string} s @param {any} v */
+  const set = (s, v) => { state[key + s] = v; render(); };
+  let missing = false;
+  const url = g("url").replace(/\{\s*([\w$.]+)\s*\}/g, (_, p) => {
+    const v = getPath(state, p);
+    if (v == null || v === "") missing = true;
+    return encodeURIComponent(String(v ?? ""));
+  });
+  if (missing) return set("_loading", false);
+
+  const headers = g("headers");
+  const body = g("body");
+  const method = g("method") || "GET";
+  const timeout = Number(g("timeout"));
+  let tries = Number(g("retry"));
+  state[key + "_error"] = null;
+  set("_loading", true);
+
+  const attempt = () => {
+    /** @type {RequestInit} */
+    const init = { method };
+    if (headers) init.headers = state[headers] || {};
+    if (body && method !== "GET") init.body = JSON.stringify(state[body] ?? null);
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    if (ctrl) init.signal = ctrl.signal;
+    const timer = timeout && ctrl ? setTimeout(() => ctrl.abort(), timeout) : 0;
+    httpJson(url, init).then((value) => {
+      clearTimeout(timer);
+      if (dead()) return;
       state[key] = value;
-      state[`${key}_error`] = null;
-      render();
-    })
-    .catch((error) => {
-      state[`${key}_error`] = String(error);
-      render();
+      state[key + "_empty"] = isEmpty(value);
+      state[key + "_error"] = null;
+      set("_loading", false);
+    }).catch((error) => {
+      clearTimeout(timer);
+      if (dead()) return;
+      if (tries-- > 0) return void setTimeout(attempt, 200);
+      state[key + "_error"] = String(error);
+      set("_loading", false);
     });
+  };
+  attempt();
 }
 
-for (const node of document.querySelectorAll("[data-wd-fetch]")) {
+/** A fetch marker carrying its last dependency snapshot for refetch diffing and
+ * a generation token so a superseded in-flight response/retry bails on write. */
+/** @typedef {Element & { __wdSnap?: string, __wdGen?: number }} FetchNode */
+/** @type {FetchNode[]} */
+const fetchNodes = [...document.querySelectorAll("[data-wd-fetch]")];
+/** @param {FetchNode} node @returns {string} */
+const depSnapshot = (node) => (node.getAttribute("data-wd-fetch-deps") || "").split(",").filter(Boolean).map((d) => JSON.stringify(getPath(state, d))).join("|");
+
+/** @type {any} */
+let refetchTimer = 0;
+/**
+ * After a mutation render, debounce-refetch any fetch node whose URL deps
+ * changed. Snapshots live on the node, so no extra bookkeeping structure.
+ * @returns {void}
+ */
+function checkRefetch() {
+  /** @type {FetchNode[]} */
+  const due = [];
+  for (const node of fetchNodes) {
+    const snap = depSnapshot(node);
+    if (snap && snap !== node.__wdSnap) { node.__wdSnap = snap; due.push(node); }
+  }
+  if (!due.length) return;
+  clearTimeout(refetchTimer);
+  refetchTimer = setTimeout(() => { for (const node of due) startFetch(node); }, 150);
+}
+
+for (const node of fetchNodes) {
+  node.__wdSnap = depSnapshot(node);
   if (node.getAttribute("data-wd-fetch-when") === "visible" && "IntersectionObserver" in window) {
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -361,8 +583,10 @@ for (const node of document.querySelectorAll("[data-wd-fetch]")) {
   }
 }
 
-// Public escape hatch on `window.wd`. Set `window.wd.debug = true` to log failing
-// computed/where expressions to the console.
+/**
+ * Public escape hatch on `window.wd`. Set `window.wd.debug = true` to log failing
+ * computed/where expressions to the console.
+ */
 /** @type {any} */ (window).wd = {
   state,
   debug: false,

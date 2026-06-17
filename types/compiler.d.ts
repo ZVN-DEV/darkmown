@@ -38,6 +38,16 @@ export function loopKeyOf(item: unknown, counts: Map<string, number>): string;
  */
 export function escapeHtml(value: unknown): string;
 /**
+ * A loop offset/limit argument: a non-negative integer literal or a state key.
+ */
+export type NumArg = {
+    kind: "literal";
+    value: number;
+} | {
+    kind: "key";
+    value: string;
+};
+/**
  * A compiled `@loop … where` predicate.
  */
 export type Predicate = {
@@ -51,21 +61,25 @@ export type Predicate = {
     refsState: boolean;
 };
 /**
- * A parsed `:button` action.
+ * Loop clause configuration shared by the static and reactive paths.
  */
-export type Action = {
+export type LoopOpts = {
+    where: Predicate | null;
+    sort: {
+        key: string;
+        dir: string;
+    } | null;
+    reverse: boolean;
+    offset: NumArg | null;
+    limit: NumArg | null;
     /**
-     * Runtime operation (inc/dec/add/append/set/remove/append-row).
+     * Empty-branch body lines, if any.
      */
-    op: string;
+    empty: string[] | null;
     /**
-     * State key the action mutates.
+     * Whether offset/limit reference state.
      */
-    target: string;
-    /**
-     * Literal value for value-carrying ops.
-     */
-    value?: unknown;
+    clauseRefsState: boolean;
 };
 export type Paths = import("./config.js").Paths;
 /**
@@ -106,6 +120,10 @@ export type Compilation = {
      * Declared state keys → initial values.
      */
     state: Map<string, unknown>;
+    /**
+     * Page-global store names (a subset of state keys).
+     */
+    stores: Set<string>;
     /**
      * Non-fatal authoring hints.
      */
@@ -159,6 +177,10 @@ export type Ctx = {
      */
     loopKey?: string | undefined;
     /**
+     * Inside a loop body, so `$index`/`$first`/… are valid.
+     */
+    loopMeta?: boolean | undefined;
+    /**
      * Markdown-it instance selected for this file.
      */
     md?: MarkdownIt | undefined;
@@ -180,5 +202,22 @@ export type CompiledPage = {
     html: string;
     assets: Assets;
     warnings: string[];
+};
+/**
+ * A parsed `:button` action.
+ */
+export type Action = {
+    /**
+     * Runtime operation (inc/dec/add/sub/append/prepend/set/toggle/member-toggle/remove/remove-value/clear/merge/delete/reset/append-row).
+     */
+    op: string;
+    /**
+     * State key (possibly dotted) the action mutates.
+     */
+    target: string;
+    /**
+     * Literal value for value-carrying ops.
+     */
+    value?: unknown;
 };
 import MarkdownIt from "markdown-it";

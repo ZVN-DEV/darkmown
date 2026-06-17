@@ -42,33 +42,43 @@ test("`todos remove todo` inside a loop emits a remove action targeting the loop
   assert.match(page.html, /data-wd-action="remove" data-wd-target="todos"/);
 });
 
-test("`remove` outside a loop is a compile error", () => {
+test("`remove` with a literal value outside a loop is remove-value (not the row op)", () => {
+  // New semantics: when the operand is NOT the active loop item it is a value to
+  // strip from the list. A bare identifier isn't a literal, so it must be quoted.
   const root = fixture();
   write(root, "site/pages/index.wd", [
     ":state items = [1, 2]",
-    ':button "x" -> items remove items'
+    ':button "x" -> items remove 2'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-action="remove-value" data-wd-target="items" data-wd-value="2"/);
+});
+
+test("`remove` with a non-loop-item bare identifier is an unparseable literal", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ":state items = [1, 2]",
+    ':button "x" -> items remove ghost'
   ].join("\n"));
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
-    /only valid inside a reactive @loop/
+    /Unsupported action literal/
   );
 });
 
-test("`remove` must name the loop item", () => {
+test("`remove <other>` inside a loop where other != item is remove-value", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", [
     ':state todos = [{"id":1}]',
     "@loop todos into todo",
     "::: card",
     "x",
-    ':button "Remove" -> todos remove other',
+    ':button "Remove" -> todos remove "done"',
     ":::",
     "@endloop"
   ].join("\n"));
-  assert.throws(
-    () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
-    /must remove the loop item "todo".*not "other"/
-  );
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-action="remove-value" data-wd-target="todos" data-wd-value="&quot;done&quot;"/);
 });
 
 test("`remove` must target the list being looped, not a different list", () => {

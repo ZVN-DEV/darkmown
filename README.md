@@ -121,6 +121,67 @@ Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive sub
 
 `:bind <state>` renders an `<input>` wired two-way to a `:state` value — typing updates the state, and the state reflects back into the field. It accepts `type=` (default `text`), `placeholder=`, `autocomplete=`, and the `required` / `autofocus` flags.
 
+### Sorting, paging, and meta — `sort by`, `limit`, `offset`, `reverse`
+
+Shape a loop without writing JavaScript. Clauses come in a fixed order after `into`:
+
+```
+@loop <src> into <item> [where …] [sort by <key> [asc|desc]] [reverse] [offset <N>] [limit <N>]
+```
+
+```wd
+@loop /posts.json into post sort by post.date desc limit 5
+{ $number }. { post.title }
+@endloop
+```
+
+- `sort by <key> [asc|desc]` — `<key>` must start with the loop item (`post.date`, not `date`). Numbers sort numerically; everything else sorts as text. `asc` is the default.
+- `reverse` — reverse the (already sorted) order.
+- `offset <N>` / `limit <N>` — `<N>` is a non-negative integer **or** a `:state`/`:store` key, which makes pagination reactive:
+
+```wd
+:state pageSize = 10
+
+@loop products into product limit pageSize
+- { product.name }
+@endloop
+```
+
+Each row exposes five meta variables, relative to the rendered slice:
+
+| Variable | Value |
+|---|---|
+| `{ $index }` | 0-based position |
+| `{ $number }` | 1-based position (`$index + 1`) |
+| `{ $first }` | `true` on the first row |
+| `{ $last }` | `true` on the last row |
+| `{ $count }` | number of rendered rows |
+
+They work in interpolation and in `:if`:
+
+```wd
+@loop products into product
+:if $first
+**Top pick:**
+:endif
+{ $number } of { $count } — { product.name }
+@endloop
+```
+
+### Empty lists — `@empty`
+
+Add an `@empty` branch to show a fallback when the loop renders no rows (after `where`, `limit`, and the rest):
+
+```wd
+@loop todos into todo
+- { todo.title }
+@empty
+Nothing left to do.
+@endloop
+```
+
+> **Note:** All of these clauses stay build-time when the source and every clause argument are static — a sorted, limited loop over a JSON file ships **zero JavaScript**. The loop becomes reactive only when the source is `:state`/`:store`/`:fetch` data, or a clause reads reactive state (like `limit pageSize`).
+
 ### Editable lists — per-row actions
 
 A `:button` inside a reactive `@loop` can act on its own row. `cart += product` carries the current row into another list; `cart remove line` drops the current row from the looped list:
@@ -181,18 +242,162 @@ Count is still zero.
 
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in colocated `.js` files.
 
-## Data, forms, and persistence
+### Button actions
+
+A `:button "Label" -> action` mutates one `:state` or `:store` value. The same vocabulary works on both:
+
+| Action | Syntax | Effect |
+|---|---|---|
+| Increment | `n++` | add 1 |
+| Decrement | `n--` | subtract 1 |
+| Add | `n += 5` | add a number |
+| Subtract | `n -= 2` | subtract a number |
+| Set | `name = value` | assign a literal |
+| Toggle | `flag toggle` | flip a boolean |
+| Append | `list append v` or `list += v` | add to the end of an array |
+| Prepend | `list prepend v` | add to the front |
+| Member toggle | `list toggle v` | add `v` if absent, else remove it |
+| Remove value | `list remove v` | remove a value from an array |
+| Clear | `name clear` | empty an array or object |
+| Merge | `obj merge other` | shallow-merge an object (key or inline `{…}`) |
+| Delete | `obj delete "key"` | remove a key |
+| Reset | `name reset` | restore the declared starting value |
+
+Values are literals: a `"string"`, number, `true`/`false`/`null`, or inline JSON (`{…}` / `[…]`).
+
+**Targets can be dotted paths,** so a button can reach into nested state:
+
+```wd
+:state cart = {"count": 0, "total": 0}
+
+:button "Add item" -> cart.count++
+```
+
+**One button can run several actions** with `;`. They apply in order, then the page renders once:
+
+```wd
+:button "Add to cart" -> cart.count++ ; cart.total += 9
+```
+
+> **Pitfall:** `list toggle v` and `list remove v` match members by value (`===`). That is exact for strings, numbers, and booleans, but not reliable for object members — two equal-looking objects are different values. To remove a row object, loop the list and use the per-row `remove` action below.
+
+## Fetching data
+
+`:fetch name from "url"` declares state and fills it from JSON over the network:
+
+```
+:fetch <name> from "<url>" [method=GET] [when=load|visible] [timeout=<ms>] [retry=<N>] [headers=<key>] [body=<key>]
+```
+
+Each fetch automatically declares four state keys you can branch on:
+
+| State | Type | Meaning |
+|---|---|---|
+| `name` | the data | `null` until the response arrives |
+| `name_loading` | boolean | `true` while the request is in flight |
+| `name_error` | string | the error message, or `null` |
+| `name_empty` | boolean | `true` when the data is `null`, `[]`, or `{}` |
+
+### The four-state pattern
+
+Cover loading, errors, empty, and data — `@empty` (from the loops above) absorbs the empty case:
+
+```wd
+:fetch roster from "/__wd/data/team.json" timeout=8000 retry=2
+
+:if roster_loading
+Loading…
+:else
+:if roster_error
+Couldn't load the team: { roster_error }
+:else
+@loop roster into member
+- { member.name }
+@empty
+No team members yet.
+@endloop
+:endif
+:endif
+```
+
+### Options
+
+- `method=` — `GET` (default), `POST`, `PUT`, `PATCH`, or `DELETE`.
+- `when=` — `load` (default) fires on page load; `visible` waits until the spot scrolls into view.
+- `timeout=<ms>` — abort and set `name_error` if the response is too slow.
+- `retry=<N>` — retry on network failure or a 5xx response before surfacing the error.
+- `headers=<key>` — a `:state`/`:store` key holding an object, sent as request headers.
+- `body=<key>` — a `:state`/`:store` key, JSON-serialized as the request body (for non-`GET`).
+
+### Dynamic URLs and refetching
+
+A URL can interpolate state with `{ }`. The fetch re-runs automatically when that state changes (and skips while the value is still empty):
+
+```wd
+:state userId = ""
+
+:fetch profile from "/api/users/{ userId }"
+```
+
+Trigger a reload by hand with the `refetch` action:
+
+```wd
+:button "Reload" -> roster refetch
+```
+
+### Looping into fetched data
+
+Loop a sub-path of fetched (or any) state with a dotted source:
+
+```wd
+:fetch org from "/__wd/data/org.json"
+
+@loop org.members into member
+- { member.name }
+@endloop
+```
+
+> **Note:** Shelf `.json` files are published at `/__wd/data/`, so `:fetch` works on any static host. The `darkmown dev` server also ships a `/__wd/echo` endpoint for demos.
+
+## Global state — `:store`
+
+`:state` is local to its page (and section). `:store` is **global, durable, and shared across tabs** — the right home for a cart, a theme, or a signed-in user.
+
+```wd
+:store cart = []
+
+:button "Add" -> cart += {"id": 1, "name": "Aurora"}
+
+You have { cart } items.
+```
+
+- **Durable by default.** A store is saved to `localStorage` under `wd:store:<name>` and reloaded on the next visit.
+- **Shared across tabs.** Change a store in one tab and every other tab on the same site updates live.
+- **Global by name.** A bare `{ cart }` reads the same store everywhere — stores are never section-scoped.
+- **Same value grammar as `:state`** — string, number, boolean, `null`, array, or object — and the **same** button actions (`cart += …`, `count++`, `theme = "dark"`, and so on).
+
+The declared value is a **seed**: it is used only the first time, when the store is absent from storage. After that the persisted value wins, so visitors keep their data.
+
+### Opt out of persistence
+
+Add `ephemeral` for an in-memory store that resets on reload and does not sync across tabs:
+
+```wd
+:store sidebarOpen = false ephemeral
+```
+
+> **Pitfall:** A store name must be unique. Declaring the same name as both a `:store` and a `:state` on one page is a compile error.
+
+## Forms and persistence
+
+Fetched data and a form live happily on the same page:
 
 ```wd
 :fetch team from "/__wd/data/team.json"
 
-:if team
 @loop team into member
 - { member.name }
 @endloop
-:else
-Loading…
-:endif
 
 :form into profile
 :input name placeholder="Your name" required
@@ -202,11 +407,10 @@ Loading…
 :state cart = [] persist
 ```
 
-- `:fetch name from "url"` declares state and fills it from JSON over the network; `name_error` carries failures. Add `when=visible` to defer the request until the spot scrolls into view.
-- `:computed total = items.length * 4` derives state from state with a compile-time-checked expression (names, numbers, arithmetic, comparisons — nothing else).
 - `:form into name` captures submits straight into state (no backend). `:form action="/url"` emits a plain native form instead — zero JS, full progressive enhancement.
-- `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Darkmown adapts to any backend — it does not own one. `darkmown dev` ships a `/__wd/echo` endpoint for demos.
-- `:state x = [] persist` keeps that state in localStorage across reloads.
+- `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Darkmown adapts to any backend — it does not own one.
+- `:state x = [] persist` keeps a single page's state in localStorage across reloads. (For state that is shared across pages and tabs, reach for [`:store`](#global-state--store) instead.)
+- `:computed total = items.length * 4` derives state from state with a compile-time-checked expression (names, numbers, arithmetic, comparisons — nothing else).
 - `:if item.path` works inside reactive loops for per-row branches, and nests — an inner `:if` resolves after the outer branch and stays reactive.
 
 ## The escape hatch
