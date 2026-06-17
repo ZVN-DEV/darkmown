@@ -2,6 +2,16 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.11.2 — 2026-06-17
+
+Product trust and release-hardening sprint.
+
+- **Public demos fixed.** `/app/` now renders feature bullets from the current data shape, and deploy/form copy clearly distinguishes static hosting from server-backed demo endpoints.
+- **Preview servers safer by default.** `darkmown dev` and `darkmown serve` bind to `127.0.0.1` unless `HOST` is set, and malformed preview URLs no longer crash the server.
+- **Directive hardening.** Demo `:try` links reject dangerous URL schemes; `:input` and `:bind` now carry escaped accessibility attributes.
+- **Release gates tightened.** Tag releases verify Node 20/22/24 before publishing, keep the runtime-size budget enforced, and prepublish checks cover typecheck, coverage, build, size, audit, and consumer smoke.
+- **Runtime guidance synced.** Packaged guidance and public copy now describe the measured ~4.7 KB gzipped runtime with the under-5 KB CI budget.
+
 ## 0.11.1 — 2026-06-17
 
 Maintenance release. No functional changes since 0.11.0.
