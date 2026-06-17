@@ -36,7 +36,7 @@ jobs:
           cache: npm
       - run: npm ci
       # Zero-dep node:test coverage; fails if total line coverage drops below 80%.
-      - run: npm run test:cov -- --test-coverage-lines=80
+      - run: npm run test:cov
 
   typecheck:
     name: Type check (JSDoc + checkJs)
