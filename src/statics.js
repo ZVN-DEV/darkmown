@@ -28,7 +28,12 @@ export function serve(distRoot, url, res) {
  * @returns {string | null}
  */
 export function resolvePublicFile(distRoot, url) {
-  const cleanUrl = decodeURIComponent(url.split("?")[0]);
+  let cleanUrl;
+  try {
+    cleanUrl = decodeURIComponent(url.split("?")[0]);
+  } catch {
+    return null;
+  }
   const base = cleanUrl.startsWith("/__wd/")
     ? cleanUrl
     : path.join(cleanUrl, path.extname(cleanUrl) ? "" : "index.html");

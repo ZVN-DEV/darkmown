@@ -28,6 +28,7 @@ if (command === "help" || command === "--help" || command === "-h") {
   console.log(`Built ${result.routes.length} routes into ${path.relative(process.cwd(), result.distRoot)}`);
 } else if (command === "dev") {
   const port = Number(process.env.PORT || 5173);
+  const host = process.env.HOST || "127.0.0.1";
   const distRoot = path.join(process.cwd(), "dist");
   buildSite();
   /** @type {Set<import("node:http").ServerResponse>} */
@@ -100,19 +101,20 @@ if (command === "help" || command === "--help" || command === "-h") {
       res.end((error instanceof Error && error.stack) || String(error));
     }
   });
-  server.listen(port, () => {
-    console.log(`Darkmown dev server ready at http://localhost:${port}`);
+  server.listen(port, host, () => {
+    console.log(`Darkmown dev server ready at http://${host}:${port}`);
     console.log(`Live compiler watching site/ and src/`);
   });
 } else if (command === "serve") {
   const port = Number(process.env.PORT || 4173);
+  const host = process.env.HOST || "127.0.0.1";
   const distRoot = path.join(process.cwd(), "dist");
   if (!fs.existsSync(distRoot)) {
     console.error("No dist directory found. Run `darkmown build` first.");
     process.exit(1);
   }
-  http.createServer((req, res) => serve(distRoot, req.url || "/", res)).listen(port, () => {
-    console.log(`Darkmown preview of dist at http://localhost:${port}`);
+  http.createServer((req, res) => serve(distRoot, req.url || "/", res)).listen(port, host, () => {
+    console.log(`Darkmown preview of dist at http://${host}:${port}`);
   });
 } else {
   console.error(`Unknown command: ${command}`);
