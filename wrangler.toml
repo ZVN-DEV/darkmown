@@ -9,3 +9,7 @@ command = "npm run build"
 # It does not provide the demo /__wd/echo endpoint; Vercel wires that
 # path to api/echo.js via vercel.json. Add a Pages Function before
 # presenting server-backed demo forms as supported on Cloudflare.
+#
+# Cloudflare Pages serves clean URLs by default (/about -> /about/index.html)
+# and automatically returns dist/404.html for any miss, which `npm run build`
+# always emits — no extra config needed here.

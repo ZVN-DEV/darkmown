@@ -1,0 +1,21 @@
+---
+title: Page not found — Darkmown
+description: That route does not exist. Head back to the Darkmown homepage.
+---
+
+@include /nav.wd
+
+<main>
+
+<section class="hero">
+  <p class="eyebrow">404</p>
+
+# This page ran off the page.
+
+The route you asked for is hidden, was never created, or has moved. Nothing was lost — Markdown that runs is still one click away.
+
+<a class="btn primary" href="/">Back to home</a>
+<a class="btn" href="/docs/">Read the docs</a>
+</section>
+
+</main>
