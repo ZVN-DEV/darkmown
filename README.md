@@ -425,7 +425,13 @@ A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin
 
 ## Security
 
-Darkmown renders Markdown with `html: true`, so **raw HTML in your content passes through verbatim** — by design, like every Markdown site generator. Treat content files as trusted input.
+### Trust boundary
+
+Darkmown is a **trusted-author** site generator: you compile content you wrote, the same way you trust your own source code. Three assumptions hold the model together — know them before you point Darkmown at content from anyone else.
+
+- **Compile only trusted, author-written content.** Do not compile `.md`/`.wd` files you did not write — user-generated content, third-party docs, form input — without sanitizing it first.
+- **Raw HTML passes through by default.** Darkmown runs `markdown-it` with `html: true`, so raw HTML in your content is emitted verbatim — by design, like every Markdown site generator. There is no built-in sanitizer; a raw `<script>` or event-handler attribute in untrusted content would execute in the visitor's browser. A page can opt into strict mode with `html: false` frontmatter, which drops raw HTML entirely.
+- **`:fetch` has no URL allowlist, and reactive pages need `unsafe-eval`.** A `:fetch` URL is taken straight from the page source, so the request goes wherever the author wrote. Reactive pages also require `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` expressions via `new Function` — a strict CSP without `unsafe-eval` will break reactive pages (static pages are unaffected).
 
 > **The single biggest footgun:** do not compile untrusted or user-submitted Markdown without sanitizing it first. There is no built-in sanitizer.
 
