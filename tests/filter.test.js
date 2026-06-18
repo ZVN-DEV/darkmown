@@ -17,7 +17,7 @@ test(":bind emits an input wired to state with its initial value + placeholder",
     ':bind query placeholder="Search products"'
   ].join("\n"));
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<input type="text" data-wd-bind-input="query" value="shoe" placeholder="Search products">/);
+  assert.match(page.html, /<input type="text" data-wd-bind-input="query" value="shoe" placeholder="Search products" aria-label="Search products">/);
   assert.equal(page.assets.runtime, true);
 });
 
@@ -25,14 +25,14 @@ test(":bind with an empty-string initial value emits an empty value attribute", 
   const root = fixture();
   write(root, "site/pages/index.wd", [':state q = ""', ":bind q"].join("\n"));
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<input type="text" data-wd-bind-input="q" value="" >/);
+  assert.match(page.html, /<input type="text" data-wd-bind-input="q" value="" aria-label="Q">/);
 });
 
 test(":bind honours type= and boolean flags", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", [':state email = ""', ':bind email type=email required autofocus'].join("\n"));
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<input type="email" data-wd-bind-input="email" value="" required autofocus>/);
+  assert.match(page.html, /<input type="email" data-wd-bind-input="email" value="" required autofocus aria-label="Email">/);
 });
 
 test(":bind escapes a malicious initial value", () => {

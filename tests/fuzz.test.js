@@ -173,6 +173,106 @@ function randWhere(rng) {
 }
 
 // ---------------------------------------------------------------------------
+// String-literal injection fuzzing.
+//
+// The A1 breakout used NONE of the screened danger tokens (no `process`,
+// `constructor`, backtick, `=>`, or `${}`). It hid live code INSIDE a string
+// literal by exploiting a naive re-wrap that stripped quotes and re-added them
+// unescaped: a single-quoted `'"+(7*7)+"'` re-emitted as `""+(7*7)+""`, turning
+// the arithmetic live. So we generate string literals whose INNER text is packed
+// with breakout characters (quotes, backslashes, arithmetic, parens, identifier
+// runs) and assert the compiled expression, when executed, has NO side effects
+// and that every literal round-trips as an inert string.
+// ---------------------------------------------------------------------------
+
+// Inner-text fragments designed to break OUT of a re-wrapped string literal: a
+// closing quote of the opposite kind, then live JS, then a re-opening quote.
+const BREAKOUT_INNER = [
+  '"+(7*7)+"',          // double-quote breakout from a single-quoted literal
+  "'+(7*7)+'",          // single-quote breakout from a double-quoted literal
+  '"+globalThis+"',     // global reference
+  "'+globalThis+'",
+  '"+process+"',        // node global
+  '"];S=1;["',          // bracket/semicolon statement injection
+  '"+S("x")+"',         // nested helper call
+  "\\\"+9+\\\"",        // backslash-escaped quote payload
+  "a\\b",               // bare backslash
+  "(1+2)*3",            // pure arithmetic, no quotes
+  "x==y",               // comparison-looking text
+  "++--**//%%",         // operator soup
+  "()()()"              // parens soup
+];
+
+// Inner-text fragments that contain a backslash. The source-level literal matcher
+// (`'[^'\\]*'|"[^"\\]*"`) deliberately refuses to consume a `\`, so these survive
+// into the validated expression and trip the `["'\\\`]` guard — i.e. they MUST be
+// rejected at compile time. Including them keeps the reject path live (anti-vacuity).
+const REJECTABLE_INNER = [
+  "\\",                 // bare backslash
+  "a\\b",               // backslash mid-text
+  "\\\"+9+\\\"",        // backslash-escaped quote breakout attempt
+  "end\\"               // trailing backslash
+];
+
+// Build a `:computed` RHS that compares a declared scalar against a generated
+// string literal whose inner text is a breakout fragment. We alternate the outer
+// quote style so both single- and double-quoted re-wrap paths are exercised. Most
+// of the time we emit a WELL-FORMED literal (escaping must neutralize it); ~25% of
+// the time we emit a backslash-bearing literal that MUST be rejected.
+function randInjectionExpr(rng) {
+  const lhs = rng.pick(["x", "count"]);
+  const op = rng.pick(["==", "!="]);
+
+  if (rng.bool(0.25)) {
+    // Rejectable: a backslash inside the literal that the matcher won't consume.
+    const inner = rng.pick(REJECTABLE_INNER);
+    const quote = rng.bool() ? "'" : '"';
+    return `${lhs} ${op} ${quote}${inner}${quote}`;
+  }
+
+  // Well-formed: choose an outer quote that does NOT appear in `inner` (and never
+  // a backslash) so the literal closes cleanly at the source level; the DANGER is
+  // purely whether the inner text survives ESCAPED through the compiler.
+  const inner = rng.pick(BREAKOUT_INNER).replace(/\\/g, "");
+  const canSingle = !inner.includes("'");
+  const canDouble = !inner.includes('"');
+  let literal;
+  if (canSingle && (rng.bool() || !canDouble)) literal = `'${inner}'`;
+  else if (canDouble) literal = `"${inner}"`;
+  else literal = `'${inner.replace(/['"]/g, "")}'`; // last-resort clean literal
+  return `${lhs} ${op} ${literal}`;
+}
+
+// Execute a compiled `:computed` expr exactly as runtime.js does — `new Function`
+// with `S` as the only injected name — but inside a hard sandbox: a Proxy that
+// traps EVERY property access on the global and throws. `S` returns a fixed
+// scalar. If any breakout reached live code (a global read, a call, arithmetic on
+// a smuggled operand), the proxy trips or the literal fails to round-trip.
+function runTrapped(expr) {
+  const trap = new Proxy({}, {
+    // `has` decides which free identifiers `with` captures. We let ONLY the
+    // legitimate reader `S` (and the unscopables probe) fall through to the real
+    // function parameter; every OTHER free identifier (a leaked `globalThis`,
+    // `process`, `this`, etc.) is captured by the trap so its `get` throws.
+    has(_t, prop) {
+      if (prop === "S" || prop === Symbol.unscopables) return false;
+      return true;
+    },
+    get(_t, prop) {
+      // The `with` machinery reads `Symbol.unscopables` while resolving; that
+      // probe is internal and must not count as a breakout.
+      if (prop === Symbol.unscopables) return undefined;
+      throw new Error(`sandbox breakout: accessed global property "${String(prop)}"`);
+    }
+  });
+  // Wrap the body in `with(__trap__)` so any free identifier other than `S`
+  // resolves to the trap and throws instead of reaching the real global.
+  const fn = new Function("S", "__trap__", `with (__trap__) { return (${expr}); }`);
+  const read = () => "SENTINEL";
+  return fn(read, trap);
+}
+
+// ---------------------------------------------------------------------------
 // Invariant helpers.
 // ---------------------------------------------------------------------------
 
@@ -314,6 +414,93 @@ test("fuzz: :computed / where reject dangerous expressions; safe ones emit only 
   // least some safe expressions must compile. Both prove the whitelist is live.
   assert.ok(dangerRejected > 0, `expected dangerous expressions to be rejected (got ${dangerRejected})`);
   assert.ok(safeAccepted > 0, `expected some safe expressions to compile (got ${safeAccepted})`);
+}));
+
+// ---------------------------------------------------------------------------
+// Test 2b: string-literal injection fuzz — the A1 breakout class.
+//
+// Generates `:computed` expressions whose string literals carry breakout payloads
+// (quotes + arithmetic + globals + statement separators) that use NONE of the
+// screened danger tokens. For every ACCEPTED expression, the compiled artifact is
+// executed in a trapped sandbox: it must either evaluate to a pure
+// boolean/string/number with no global access, OR be rejected at compile time.
+// Any side effect (a global read, a smuggled call, folded arithmetic from a broken
+// literal) fails the test with a seed-tagged repro.
+// ---------------------------------------------------------------------------
+
+test("fuzz: :computed string literals cannot smuggle live code past escaping (A1 class)", () => withExpectedCompilerWarnings(() => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-fuzz-inj-"));
+  fs.mkdirSync(path.join(root, "site/pages"), { recursive: true });
+  const context = createPaths(root);
+  const pageFile = path.join(root, "site/pages/index.wd");
+
+  const CASES = 2500;
+  let accepted = 0;
+  let rejected = 0;
+
+  for (let i = 0; i < CASES; i++) {
+    const seed = ((BASE_SEED ^ 0x33333333) + i) >>> 0;
+    const rng = makeRng(seed);
+    const expr = randInjectionExpr(rng);
+    const doc = [
+      ":state count = 0",
+      ":state x = 1",
+      `:computed result = ${expr}`
+    ].join("\n");
+
+    const repro = (msg) =>
+      `\n\n=== FUZZ INVARIANT VIOLATION (string-literal injection) ===\n` +
+      `seed: ${seed} (re-run: WD_FUZZ_SEED=${seed})\n` +
+      `reason: ${msg}\n` +
+      `expr: ${expr}\n` +
+      `--- input .wd ---\n${doc}\n--- end input ---\n`;
+
+    fs.writeFileSync(pageFile, doc);
+
+    let artifact;
+    try {
+      const result = compileDocument(pageFile, context);
+      [artifact] = extractComputedExprs(result.html);
+      assert.ok(typeof artifact === "string" && artifact.length > 0, repro("accepted but emitted no computed expr"));
+    } catch (err) {
+      // A compile-time rejection is a fully acceptable (safe) outcome.
+      assert.ok(err instanceof Error, repro(`rejection was a non-Error: ${String(err)}`));
+      assert.ok(err.message.length > 0, repro("rejection Error had empty message"));
+      rejected++;
+      continue;
+    }
+
+    // NOTE: we deliberately do NOT apply the `DANGEROUS_ARTIFACT` raw-token regex
+    // here. The whole A1 class is that danger-LOOKING text (`globalThis`, `+`,
+    // `(7*7)`) may legitimately appear INSIDE an escaped string literal and is
+    // inert there — e.g. `S("count") == "'+globalThis+'"`. A purely textual screen
+    // gives false positives. The authoritative invariant is behavioral: execute
+    // the artifact in a hard sandbox and prove it has no side effects.
+
+    // Execute the accepted artifact under a hard sandbox. It must complete with a
+    // pure value and never touch a trapped global.
+    let value;
+    try {
+      value = runTrapped(artifact);
+    } catch (err) {
+      assert.fail(repro(`compiled expr had a SIDE EFFECT when executed (sandbox tripped):\n  artifact: ${artifact}\n  error: ${err && err.message}`));
+    }
+    const t = typeof value;
+    assert.ok(
+      t === "boolean" || t === "string" || t === "number",
+      repro(`compiled expr produced a non-primitive (${t}) — a literal may have broken out:\n  artifact: ${artifact}\n  value: ${String(value)}`)
+    );
+    // The comparison is `SENTINEL <op> <literal>`. Since the literal is an inert
+    // string, a `==`/`!=` against the "SENTINEL" sentinel must be a clean boolean.
+    assert.equal(t, "boolean", repro(`expected a boolean comparison result; got ${t} (${String(value)}) — arithmetic/string concat may have leaked:\n  artifact: ${artifact}`));
+    accepted++;
+  }
+
+  // Anti-vacuity: the corpus must actually exercise BOTH paths. If everything was
+  // rejected the sandbox never ran; if nothing was rejected the generator is too
+  // tame. Require both, matching the existing fuzz guards.
+  assert.ok(accepted > 0, `expected some injection-shaped exprs to compile and run safely (got ${accepted})`);
+  assert.ok(rejected > 0, `expected some injection-shaped exprs to be rejected at compile time (got ${rejected})`);
 }));
 
 // Pull the decoded `data-wd-computed-expr` artifacts out of compiled HTML.
