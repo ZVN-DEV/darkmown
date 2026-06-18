@@ -669,8 +669,8 @@ test(":form into declares state and emits a captured form; action mode stays nat
 
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /<form data-wd-form="profile">/);
-  assert.match(page.html, /<input type="text" name="name" placeholder="Your name" required>/);
-  assert.match(page.html, /<input type="email" name="email">/);
+  assert.match(page.html, /<input type="text" name="name" placeholder="Your name" required aria-label="Your name">/);
+  assert.match(page.html, /<input type="email" name="email" aria-label="Email">/);
   assert.match(page.html, /<button type="submit">Save<\/button>/);
   assert.match(page.html, /data-wd-state>\{"profile":null\}/);
   assert.match(page.html, /data-wd-bind="profile" data-wd-path="name"/);

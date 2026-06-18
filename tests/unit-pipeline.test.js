@@ -63,7 +63,7 @@ test(":input emits type, attributes, and boolean flags", () => {
     ':submit "Go"',
     ":endform"
   ]);
-  assert.match(page.html, /<input type="email" name="email" placeholder="you@x.com" required autofocus>/);
+  assert.match(page.html, /<input type="email" name="email" placeholder="you@x.com" required autofocus aria-label="you@x.com">/);
 });
 
 test(":input emits escaped accessibility attributes", () => {

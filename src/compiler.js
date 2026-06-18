@@ -838,7 +838,10 @@ function compileComputedExpr(raw, ctx) {
   /** @type {string[]} */
   const strings = [];
   let expr = raw.replace(/"[^"\\]*"|'[^'\\]*'/g, (literal) => {
-    strings.push(`"${literal.slice(1, -1)}"`);
+    // JSON.stringify fully escapes embedded ", \, etc. so the re-inserted literal
+    // (line below) is an inert JS string and cannot terminate early to smuggle in
+    // live code. Mirrors the SAFE @loop where path (compileOperand).
+    strings.push(JSON.stringify(literal.slice(1, -1)));
     return `__WDSTR${strings.length - 1}__`;
   });
   if (/["'\\`]/.test(expr)) {
@@ -910,6 +913,8 @@ function handleInput(line, ctx) {
   if (!match) throw new Error(`Malformed :input in ${ctx.file}: ${line}`);
   const attrs = [`name="${escapeHtml(match[1])}"`];
   let type = "text";
+  let placeholder;
+  let hasAria = false;
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
@@ -927,7 +932,15 @@ function handleInput(line, ctx) {
     if (!["placeholder", "value", "min", "max", "step", "pattern", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
       throw new Error(`Unknown :input attribute "${token[1]}" in ${ctx.file}`);
     }
+    if (token[1] === "placeholder") placeholder = value;
+    if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
     attrs.push(`${token[1]}="${escapeHtml(value)}"`);
+  }
+  // Accessible name: if the author supplied neither aria-label nor aria-describedby,
+  // derive a non-visual aria-label from the placeholder, else from the field name.
+  // Never overrides an author-supplied aria attribute (zero layout impact).
+  if (!hasAria) {
+    attrs.push(`aria-label="${escapeHtml(placeholder || humanizeName(match[1]))}"`);
   }
   return `<input type="${escapeHtml(type)}" ${attrs.join(" ")}>`;
 }
@@ -949,6 +962,8 @@ function handleBind(line, ctx) {
   }
   ctx.comp.assets.runtime = true;
   let type = "text";
+  let placeholder;
+  let hasAria = false;
   const attrs = [];
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
   for (const token of (match[2] || "").matchAll(re)) {
@@ -962,7 +977,15 @@ function handleBind(line, ctx) {
     if (!["placeholder", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
       throw new Error(`Unknown :bind attribute "${token[1]}" in ${ctx.file}`);
     }
+    if (token[1] === "placeholder") placeholder = value;
+    if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
     attrs.push(`${token[1]}="${escapeHtml(value)}"`);
+  }
+  // Accessible name (see handleInput): default a non-visual aria-label from the
+  // placeholder, else a humanized version of the bound state key. The author's own
+  // aria-label/aria-describedby always wins.
+  if (!hasAria) {
+    attrs.push(`aria-label="${escapeHtml(placeholder || humanizeName(match[1]))}"`);
   }
   const initial = ctx.comp.state.get(key);
   const valueAttr = initial === undefined || initial === null ? "" : ` value="${escapeHtml(String(initial))}"`;
@@ -2087,6 +2110,23 @@ function parseScalar(raw) {
  */
 function stripQuotes(value) {
   return value?.replace(/^["']|["']$/g, "") ?? "";
+}
+
+/**
+ * Turn a field name / state key into a human-readable accessible name, e.g.
+ * `quest` → "Quest", `user-name` → "User name", `firstName` → "First name".
+ * Hyphens, underscores, and camelCase boundaries become spaces; the first letter
+ * is capitalized. Used to auto-derive aria-label on generated form inputs.
+ * @param {string} name
+ * @returns {string}
+ */
+function humanizeName(name) {
+  const words = name
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2") // split camelCase
+    .replace(/[-_]+/g, " ")                  // hyphens/underscores → spaces
+    .trim()
+    .toLowerCase();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
 }
 
 /**
