@@ -265,6 +265,16 @@ You have { cart } items.
 
 See it all live on the [Data & Forms page](/data/).
 
+## Trust boundary
+
+Darkmown is a trusted-author site generator: you compile content you wrote, the way you trust your own source. Three things define that boundary.
+
+- **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
+- **Raw HTML passes through by default.** Markdown renders with `html: true`, so raw HTML is emitted verbatim and there is no built-in sanitizer. Set `html: false` in a page's frontmatter to drop raw HTML for untrusted content.
+- **`:fetch` has no URL allowlist, and reactive pages need `unsafe-eval`.** Fetch URLs come straight from the page source, and the runtime compiles `:computed` / `@loop … where` expressions via `new Function` — so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
+
+See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in the package for the full security model.
+
 ## Colocation
 
 - A matching `.skin` file attaches CSS to the page (indentation-based, compiles to real CSS).
