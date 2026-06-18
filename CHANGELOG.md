@@ -2,6 +2,17 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.12.0 — 2026-06-18
+
+Security and deploy-hardening sprint.
+
+- **Critical fix — `:computed` expression injection closed.** String literals inside `:computed` expressions are now escaped with `JSON.stringify` (the same path `@loop where` already used), so a crafted literal can no longer break out of the validated whitelist and execute arbitrary JavaScript at build time or in the browser. Added a regression suite that decodes and evaluates the emitted expression, plus a fuzzer invariant that runs compiled expressions inside a trapped sandbox to catch the whole class.
+- **Honest coverage gate.** Coverage now measures `src/**` only — test files no longer inflate the denominator — and the gate explicitly discloses that the browser runtime is covered by the Playwright e2e job rather than the line gate.
+- **Accessible form inputs by default.** `:input` and `:bind` auto-emit an `aria-label` (from the placeholder, else a humanized field name) when no `aria-label`/`aria-describedby` is supplied. The label is non-visual and never overrides an author-supplied attribute.
+- **Static-host deploys hardened.** Builds emit `dist/404.html`; the preview server serves it on a miss and returns correct content-types for images, SVG, and fonts (unknown types default to `application/octet-stream`). `vercel.json`/`wrangler.toml` document clean-URL and 404 behavior.
+- **Dev server survives a broken build.** A compile error during `darkmown dev` startup no longer crashes the process — the server stays up and the error appears in the overlay, clearing on the next good build.
+- **Trust boundary documented.** README, SECURITY.md, and the docs site now state the trust model plainly: compile only authored content — `html: true` passes raw HTML through, `:fetch` has no URL allowlist, and reactive pages require `script-src 'unsafe-eval'`.
+
 ## 0.11.2 — 2026-06-17
 
 Product trust and release-hardening sprint.
