@@ -170,7 +170,7 @@ tags: [sales, revenue, "q1, q2"]
 
 ## Reactive directives
 
-Reactive pages opt into `/__wd/runtime.js` (~4.7 KB gzipped, under a CI-enforced 5 KB budget). Static pages do not.
+Reactive pages opt into `/__wd/runtime.js` (~5.7 KB gzipped, under a CI-enforced 6 KB budget). Static pages do not.
 
 ```wd
 :state count = 0
@@ -195,6 +195,49 @@ Count is still zero.
 ```
 
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in a colocated `.js` file.
+
+### Multi-branch conditionals
+
+Chain conditionals with `:else if`. Each condition is a bare truthy path (the same form `:if` takes). Use any number of branches; a bare `:else` must come last:
+
+```wd
+:if isPro
+Pro plan
+:else if isTrial
+Trial — { daysLeft } days left
+:else
+Free plan
+:endif
+```
+
+A whole chain compiles to nested conditional regions, so it folds at build time when the values are static and stays reactive otherwise — exactly like a single `:if`.
+
+### Reactive classes — `.class when …`
+
+A container class can react to state or the loop item. Static `.class` tokens stay as-is; add `when <predicate>` for a reactive one:
+
+```wd
+@loop products into p
+::: card .product .on-sale when p.price < 50
+**{ p.name }** — ${ p.price }
+:::
+@endloop
+```
+
+The predicate uses the `@loop … where` / `:if` whitelist (item fields, `:state`, numbers, strings, comparisons, `and`/`or`, `contains`). A static predicate folds to a plain class at build; a state or loop-item predicate stays reactive.
+
+### Effects — `:effect`
+
+`:effect <watched> -> <actions>` runs actions (the `:button` vocabulary, `;`-chained) whenever the watched state changes — for side effects beyond `:computed` and fetch deps:
+
+```wd
+:state q = ""
+:state searches = 0
+
+:effect q -> searches++
+```
+
+Effects run after a render against settled state, never on the initial load, with a 10-pass settle cap guarding against loops.
 
 ### Button actions
 
@@ -223,8 +266,7 @@ Values are literals — a `"string"`, number, `true`/`false`/`null`, or inline J
 
 :if team_loading
 Loading…
-:else
-:if team_error
+:else if team_error
 Couldn't load the team: { team_error }
 :else
 @loop team into member
@@ -233,10 +275,18 @@ Couldn't load the team: { team_error }
 No team members yet.
 @endloop
 :endif
-:endif
 ```
 
-Options after the URL: `method=` (default `GET`), `when=load|visible`, `timeout=<ms>`, `retry=<N>`, `headers=<key>`, and `body=<key>` (the last two name a `:state`/`:store` key). A URL can interpolate state (`"/api/users/{ userId }"`) and re-fetches automatically when that state changes; trigger a reload by hand with `:button "Reload" -> team refetch`. Loop a sub-path of fetched data with a dotted source — `@loop team.members into member`.
+Options after the URL: `method=` (default `GET`), `when=load|visible`, `timeout=<ms>`, `retry=<N>`, `headers=<key>`, and `body=<key>` (the last two name a `:state`/`:store` key). A URL can interpolate state (`"/api/users/{ userId }"`) and re-fetches automatically when that state changes; trigger a reload by hand with `:button "Reload" -> team refetch`. Loop a sub-path of fetched data with a dotted source — `@loop team.members into member`. URLs must be relative, `http(s)://`, or a leading `{ state }` interpolation — other schemes are rejected at compile time.
+
+### Authenticated requests
+
+`headers=<key>` sends a state object as request headers; pair it with `:store` to persist a bearer token. Add `refresh="<url>"` and a `401` triggers a token refresh: Darkmown POSTs the current headers to the refresh URL, writes the renewed token back into the `headers` state, and retries the request once (concurrent `401`s share one refresh).
+
+```wd
+:store session = { "Authorization": "Bearer …" }
+:fetch feed from "/api/feed" headers=session refresh="/auth/refresh"
+```
 
 ## Global state — `:store`
 
@@ -271,7 +321,7 @@ Darkmown is a trusted-author site generator: you compile content you wrote, the 
 
 - **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
 - **Raw HTML passes through by default.** Markdown renders with `html: true`, so raw HTML is emitted verbatim and there is no built-in sanitizer. Set `html: false` in a page's frontmatter to drop raw HTML for untrusted content.
-- **`:fetch` has no URL allowlist, and reactive pages need `unsafe-eval`.** Fetch URLs come straight from the page source, and the runtime compiles `:computed` / `@loop … where` expressions via `new Function` — so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
+- **`:fetch` has no host allowlist, and reactive pages need `unsafe-eval`.** Fetch URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF is the author's responsibility. The runtime compiles `:computed` / `@loop … where` / `.class when` expressions via `new Function`, so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
 
 See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in the package for the full security model.
 
@@ -283,6 +333,6 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in 
 
 ## Spec status
 
-The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:store`, the full `:fetch` lifecycle (loading/error/empty states, dynamic URLs, `refetch`, and dotted loop sources), `:form` (including server round-trips), loop ergonomics (`sort by`/`limit`/`offset`/`reverse`/`@empty` and `$index`/`$number`/`$first`/`$last`/`$count`), `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/). Still on the roadmap: a first-party server runtime (`site/api/`) and HTML-fragment swaps. See `docs/spec-alignment.md` in the package for the full audit.
+The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:store`, the full `:fetch` lifecycle (loading/error/empty states, dynamic URLs, `refetch`, dotted loop sources, authenticated `headers=` + `refresh=` token renewal), `:form` (including server round-trips), loop ergonomics (`sort by`/`limit`/`offset`/`reverse`/`@empty` and `$index`/`$number`/`$first`/`$last`/`$count`), `:if … :else if … :else`, reactive `.class when …`, `:effect`, `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/) and the [Reactive page](/reactive/). Still on the roadmap: a first-party server runtime (`site/api/`) and HTML-fragment swaps. See `docs/spec-alignment.md` in the package for the full audit.
 
 </main>

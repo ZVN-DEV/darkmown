@@ -33,6 +33,47 @@ Loading the team…
 
 That loop also proves `:if` over loop items: the lead badge is decided per row.
 
+## The four states of a fetch
+
+Every `:fetch` tracks the whole lifecycle — `loading`, `error`, `empty`, and data — so a page can answer each one. Here the same primitive shows an **error** (a missing URL 404s) and an **empty** result (a file that is just `[]`):
+
+:fetch broken from "/__wd/data/intentionally-missing.json"
+
+:if broken_error
+The request failed on purpose — `broken_error` holds: { broken_error }
+:else if broken_loading
+Trying the missing endpoint…
+:else
+Waiting…
+:endif
+
+:fetch roster from "/__wd/data/empty.json"
+
+@loop roster into person
+- { person.name }
+@empty
+The roster came back empty — `@empty` renders instead of the rows.
+@endloop
+
+The error branch uses an `:else if` chain; the empty branch uses the loop's `@empty`. No state machine to wire by hand.
+
+## Authenticated requests
+
+A real API usually wants a token. `:fetch … headers=<key>` spreads a state object into the request headers, so pair it with `:store` to persist that token across reloads:
+
+:store session = { "Authorization": "Bearer demo-token" }
+:fetch feed from "/__wd/data/team.json" headers=session
+
+:if feed_error
+The API rejected the token: { feed_error }
+:else if feed
+Authenticated fetch returned { feed.length } row(s). Open the network tab — the `Authorization` header rides along on the request.
+:else
+Loading the authenticated feed…
+:endif
+
+This demo points `from=` at a static file (which ignores the header), so it stays self-contained — point it at your real API and the bearer token travels with every request. When that token expires, add `refresh="/auth/refresh"` and Darkmown renews it on a `401` and retries once, automatically.
+
 ## Forms write state, no backend required
 
 `:form into profile` captures the submit straight into state. With `action="/url"` instead, Darkmown emits a plain native form and stays out of the way entirely:

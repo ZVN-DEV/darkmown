@@ -2,6 +2,17 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.13.0 — 2026-06-18
+
+Layered capabilities — four reactive features shaped as progressive disclosure: a simple default, with more power one layer down. The reactive runtime grew to ~5.7 KB gzipped; the CI budget moves from 5 KB to **6 KB** (still shipped un-minified, source fully commented).
+
+- **Conditionals — `:else if` chains.** `:if A` / `:else if B` / … / `:else` / `:endif`. Any number of `:else if`; an optional trailing bare `:else` must come last (a later `:else if` is a compile error). Desugars to nested `:if` regions the runtime already drives — identical behavior for static, reactive, and loop-row conditionals, and no runtime change.
+- **Styling — reactive classes (`::: … .class when <predicate>`).** A container class can be toggled by a predicate using the same whitelisted grammar as `@loop … where` / `:if` (`item.field`, `:state`, `==`/`!=`/`>`/`<`/`>=`/`<=`/`contains`, `and`/`or`). A fully-static predicate folds at build time; a state predicate becomes a global `data-wd-class` binding; a loop-item predicate reacts per row. Static `.class` tokens are unchanged.
+- **Fetch — authenticated requests + token refresh (`:fetch … headers= refresh=`).** `headers=<stateKey>` (already shipped) spreads a state object into request headers; pair with `:store` to persist a bearer token. New `refresh="<url>"`: on an HTTP 401 the runtime POSTs the current headers to the refresh URL, writes the renewed token back to state (persisting if it is a `:store`), and retries the original request once. Concurrent 401s sharing a refresh URL are de-duplicated into a single in-flight refresh.
+- **Effects — `:effect <state> -> <actions>`.** Run actions (the full `:button` vocabulary, `;`-chained) whenever a watched state path changes — for side effects beyond `:computed` (derive state) and fetch deps (auto-refetch). Effects run after a render against settled state, with a 10-pass settle cap guarding against effect→effect loops.
+- **Assets — page-colocated static files.** Any non-page file under `site/pages/` (images, SVG, fonts — anything but `.md`/`.wd`/`.skin`/`.js`) is copied to `dist/` at its path: `site/pages/logo.svg` → `dist/logo.svg`, `site/pages/blog/cover.png` → `dist/blog/cover.png`. The shelf (`site/_/` → `/__wd/media`, `/__wd/data`) is unchanged; `.avif` joins the served content-types.
+- **Security — `:fetch` URL scheme hardening.** `:fetch` (and `refresh=`) URLs are validated at compile time: relative paths, `http(s)://`, and a leading `{ state }` interpolation are allowed; a protocol-relative `//host` or any non-http(s) scheme (`file:`, `data:`, `javascript:`, …) is now a compile error with a corrective hint.
+
 ## 0.12.1 — 2026-06-18
 
 Release-hygiene and DX polish (post-0.12.0 smoke audit).

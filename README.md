@@ -7,7 +7,7 @@
 
 **[darkmown.com](https://darkmown.com)** · Markdown that runs.
 
-Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~4.7 KB gzipped, CI-enforced under 5 KB.
+Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~5.7 KB gzipped, CI-enforced under 6 KB.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~4.7 KB gzipped, CI-enforced under 5 KB).
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~5.7 KB gzipped, CI-enforced under 6 KB).
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Interpolation
@@ -88,7 +88,14 @@ Images, fonts, icons, and other non-page files live on the include shelf at `sit
 - Any non-`.md`/`.wd` file in `site/_/` → served at `/__wd/media/<path>` (e.g. `site/_/logo.svg` → `/__wd/media/logo.svg`).
 - `.json` files → served at `/__wd/data/<name>` (this is what `:fetch` reads).
 
-Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`serve` layer returns the correct `Content-Type` per extension. (Files dropped in `site/pages/` are treated as routes, not assets — put shareable assets on the shelf.)
+Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`serve` layer returns the correct `Content-Type` per extension.
+
+**Or colocate an asset next to the page that uses it.** Any non-page file under `site/pages/` (anything but `.md`/`.wd` routes and the colocated `.skin`/`.js`) is copied to `dist/` at its own path, so a clean relative URL just works:
+
+- `site/pages/logo.svg` → `dist/logo.svg` → `![logo](/logo.svg)`
+- `site/pages/blog/cover.png` → `dist/blog/cover.png` → `![cover](/blog/cover.png)`
+
+Use the shelf for assets shared across many pages; colocate the ones that belong to a single page or section. Both ship untouched with the correct content-type.
 
 ## Loops
 
@@ -240,6 +247,20 @@ Cart has { count } items.
 
 State declared inside a section is scoped to it — two sections can both own a `count`. Bindings and actions resolve to the nearest scope.
 
+### Reactive classes — `.class when <predicate>`
+
+A container class can be toggled by a predicate. Static `.class` tokens are unchanged; add `when <predicate>` to make one reactive:
+
+```wd
+@loop products into p
+::: card .product .on-sale when p.price < 50 .featured when p.featured
+**{ p.name }** — ${ p.price }
+:::
+@endloop
+```
+
+The predicate uses the same whitelist as `@loop … where` / `:if` — item fields, declared `:state`/`:store`, numbers, strings, the `==`/`!=`/`>`/`<`/`>=`/`<=`/`contains` operators, and `and`/`or`. A bare path (`.featured when p.featured`) reads as truthy. A predicate over only static values folds at build time into a plain class; one that reads state or the loop item stays reactive and ships with the runtime.
+
 ## Reactive directives
 
 ```wd
@@ -255,6 +276,20 @@ Count has changed.
 Count is still zero.
 :endif
 ```
+
+Conditionals chain with `:else if`. Each condition is a bare truthy path (the same form `:if` takes — no operators). Use any number of them; an optional bare `:else` must be the last branch:
+
+```wd
+:if isPro
+Pro plan
+:else if isTrial
+Trial — { daysLeft } days left
+:else
+Free plan
+:endif
+```
+
+A whole chain compiles to nested conditional regions, so it stays reactive (or folds at build time when the values are static) exactly like a single `:if`.
 
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in colocated `.js` files.
 
@@ -297,6 +332,19 @@ Values are literals: a `"string"`, number, `true`/`false`/`null`, or inline JSON
 
 > **Pitfall:** `list toggle v` and `list remove v` match members by value (`===`). That is exact for strings, numbers, and booleans, but not reliable for object members — two equal-looking objects are different values. To remove a row object, loop the list and use the per-row `remove` action below.
 
+### Effects — `:effect`
+
+`:effect <watched> -> <actions>` runs actions whenever a watched state path changes. The actions are the same `:button` vocabulary (`;`-chained) — this is the escape hatch for side effects beyond `:computed` (which derives state) and `:fetch` deps (which auto-refetch):
+
+```wd
+:state q = ""
+:state searches = 0
+
+:effect q -> searches++
+```
+
+Effects run after a render, against settled state, and an effect that mutates state triggers another pass — bounded by a 10-pass settle cap that warns (and stops) if an effect never settles. They do not fire on the initial load, only on a real change.
+
 ## Fetching data
 
 `:fetch name from "url"` declares state and fills it from JSON over the network:
@@ -323,8 +371,7 @@ Cover loading, errors, empty, and data — `@empty` (from the loops above) absor
 
 :if roster_loading
 Loading…
-:else
-:if roster_error
+:else if roster_error
 Couldn't load the team: { roster_error }
 :else
 @loop roster into member
@@ -332,7 +379,6 @@ Couldn't load the team: { roster_error }
 @empty
 No team members yet.
 @endloop
-:endif
 :endif
 ```
 
@@ -344,6 +390,28 @@ No team members yet.
 - `retry=<N>` — retry on network failure or a 5xx response before surfacing the error.
 - `headers=<key>` — a `:state`/`:store` key holding an object, sent as request headers.
 - `body=<key>` — a `:state`/`:store` key, JSON-serialized as the request body (for non-`GET`).
+- `refresh=<url>` — a token-refresh endpoint; on a `401`, renew the `headers=` token and retry once (see below).
+
+> **URL safety.** A `:fetch`/`refresh` URL must be a relative path, an `http(s)://` URL, or a leading `{ state }` interpolation. A protocol-relative `//host` or a non-http(s) scheme (`file:`, `data:`, `javascript:`, …) is a compile error.
+
+### Authenticated requests and token refresh
+
+`headers=<key>` sends a state object as request headers — pair it with `:store` to persist a bearer token across reloads:
+
+```wd
+:store session = { "Authorization": "Bearer …" }
+:fetch feed from "/api/feed" headers=session
+```
+
+Add `refresh="<url>"` and Darkmown manages the token lifecycle: when a request comes back `401`, it POSTs the current `headers` object to the refresh URL, writes the returned headers (the new token) back into the `session` state — persisting it, since `session` is a `:store` — and retries the original request once. Concurrent `401`s sharing a refresh URL are de-duplicated into a single in-flight refresh.
+
+```wd
+:store session = { "Authorization": "Bearer …" }
+
+:fetch feed from "/api/feed" headers=session refresh="/auth/refresh"
+```
+
+`refresh=` requires `headers=` (it needs a state key to renew). The refresh endpoint should accept the current headers as a JSON body and reply with the new headers object.
 
 ### Dynamic URLs and refetching
 
@@ -447,7 +515,7 @@ Darkmown is a **trusted-author** site generator: you compile content you wrote, 
 
 - **Compile only trusted, author-written content.** Do not compile `.md`/`.wd` files you did not write — user-generated content, third-party docs, form input — without sanitizing it first.
 - **Raw HTML passes through by default.** Darkmown runs `markdown-it` with `html: true`, so raw HTML in your content is emitted verbatim — by design, like every Markdown site generator. There is no built-in sanitizer; a raw `<script>` or event-handler attribute in untrusted content would execute in the visitor's browser. A page can opt into strict mode with `html: false` frontmatter, which drops raw HTML entirely.
-- **`:fetch` has no URL allowlist, and reactive pages need `unsafe-eval`.** A `:fetch` URL is taken straight from the page source, so the request goes wherever the author wrote. Reactive pages also require `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` expressions via `new Function` — a strict CSP without `unsafe-eval` will break reactive pages (static pages are unaffected).
+- **`:fetch` has no host allowlist, and reactive pages need `unsafe-eval`.** A `:fetch` (or `refresh=`) URL is taken straight from the page source; the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF protection is the author's responsibility. Reactive pages also require `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function` — a strict CSP without `unsafe-eval` will break reactive pages (static pages are unaffected).
 
 > **The single biggest footgun:** do not compile untrusted or user-submitted Markdown without sanitizing it first. There is no built-in sanitizer.
 

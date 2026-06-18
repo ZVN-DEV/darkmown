@@ -69,6 +69,23 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
         assert.match(page.html, /data-wd-form/);
       },
     },
+    {
+      name: "effect on watched state",
+      body: snippetFrom("README.md", ":effect q -> searches++"),
+      assert: (page) => {
+        assert.equal(page.assets.runtime, true);
+        assert.match(page.html, /data-wd-effect/);
+      },
+    },
+    {
+      name: "authenticated fetch with refresh",
+      body: snippetFrom("README.md", 'refresh="/auth/refresh"'),
+      assert: (page) => {
+        assert.equal(page.assets.runtime, true);
+        assert.match(page.html, /data-wd-fetch-headers="session"/);
+        assert.match(page.html, /data-wd-fetch-refresh="\/auth\/refresh"/);
+      },
+    },
   ];
 
   for (const item of cases) {

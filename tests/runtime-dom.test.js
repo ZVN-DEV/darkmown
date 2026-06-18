@@ -27,6 +27,7 @@ class ClassList {
   add(c) { this._set.add(c); }
   remove(c) { this._set.delete(c); }
   contains(c) { return this._set.has(c); }
+  toggle(c, on) { on ? this.add(c) : this.remove(c); return on; }
 }
 
 class El {
@@ -110,7 +111,7 @@ function matchSelector(node, selector) {
 
 // --- Sandbox harness -------------------------------------------------------
 
-function makeSandbox(rootBuilder, { withRAF = false } = {}) {
+function makeSandbox(rootBuilder, { withRAF = false, globals = {} } = {}) {
   const root = new El("body");
   rootBuilder(root, El);
 
@@ -155,6 +156,8 @@ function makeSandbox(rootBuilder, { withRAF = false } = {}) {
   // listener registry there. `fire(type, target)` drives both document + window.
   sandbox.addEventListener = (type, fn) => { (listeners[type] ||= []).push(fn); };
   sandbox.window = sandbox;
+  // Extra globals (fetch stub, timers, Promise) for the async :fetch tests.
+  Object.assign(sandbox, globals);
 
   vm.createContext(sandbox);
   // Instrument renderNow by wrapping the source: count flushes without changing logic.
@@ -597,4 +600,240 @@ test("runtime renders the @empty template when the post-pipeline list is empty",
   h.sandbox.wd.render();
   assert.equal(out.children.length, 1);
   assert.equal(out.children[0].textContent, "Nothing here.");
+});
+
+// ---------------------------------------------------------------------------
+// :fetch refresh= — 401 token-refresh lifecycle (Component B)
+// ---------------------------------------------------------------------------
+
+// Programmable fetch stub: routes map a URL to a single response or a queue of
+// responses (successive calls advance, last one repeats). Each call is recorded.
+function makeFetchStub(routes) {
+  const calls = [];
+  const fetch = (url, init) => {
+    calls.push({ url, init, headers: init && init.headers });
+    const r = routes[url];
+    const resp = Array.isArray(r) ? (r.length > 1 ? r.shift() : r[0]) : r;
+    const status = resp.status;
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve(JSON.stringify(resp.body ?? null))
+    });
+  };
+  return { fetch, calls, count: (url) => calls.filter((c) => c.url === url).length };
+}
+
+// Drain microtasks across a few macrotask ticks so the whole async fetch chain
+// (request → 401 → refresh POST → write-back → retry → settle) completes.
+async function settle(n = 8) {
+  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
+}
+
+function fetchRegion(root, El, { key, url, headers, refresh, session }) {
+  if (session !== undefined) {
+    const s = new El("script");
+    s.setAttribute("data-wd-state", "");
+    s.textContent = JSON.stringify({ [headers]: session });
+    root.appendChild(s);
+  }
+  const span = new El("span");
+  span.setAttribute("data-wd-fetch", "");
+  span.setAttribute("data-wd-fetch-key", key);
+  span.setAttribute("data-wd-fetch-url", url);
+  if (headers) span.setAttribute("data-wd-fetch-headers", headers);
+  if (refresh) span.setAttribute("data-wd-fetch-refresh", refresh);
+  root.appendChild(span);
+  return span;
+}
+
+test(":fetch renews the token on a 401, writes it back, and retries once", async () => {
+  const stub = makeFetchStub({
+    "/api/feed": [{ status: 401 }, { status: 200, body: [{ id: 1 }] }],
+    "/auth/refresh": { status: 200, body: { Authorization: "Bearer new" } }
+  });
+  const h = makeSandbox(
+    (root, El) => fetchRegion(root, El, { key: "feed", url: "/api/feed", headers: "session", refresh: "/auth/refresh", session: { Authorization: "Bearer old" } }),
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+
+  await settle();
+
+  assert.equal(stub.count("/api/feed"), 2, "original request retried once");
+  assert.equal(stub.count("/auth/refresh"), 1, "token refreshed once");
+  assert.deepEqual(h.sandbox.wd.state.session, { Authorization: "Bearer new" }, "renewed token written back to state");
+  const feedCalls = stub.calls.filter((c) => c.url === "/api/feed");
+  assert.deepEqual(feedCalls[0].headers, { Authorization: "Bearer old" });
+  assert.deepEqual(feedCalls[1].headers, { Authorization: "Bearer new" }, "retry carried the renewed header");
+  assert.deepEqual(h.sandbox.wd.state.feed, [{ id: 1 }]);
+  assert.equal(h.sandbox.wd.state.feed_error, null);
+});
+
+test(":fetch falls through to *_error when the token refresh fails", async () => {
+  const stub = makeFetchStub({
+    "/api/feed": { status: 401 },
+    "/auth/refresh": { status: 500, body: { error: "nope" } }
+  });
+  const h = makeSandbox(
+    (root, El) => fetchRegion(root, El, { key: "feed", url: "/api/feed", headers: "session", refresh: "/auth/refresh", session: { Authorization: "Bearer old" } }),
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+
+  await settle();
+
+  assert.equal(stub.count("/auth/refresh"), 1, "one refresh attempt");
+  assert.match(String(h.sandbox.wd.state.feed_error), /HTTP 401/, "surfaces the original 401");
+  assert.equal(h.sandbox.wd.state.feed ?? null, null);
+});
+
+test("concurrent 401s share a single token refresh, then each retries", async () => {
+  const stub = makeFetchStub({
+    "/api/a": [{ status: 401 }, { status: 200, body: { who: "a" } }],
+    "/api/b": [{ status: 401 }, { status: 200, body: { who: "b" } }],
+    "/auth/refresh": { status: 200, body: { Authorization: "Bearer new" } }
+  });
+  const h = makeSandbox(
+    (root, El) => {
+      fetchRegion(root, El, { key: "a", url: "/api/a", headers: "session", refresh: "/auth/refresh", session: { Authorization: "Bearer old" } });
+      fetchRegion(root, El, { key: "b", url: "/api/b", headers: "session", refresh: "/auth/refresh" });
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+
+  await settle();
+
+  assert.equal(stub.count("/auth/refresh"), 1, "single-flight: one shared refresh for both 401s");
+  assert.deepEqual(h.sandbox.wd.state.a, { who: "a" });
+  assert.deepEqual(h.sandbox.wd.state.b, { who: "b" });
+});
+
+// ---------------------------------------------------------------------------
+// Reactive styling — .class when <predicate> (Component C)
+// ---------------------------------------------------------------------------
+
+test("data-wd-class toggles a global state-driven class on render", () => {
+  let el;
+  const h = makeSandbox((root, El) => {
+    const s = new El("script");
+    s.setAttribute("data-wd-state", "");
+    s.textContent = JSON.stringify({ hot: false });
+    root.appendChild(s);
+    el = new El("div");
+    el.setAttribute("data-wd-class", JSON.stringify([["sale", '(S("hot"))']]));
+    root.appendChild(el);
+  });
+
+  assert.equal(el.classList.contains("sale"), false, "off when state is falsy");
+  h.sandbox.wd.state.hot = true;
+  h.sandbox.wd.render();
+  assert.equal(el.classList.contains("sale"), true, "on when state flips truthy");
+  h.sandbox.wd.state.hot = false;
+  h.sandbox.wd.render();
+  assert.equal(el.classList.contains("sale"), false, "off again");
+});
+
+test("loop-row data-wd-each-class reacts to item fields", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    const s = new El("script");
+    s.setAttribute("data-wd-state", "");
+    s.textContent = JSON.stringify({ products: [{ id: 1, name: "A", onSale: true }, { id: 2, name: "B", onSale: false }] });
+    root.appendChild(s);
+    const region = new El("div");
+    region.setAttribute("data-wd-loop", "products");
+    const template = new El("template");
+    template.setAttribute("data-wd-loop-template", "");
+    const proto = new El("div");
+    proto.setAttribute("data-wd-each-class", JSON.stringify([["sale", 'I("onSale")']]));
+    const span = new El("span");
+    span.setAttribute("data-wd-each", "");
+    span.setAttribute("data-wd-path", "name");
+    proto.appendChild(span);
+    template.content.appendChild(proto);
+    region.appendChild(template);
+    out = new El("ul");
+    out.setAttribute("data-wd-loop-out", "");
+    region.appendChild(out);
+    root.appendChild(region);
+  });
+
+  assert.equal(out.children[0].classList.contains("sale"), true, "row 0 onSale → class on");
+  assert.equal(out.children[1].classList.contains("sale"), false, "row 1 not onSale → class off");
+
+  // Flip item 2 onSale; the reused row's class reacts.
+  h.sandbox.wd.state.products = [{ id: 1, name: "A", onSale: true }, { id: 2, name: "B", onSale: true }];
+  h.sandbox.wd.render();
+  assert.equal(out.children[1].classList.contains("sale"), true, "row 1 now onSale → class on");
+});
+
+// ---------------------------------------------------------------------------
+// Effects — :effect <state> -> <actions> (Component D)
+// ---------------------------------------------------------------------------
+
+function effectSandbox(rootBuilder, warns) {
+  return makeSandbox(rootBuilder, {
+    globals: { console: { warn: (...a) => warns.push(a.join(" ")), log() {}, error() {} } }
+  });
+}
+
+test(":effect runs its action only when the watched state changes", () => {
+  const warns = [];
+  const h = effectSandbox((root, El) => {
+    const s = new El("script");
+    s.setAttribute("data-wd-state", "");
+    s.textContent = JSON.stringify({ q: "", hits: 0 });
+    root.appendChild(s);
+    const fx = new El("script");
+    fx.setAttribute("data-wd-effect", "");
+    fx.textContent = JSON.stringify({ watch: "q", actions: [{ op: "inc", target: "hits" }] });
+    root.appendChild(fx);
+  }, warns);
+
+  assert.equal(h.sandbox.wd.state.hits, 0, "no fire on initial load");
+  h.sandbox.wd.state.q = "a";
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.hits, 1, "watched change fires the effect");
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.hits, 1, "no re-fire without a further change");
+});
+
+test(":effect cascades settle within the pass cap", () => {
+  const warns = [];
+  const h = effectSandbox((root, El) => {
+    const s = new El("script");
+    s.setAttribute("data-wd-state", "");
+    s.textContent = JSON.stringify({ q: "", r: 0, s: 0 });
+    root.appendChild(s);
+    for (const [watch, target] of [["q", "r"], ["r", "s"]]) {
+      const fx = new El("script");
+      fx.setAttribute("data-wd-effect", "");
+      fx.textContent = JSON.stringify({ watch, actions: [{ op: "inc", target }] });
+      root.appendChild(fx);
+    }
+  }, warns);
+
+  h.sandbox.wd.state.q = "x";
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.r, 1, "q→r effect fired");
+  assert.equal(h.sandbox.wd.state.s, 1, "r→s effect cascaded and settled");
+  assert.equal(warns.length, 0, "no settle warning for a terminating cascade");
+});
+
+test(":effect that never settles stops at the cap and warns", () => {
+  const warns = [];
+  const h = effectSandbox((root, El) => {
+    const s = new El("script");
+    s.setAttribute("data-wd-state", "");
+    s.textContent = JSON.stringify({ n: 0 });
+    root.appendChild(s);
+    const fx = new El("script");
+    fx.setAttribute("data-wd-effect", "");
+    fx.textContent = JSON.stringify({ watch: "n", actions: [{ op: "inc", target: "n" }] });
+    root.appendChild(fx);
+  }, warns);
+
+  h.sandbox.wd.state.n = 1;
+  h.sandbox.wd.render();
+  assert.ok(warns.some((w) => /did not settle/.test(w)), "warns when an effect never settles");
+  assert.ok(h.sandbox.wd.state.n <= 11, "the settle cap bounds the runaway effect");
 });

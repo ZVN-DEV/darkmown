@@ -103,11 +103,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: shipped runtime must stay under 5KB gzipped
+      - name: shipped runtime must stay under 6KB gzipped
         run: |
           size=$(gzip -c dist/__wd/runtime.js | wc -c)
-          echo "shipped runtime gzipped: ${size} bytes (budget: 5120)"
-          test "$size" -lt 5120
+          echo "shipped runtime gzipped: ${size} bytes (budget: 6144)"
+          test "$size" -lt 6144
 
   audit:
     name: Dependency audit

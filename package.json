@@ -1,6 +1,6 @@
 {
   "name": "@zvndev/darkmown",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -13,7 +13,7 @@
   "types": "./types/index.d.ts",
   "scripts": {
     "build": "node src/cli.js build",
-    "runtime:size": "node -e \"const fs=require('fs'),zlib=require('zlib'); const size=zlib.gzipSync(fs.readFileSync('dist/__wd/runtime.js')).length; console.log('shipped runtime gzipped: '+size+' bytes (budget: 5120)'); if (size >= 5120) process.exit(1)\"",
+    "runtime:size": "node -e \"const fs=require('fs'),zlib=require('zlib'); const size=zlib.gzipSync(fs.readFileSync('dist/__wd/runtime.js')).length; console.log('shipped runtime gzipped: '+size+' bytes (budget: 6144)'); if (size >= 6144) process.exit(1)\"",
     "dev": "node src/cli.js dev",
     "test": "node --test tests/*.test.js",
     "test:cov": "node scripts/test-coverage-gate.mjs 90",

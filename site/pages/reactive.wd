@@ -39,30 +39,34 @@ The same `@loop` that unrolls static data also drives reactive lists. Items are 
 
 :button "Add todo" -> todos += {"id": 3, "title": "Live compile", "owner": "Testing"}
 
-## Conditionals inside a loop, nested
+## Multi-branch conditionals + reactive classes
 
-`:if` works per row, and conditionals nest — the inner branch is decided after the outer one, for every item, and stays reactive. Add a "done" task and watch which badge each row shows:
+`:if … :else if … :else … :endif` picks one of several branches per row, and a container class can react to the row too: `.class when <predicate>` toggles a class from the same whitelist `@loop … where` uses. Each card below picks one of three badges *and* tags itself `.is-done` / `.is-blocked`, all reactive:
+
+<style>
+.task-row { border-left: 4px solid #9991; padding-left: .6rem; }
+.task-row.is-done { border-left-color: #2e9e5b; }
+.task-row.is-blocked { border-left-color: #d2453f; }
+</style>
 
 :state tasks = [{"id": 1, "title": "Draft the spec", "done": true, "blocked": false}, {"id": 2, "title": "Wire the runtime", "done": false, "blocked": true}, {"id": 3, "title": "Write the demo", "done": false, "blocked": false}]
 
 @loop tasks into task
-::: card .task-row
+::: card .task-row .is-done when task.done .is-blocked when task.blocked
 **{ task.title }** —
 :if task.done
 done ✓
-:else
-:if task.blocked
+:else if task.blocked
 blocked ✗
 :else
 in progress …
-:endif
 :endif
 :::
 @endloop
 
 :button "Add a finished task" -> tasks += {"id": 4, "title": "Ship it", "done": true, "blocked": false}
 
-Each row picks one of three states from two nested conditionals, all in plain Markdown — no component, no ternary, no JavaScript.
+Each row picks one of three states from a single `:else if` chain, and its left border color comes from a reactive `.class when …` — plain Markdown, no component, no ternary, no JavaScript.
 
 ## Live filtering — search in pure Markdown
 
@@ -82,6 +86,15 @@ Each row picks one of three states from two nested conditionals, all in plain Ma
 @endloop
 
 The predicate whitelist is compile-time validated — item fields, declared state, numbers, and strings only. An item-only predicate (say `where p.price < 50`) would instead filter at build time and ship zero JavaScript.
+
+### …and an effect that watches the search
+
+`:effect <state> -> <actions>` runs actions whenever the watched state changes — for side effects past deriving state. This one counts how many times the search box above has changed:
+
+:state searches = 0
+:effect q -> searches++
+
+The search has changed **{ searches }** time(s). Type in the box above and this updates on its own — no handler wired by hand.
 
 ### …and an editable cart
 

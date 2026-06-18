@@ -71,6 +71,11 @@ export function buildSite(cwd = process.cwd()) {
   fs.writeFileSync(path.join(paths.distRoot, "404.html"), notFoundHtml ?? defaultNotFoundHtml());
 
   fs.writeFileSync(path.join(paths.distRoot, "routes.json"), JSON.stringify(manifest, null, 2));
+
+  // Page-colocated static assets (images, SVG, fonts, …) copy last, so the guard
+  // sees every emitted route/framework file already on disk.
+  emitPageAssets(paths);
+
   return { routes: manifest, distRoot: paths.distRoot };
 }
 
@@ -163,6 +168,33 @@ function emitShelfAssets(paths) {
     const rel = path.relative(paths.shelfRoot, file);
     const folder = ext === ".json" ? "__wd/data" : "__wd/media";
     const out = path.join(paths.distRoot, folder, rel);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.copyFileSync(file, out);
+  }
+}
+
+/**
+ * Copy page-colocated static assets (images, SVG, fonts, …) from `site/pages`
+ * into `dist`, preserving their relative path: `site/pages/logo.svg` →
+ * `dist/logo.svg`; `site/pages/blog/cover.png` → `dist/blog/cover.png`. Routes
+ * (`.md`/`.wd`) and the compiler's colocated `.skin`/`.js` files are skipped —
+ * those have their own emit paths. A backstop guard skips any asset whose output
+ * would clobber an already-emitted route/framework file (in practice their
+ * extensions differ, so this only fires on a genuine name clash).
+ * @param {Paths} paths
+ * @returns {void}
+ */
+function emitPageAssets(paths) {
+  if (!fs.existsSync(paths.routesRoot)) return;
+  for (const file of walk(paths.routesRoot)) {
+    const ext = path.extname(file).toLowerCase();
+    if ([".md", ".wd", ".skin", ".js"].includes(ext)) continue;
+    const rel = path.relative(paths.routesRoot, file);
+    const out = path.join(paths.distRoot, rel);
+    if (fs.existsSync(out)) {
+      console.warn(`hint: page asset "${rel}" skipped — a built route already emits /${rel.replaceAll(path.sep, "/")}`);
+      continue;
+    }
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.copyFileSync(file, out);
   }

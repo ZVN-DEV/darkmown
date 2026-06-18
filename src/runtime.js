@@ -131,7 +131,11 @@ function isEmpty(v) {
 async function httpJson(url, init) {
   const response = await fetch(url, init);
   const text = await response.text();
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    const err = /** @type {Error & { status?: number }} */ (new Error(`HTTP ${response.status}`));
+    err.status = response.status; // lets the :fetch lifecycle single out a 401 for token refresh
+    throw err;
+  }
   try { return JSON.parse(text); } catch { return { status: response.status, body: text }; }
 }
 
@@ -187,6 +191,29 @@ function loopPredicate(body) {
 }
 
 /**
+ * Toggle reactive `.class when <predicate>` bindings on an element. `raw` is the
+ * JSON `[[name, body], …]` from data-wd-class (global, item undefined) or
+ * data-wd-each-class (per loop row); each body is the same I()/S()/C()
+ * expression the loop `where` uses.
+ * @param {Element} el
+ * @param {string | null} raw
+ * @param {any} item Loop item for each-class; undefined for a global class.
+ * @returns {void}
+ */
+function classToggle(el, raw, item) {
+  if (!raw) return;
+  /** @type {[string, string][]} */
+  let pairs;
+  try { pairs = JSON.parse(raw); } catch { return; }
+  for (const [name, body] of pairs) {
+    let on = false;
+    try { on = Boolean(loopPredicate(body)((/** @type {string} */ p) => getPath(item, p), (/** @type {string} */ k, /** @type {string} */ r) => getPath(state[k], r || ""), containsFn)); }
+    catch (error) { warn(body, error); }
+    el.classList.toggle(name, on);
+  }
+}
+
+/**
  * Stable per-render key for a loop row, disambiguating duplicates with `#n`.
  * @param {any} item
  * @param {Map<string, number>} counts
@@ -231,6 +258,8 @@ function fillItem(node, item, meta = {}) {
   for (const marker of node.querySelectorAll("[data-wd-each-meta]")) {
     marker.textContent = meta[marker.getAttribute("data-wd-each-meta") || ""] ?? "";
   }
+  const classNodes = node.matches("[data-wd-each-class]") ? [node, ...node.querySelectorAll("[data-wd-each-class]")] : [...node.querySelectorAll("[data-wd-each-class]")];
+  for (const el of classNodes) classToggle(el, el.getAttribute("data-wd-each-class"), item);
 }
 
 /**
@@ -289,6 +318,10 @@ function renderNow() {
     const template = /** @type {HTMLTemplateElement | null} */ (node.querySelector(value ? "template[data-wd-true]" : "template[data-wd-false]"));
     output.innerHTML = template?.innerHTML || "";
   }
+
+  // Reactive styling: toggle state-driven `.class when …` bindings. Loop-row
+  // bindings (data-wd-each-class) are handled per item inside fillItem.
+  for (const el of document.querySelectorAll("[data-wd-class]")) classToggle(el, el.getAttribute("data-wd-class"), undefined);
 
   for (const region of document.querySelectorAll("[data-wd-loop]")) {
     const key = region.getAttribute("data-wd-loop");
@@ -362,6 +395,36 @@ function renderNow() {
   for (const input of document.querySelectorAll("[data-wd-bind-input]")) {
     if (document.activeElement !== input) /** @type {HTMLInputElement} */ (input).value = state[input.getAttribute("data-wd-bind-input") || ""] ?? "";
   }
+
+  runEffects(); // side effects run last, against fully settled state
+}
+
+/** @typedef {{ watch: string, actions: { op: string, target?: string, value?: any }[], last: string }} Effect */
+/** @type {Effect[]} */
+const effects = [...document.querySelectorAll("script[data-wd-effect]")].map((node) => {
+  const def = JSON.parse(node.textContent || "{}");
+  return { watch: def.watch, actions: def.actions || [], last: JSON.stringify(getPath(state, def.watch) ?? null) };
+});
+let effectDepth = 0;
+/**
+ * After a render, fire any `:effect` whose watched state changed, running its
+ * actions through the shared action runner. If that mutates state, re-render and
+ * re-check; a settle cap of 10 passes guards against effect→effect loops.
+ * @returns {void}
+ */
+function runEffects() {
+  if (!effects.length) return;
+  let changed = false;
+  for (const fx of effects) {
+    const now = JSON.stringify(getPath(state, fx.watch) ?? null);
+    if (now === fx.last) continue;
+    fx.last = now;
+    for (const a of fx.actions) applyAction(null, a.op, a.target || "", a.value);
+    changed = true;
+  }
+  if (!changed) { effectDepth = 0; return; }
+  if (++effectDepth >= 10) { effectDepth = 0; console.warn("effect did not settle"); return; }
+  renderNow(); // reflect the effect's state changes, then re-check
 }
 
 /**
@@ -391,10 +454,11 @@ document.addEventListener("input", (event) => {
 /**
  * Resolve the loop source and row item for a clicked element, if inside a loop.
  * The clicked button's row is the nearest reconciled loop node; it carries its item.
- * @param {Element} el
+ * @param {Element | null} el Null for effect-driven actions (no clicked row).
  * @returns {{ srcKey: string | null, item: any } | null}
  */
 function clickedRow(el) {
+  if (!el) return null; // effect-driven actions have no clicked row → row ops no-op
   const row = /** @type {WdRow | null} */ (el.closest("[data-wd-loop-key]"));
   const region = el.closest("[data-wd-loop]");
   if (!row || !region) return null;
@@ -404,7 +468,7 @@ function clickedRow(el) {
 /**
  * Apply one parsed action `{op,target,value}` against state. Targets are dotted
  * paths read via getPath / written via setPath; a bare name is a 1-segment path.
- * @param {Element} action The clicked element (for loop-row resolution).
+ * @param {Element | null} action The clicked element (for loop-row resolution); null for effects.
  * @param {string} op
  * @param {string} target
  * @param {any} value
@@ -518,11 +582,16 @@ function startFetch(node) {
 
   const headers = g("headers");
   const body = g("body");
+  const refresh = g("refresh");
   const method = g("method") || "GET";
   const timeout = Number(g("timeout"));
   let tries = Number(g("retry"));
+  let refreshed = false; // a token refresh + retry happens at most once per request
   state[key + "_error"] = null;
   set("_loading", true);
+
+  /** @param {any} error */
+  const fail = (error) => { state[key + "_error"] = String(error); set("_loading", false); };
 
   const attempt = () => {
     /** @type {RequestInit} */
@@ -542,12 +611,51 @@ function startFetch(node) {
     }).catch((error) => {
       clearTimeout(timer);
       if (dead()) return;
+      const is401 = error && error.status === 401;
+      // Layer 2: a 401 with a refresh URL renews the token once, then retries.
+      if (is401 && refresh && headers && !refreshed) {
+        refreshed = true;
+        return void refreshToken(refresh, headers).then((ok) => {
+          if (dead()) return;
+          ok ? attempt() : fail(error);
+        });
+      }
+      if (is401 && refreshed) return void fail(error); // a second 401 after refresh → give up
       if (tries-- > 0) return void setTimeout(attempt, 200);
-      state[key + "_error"] = String(error);
-      set("_loading", false);
+      fail(error);
     });
   };
   attempt();
+}
+
+/** @type {Map<string, Promise<boolean>>} In-flight token refreshes, keyed by URL. */
+const refreshFlights = new Map();
+/**
+ * Single-flight token refresh: POST the current header state to `refreshUrl`,
+ * and on a 2xx JSON reply write the returned headers object back into the
+ * `headersKey` state (persisting if it is a `:store`). Concurrent 401s sharing a
+ * refresh URL await the same request, then each retries its own fetch.
+ * @param {string} refreshUrl
+ * @param {string} headersKey
+ * @returns {Promise<boolean>} whether the token was renewed
+ */
+function refreshToken(refreshUrl, headersKey) {
+  const inflight = refreshFlights.get(refreshUrl);
+  if (inflight) return inflight;
+  const flight = httpJson(refreshUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(state[headersKey] ?? {})
+  }).then((value) => {
+    if (value && typeof value === "object") {
+      state[headersKey] = value; // the new headers shape, e.g. { Authorization: "Bearer …" }
+      savePersisted();
+      return true;
+    }
+    return false;
+  }).catch(() => false).finally(() => refreshFlights.delete(refreshUrl));
+  refreshFlights.set(refreshUrl, flight);
+  return flight;
 }
 
 /** A fetch marker carrying its last dependency snapshot for refetch diffing and

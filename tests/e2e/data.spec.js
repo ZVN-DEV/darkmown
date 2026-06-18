@@ -56,6 +56,20 @@ test.describe("/data/ — fetch, forms, computed", () => {
     await expect(cartLine).toContainText("holds 0 item(s) worth $0");
   });
 
+  test("the four-state fetch demo renders its error and empty branches", async ({
+    page,
+  }) => {
+    // `broken` fetches a missing URL → 404 → the :else if error branch renders.
+    await expect(page.getByText(/The request failed on purpose/)).toBeVisible();
+    // `roster` fetches empty.json ([]) → the loop's @empty branch renders.
+    await expect(
+      page.getByText("The roster came back empty")
+    ).toBeVisible();
+    // The authenticated fetch (headers=session) hits a static file that ignores
+    // the header, so the data branch renders the row count.
+    await expect(page.getByText(/Authenticated fetch returned 5 row/)).toBeVisible();
+  });
+
   test("server form surfaces the error fallback when the endpoint 404s", async ({
     page,
   }) => {
