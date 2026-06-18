@@ -14,7 +14,8 @@ test.describe("/data/ — fetch, forms, computed", () => {
     // :if team branch flips and the member loop fills in.
     const team = page.locator('[data-wd-loop="team"] [data-wd-loop-key]');
     await expect(team).toHaveCount(5);
-    await expect(page.getByText("Acceptance & demo proof")).toBeVisible();
+    // A role string from the fetched team.json proves the loop filled from data.
+    await expect(page.getByText("Engineering")).toBeVisible();
     // The loading fallback should be gone after the fetch resolves.
     await expect(page.getByText("Loading the team…")).toBeHidden();
     // Per-row :if over the fetched items: lead badge for the lead member.
