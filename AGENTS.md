@@ -7,7 +7,7 @@ Darkmown is a Markdown-native web framework. You build sites by writing `.md` an
 - `.md` files are plain CommonMark. Directives stay inert text.
 - `.wd` files are the same Markdown **plus directives** (state, loops, conditionals, includes, forms).
 - To make a `.md` page interactive, **rename it to `.wd`**. ⚠️ Renaming means the old `.md` is **gone** — never leave both `index.md` and `index.wd`, that is a fatal `Duplicate route` build error. Upgrade = delete the `.md`, create the `.wd`.
-- Static pages ship **zero** JavaScript; a page loads the ~4.7 KB gzipped runtime (CI-enforced under 5 KB) only if it declares reactive behavior.
+- Static pages ship **zero** JavaScript; a page loads the ~5.7 KB gzipped runtime (CI-enforced under 6 KB) only if it declares reactive behavior.
 
 ## Project layout & routing
 
@@ -57,13 +57,15 @@ Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list +
 
 ### Conditionals
 ```wd
-:if count
-Shown when truthy.
+:if isPro
+Pro plan.
+:else if isTrial
+Trial.
 :else
-Shown when falsy.
+Free plan.
 :endif
 ```
-`:if name.path` tests a dotted path. Conditionals nest, including per-row inside a loop.
+`:if name.path` tests a dotted path for truthiness (a bare path — no operators). Chain with `:else if` (any number; a bare `:else` must be last). Conditionals nest, including per-row inside a loop.
 
 ### Loops — the only loop
 ```wd
@@ -120,8 +122,13 @@ Thanks, **{ profile.name }**!
 :endif
 
 :computed total = items.length * 4         ← derived state; arithmetic & comparisons only
+
+:store session = { "Authorization": "Bearer …" }      ← persisted token
+:fetch feed from "/api/feed" headers=session refresh="/auth/refresh"   ← auth header; 401 → renew token, retry once
+
+:effect q -> searches++                     ← run actions when watched state changes
 ```
-Shelf `.json` files (in `site/_/`) publish to `/__wd/data/`. `:form action="/api/x" into reply` posts urlencoded and lands the JSON reply in state (without JS it degrades to a native POST). Darkmown owns no backend — point forms at your own API.
+Shelf `.json` files (in `site/_/`) publish to `/__wd/data/`. `:form action="/api/x" into reply` posts urlencoded and lands the JSON reply in state (without JS it degrades to a native POST). Darkmown owns no backend — point forms at your own API. `:fetch`/`refresh=` URLs must be relative, `http(s)://`, or a leading `{ state }` interpolation. `:effect` actions are the `:button` vocabulary (`;`-chained); effects run on change, not on load, capped at 10 settle passes.
 
 **Form-state rules (these cause most form failures):**
 - `:form into x` declares `x` only at `:endform`. A `:if x` (or `{ x.field }`) that reads it must come **after `:endform`**, never inside the form body.
@@ -144,7 +151,7 @@ Your `.skin` selectors must match the **real** output. The emitted HTML is:
 | reactive `@loop` of a list | `<ul>`/`<ol>` (or `<div>`) of items |
 | `{ name }` | a text node |
 
-So style with real selectors: `section`, `.card`, `button`, `input`, `form`, `h1`. **To add a class to a container, use `::: name .class`. For any other custom element, write raw HTML `<div class="…">`. There is NO `{.class}` attribute syntax.**
+So style with real selectors: `section`, `.card`, `button`, `input`, `form`, `h1`. **To add a class to a container, use `::: name .class`. For any other custom element, write raw HTML `<div class="…">`. There is NO `{.class}` attribute syntax.** A container class can also be reactive: `::: card .on-sale when p.price < 50` toggles the class from a predicate (same whitelist as `@loop … where`).
 
 ## Styling with `.skin` — ship this on every page
 

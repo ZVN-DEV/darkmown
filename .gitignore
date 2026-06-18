@@ -16,9 +16,10 @@ playwright-report/
 # Local agent worktrees & session state
 .claude/
 
-# Agent-generated audit reports & sprint plans — keep local, never commit
+# Agent-generated audit reports, sprint plans & design specs — keep local, never commit
 # (repo-wide: catches root and docs/strategy/ etc.).
 AUDIT-REPORT.md
 SPRINT-PLAN.md
 *-REPORT.md
 *-PLAN.md
+docs/superpowers/

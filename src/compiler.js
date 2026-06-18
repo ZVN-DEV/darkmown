@@ -377,6 +377,11 @@ function compileBody(lines, ctx) {
       out.push(handleComputed(line, ctx));
       continue;
     }
+    if (/^:effect\s/.test(line)) {
+      flush();
+      out.push(handleEffect(line, ctx));
+      continue;
+    }
     if (/^:form\s/.test(line)) {
       flush();
       const block = scanBlock(lines, i, /^:form\s/, ":endform", ctx.file);
@@ -542,7 +547,13 @@ function scanContainer(lines, start, file) {
 }
 
 /**
- * Split an `:if … :else … :endif` block into its two branches.
+ * Split an `:if … :else if … :else … :endif` chain into the first condition's
+ * truthy body and a falsy body. A bare `:else` works as before. The first
+ * `:else if B` is **desugared** into a nested `:if` that lives in the falsy
+ * branch: the falsy body becomes `[":if B", …rest…, ":endif"]`, which re-enters
+ * `compileBody`/`handleIf` recursively. A whole `:if/:else if/:else` chain
+ * therefore compiles to nested `data-wd-if` regions the runtime already drives —
+ * identical behavior for static, reactive, and loop-row conditionals.
  * @param {string[]} lines
  * @param {number} start Index of the `:if` line.
  * @param {string} file Source path for errors.
@@ -554,6 +565,11 @@ function scanConditional(lines, start, file) {
   /** @type {string[]} */
   const falsy = [];
   let current = truthy;
+  // "truthy": collecting the :if body. "else": a bare :else closed the chain —
+  // no further branches allowed. "elseif": the first :else if was desugared into
+  // a nested :if inside `falsy`; subsequent depth-0 :else if/:else lines belong to
+  // that nested chain and are emitted verbatim for the recursive compile to split.
+  let mode = "truthy";
   let depth = 0;
   let fence = null;
   for (let i = start + 1; i < lines.length; i++) {
@@ -571,12 +587,28 @@ function scanConditional(lines, start, file) {
     }
     if (/^:if\s/.test(line)) depth++;
     if (line.trim() === ":endif") {
-      if (depth === 0) return { truthy, falsy, end: i };
+      if (depth === 0) {
+        if (mode === "elseif") falsy.push(":endif"); // close the synthesized nested :if
+        return { truthy, falsy, end: i };
+      }
       depth--;
     }
-    if (line.trim() === ":else" && depth === 0) {
-      current = falsy;
-      continue;
+    if (depth === 0 && mode !== "elseif") {
+      const t = line.trim();
+      const elseIf = t.match(/^:else if\s+(.+?)\s*$/);
+      if (elseIf) {
+        if (mode === "else") throw new Error(`":else if" after ":else" in ${file}. ":else" must be the last branch — order the "else if" conditions before the bare ":else".`);
+        falsy.push(`:if ${elseIf[1]}`); // desugar the chain tail into a nested :if
+        current = falsy;
+        mode = "elseif";
+        continue;
+      }
+      if (t === ":else") {
+        if (mode === "else") throw new Error(`Duplicate ":else" in ${file}. A conditional may have only one bare ":else".`);
+        current = falsy;
+        mode = "else";
+        continue;
+      }
     }
     current.push(line);
   }
@@ -634,20 +666,44 @@ function parseIncludeArgs(raw, ctx) {
  * @returns {string}
  */
 function handleContainer(header, bodyLines, ctx) {
-  const tokens = header.split(/\s+/);
+  let rest = header.trim();
   let tag = "section";
-  /** @type {string[]} */
-  let extraClass = [];
+  /** @type {string[]} Static classes baked into class="". */
+  const extraClass = [];
+  /** @type {[string, string][]} Reactive loop-item class bindings (data-wd-each-class). */
+  const eachClasses = [];
+  /** @type {[string, string][]} Global state-driven class bindings (data-wd-class). */
+  const stateClasses = [];
   let id = "";
-  let nameToken = tokens[0] && !tokens[0].startsWith("#") && !tokens[0].startsWith(".") ? tokens.shift() ?? "section" : "section";
-  if (nameToken !== "section") {
-    tag = "div";
-    extraClass.push(nameToken);
-  }
-  for (const token of tokens) {
-    if (token.startsWith("#")) id = token.slice(1);
-    else if (token.startsWith(".")) extraClass.push(token.slice(1));
-    else throw new Error(`Unexpected token "${token}" in container "::: ${header}" in ${ctx.file}`);
+  // Leading tag/name token (anything not starting with . or #). "section" keeps
+  // the <section> tag; any other name becomes a <div> and also a class.
+  const lead = rest.match(/^([^\s.#]\S*)/);
+  let nameToken = "section";
+  if (lead) { nameToken = lead[1]; rest = rest.slice(lead[0].length).trim(); }
+  if (nameToken !== "section") { tag = "div"; extraClass.push(nameToken); }
+  while (rest.length) {
+    if (rest.startsWith("#")) {
+      const m = rest.match(/^#(\S+)/);
+      id = (m ? m[1] : "");
+      rest = rest.slice((m ? m[0] : rest).length).trim();
+      continue;
+    }
+    const cm = rest.match(/^\.([A-Za-z_][\w-]*)/);
+    if (!cm) throw new Error(`Unexpected token "${rest.split(/\s+/)[0]}" in container "::: ${header}" in ${ctx.file}`);
+    const cls = cm[1];
+    rest = rest.slice(cm[0].length).trim();
+    // Optional `when <predicate>` makes the class reactive. The predicate runs to
+    // the next ` .`/` #` token or the end of the header.
+    const whenMatch = rest.match(/^when\s+(.+?)(?=\s+[.#]|$)/);
+    if (whenMatch) {
+      rest = rest.slice(whenMatch[0].length).trim();
+      const compiled = compileWhen(whenMatch[1].trim(), ctx);
+      if (compiled.static) { if (compiled.value) extraClass.push(cls); }
+      else if (compiled.item) eachClasses.push([cls, compiled.body]);
+      else stateClasses.push([cls, compiled.body]);
+    } else {
+      extraClass.push(cls);
+    }
   }
   const explicitId = Boolean(id);
   if (!id) id = `wd-s${++ctx.comp.sectionCounter}`;
@@ -661,7 +717,10 @@ function handleContainer(header, bodyLines, ctx) {
   }
   const idAttr = explicitId ? ` id="${escapeHtml(id)}"` : "";
   const classAttr = extraClass.length ? ` class="${escapeHtml(extraClass.join(" "))}"` : "";
-  return `<${tag}${idAttr}${classAttr}>\n${inner}\n</${tag}>`;
+  let classBind = "";
+  if (eachClasses.length) { ctx.comp.assets.runtime = true; classBind += ` data-wd-each-class="${escapeHtml(JSON.stringify(eachClasses))}"`; }
+  if (stateClasses.length) { ctx.comp.assets.runtime = true; classBind += ` data-wd-class="${escapeHtml(JSON.stringify(stateClasses))}"`; }
+  return `<${tag}${idAttr}${classAttr}${classBind}>\n${inner}\n</${tag}>`;
 }
 
 /**
@@ -740,7 +799,7 @@ function declareErrorState(key, ctx) {
 }
 
 const FETCH_USE =
-  'Use: :fetch name from "url" [method=…] [timeout=ms] [retry=N] [when=visible] [headers=key] [body=key]';
+  'Use: :fetch name from "url" [method=…] [timeout=ms] [retry=N] [when=visible] [headers=key] [body=key] [refresh=url]';
 
 /**
  * Parse a keyword-arg `:fetch` directive into a lifecycle-aware marker.
@@ -755,14 +814,14 @@ function handleFetch(line, ctx) {
   const head = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+)\s*(.*)$/);
   if (!head) throw new Error(`Malformed :fetch in ${ctx.file}: ${line}. ${FETCH_USE}`);
   const name = head[1];
-  const url = stripQuotes(head[2]);
+  const url = validateFetchUrl(stripQuotes(head[2]), ctx);
   /** @type {Record<string, string>} */
   const opts = {};
   for (const part of head[3].trim().split(/\s+/).filter(Boolean)) {
     const kv = part.match(/^([A-Za-z]+)=(.+)$/);
     if (!kv) throw new Error(`Unknown :fetch option "${part}" in ${ctx.file}. ${FETCH_USE}`);
     const optName = kv[1];
-    if (!["method", "when", "timeout", "retry", "headers", "body"].includes(optName)) {
+    if (!["method", "when", "timeout", "retry", "headers", "body", "refresh"].includes(optName)) {
       throw new Error(`Unknown :fetch option "${optName}" in ${ctx.file}. ${FETCH_USE}`);
     }
     opts[optName] = stripQuotes(kv[2]);
@@ -778,6 +837,14 @@ function handleFetch(line, ctx) {
     if (opts[n] !== undefined && !/^\d+$/.test(opts[n])) {
       throw new Error(`:fetch ${n} must be a non-negative integer in ${ctx.file}. ${FETCH_USE}`);
     }
+  }
+  if (opts.refresh !== undefined) {
+    // Layer 2: a 401 triggers a token-refresh POST to this URL, then one retry.
+    // The new token is written back into the `headers=` state, so it is required.
+    if (!opts.headers) {
+      throw new Error(`:fetch refresh= needs headers= (the state key holding the token to renew) in ${ctx.file}. ${FETCH_USE}`);
+    }
+    opts.refresh = validateFetchUrl(opts.refresh, ctx, ":fetch refresh");
   }
 
   // Extract `{ path }` dependency keys from the URL (validated against poison
@@ -811,9 +878,38 @@ function handleFetch(line, ctx) {
     attr("retry", opts.retry) +
     attr("headers", opts.headers && resolveStateKey(opts.headers, ctx)) +
     attr("body", opts.body && resolveStateKey(opts.body, ctx)) +
+    attr("refresh", opts.refresh) +
     attr("deps", deps.join(",")) +
     `></span>`;
   return `<script type="application/json" data-wd-state>${safeScriptJson(seeds)}</script>${marker}`;
+}
+
+/**
+ * Validate a `:fetch` (or `refresh=`) URL's scheme at compile time. Mirrors the
+ * `:try` href guard: relative paths (`/`, `./`, `../`, bare), an `http(s)://`
+ * URL, or a leading `{ state }` interpolation are allowed; a protocol-relative
+ * `//host` or any non-http(s) scheme (`file:`, `data:`, `javascript:`, …) is
+ * rejected. Interpolated values are percent-encoded by the runtime, so a scheme
+ * cannot be injected through state at request time.
+ * @param {string} url
+ * @param {Ctx} ctx
+ * @param {string} [what] Option name for the error message.
+ * @returns {string}
+ */
+function validateFetchUrl(url, ctx, what = ":fetch") {
+  const value = url.trim();
+  if (value !== url || value === "" || /[\u0000-\u001F\u007F]/.test(value)) {
+    throw new Error(`Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Use a relative path (/, ./, ../), an http(s):// URL, or a { state } interpolation.`);
+  }
+  if (value.startsWith("//")) {
+    throw new Error(`Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http:// or https:// explicitly.`);
+  }
+  if (value.startsWith("{")) return value; // interpolation-first; the runtime percent-encodes state values
+  const scheme = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
+  if (scheme && !["http", "https"].includes(scheme[1].toLowerCase())) {
+    throw new Error(`Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. The "${scheme[1]}:" scheme is not allowed; use http://, https://, or a relative path.`);
+  }
+  return value;
 }
 
 /**
@@ -1029,6 +1125,30 @@ function handleButton(line, ctx) {
   }
   const valueAttr = action.value === undefined ? "" : ` data-wd-value="${escapeHtml(JSON.stringify(action.value))}"`;
   return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${valueAttr}>${escapeHtml(match[1])}</button>`;
+}
+
+const EFFECT_USE = "Use: :effect watchedState -> action[; action…] (actions use the :button vocabulary).";
+
+/**
+ * Parse `:effect <watched> -> <actions>` into a zero-output marker the runtime
+ * watches: when `<watched>` state changes, it runs `<actions>` (the same `:button`
+ * action vocabulary, `;`-chained). For arbitrary side effects beyond `:computed`
+ * (derive state) and fetch deps (auto-refetch).
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function handleEffect(line, ctx) {
+  const match = line.match(/^:effect\s+([A-Za-z_$][\w$.]*)\s*->\s*(.+)$/);
+  if (!match) throw new Error(`Malformed :effect in ${ctx.file}: ${line}. ${EFFECT_USE}`);
+  const segs = validatePath(match[1], ctx, EFFECT_USE);
+  const key = resolveStateKey(segs[0], ctx);
+  if (!key) throw new Error(`:effect watches unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`);
+  ctx.comp.assets.runtime = true;
+  const watch = [key, ...segs.slice(1)].join(".");
+  const action = parseAction(match[2], ctx);
+  const actions = Array.isArray(action) ? action : [action];
+  return `<script type="application/json" data-wd-effect>${safeScriptJson({ watch, actions })}</script>`;
 }
 
 /**
@@ -1373,6 +1493,75 @@ function evalPredicate(body, item, ctx) {
     console.warn(`@loop where predicate "${body}" in ${ctx.file} could not be evaluated at build time; treating the row as excluded. Check the condition.`);
     return false;
   }
+}
+
+/**
+ * Compile one operand of a `::: … .class when <predicate>` expression. Like the
+ * `@loop where` operand, but also folds a static-scope value (a loop-unrolled
+ * item field or include arg) to its build-time literal, so a fully-static
+ * predicate can be evaluated at compile time. Mirrors `:if`'s scope→item→state
+ * resolution order.
+ * @param {string} tok
+ * @param {Ctx} ctx
+ * @returns {{ code: string, state: boolean, item: boolean }}
+ */
+function compileWhenOperand(tok, ctx) {
+  if (/^"[^"]*"$/.test(tok) || /^'[^']*'$/.test(tok)) return { code: JSON.stringify(tok.slice(1, -1)), state: false, item: false };
+  if (/^-?\d+(?:\.\d+)?$/.test(tok)) return { code: tok, state: false, item: false };
+  if (["true", "false", "null"].includes(tok)) return { code: tok, state: false, item: false };
+  if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(tok)) {
+    throw new Error(`Unsupported operand "${tok}" in "::: … when" (${ctx.file}). Use item.field, a :state name, a number, or a "string".`);
+  }
+  const segs = tok.split(".");
+  if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
+    throw new Error(`Path "${tok}" is not allowed in "::: … when" (${ctx.file})`);
+  }
+  const scoped = lookupVar(ctx.scope, segs[0]);
+  if (scoped.found) return { code: JSON.stringify(getPath(scoped.value, segs.slice(1)) ?? null), state: false, item: false };
+  if (ctx.loopItem && segs[0] === ctx.loopItem) return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, state: false, item: true };
+  const key = resolveStateKey(segs[0], ctx);
+  if (!key) throw new Error(`"::: … when" references unknown name "${segs[0]}" in ${ctx.file}. Use a loop item field, a declared :state, a number, or a "string".`);
+  const rest = segs.slice(1).join(".");
+  return { code: `S(${JSON.stringify(key)}${rest ? `, ${JSON.stringify(rest)}` : ""})`, state: true, item: false };
+}
+
+/**
+ * Compile a `::: … .class when <predicate>`. Allows `:if`-style bare truthy
+ * paths and `where`-style `left <op> right` conditions joined by `and`/`or`.
+ * Folds to a static verdict when every operand is build-known, else returns a
+ * runtime body over I()/S()/C() plus whether it reads the reactive loop item
+ * (which decides data-wd-each-class vs the global data-wd-class).
+ * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {{ static: true, value: boolean } | { static: false, body: string, item: boolean }}
+ */
+function compileWhen(raw, ctx) {
+  const parts = raw.split(/\s+(and|or)\s+/i);
+  /** @type {string[]} */
+  const pieces = [];
+  let usesState = false;
+  let usesItem = false;
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) { pieces.push(parts[i].toLowerCase() === "and" ? "&&" : "||"); continue; }
+    const seg = parts[i].trim();
+    const opMatch = seg.match(/^(.+?)\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
+    if (opMatch) {
+      const left = compileWhenOperand(opMatch[1].trim(), ctx);
+      const right = compileWhenOperand(opMatch[3].trim(), ctx);
+      usesState = usesState || left.state || right.state;
+      usesItem = usesItem || left.item || right.item;
+      const op = opMatch[2].toLowerCase();
+      pieces.push(op === "contains" ? `(C(${left.code}, ${right.code}))` : `(${left.code} ${op} ${right.code})`);
+    } else {
+      const only = compileWhenOperand(seg, ctx);
+      usesState = usesState || only.state;
+      usesItem = usesItem || only.item;
+      pieces.push(`(${only.code})`);
+    }
+  }
+  const body = pieces.join(" ");
+  if (!usesState && !usesItem) return { static: true, value: evalPredicate(body, undefined, ctx) };
+  return { static: false, body, item: usesItem };
 }
 
 /**

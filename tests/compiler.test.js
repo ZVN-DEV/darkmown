@@ -351,6 +351,53 @@ test("inner sections read outer state through the scope chain", () => {
   assert.match(page.html, /Still sees <span data-wd-bind="global">5<\/span>/);
 });
 
+test("static container classes are unchanged by the reactive-class feature", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "::: card .product .featured\nHi\n:::");
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<div class="card product featured">/);
+  assert.doesNotMatch(page.html, /data-wd-class/);
+  assert.equal(page.assets.runtime, false);
+});
+
+test(".class when <state> emits a global data-wd-class binding", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ":state hot = false",
+    "::: card .sale when hot",
+    "Deal",
+    ":::"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.equal(page.assets.runtime, true);
+  assert.match(page.html, /data-wd-class="\[\[&quot;sale&quot;,&quot;\(S\(\\&quot;hot\\&quot;\)\)&quot;\]\]"/);
+});
+
+test(".class when <item.field> inside a reactive loop emits data-wd-each-class", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ":state products = [{\"id\":1,\"name\":\"A\",\"onSale\":true}]",
+    "@loop products into p",
+    "::: card .sale when p.onSale",
+    "{ p.name }",
+    ":::",
+    "@endloop"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-each-class=/);
+  assert.match(page.html, /I\(\\&quot;onSale\\&quot;\)/);
+});
+
+test(".class when <static value> folds at build time (no binding emitted)", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "@include /card.wd with vip=true");
+  write(root, "site/_/card.wd", "::: card .gold when vip\nHi\n:::");
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<div class="card gold">/);
+  assert.doesNotMatch(page.html, /data-wd-class/);
+  assert.equal(page.assets.runtime, false);
+});
+
 test("unclosed and stray containers fail clearly", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", "::: section #a\ncontent");
@@ -411,6 +458,68 @@ test(":if over undeclared names fails with guidance", () => {
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /does not match a :state or in-scope value/
+  );
+});
+
+test("reactive :else if chain desugars to nested data-wd-if regions", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ":state isPro = false",
+    ":state isTrial = false",
+    ":if isPro",
+    "Pro plan",
+    ":else if isTrial",
+    "Trial plan",
+    ":else",
+    "Free plan",
+    ":endif"
+  ].join("\n"));
+
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.equal(page.assets.runtime, true);
+  // The chain compiles to two nested data-wd-if regions the runtime already drives.
+  assert.match(page.html, /data-wd-if="isPro"/);
+  assert.match(page.html, /data-wd-if="isTrial"/);
+  // The second condition lives inside the first's falsy template (the desugar).
+  assert.match(page.html, /<template data-wd-false><div data-wd-if="isTrial"/);
+  // Initial active leaf is the bare :else branch (both flags false).
+  assert.match(page.html, /<p>Free plan<\/p>/);
+});
+
+test("static :else if chain selects the matching branch at build time", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "@include /tier.wd with isPro=false isTrial=true");
+  write(root, "site/_/tier.wd", [
+    ":if isPro",
+    "Pro plan",
+    ":else if isTrial",
+    "Trial plan",
+    ":else",
+    "Free plan",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /Trial plan/);
+  assert.doesNotMatch(page.html, /Pro plan/);
+  assert.doesNotMatch(page.html, /Free plan/);
+  assert.equal(page.assets.runtime, false);
+});
+
+test(":else if after a bare :else is a compile error", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ":state open = false",
+    ":if open",
+    "A",
+    ":else",
+    "B",
+    ":else if open",
+    "C",
+    ":endif"
+  ].join("\n"));
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
+    /":else if" after ":else"/
   );
 });
 
@@ -477,6 +586,30 @@ test("build emits html, manifest, colocated skin css, and colocated script", () 
   assert.match(html, /type="module"/);
   assert.equal(fs.existsSync(path.join(root, "dist", manifest[0].assets.skins[0])), true);
   assert.equal(fs.existsSync(path.join(root, "dist", manifest[0].assets.scripts[0])), true);
+});
+
+test("page-colocated assets copy to dist; routes and skin/js do not double-emit", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "# Home\n\n![logo](/logo.svg)");
+  write(root, "site/pages/index.skin", "tokens\n  ink #111\npage\n  color $ink");
+  write(root, "site/pages/index.js", "document.body.dataset.ready = 'true';");
+  write(root, "site/pages/logo.svg", "<svg xmlns='http://www.w3.org/2000/svg'></svg>");
+  write(root, "site/pages/blog/index.wd", "# Blog");
+  write(root, "site/pages/blog/cover.png", "PNGDATA");
+  write(root, "site/pages/fonts/Inter.woff2", "FONTDATA");
+
+  buildSite(root);
+
+  // Page assets land at their path under dist.
+  assert.equal(fs.existsSync(path.join(root, "dist/logo.svg")), true);
+  assert.equal(fs.readFileSync(path.join(root, "dist/blog/cover.png"), "utf8"), "PNGDATA");
+  assert.equal(fs.readFileSync(path.join(root, "dist/fonts/Inter.woff2"), "utf8"), "FONTDATA");
+
+  // Routes are not copied verbatim; the colocated skin compiles to .css (not a raw .skin),
+  // and the page script is the compiler's domain — neither is double-emitted as a raw asset.
+  assert.equal(fs.existsSync(path.join(root, "dist/index.wd")), false);
+  assert.equal(fs.existsSync(path.join(root, "dist/blog/index.wd")), false);
+  assert.equal(fs.existsSync(path.join(root, "dist/index.skin")), false);
 });
 
 test("reactive pages emit runtime and static pages stay runtime-free", () => {
@@ -1113,6 +1246,109 @@ test(":fetch URL deps reject prototype-pollution path segments", () => {
   assert.throws(
     () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
     /not allowed/
+  );
+});
+
+test(":fetch allows relative, http(s), and leading-interpolation URLs", () => {
+  for (const url of ["/__wd/data/team.json", "./local.json", "../up.json", "api/data.json", "https://api.example.com/v1/x", "http://localhost:3000/x", "{ apiBase }/users", "/u/{ id }"]) {
+    const root = fixture();
+    write(root, "site/pages/index.wd", `:state apiBase = ""\n:state id = "1"\n:fetch x from "${url}"`);
+    const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+    assert.match(page.html, /data-wd-fetch-url=/, `expected ${url} to compile`);
+  }
+});
+
+test(":fetch rejects protocol-relative and non-http(s) scheme URLs", () => {
+  for (const [url, re] of [
+    ['//evil.example.com/x', /Protocol-relative/],
+    ['file:///etc/passwd', /"file:" scheme is not allowed/],
+    ['data:text/html,<script>', /"data:" scheme is not allowed/],
+    ['javascript:alert(1)', /"javascript:" scheme is not allowed/]
+  ]) {
+    const root = fixture();
+    write(root, "site/pages/bad.wd", `:fetch x from "${url}"`);
+    assert.throws(
+      () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+      re,
+      `expected ${url} to be rejected`
+    );
+  }
+});
+
+test(":fetch refresh= emits the refresh and headers attributes", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':store session = { "Authorization": "Bearer x" }',
+    ':fetch feed from "/api/feed" headers=session refresh="/auth/refresh"'
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-fetch-headers="session"/);
+  assert.match(page.html, /data-wd-fetch-refresh="\/auth\/refresh"/);
+});
+
+test(":fetch refresh= requires headers=", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ':fetch feed from "/api/feed" refresh="/auth/refresh"');
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /refresh= needs headers=/
+  );
+});
+
+test(":fetch refresh= validates the URL scheme", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", [
+    ':store session = { "Authorization": "Bearer x" }',
+    ':fetch feed from "/api/feed" headers=session refresh="javascript:alert(1)"'
+  ].join("\n"));
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /"javascript:" scheme is not allowed/
+  );
+});
+
+test(":effect emits a zero-output marker with watch + actions", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state q = ""',
+    ":state hits = 0",
+    ":effect q -> hits++"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.equal(page.assets.runtime, true);
+  assert.match(page.html, /<script type="application\/json" data-wd-effect>/);
+  assert.match(page.html, /"watch":"q"/);
+  assert.match(page.html, /"op":"inc"/);
+  assert.match(page.html, /"target":"hits"/);
+});
+
+test(":effect supports ;-chained actions", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state q = ""',
+    ":state a = 0",
+    ":state b = 0",
+    ":effect q -> a++; b++"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /"actions":\[\{"op":"inc","target":"a"\},\{"op":"inc","target":"b"\}\]/);
+});
+
+test(":effect over unknown state throws with guidance", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ":state x = 0\n:effect ghost -> x++");
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /watches unknown state "ghost"/
+  );
+});
+
+test(":effect malformed throws with a Use hint", () => {
+  const root = fixture();
+  write(root, "site/pages/bad.wd", ":state q = 0\n:effect q");
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :effect[\s\S]*Use: :effect/
   );
 });
 
