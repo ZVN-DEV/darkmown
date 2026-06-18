@@ -15,9 +15,9 @@ playwright-report/
 # Local agent worktrees & session state
 .claude/
 
-# Agent-generated audit reports & sprint plans — keep local, never commit.
-# Root-anchored so intentional docs (e.g. docs/strategy/*) are unaffected.
-/AUDIT-REPORT.md
-/SPRINT-PLAN.md
-/*-REPORT.md
-/*-PLAN.md
+# Agent-generated audit reports & sprint plans — keep local, never commit
+# (repo-wide: catches root and docs/strategy/ etc.).
+AUDIT-REPORT.md
+SPRINT-PLAN.md
+*-REPORT.md
+*-PLAN.md
