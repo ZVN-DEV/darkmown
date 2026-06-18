@@ -36,7 +36,7 @@ test("static serve returns a generic 404 for malformed request paths", () => {
   serve("/tmp/example/dist", "/%E0%A4%A", res);
 
   assert.equal(res.statusCode, 404);
-  assert.equal(res.headers["content-type"], "text/html");
+  assert.equal(res.headers["content-type"], "text/html; charset=utf-8");
   assert.doesNotMatch(chunks.join(""), /URIError|stack|decodeURIComponent/);
 });
 

@@ -30,11 +30,22 @@ if (command === "help" || command === "--help" || command === "-h") {
   const port = Number(process.env.PORT || 5173);
   const host = process.env.HOST || "127.0.0.1";
   const distRoot = path.join(process.cwd(), "dist");
-  buildSite();
   /** @type {Set<import("node:http").ServerResponse>} */
   const clients = new Set();
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let timer;
+  /** @type {string | undefined} Last build failure, replayed to clients on connect. */
+  let lastBuildError;
+
+  // A broken initial build must NOT crash the process before the HTTP server —
+  // and thus the error overlay — comes up. Record the error so new SSE clients
+  // see it on connect; the next successful rebuild clears it via `reload`.
+  try {
+    buildSite();
+  } catch (error) {
+    lastBuildError = (error instanceof Error ? error.message : String(error)).trim();
+    console.error(lastBuildError);
+  }
 
   // Rebuild in a child process so changes to Darkmown's own src/ always load
   // fresh modules — an in-process rebuild would reuse the stale import cache.
@@ -45,10 +56,12 @@ if (command === "help" || command === "--help" || command === "-h") {
       execFile(process.execPath, [cliPath, "build"], { cwd: process.cwd() }, (error, stdout, stderr) => {
         if (error) {
           const message = (stderr || stdout || String(error)).trim();
+          lastBuildError = message;
           console.error(message);
           broadcast(clients, `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`);
           return;
         }
+        lastBuildError = undefined;
         const elapsed = Math.round(performance.now() - started);
         if (stderr.trim()) console.warn(stderr.trim());
         broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
@@ -74,6 +87,11 @@ if (command === "help" || command === "--help" || command === "-h") {
         });
         res.write("\n");
         clients.add(res);
+        // Replay a broken build to clients that connect while it's still failing,
+        // so the overlay shows even after a startup or pre-connect compile error.
+        if (lastBuildError) {
+          res.write(`event: builderror\ndata: ${JSON.stringify({ message: lastBuildError.slice(0, 4000) })}\n\n`);
+        }
         req.on("close", () => clients.delete(res));
         return;
       }

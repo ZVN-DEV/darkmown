@@ -12,7 +12,12 @@ import path from "node:path";
 export function serve(distRoot, url, res) {
   const file = resolvePublicFile(distRoot, url || "/");
   if (!file || !fs.existsSync(file)) {
-    res.writeHead(404, { "content-type": "text/html" });
+    res.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+    const notFound = path.join(distRoot, "404.html");
+    if (fs.existsSync(notFound)) {
+      res.end(fs.readFileSync(notFound));
+      return;
+    }
     res.end("<h1>Not found</h1><p>This route is hidden or has not been created.</p>");
     return;
   }
@@ -44,13 +49,37 @@ export function resolvePublicFile(distRoot, url) {
 }
 
 /**
- * Map a file path to a response content-type, defaulting to `text/html`.
+ * Map a file extension to a response content-type. Unknown types fall back to
+ * `application/octet-stream` so the browser never mis-sniffs an asset as HTML.
+ * @type {Record<string, string>}
+ */
+const contentTypes = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json",
+  ".map": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".txt": "text/plain; charset=utf-8",
+  ".xml": "application/xml"
+};
+
+/**
+ * Map a file path to a response content-type by extension, defaulting to
+ * `application/octet-stream` for unknown types.
  * @param {string} file File path or name.
  * @returns {string}
  */
 export function contentType(file) {
-  if (file.endsWith(".css")) return "text/css";
-  if (file.endsWith(".js")) return "text/javascript";
-  if (file.endsWith(".json")) return "application/json";
-  return "text/html";
+  return contentTypes[path.extname(file).toLowerCase()] || "application/octet-stream";
 }

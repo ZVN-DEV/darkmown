@@ -38,6 +38,9 @@ export function buildSite(cwd = process.cwd()) {
   /** @type {Set<string>} */
   const warned = new Set();
 
+  /** @type {string | undefined} HTML of the `/404/` route, copied to dist/404.html. */
+  let notFoundHtml;
+
   for (const route of routes) {
     const page = compilePage(route.file, paths);
     for (const warning of page.warnings || []) {
@@ -48,6 +51,7 @@ export function buildSite(cwd = process.cwd()) {
     const outFile = outputPathForRoute(paths.distRoot, route.route);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, page.html);
+    if (route.route === "/404/") notFoundHtml = page.html;
     emitAssets(page.assets, paths);
     if (page.assets.runtime) emitRuntime(paths);
     manifest.push({
@@ -60,6 +64,11 @@ export function buildSite(cwd = process.cwd()) {
       }
     });
   }
+
+  // Hosts (Vercel, Cloudflare Pages) and the framework's own server auto-serve
+  // dist/404.html for misses. Prefer the compiled 404 route; fall back to a
+  // minimal page so a 404 is always available.
+  fs.writeFileSync(path.join(paths.distRoot, "404.html"), notFoundHtml ?? defaultNotFoundHtml());
 
   fs.writeFileSync(path.join(paths.distRoot, "routes.json"), JSON.stringify(manifest, null, 2));
   return { routes: manifest, distRoot: paths.distRoot };
@@ -87,6 +96,30 @@ export function stripRuntimeComments(source) {
     .replace(/^[ \t]*\/\/.*$/gm, "")
     // Drop the now blank/whitespace-only lines the removals leave behind.
     .replace(/^[ \t]*\n/gm, "");
+}
+
+/**
+ * A minimal, zero-JS fallback 404 page used only when no `404.wd` route exists.
+ * @returns {string}
+ */
+function defaultNotFoundHtml() {
+  return [
+    "<!doctype html>",
+    '<html lang="en">',
+    "<head>",
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    "<title>Page not found</title>",
+    "</head>",
+    "<body>",
+    "<main>",
+    "<h1>Page not found</h1>",
+    "<p>That route does not exist. <a href=\"/\">Back to home</a>.</p>",
+    "</main>",
+    "</body>",
+    "</html>",
+    ""
+  ].join("\n");
 }
 
 /**

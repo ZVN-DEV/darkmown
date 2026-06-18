@@ -138,6 +138,8 @@ test("full user journey: init -> build -> serve -> fetch", { timeout: STEP_TIMEO
     assert.ok(fs.existsSync(path.join(dist, "about", "index.html")), "dist/about/index.html");
     // Reactive scaffold index pulls in the shared runtime under /__wd/.
     assert.ok(fs.existsSync(path.join(dist, "__wd", "runtime.js")), "dist/__wd/runtime.js");
+    // Every build emits a 404 page for hosts (and the local server) to serve on misses.
+    assert.ok(fs.existsSync(path.join(dist, "404.html")), "dist/404.html");
   });
 
   // 3. OUTPUT CORRECTNESS — parse routes.json + assert static/reactive gating.
@@ -189,9 +191,16 @@ test("full user journey: init -> build -> serve -> fetch", { timeout: STEP_TIMEO
       assert.match(about.body, /About/, "about body content");
       assert.doesNotMatch(about.body, /data-wd-/, "about served static");
 
-      // A genuinely missing route resolves to a 404 from the resolver.
+      // A genuinely missing route resolves to a 404, served from dist/404.html.
       const missing = await httpGet(server.origin, "/does-not-exist/");
       assert.equal(missing.status, 404, "unknown route -> 404");
+      assert.equal(
+        missing.headers["content-type"],
+        "text/html; charset=utf-8",
+        "404 served as html"
+      );
+      const notFoundHtml = fs.readFileSync(path.join(dist, "404.html"), "utf8");
+      assert.equal(missing.body, notFoundHtml, "404 body comes from dist/404.html");
     } finally {
       await server.close();
     }
