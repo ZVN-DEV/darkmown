@@ -68,6 +68,36 @@ test("dev binds to loopback by default and reports HOST overrides", async () => 
   assert.match(overrideOutput, /http:\/\/localhost:0/);
 });
 
+test("bare `darkmown` prints help instead of silently building", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-bare-"));
+  fs.mkdirSync(path.join(root, "site/pages"), { recursive: true });
+  fs.writeFileSync(path.join(root, "site/pages/index.wd"), "# Hi\n");
+  const output = execFileSync("node", [cli], { cwd: root, encoding: "utf8" });
+  assert.match(output, /Usage:/);
+  assert.doesNotMatch(output, /Built \d+ routes/);
+  assert.equal(fs.existsSync(path.join(root, "dist")), false, "bare command must not build");
+});
+
+test("build prints a clean compile error without a Node stack trace", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-builderr-"));
+  fs.mkdirSync(path.join(root, "site/pages"), { recursive: true });
+  // Unclosed @loop → a compile Error with a file-pathed message.
+  fs.writeFileSync(path.join(root, "site/pages/broken.wd"), "@loop /x.json into item\nno end\n");
+  let failed = false;
+  try {
+    execFileSync("node", [cli, "build"], { cwd: root, encoding: "utf8", stdio: "pipe" });
+  } catch (error) {
+    failed = true;
+    assert.equal(error.status, 1, "build must exit non-zero on a compile error");
+    const stderr = String(error.stderr);
+    assert.match(stderr, /^✗ /m, "error must be prefixed with ✗");
+    assert.match(stderr, /Missing @endloop/, "error must carry the compiler message");
+    assert.doesNotMatch(stderr, /\n\s+at \w/, "must not print a Node stack trace");
+    assert.doesNotMatch(stderr, /Node\.js v\d/, "must not print the Node version footer");
+  }
+  assert.equal(failed, true, "build was expected to fail on the broken page");
+});
+
 test("init in the current directory prints a direct next step", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-init-current-"));
   const output = execFileSync("node", [cli, "init", "."], { cwd: root, encoding: "utf8" });

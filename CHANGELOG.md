@@ -2,6 +2,17 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.12.1 — 2026-06-18
+
+Release-hygiene and DX polish (post-0.12.0 smoke audit).
+
+- **Clean compile errors.** `darkmown build` prints a single `✗ <message>` line on a compile error instead of a raw Node.js stack trace (the dev rebuild log inherits the same clean output). The message still carries the file path and corrective hint.
+- **Bare `darkmown` prints help.** Running the command with no arguments shows usage instead of silently running a build.
+- **Social-share images.** A new `image:` frontmatter key sets `og:image` / `twitter:image` and upgrades the Twitter card to `summary_large_image`. The home page now ships an Open Graph card.
+- **`SECURITY.md` ships in the package** so the README's in-package security link resolves for npm consumers.
+- **Static assets documented.** README explains that non-page shelf files (`site/_/`) are copied to `/__wd/media/` (and `.json` to `/__wd/data/`).
+- **README badges** added (npm version, CI, provenance, license).
+
 ## 0.12.0 — 2026-06-18
 
 Security and deploy-hardening sprint.

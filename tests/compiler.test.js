@@ -519,6 +519,32 @@ test("reactive includes make the parent page reactive", () => {
   assert.deepEqual(manifest[0].assets.scripts, ["/__wd/runtime.js"]);
 });
 
+test("image frontmatter emits og:image and a large social card", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    "---",
+    "title: Share me",
+    "description: A social card test",
+    "image: https://example.com/og.png",
+    "---",
+    "",
+    "# Hello"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<meta property="og:image" content="https:\/\/example\.com\/og\.png">/);
+  assert.match(page.html, /<meta name="twitter:image" content="https:\/\/example\.com\/og\.png">/);
+  assert.match(page.html, /<meta name="twitter:card" content="summary_large_image">/);
+  assert.match(page.html, /<meta property="og:title" content="Share me">/);
+});
+
+test("a page without an image keeps the summary card and emits no og:image", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", ["---", "title: Plain", "description: No image", "---", "", "# Hi"].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.doesNotMatch(page.html, /og:image/);
+  assert.match(page.html, /<meta name="twitter:card" content="summary">/);
+});
+
 function fixture() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "wd-compiler-"));
 }

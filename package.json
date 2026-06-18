@@ -1,6 +1,6 @@
 {
   "name": "@zvndev/darkmown",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -34,6 +34,7 @@
     "docs/spec-alignment.md",
     "AGENTS.md",
     "README.md",
+    "SECURITY.md",
     "LICENSE",
     "CHANGELOG.md"
   ],

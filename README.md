@@ -1,5 +1,10 @@
 # Darkmown
 
+[![npm](https://img.shields.io/npm/v/@zvndev/darkmown)](https://www.npmjs.com/package/@zvndev/darkmown)
+[![CI](https://github.com/ZVN-DEV/darkmown/actions/workflows/ci.yml/badge.svg)](https://github.com/ZVN-DEV/darkmown/actions/workflows/ci.yml)
+[![provenance](https://img.shields.io/badge/npm-provenance-blue)](https://www.npmjs.com/package/@zvndev/darkmown)
+[![license](https://img.shields.io/npm/l/@zvndev/darkmown)](./LICENSE)
+
 **[darkmown.com](https://darkmown.com)** · Markdown that runs.
 
 Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~4.7 KB gzipped, CI-enforced under 5 KB.
@@ -73,6 +78,17 @@ tags: [sales, revenue, "q1, q2"]
 - `{ meta.title }` prints a scalar; `{ meta.tags }` prints an array joined with `, `.
 - `@loop meta.tags into tag` iterates an array field at build time (stays static, zero-JS).
 - Arrays are inline flow only (`[a, b]`); quoted items keep internal commas (`"q1, q2"`). A value without a leading `[` stays a plain string.
+
+Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card).
+
+## Static assets
+
+Images, fonts, icons, and other non-page files live on the include shelf at `site/_/` and are copied into the build untouched:
+
+- Any non-`.md`/`.wd` file in `site/_/` → served at `/__wd/media/<path>` (e.g. `site/_/logo.svg` → `/__wd/media/logo.svg`).
+- `.json` files → served at `/__wd/data/<name>` (this is what `:fetch` reads).
+
+Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`serve` layer returns the correct `Content-Type` per extension. (Files dropped in `site/pages/` are treated as routes, not assets — put shareable assets on the shelf.)
 
 ## Loops
 

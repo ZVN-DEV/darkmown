@@ -10,7 +10,9 @@ import { initProject } from "./scaffold.js";
 import { contentType, resolvePublicFile, serve } from "./statics.js";
 
 const cliPath = fileURLToPath(import.meta.url);
-const command = process.argv[2] || "build";
+// Bare `darkmown` prints help (discovery) rather than silently building — a new
+// user typing the command alone expects to see what it can do, not a no-op build.
+const command = process.argv[2] || "help";
 
 if (command === "help" || command === "--help" || command === "-h") {
   printHelp();
@@ -18,14 +20,24 @@ if (command === "help" || command === "--help" || command === "-h") {
   const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   console.log(pkg.version);
 } else if (command === "init") {
-  const target = process.argv[3] || ".";
-  const result = initProject(path.resolve(process.cwd(), target));
-  const relativeRoot = path.relative(process.cwd(), result.root) || ".";
-  console.log(`Created Darkmown project at ${relativeRoot}`);
-  console.log(`Next: ${nextStep(relativeRoot)}`);
+  try {
+    const target = process.argv[3] || ".";
+    const result = initProject(path.resolve(process.cwd(), target));
+    const relativeRoot = path.relative(process.cwd(), result.root) || ".";
+    console.log(`Created Darkmown project at ${relativeRoot}`);
+    console.log(`Next: ${nextStep(relativeRoot)}`);
+  } catch (error) {
+    failClean(error);
+  }
 } else if (command === "build") {
-  const result = buildSite();
-  console.log(`Built ${result.routes.length} routes into ${path.relative(process.cwd(), result.distRoot)}`);
+  try {
+    const result = buildSite();
+    console.log(`Built ${result.routes.length} routes into ${path.relative(process.cwd(), result.distRoot)}`);
+  } catch (error) {
+    // A compile error has a clear, file-pathed message — print just that, not a
+    // Node stack trace, so a typo reads as "fix your page", not "the tool crashed".
+    failClean(error);
+  }
 } else if (command === "dev") {
   const port = Number(process.env.PORT || 5173);
   const host = process.env.HOST || "127.0.0.1";
@@ -168,6 +180,17 @@ function serveDev(distRoot, url, res) {
  */
 function broadcast(clients, message) {
   for (const client of clients) client.write(message);
+}
+
+/**
+ * Print a compile/CLI error as a single clean line and exit non-zero — no Node
+ * stack trace. The thrown Error already carries the file path + corrective hint.
+ * @param {unknown} error
+ * @returns {never}
+ */
+function failClean(error) {
+  console.error(`✗ ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
 }
 
 function printHelp() {

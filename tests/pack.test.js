@@ -19,6 +19,7 @@ test("npm pack includes the runtime, compiler, cli, and intentional demo/support
     "site/pages/docs/.secret.wd",
     "AGENTS.md",
     "README.md",
+    "SECURITY.md",
     "package.json"
   ]) {
     assert.equal(files.includes(required), true, `missing ${required} from npm pack`);

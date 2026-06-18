@@ -6,6 +6,7 @@ dist/
 .playwright-mcp/
 .vercel
 /*.png
+screenshots/
 
 # Playwright e2e artifacts (browser binaries live in node_modules / OS cache)
 test-results/
