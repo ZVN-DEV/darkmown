@@ -837,3 +837,59 @@ test(":effect that never settles stops at the cap and warns", () => {
   assert.ok(warns.some((w) => /did not settle/.test(w)), "warns when an effect never settles");
   assert.ok(h.sandbox.wd.state.n <= 11, "the settle cap bounds the runaway effect");
 });
+
+// ---------------------------------------------------------------------------
+// Expression conditionals — :if a <op> b (richer conditions)
+// ---------------------------------------------------------------------------
+
+test("expression :if toggles its active branch as watched state crosses the predicate", () => {
+  let node;
+  const h = makeSandbox((root, El) => {
+    const s = new El("script");
+    s.setAttribute("data-wd-state", "");
+    s.textContent = JSON.stringify({ n: 3 });
+    root.appendChild(s);
+    node = new El("div");
+    node.setAttribute("data-wd-if", "");
+    node.setAttribute("data-wd-if-expr", '(S("n") > 5)');
+    node.setAttribute("data-wd-if-active", "false");
+    const tTrue = new El("template"); tTrue.setAttribute("data-wd-true", "");
+    const tFalse = new El("template"); tFalse.setAttribute("data-wd-false", "");
+    const out = new El("div"); out.setAttribute("data-wd-if-out", "");
+    node.appendChild(tTrue); node.appendChild(tFalse); node.appendChild(out);
+    root.appendChild(node);
+  });
+
+  assert.equal(node.getAttribute("data-wd-if-active"), "false", "n=3 → predicate false");
+  h.sandbox.wd.state.n = 10;
+  h.sandbox.wd.render();
+  assert.equal(node.getAttribute("data-wd-if-active"), "true", "n=10 → predicate true");
+  h.sandbox.wd.state.n = 1;
+  h.sandbox.wd.render();
+  assert.equal(node.getAttribute("data-wd-if-active"), "false", "n=1 → predicate false again");
+});
+
+test("expression :if supports == and a negated operand", () => {
+  let node;
+  const h = makeSandbox((root, El) => {
+    const s = new El("script");
+    s.setAttribute("data-wd-state", "");
+    s.textContent = JSON.stringify({ plan: "free", banned: false });
+    root.appendChild(s);
+    node = new El("div");
+    node.setAttribute("data-wd-if", "");
+    node.setAttribute("data-wd-if-expr", '(S("plan") == "pro") && (!(S("banned")))');
+    node.setAttribute("data-wd-if-active", "false");
+    const out = new El("div"); out.setAttribute("data-wd-if-out", "");
+    node.appendChild(out);
+    root.appendChild(node);
+  });
+
+  assert.equal(node.getAttribute("data-wd-if-active"), "false", "plan=free → false");
+  h.sandbox.wd.state.plan = "pro";
+  h.sandbox.wd.render();
+  assert.equal(node.getAttribute("data-wd-if-active"), "true", "plan=pro & not banned → true");
+  h.sandbox.wd.state.banned = true;
+  h.sandbox.wd.render();
+  assert.equal(node.getAttribute("data-wd-if-active"), "false", "banned → false");
+});

@@ -205,12 +205,20 @@ function classToggle(el, raw, item) {
   /** @type {[string, string][]} */
   let pairs;
   try { pairs = JSON.parse(raw); } catch { return; }
-  for (const [name, body] of pairs) {
-    let on = false;
-    try { on = Boolean(loopPredicate(body)((/** @type {string} */ p) => getPath(item, p), (/** @type {string} */ k, /** @type {string} */ r) => getPath(state[k], r || ""), containsFn)); }
-    catch (error) { warn(body, error); }
-    el.classList.toggle(name, on);
-  }
+  for (const [name, body] of pairs) el.classList.toggle(name, evalPredicate(body, item));
+}
+
+/**
+ * Evaluate a compiled whitelist predicate body (over I()/S()/C()) to a boolean.
+ * Shared by reactive classes (`.class when`) and expression conditionals
+ * (`:if a > b`). `item` is the loop row for per-row predicates, else undefined.
+ * @param {string} body
+ * @param {any} item
+ * @returns {boolean}
+ */
+function evalPredicate(body, item) {
+  try { return Boolean(loopPredicate(body)((/** @type {string} */ p) => getPath(item, p), (/** @type {string} */ k, /** @type {string} */ r) => getPath(state[k], r || ""), containsFn)); }
+  catch (error) { warn(body, error); return false; }
 }
 
 /**
@@ -241,8 +249,9 @@ function fillItem(node, item, meta = {}) {
   // querySelectorAll skips <template> content, so this sees only the outermost
   // regions; recursing into each injected branch fills the rest.
   for (const region of node.querySelectorAll("[data-wd-each-if]")) {
+    const expr = region.getAttribute("data-wd-if-expr");
     const m = region.getAttribute("data-wd-meta");
-    const value = m ? meta[m] : getPath(item, region.getAttribute("data-wd-path"));
+    const value = expr ? evalPredicate(expr, item) : (m ? meta[m] : getPath(item, region.getAttribute("data-wd-path")));
     const output = region.querySelector("[data-wd-each-if-out]");
     if (!output) continue;
     const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector(value ? "template[data-wd-if-true]" : "template[data-wd-if-false]"));
@@ -302,22 +311,38 @@ function pipeline(list, region) {
 }
 
 /**
+ * Evaluate one global `data-wd-if` region against current state and swap its
+ * branch when the truthiness flips. `data-wd-if-expr` carries a compiled
+ * predicate (richer `:if`); otherwise it is a bare-path truthiness test. On a
+ * swap, the freshly injected branch can carry nested if-regions (a desugared
+ * `:else if`) that were never in the live tree this pass — querySelectorAll
+ * skips <template> content — so recurse to fill them. Unchanged regions are
+ * left alone; their already-live nested regions are reached by renderNow's
+ * document-wide query.
+ * @param {Element} node
+ * @returns {void}
+ */
+function renderIf(node) {
+  const expr = node.getAttribute("data-wd-if-expr");
+  const value = expr ? evalPredicate(expr, undefined) : getPath(state[node.getAttribute("data-wd-if") || ""], node.getAttribute("data-wd-path"));
+  const active = String(Boolean(value));
+  if (node.getAttribute("data-wd-if-active") === active) return;
+  node.setAttribute("data-wd-if-active", active);
+  const output = node.querySelector("[data-wd-if-out]");
+  if (!output) return;
+  const template = /** @type {HTMLTemplateElement | null} */ (node.querySelector(value ? "template[data-wd-true]" : "template[data-wd-false]"));
+  output.innerHTML = template?.innerHTML || "";
+  for (const nested of output.querySelectorAll("[data-wd-if]")) renderIf(nested);
+}
+
+/**
  * Synchronously render the whole document from current `state`:
  * computed → if-regions → keyed loop reconcile → text/input binds.
  * @returns {void}
  */
 function renderNow() {
   recompute();
-  for (const node of document.querySelectorAll("[data-wd-if]")) {
-    const value = getPath(state[node.getAttribute("data-wd-if") || ""], node.getAttribute("data-wd-path"));
-    const active = String(Boolean(value));
-    if (node.getAttribute("data-wd-if-active") === active) continue;
-    node.setAttribute("data-wd-if-active", active);
-    const output = node.querySelector("[data-wd-if-out]");
-    if (!output) continue;
-    const template = /** @type {HTMLTemplateElement | null} */ (node.querySelector(value ? "template[data-wd-true]" : "template[data-wd-false]"));
-    output.innerHTML = template?.innerHTML || "";
-  }
+  for (const node of document.querySelectorAll("[data-wd-if]")) renderIf(node);
 
   // Reactive styling: toggle state-driven `.class when …` bindings. Loop-row
   // bindings (data-wd-each-class) are handled per item inside fillItem.

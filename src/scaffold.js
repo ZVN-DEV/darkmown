@@ -128,10 +128,19 @@ export function initProject(root) {
     "",
     "Run `npm install` and `npm run dev` to start the live compiler.",
     "",
+    "## Commands",
+    "",
+    "- `npm run dev` — live compiler on http://localhost:5173 with hot reload.",
+    "- `npm run build` — compile the site to `dist/`.",
+    "- `npm run preview` — serve the built `dist/` locally.",
+    "",
+    "## Layout",
+    "",
     "- Pages live in `site/pages`.",
     "- Shared includes live in `site/_`.",
     "- Hidden route files start with `.` or `-`.",
-    "- Colocated `index.skin` and `index.js` attach automatically."
+    "- Colocated `index.skin` and `index.js` attach automatically.",
+    "- Any other file under `site/pages` (images, fonts, …) copies to `dist/` at its own path."
   ].join("\n"));
   return { root };
 }

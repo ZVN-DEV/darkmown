@@ -1159,48 +1159,71 @@ function handleEffect(line, ctx) {
  * @returns {string}
  */
 function handleIf(line, truthyLines, falsyLines, ctx) {
-  const match = line.match(/^:if\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*$/);
-  if (!match) throw new Error(`Malformed :if in ${ctx.file}: ${line}. Use ":if name" with a :state or in-scope value.`);
-  const segs = match[1].split(".");
-  const head = segs[0];
+  const condition = line.replace(/^:if\s+/, "").trim();
+  // Fast path: a bare truthy dotted path (`:if open`, `:if item.done`). Keeps the
+  // existing markup/behavior identical. Anything with operators (`>`, `==`, `and`,
+  // `not`, …) falls through to the predicate path below.
+  const match = condition.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)$/);
+  if (match) {
+    const segs = match[1].split(".");
+    const head = segs[0];
 
-  // Per-row meta vars in :if — only valid inside a loop.
-  if (LOOP_META[head]) {
-    if (!ctx.loopMeta) throw new Error(`":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`);
-    if (ctx.loopItem) {
+    // Per-row meta vars in :if — only valid inside a loop.
+    if (LOOP_META[head]) {
+      if (!ctx.loopMeta) throw new Error(`":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`);
+      if (ctx.loopItem) {
+        const truthy = compileBody(truthyLines, ctx).trim();
+        const falsy = compileBody(falsyLines, ctx).trim();
+        return `<span data-wd-each-if data-wd-meta="${LOOP_META[head]}"><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
+      }
+      // static: the meta boolean is in scope — fall through to the static branch below.
+    }
+
+    const staticValue = lookupVar(ctx.scope, head);
+    if (staticValue.found) {
+      const active = Boolean(getPath(staticValue.value, segs.slice(1)));
+      return compileBody(active ? truthyLines : falsyLines, ctx);
+    }
+
+    if (ctx.loopItem && head === ctx.loopItem) {
       const truthy = compileBody(truthyLines, ctx).trim();
       const falsy = compileBody(falsyLines, ctx).trim();
-      return `<span data-wd-each-if data-wd-meta="${LOOP_META[head]}"><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
+      const rest = segs.slice(1).join(".");
+      const pathAttr = ` data-wd-path="${escapeHtml(rest)}"`;
+      return `<span data-wd-each-if${pathAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
     }
-    // static: the meta boolean is in scope — fall through to the static branch below.
-  }
 
-  const staticValue = lookupVar(ctx.scope, head);
-  if (staticValue.found) {
-    const active = Boolean(getPath(staticValue.value, segs.slice(1)));
-    return compileBody(active ? truthyLines : falsyLines, ctx);
-  }
-
-  if (ctx.loopItem && head === ctx.loopItem) {
+    const key = resolveStateKey(head, ctx);
+    if (!key) {
+      throw new Error(`:if ${match[1]} in ${ctx.file} does not match a :state or in-scope value. Declare it first.`);
+    }
+    ctx.comp.assets.runtime = true;
     const truthy = compileBody(truthyLines, ctx).trim();
     const falsy = compileBody(falsyLines, ctx).trim();
-    const rest = segs.slice(1).join(".");
-    const pathAttr = ` data-wd-path="${escapeHtml(rest)}"`;
-    return `<span data-wd-each-if${pathAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
+    const restPath = segs.slice(1).join(".");
+    const pathAttr = restPath ? ` data-wd-path="${escapeHtml(restPath)}"` : "";
+    const initialTruthy = Boolean(getPath(ctx.comp.state.get(key), segs.slice(1)));
+    const active = initialTruthy ? truthy : falsy;
+    return `<div data-wd-if="${key}"${pathAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
   }
 
-  const key = resolveStateKey(head, ctx);
-  if (!key) {
-    throw new Error(`:if ${match[1]} in ${ctx.file} does not match a :state or in-scope value. Declare it first.`);
-  }
+  // Predicate path: a comparison / logical condition. Compiles through the same
+  // whitelist as `@loop … where` / `.class when` (with `not`), so it folds at
+  // build when static, drives a per-row each-if when it reads the loop item, and
+  // a global if-region (evaluated each render) when it reads state. No raw eval.
+  if (!condition) throw new Error(`Malformed :if in ${ctx.file}: ${line}. Use ":if name" or ":if a <op> b [and|or|not …]".`);
+  const compiled = compileWhen(condition, ctx, '":if"');
+  if (compiled.static) return compileBody(compiled.value ? truthyLines : falsyLines, ctx);
   ctx.comp.assets.runtime = true;
   const truthy = compileBody(truthyLines, ctx).trim();
   const falsy = compileBody(falsyLines, ctx).trim();
-  const restPath = segs.slice(1).join(".");
-  const pathAttr = restPath ? ` data-wd-path="${escapeHtml(restPath)}"` : "";
-  const initialTruthy = Boolean(getPath(ctx.comp.state.get(key), segs.slice(1)));
+  const exprAttr = ` data-wd-if-expr="${escapeHtml(compiled.body)}"`;
+  if (compiled.item) {
+    return `<span data-wd-each-if${exprAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
+  }
+  const initialTruthy = evalPredicate(compiled.body, undefined, ctx);
   const active = initialTruthy ? truthy : falsy;
-  return `<div data-wd-if="${key}"${pathAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
+  return `<div data-wd-if=""${exprAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
 }
 
 // The fixed corrective suggestion shown for any malformed @loop header.
@@ -1503,24 +1526,25 @@ function evalPredicate(body, item, ctx) {
  * resolution order.
  * @param {string} tok
  * @param {Ctx} ctx
+ * @param {string} what Directive label for error messages.
  * @returns {{ code: string, state: boolean, item: boolean }}
  */
-function compileWhenOperand(tok, ctx) {
+function compileWhenOperand(tok, ctx, what) {
   if (/^"[^"]*"$/.test(tok) || /^'[^']*'$/.test(tok)) return { code: JSON.stringify(tok.slice(1, -1)), state: false, item: false };
   if (/^-?\d+(?:\.\d+)?$/.test(tok)) return { code: tok, state: false, item: false };
   if (["true", "false", "null"].includes(tok)) return { code: tok, state: false, item: false };
   if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(tok)) {
-    throw new Error(`Unsupported operand "${tok}" in "::: … when" (${ctx.file}). Use item.field, a :state name, a number, or a "string".`);
+    throw new Error(`Unsupported operand "${tok}" in ${what} (${ctx.file}). Use item.field, a :state name, a number, or a "string".`);
   }
   const segs = tok.split(".");
   if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
-    throw new Error(`Path "${tok}" is not allowed in "::: … when" (${ctx.file})`);
+    throw new Error(`Path "${tok}" is not allowed in ${what} (${ctx.file})`);
   }
   const scoped = lookupVar(ctx.scope, segs[0]);
   if (scoped.found) return { code: JSON.stringify(getPath(scoped.value, segs.slice(1)) ?? null), state: false, item: false };
   if (ctx.loopItem && segs[0] === ctx.loopItem) return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, state: false, item: true };
   const key = resolveStateKey(segs[0], ctx);
-  if (!key) throw new Error(`"::: … when" references unknown name "${segs[0]}" in ${ctx.file}. Use a loop item field, a declared :state, a number, or a "string".`);
+  if (!key) throw new Error(`${what} references unknown name "${segs[0]}" in ${ctx.file}. Use a loop item field, a declared :state, a number, or a "string".`);
   const rest = segs.slice(1).join(".");
   return { code: `S(${JSON.stringify(key)}${rest ? `, ${JSON.stringify(rest)}` : ""})`, state: true, item: false };
 }
@@ -1533,9 +1557,10 @@ function compileWhenOperand(tok, ctx) {
  * (which decides data-wd-each-class vs the global data-wd-class).
  * @param {string} raw
  * @param {Ctx} ctx
+ * @param {string} [what] Directive label for error messages.
  * @returns {{ static: true, value: boolean } | { static: false, body: string, item: boolean }}
  */
-function compileWhen(raw, ctx) {
+function compileWhen(raw, ctx, what = '"::: … when"') {
   const parts = raw.split(/\s+(and|or)\s+/i);
   /** @type {string[]} */
   const pieces = [];
@@ -1543,21 +1568,26 @@ function compileWhen(raw, ctx) {
   let usesItem = false;
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 1) { pieces.push(parts[i].toLowerCase() === "and" ? "&&" : "||"); continue; }
-    const seg = parts[i].trim();
+    let seg = parts[i].trim();
+    // Optional leading `not` negates the whole sub-condition.
+    let negate = false;
+    if (/^not\s+/i.test(seg)) { negate = true; seg = seg.replace(/^not\s+/i, "").trim(); }
     const opMatch = seg.match(/^(.+?)\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
+    let expr;
     if (opMatch) {
-      const left = compileWhenOperand(opMatch[1].trim(), ctx);
-      const right = compileWhenOperand(opMatch[3].trim(), ctx);
+      const left = compileWhenOperand(opMatch[1].trim(), ctx, what);
+      const right = compileWhenOperand(opMatch[3].trim(), ctx, what);
       usesState = usesState || left.state || right.state;
       usesItem = usesItem || left.item || right.item;
       const op = opMatch[2].toLowerCase();
-      pieces.push(op === "contains" ? `(C(${left.code}, ${right.code}))` : `(${left.code} ${op} ${right.code})`);
+      expr = op === "contains" ? `C(${left.code}, ${right.code})` : `${left.code} ${op} ${right.code}`;
     } else {
-      const only = compileWhenOperand(seg, ctx);
+      const only = compileWhenOperand(seg, ctx, what);
       usesState = usesState || only.state;
       usesItem = usesItem || only.item;
-      pieces.push(`(${only.code})`);
+      expr = only.code;
     }
+    pieces.push(negate ? `(!(${expr}))` : `(${expr})`);
   }
   const body = pieces.join(" ");
   if (!usesState && !usesItem) return { static: true, value: evalPredicate(body, undefined, ctx) };

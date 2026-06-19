@@ -70,6 +70,16 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
       },
     },
     {
+      name: "comparison conditional",
+      body: snippetFrom("README.md", "Count is high."),
+      assert: (page) => {
+        // A documented `:if count >= 10 … :else if count > 0` compiles to a
+        // reactive expression region (proves the richer-condition grammar works).
+        assert.equal(page.assets.runtime, true);
+        assert.match(page.html, /data-wd-if-expr=/);
+      },
+    },
+    {
       name: "effect on watched state",
       body: snippetFrom("README.md", ":effect q -> searches++"),
       assert: (page) => {

@@ -20,6 +20,7 @@ package.json
 - **Folders are routes.** `site/pages/blog/post.wd` serves at `/blog/post/`.
 - Files/folders starting with `.`, `-`, or `_` are **hidden** from routing (drafts, partials).
 - A `page.skin` next to `page.wd` attaches styling; a `page.js` attaches behavior. Matched by basename.
+- **Colocated assets:** any other file under `site/pages/` (not a `.md`/`.wd` route, not a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type — so `site/pages/logo.svg` is served at `/logo.svg`. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
 
 Commands: `darkmown dev`, `darkmown build`, `darkmown serve`.
 
@@ -57,15 +58,25 @@ Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list +
 
 ### Conditionals
 ```wd
-:if isPro
+:if plan == "pro" or seats >= 5
 Pro plan.
-:else if isTrial
+:else if trialDays > 0 and not expired
 Trial.
 :else
 Free plan.
 :endif
 ```
-`:if name.path` tests a dotted path for truthiness (a bare path — no operators). Chain with `:else if` (any number; a bare `:else` must be last). Conditionals nest, including per-row inside a loop.
+`:if <predicate>` branches on a compile-time-validated predicate — a bare path (truthy), comparisons (`==` `!=` `<` `<=` `>` `>=` `contains`), joined with `and`/`or`/`not`. Operands are item paths, declared `:state`/`:store`, numbers, or `"strings"` — no expressions. (Same grammar as `.class when`; `@loop … where` is the comparison-only subset — operators with `and`/`or`.) Chain with `:else if` (any number; a bare `:else` must be last). Conditionals nest, including per-row inside a loop.
+
+### Reactive classes — `.class when <predicate>`
+```wd
+@loop tasks into task
+::: card .task .done when task.done .urgent when task.priority > 3   ← toggles each class by predicate
+**{ task.title }**
+:::
+@endloop
+```
+`.class when <predicate>` on a `:::` container toggles that class from the same predicate grammar as `:if`. A predicate over only static values folds to a plain class at build time; one reading `:state` or the loop item stays reactive.
 
 ### Loops — the only loop
 ```wd
@@ -151,7 +162,7 @@ Your `.skin` selectors must match the **real** output. The emitted HTML is:
 | reactive `@loop` of a list | `<ul>`/`<ol>` (or `<div>`) of items |
 | `{ name }` | a text node |
 
-So style with real selectors: `section`, `.card`, `button`, `input`, `form`, `h1`. **To add a class to a container, use `::: name .class`. For any other custom element, write raw HTML `<div class="…">`. There is NO `{.class}` attribute syntax.** A container class can also be reactive: `::: card .on-sale when p.price < 50` toggles the class from a predicate (same whitelist as `@loop … where`).
+So style with real selectors: `section`, `.card`, `button`, `input`, `form`, `h1`. **To add a class to a container, use `::: name .class`. For any other custom element, write raw HTML `<div class="…">`. There is NO `{.class}` attribute syntax.** A container class can also be reactive: `::: card .on-sale when p.price < 50` toggles the class from a predicate (same grammar as `:if`).
 
 ## Styling with `.skin` — ship this on every page
 
