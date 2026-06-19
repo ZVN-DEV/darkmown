@@ -307,7 +307,7 @@ You have { cart } items.
 
 ## Forms and persistence
 
-- `:form into name` captures submits straight into state — no backend. `:form action="/url"` emits a plain native form with zero JS instead.
+- `:form into name` captures submits straight into state — no backend. `:form action="/url"` emits a plain native form with zero JS instead. Form actions follow the same scheme rules as `:fetch`: relative paths, explicit `http(s)://`, or leading `{ state }` interpolation; protocol-relative and non-http(s) schemes are compile errors.
 - `:input field placeholder="…" required` and `:submit "Label"` build the form body.
 - `:state cart = [] persist` survives reloads via localStorage on a single page; use `:store` for state shared across pages and tabs.
 - `:if item.path` works inside reactive loops for per-row branches, and conditionals nest — an inner `:if` resolves after the outer branch, staying reactive.
@@ -321,7 +321,7 @@ Darkmown is a trusted-author site generator: you compile content you wrote, the 
 
 - **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
 - **Raw HTML passes through by default.** Markdown renders with `html: true`, so raw HTML is emitted verbatim and there is no built-in sanitizer. Set `html: false` in a page's frontmatter to drop raw HTML for untrusted content.
-- **`:fetch` has no host allowlist, and reactive pages need `unsafe-eval`.** Fetch URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF is the author's responsibility. The runtime compiles `:computed` / `@loop … where` / `.class when` expressions via `new Function`, so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
+- **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. The runtime compiles `:computed` / `@loop … where` / `.class when` expressions via `new Function`, so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
 
 See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in the package for the full security model.
 
@@ -330,7 +330,7 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in 
 - A matching `.skin` file attaches CSS to the page (indentation-based, compiles to real CSS).
 - A matching `.js` file attaches page behavior.
 - Both work for included fragments too, by basename.
-- Any other file under `site/pages/` (an image, font, PDF — anything that isn't a `.md`/`.wd` route or a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type. So `site/pages/logo.svg` is served at `/logo.svg`. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
+- Any other file under `site/pages/` (an image, font, PDF — anything that isn't a `.md`/`.wd` route or a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type. So `site/pages/logo.svg` is served at `/logo.svg`. Assets below hidden path segments (`.`, `-`, or `_`) and symlinked page assets are skipped, matching the routing privacy rule. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
 
 ## Spec status
 

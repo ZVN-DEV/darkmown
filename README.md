@@ -95,6 +95,8 @@ Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`
 - `site/pages/logo.svg` → `dist/logo.svg` → `![logo](/logo.svg)`
 - `site/pages/blog/cover.png` → `dist/blog/cover.png` → `![cover](/blog/cover.png)`
 
+Hidden/private page paths stay private: any `site/pages` asset below a path segment starting with `.`, `-`, or `_` is skipped, and symlinked page assets are never copied. Keep drafts, private notes, and local secrets out of public output by naming them like routes: `.env`, `_private/secret.txt`, or `-draft/notes.txt`.
+
 Use the shelf for assets shared across many pages; colocate the ones that belong to a single page or section. Both ship untouched with the correct content-type.
 
 ## Loops
@@ -493,7 +495,7 @@ Fetched data and a form live happily on the same page:
 :state cart = [] persist
 ```
 
-- `:form into name` captures submits straight into state (no backend). `:form action="/url"` emits a plain native form instead — zero JS, full progressive enhancement.
+- `:form into name` captures submits straight into state (no backend). `:form action="/url"` emits a plain native form instead — zero JS, full progressive enhancement. Form actions use the same URL scheme guard as `:fetch`: relative paths, explicit `http(s)://`, or leading `{ state }` interpolation; protocol-relative and non-http(s) schemes are compile errors.
 - `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Darkmown adapts to any backend — it does not own one.
 - `:state x = [] persist` keeps a single page's state in localStorage across reloads. (For state that is shared across pages and tabs, reach for [`:store`](#global-state--store) instead.)
 - `:computed total = items.length * 4` derives state from state with a compile-time-checked expression (names, numbers, arithmetic, comparisons — nothing else).
@@ -517,7 +519,7 @@ Darkmown is a **trusted-author** site generator: you compile content you wrote, 
 
 - **Compile only trusted, author-written content.** Do not compile `.md`/`.wd` files you did not write — user-generated content, third-party docs, form input — without sanitizing it first.
 - **Raw HTML passes through by default.** Darkmown runs `markdown-it` with `html: true`, so raw HTML in your content is emitted verbatim — by design, like every Markdown site generator. There is no built-in sanitizer; a raw `<script>` or event-handler attribute in untrusted content would execute in the visitor's browser. A page can opt into strict mode with `html: false` frontmatter, which drops raw HTML entirely.
-- **`:fetch` has no host allowlist, and reactive pages need `unsafe-eval`.** A `:fetch` (or `refresh=`) URL is taken straight from the page source; the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF protection is the author's responsibility. Reactive pages also require `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function` — a strict CSP without `unsafe-eval` will break reactive pages (static pages are unaffected).
+- **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** A fetch/form URL is taken straight from the page source; the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Reactive pages also require `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function` — a strict CSP without `unsafe-eval` will break reactive pages (static pages are unaffected).
 
 > **The single biggest footgun:** do not compile untrusted or user-submitted Markdown without sanitizing it first. There is no built-in sanitizer.
 

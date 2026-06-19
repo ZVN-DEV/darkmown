@@ -2,6 +2,14 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.14.1 — 2026-06-19
+
+Patch-release hardening for page assets, form actions, and release metadata.
+
+- **Security — private page assets stay private.** Page-colocated assets now follow the same hidden-path convention as routes: files or folders under `site/pages/` whose path segment starts with `.`, `-`, or `_` are not copied to `dist`. Symlinked page assets are also skipped, closing the accidental-publication path for `.env`, `_private/*`, `-draft/*`, and symlink-to-outside files. Normal colocated assets such as `site/pages/logo.svg` and `site/pages/blog/cover.png` still emit unchanged.
+- **Security — `:form action=` scheme validation.** Native and round-trip forms now validate `action=` with the same compile-time URL scheme guard as `:fetch`: relative URLs, explicit `http(s)://`, and leading `{ state }` interpolation are allowed; protocol-relative URLs and non-http(s) schemes (`javascript:`, `data:`, `file:`, …) are compile errors.
+- **Release hygiene.** `package-lock.json` package metadata is synced to the release version, so package review no longer reports stale root version drift.
+
 ## 0.14.0 — 2026-06-18
 
 Richer conditionals — `:if` / `:else if` now read the full predicate grammar instead of a bare truthy path only. The reactive runtime is ~5.7 KB gzipped (5762 B), still under the 6 KB CI budget and shipped un-minified.
