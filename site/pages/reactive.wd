@@ -16,6 +16,16 @@ The count is { count }.
 
 :button "Increment" -> count++
 
+`:if` reads JavaScript-style comparisons — `==` `!=` `<` `<=` `>` `>=` `contains` — joined with `and`, `or`, and `not`. This chain reacts to the counter above, no handler wired by hand:
+
+:if count >= 3 and count <= 5
+Counter is in the sweet spot (3–5).
+:else if count > 5
+Counter is over the top.
+:else
+Counter is warming up.
+:endif
+
 :state open = false
 
 :button "Show details" -> open = true

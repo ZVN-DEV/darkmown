@@ -259,7 +259,7 @@ A container class can be toggled by a predicate. Static `.class` tokens are unch
 @endloop
 ```
 
-The predicate uses the same whitelist as `@loop … where` / `:if` — item fields, declared `:state`/`:store`, numbers, strings, the `==`/`!=`/`>`/`<`/`>=`/`<=`/`contains` operators, and `and`/`or`. A bare path (`.featured when p.featured`) reads as truthy. A predicate over only static values folds at build time into a plain class; one that reads state or the loop item stays reactive and ships with the runtime.
+The predicate uses the same whitelist as `:if` — item fields, declared `:state`/`:store`, numbers, strings, the `==`/`!=`/`>`/`<`/`>=`/`<=`/`contains` operators, and `and`/`or`/`not`. A bare path (`.featured when p.featured`) reads as truthy. (`@loop … where` is the comparison-only subset of this grammar.) A predicate over only static values folds at build time into a plain class; one that reads state or the loop item stays reactive and ships with the runtime.
 
 ## Reactive directives
 
@@ -270,26 +270,28 @@ Count: { count }
 
 :button "Increment" -> count++
 
-:if count
+:if count >= 10
+Count is high.
+:else if count > 0
 Count has changed.
 :else
 Count is still zero.
 :endif
 ```
 
-Conditionals chain with `:else if`. Each condition is a bare truthy path (the same form `:if` takes — no operators). Use any number of them; an optional bare `:else` must be the last branch:
+A condition reads the same predicate grammar as `.class when`: a bare path (truthy), or the comparisons `==` `!=` `<` `<=` `>` `>=` `contains`, joined with `and`, `or`, and `not`. (`@loop … where` is the comparison-only subset — operators with `and`/`or`.) Chain with `:else if` (any number; an optional bare `:else` must be the last branch):
 
 ```wd
-:if isPro
+:if plan == "pro" or seats >= 5
 Pro plan
-:else if isTrial
-Trial — { daysLeft } days left
+:else if trialDays > 0 and not expired
+Trial — { trialDays } days left
 :else
 Free plan
 :endif
 ```
 
-A whole chain compiles to nested conditional regions, so it stays reactive (or folds at build time when the values are static) exactly like a single `:if`.
+A whole chain compiles to nested conditional regions, so it stays reactive (or folds at build time when every value is static) exactly like a single `:if`.
 
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in colocated `.js` files.
 
@@ -350,7 +352,7 @@ Effects run after a render, against settled state, and an effect that mutates st
 `:fetch name from "url"` declares state and fills it from JSON over the network:
 
 ```
-:fetch <name> from "<url>" [method=GET] [when=load|visible] [timeout=<ms>] [retry=<N>] [headers=<key>] [body=<key>]
+:fetch <name> from "<url>" [method=GET] [when=load|visible] [timeout=<ms>] [retry=<N>] [headers=<key>] [body=<key>] [refresh=<url>]
 ```
 
 Each fetch automatically declares four state keys you can branch on:

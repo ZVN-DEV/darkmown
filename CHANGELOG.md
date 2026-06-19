@@ -2,6 +2,15 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.14.0 — 2026-06-18
+
+Richer conditionals — `:if` / `:else if` now read the full predicate grammar instead of a bare truthy path only. The reactive runtime is ~5.7 KB gzipped (5762 B), still under the 6 KB CI budget and shipped un-minified.
+
+- **Conditionals — comparison & logical expressions.** A `:if` / `:else if` condition now accepts the same compile-time-validated grammar as `.class when`: a bare path (truthy) **or** the comparisons `==` `!=` `<` `<=` `>` `>=` `contains`, joined with `and`, `or`, and negated with `not`. Operands are loop-item paths, declared `:state`/`:store`, numbers, `"strings"`, or `true`/`false`/`null`. `:if plan == "pro" or seats >= 5` and `:else if trialDays > 0 and not expired` are now valid where only `:if plan` worked before. A bare path keeps the original zero-overhead fast path.
+- **Same reactivity rules, same security.** A condition over only static values still folds the branch at build time (`runtime: false` preserved); one over `:state` emits a reactive region (`data-wd-if` + `data-wd-if-expr`); one over a loop item evaluates per row (`data-wd-each-if`). The expression compiles to the same whitelisted form over `I()`/`S()`/`C()` and runs via the shared `evalPredicate` runtime helper — no new eval surface, and `constructor`/`prototype`/`__proto__` path segments stay rejected in compiler and runtime. `:else if` chains inherit this automatically.
+- **No grouping (caveat).** There is no parenthesis grouping; `and`/`or` associate left-to-right with no precedence between them. Split into `:else if` branches or a `:computed` boolean when grouping matters. `@loop … where` stays the comparison-only subset of this grammar (no `not`, no bare-truthy form).
+- **Fix — nested global conditionals re-evaluate after an outer flip.** When a page-level (non-loop) `:if` flips to its falsy branch, the runtime now recurses into the freshly injected branch and evaluates any nested conditional (the desugared `:else if` tail) in the same pass. Previously the injected nested region kept its build-time branch until the next unrelated render. This also corrects bare-path nested `:else if` chains over page state, not just the new comparison form.
+
 ## 0.13.0 — 2026-06-18
 
 Layered capabilities — four reactive features shaped as progressive disclosure: a simple default, with more power one layer down. The reactive runtime grew to ~5.7 KB gzipped; the CI budget moves from 5 KB to **6 KB** (still shipped un-minified, source fully commented).

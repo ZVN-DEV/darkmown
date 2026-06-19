@@ -245,13 +245,26 @@ test(":if over :state emits both branch templates and the active initial branch"
   assert.match(page.html, /<template data-wd-false><p>Hidden<\/p><\/template>/);
 });
 
-test("malformed :if (with operators) throws with a Use: hint", () => {
-  compileThrows([
+test(":if with a comparison compiles to a predicate-driven region", () => {
+  const page = compile([
     ":state n = 0",
     ":if n > 5",
     "Big",
     ":endif"
-  ], /Malformed :if[\s\S]*Use ":if name"/);
+  ]);
+  assert.equal(page.assets.runtime, true);
+  assert.match(page.html, /data-wd-if-expr=/);
+  // n=0 so the truthy branch is not the initial active one.
+  assert.match(page.html, /<div data-wd-if-out><\/div>/);
+});
+
+test(":if over an unknown name in a comparison still throws", () => {
+  compileThrows([
+    ":state n = 0",
+    ":if ghost > 5",
+    "x",
+    ":endif"
+  ], /unknown name "ghost"/);
 });
 
 // --- Containers & demo directives -------------------------------------------

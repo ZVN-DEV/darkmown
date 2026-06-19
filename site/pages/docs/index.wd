@@ -198,19 +198,19 @@ Directive actions are intentionally narrow and compile-time checked. Arbitrary J
 
 ### Multi-branch conditionals
 
-Chain conditionals with `:else if`. Each condition is a bare truthy path (the same form `:if` takes). Use any number of branches; a bare `:else` must come last:
+A condition reads the same predicate grammar as `.class when` — a bare path (truthy), or the comparisons `==` `!=` `<` `<=` `>` `>=` `contains`, joined with `and`, `or`, and `not`. (`@loop … where` is the comparison-only subset.) Chain with `:else if` (any number; a bare `:else` must come last):
 
 ```wd
-:if isPro
+:if plan == "pro" or seats >= 5
 Pro plan
-:else if isTrial
-Trial — { daysLeft } days left
+:else if trialDays > 0 and not expired
+Trial — { trialDays } days left
 :else
 Free plan
 :endif
 ```
 
-A whole chain compiles to nested conditional regions, so it folds at build time when the values are static and stays reactive otherwise — exactly like a single `:if`.
+A whole chain compiles to nested conditional regions, so it folds at build time when every value is static and stays reactive otherwise — exactly like a single `:if`.
 
 ### Reactive classes — `.class when …`
 
@@ -224,7 +224,7 @@ A container class can react to state or the loop item. Static `.class` tokens st
 @endloop
 ```
 
-The predicate uses the `@loop … where` / `:if` whitelist (item fields, `:state`, numbers, strings, comparisons, `and`/`or`, `contains`). A static predicate folds to a plain class at build; a state or loop-item predicate stays reactive.
+The predicate uses the `:if` whitelist (item fields, `:state`, numbers, strings, comparisons, `and`/`or`/`not`, `contains`). A static predicate folds to a plain class at build; a state or loop-item predicate stays reactive.
 
 ### Effects — `:effect`
 
@@ -330,6 +330,7 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in 
 - A matching `.skin` file attaches CSS to the page (indentation-based, compiles to real CSS).
 - A matching `.js` file attaches page behavior.
 - Both work for included fragments too, by basename.
+- Any other file under `site/pages/` (an image, font, PDF — anything that isn't a `.md`/`.wd` route or a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type. So `site/pages/logo.svg` is served at `/logo.svg`. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
 
 ## Spec status
 

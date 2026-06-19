@@ -523,6 +523,94 @@ test(":else if after a bare :else is a compile error", () => {
   );
 });
 
+test(":if with a comparison emits a predicate-driven region with the right initial branch", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ":state n = 3",
+    ":if n > 5",
+    "Big",
+    ":else",
+    "Small",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.equal(page.assets.runtime, true);
+  assert.match(page.html, /data-wd-if-expr="[^"]*S\(&quot;n&quot;\) &gt; 5/);
+  // n=3 → false branch is the initial active one.
+  assert.match(page.html, /data-wd-if-active="false"/);
+  assert.match(page.html, /<div data-wd-if-out><p>Small<\/p><\/div>/);
+});
+
+test(":if supports ==, and/or, and not over state", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state plan = "pro"',
+    ":state banned = false",
+    ':if plan == "pro" and not banned',
+    "Welcome",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /data-wd-if-expr=/);
+  // == comparison, && join, and a negated operand.
+  assert.match(page.html, /S\(&quot;plan&quot;\) == &quot;pro&quot;/);
+  assert.match(page.html, /&amp;&amp;/);
+  assert.match(page.html, /!\(S\(&quot;banned&quot;\)\)/);
+  // plan=="pro" && !false → true → Welcome is the initial branch.
+  assert.match(page.html, /data-wd-if-active="true"/);
+});
+
+test(":if comparison over only static/literal values folds at build (no runtime)", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ":if 2 > 1",
+    "Always",
+    ":else",
+    "Never",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /Always/);
+  assert.doesNotMatch(page.html, /Never/);
+  assert.doesNotMatch(page.html, /data-wd-if/);
+  assert.equal(page.assets.runtime, false);
+});
+
+test(":if comparison over a loop item emits a per-row each-if predicate", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [
+    ':state products = [{"id":1,"name":"A","price":90}]',
+    "@loop products into p",
+    ":if p.price > 50",
+    "pricey",
+    ":else",
+    "cheap",
+    ":endif",
+    "@endloop"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<span data-wd-each-if data-wd-if-expr="[^"]*I\(&quot;price&quot;\) &gt; 50/);
+});
+
+test(":else if chain with comparisons selects the matching branch statically", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "@include /tier.wd with score=85");
+  write(root, "site/_/tier.wd", [
+    ":if score >= 90",
+    "GradeAlpha",
+    ":else if score >= 80",
+    "GradeBeta",
+    ":else",
+    "GradeGamma",
+    ":endif"
+  ].join("\n"));
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /GradeBeta/);
+  assert.doesNotMatch(page.html, /GradeAlpha/);
+  assert.doesNotMatch(page.html, /GradeGamma/);
+  assert.equal(page.assets.runtime, false);
+});
+
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------

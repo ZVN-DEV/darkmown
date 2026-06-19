@@ -39,6 +39,27 @@ test.describe("/reactive/ — real browser reactivity", () => {
     await expect(page.getByText("The details are visible now.")).toBeHidden();
   });
 
+  test("comparison :if chain reacts to the counter", async ({ page }) => {
+    // count = 0 → the "warming up" branch (count >= 3 and count <= 5 is false).
+    await expect(page.getByText("Counter is warming up.")).toBeVisible();
+    await expect(page.getByText("Counter is in the sweet spot (3–5).")).toBeHidden();
+
+    const inc = page.getByRole("button", { name: "Increment" });
+    // Climb to 3 → the range predicate `count >= 3 and count <= 5` matches.
+    await inc.click();
+    await inc.click();
+    await inc.click();
+    await expect(page.getByText("Counter is in the sweet spot (3–5).")).toBeVisible();
+    await expect(page.getByText("Counter is warming up.")).toBeHidden();
+
+    // Climb past 5 → the `:else if count > 5` branch takes over.
+    await inc.click();
+    await inc.click();
+    await inc.click();
+    await expect(page.getByText("Counter is over the top.")).toBeVisible();
+    await expect(page.getByText("Counter is in the sweet spot (3–5).")).toBeHidden();
+  });
+
   test(":bind search box filters the live product list", async ({ page }) => {
     const products = page.locator('[data-wd-loop="products"] [data-wd-loop-key]');
     // All five products visible to start.
