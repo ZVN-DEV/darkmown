@@ -987,7 +987,7 @@ function compileComputedExpr(raw, ctx) {
  */
 function handleForm(line, bodyLines, ctx) {
   let rest = line.slice(":form".length).trim();
-  const action = rest.match(/action="([^"]+)"/)?.[1];
+  const rawAction = rest.match(/action="([^"]+)"/)?.[1];
   const method = rest.match(/method="([^"]+)"/)?.[1] || "post";
   const into = rest.match(/(?:^|\s)into\s+([A-Za-z_$][\w$]*)/)?.[1];
   const leftover = rest
@@ -995,11 +995,12 @@ function handleForm(line, bodyLines, ctx) {
     .replace(/method="[^"]+"/, "")
     .replace(/(?:^|\s)into\s+[A-Za-z_$][\w$]*/, "")
     .trim();
-  if ((!action && !into) || leftover) {
+  if ((!rawAction && !into) || leftover) {
     throw new Error(
       `Malformed :form in ${ctx.file}: ${line}. Use ':form into name' (client state), ':form action="/url"' (native post), or both (fetch round-trip into state).`
     );
   }
+  const action = rawAction ? validateFetchUrl(rawAction, ctx, ":form action") : undefined;
   const inner = compileBody(bodyLines, ctx).trim();
   if (!into) {
     return `<form action="${escapeHtml(action)}" method="${escapeHtml(method)}">${inner}</form>`;

@@ -190,6 +190,7 @@ function emitPageAssets(paths) {
     const ext = path.extname(file).toLowerCase();
     if ([".md", ".wd", ".skin", ".js"].includes(ext)) continue;
     const rel = path.relative(paths.routesRoot, file);
+    if (hasHiddenPathSegment(rel) || fs.lstatSync(file).isSymbolicLink()) continue;
     const out = path.join(paths.distRoot, rel);
     if (fs.existsSync(out)) {
       console.warn(`hint: page asset "${rel}" skipped — a built route already emits /${rel.replaceAll(path.sep, "/")}`);
@@ -198,6 +199,17 @@ function emitPageAssets(paths) {
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.copyFileSync(file, out);
   }
+}
+
+/**
+ * Match the router's hidden-path convention for page-colocated assets too:
+ * anything below a `.`, `-`, or `_` segment is private/draft framework input,
+ * not public output.
+ * @param {string} rel
+ * @returns {boolean}
+ */
+function hasHiddenPathSegment(rel) {
+  return rel.split(path.sep).some((segment) => /^[._-]/.test(segment));
 }
 
 /**

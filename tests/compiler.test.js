@@ -700,6 +700,23 @@ test("page-colocated assets copy to dist; routes and skin/js do not double-emit"
   assert.equal(fs.existsSync(path.join(root, "dist/index.skin")), false);
 });
 
+test("page-colocated private and symlinked assets do not copy to dist", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "# Home");
+  write(root, "site/pages/.env", "SECRET=1");
+  write(root, "site/pages/_private/secret.txt", "private");
+  write(root, "site/pages/-draft/notes.txt", "draft");
+  write(root, "outside-secret.txt", "outside");
+  fs.symlinkSync(path.join(root, "outside-secret.txt"), path.join(root, "site/pages/link-secret.txt"));
+
+  buildSite(root);
+
+  assert.equal(fs.existsSync(path.join(root, "dist/.env")), false);
+  assert.equal(fs.existsSync(path.join(root, "dist/_private/secret.txt")), false);
+  assert.equal(fs.existsSync(path.join(root, "dist/-draft/notes.txt")), false);
+  assert.equal(fs.existsSync(path.join(root, "dist/link-secret.txt")), false);
+});
+
 test("reactive pages emit runtime and static pages stay runtime-free", () => {
   const reactiveRoot = fixture();
   write(reactiveRoot, "site/pages/index.wd", [

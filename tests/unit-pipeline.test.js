@@ -138,6 +138,20 @@ test(":form action-only stays native (no runtime, no data-wd-form)", () => {
   assert.equal(page.assets.runtime, false);
 });
 
+test(":form action rejects unsafe URL schemes", () => {
+  compileThrows([
+    ':form action="javascript:alert(1)"',
+    ':submit "Go"',
+    ":endform"
+  ], /Unsafe :form action URL[\s\S]*javascript/);
+
+  compileThrows([
+    ':form action="//evil.example/collect" into reply',
+    ':submit "Go"',
+    ":endform"
+  ], /Protocol-relative URLs are not allowed/);
+});
+
 // --- :state error paths -----------------------------------------------------
 
 test(":state declared twice in the same scope throws", () => {
