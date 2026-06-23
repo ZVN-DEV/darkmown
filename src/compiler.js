@@ -77,6 +77,7 @@ import MarkdownIt from "markdown-it";
 
 const md = new MarkdownIt({ html: true });
 md.use(bindingPlugin);
+md.use(attrsPlugin);
 
 // Raw HTML in markdown passes through by default (a documented design choice).
 // Pages can opt out with frontmatter `html: false` for untrusted content; the
@@ -94,6 +95,7 @@ function selectMd(meta) {
   if (!mdNoHtml) {
     mdNoHtml = new MarkdownIt({ html: false });
     mdNoHtml.use(bindingPlugin);
+    mdNoHtml.use(attrsPlugin);
   }
   return mdNoHtml;
 }
@@ -392,6 +394,20 @@ function compileBody(lines, ctx) {
     if (/^:input\s/.test(line)) {
       flush();
       out.push(handleInput(line, ctx));
+      continue;
+    }
+    if (/^:textarea\s/.test(line)) {
+      flush();
+      out.push(handleTextarea(line, ctx));
+      continue;
+    }
+    if (/^:select\s/.test(line)) {
+      flush();
+      const opts = [];
+      let j = i + 1;
+      while (j < lines.length && /^\s*-\s+/.test(lines[j])) { opts.push(lines[j]); j++; }
+      out.push(handleSelect(line, opts, ctx));
+      i = j - 1;
       continue;
     }
     if (/^:bind\s/.test(line)) {
@@ -1109,6 +1125,85 @@ function handleSubmit(line, ctx) {
   const match = line.match(/^:submit\s+"([^"]+)"\s*$/);
   if (!match) throw new Error(`Malformed :submit in ${ctx.file}: ${line}. Use: :submit "Label"`);
   return `<button type="submit">${escapeHtml(match[1])}</button>`;
+}
+
+/**
+ * `:textarea name [placeholder="…"] [rows=N] [required]` → a `<textarea>`. Like
+ * `:input`, it derives a non-visual aria-label from the placeholder (else the
+ * humanized name) when the author supplies none. Captured by the runtime's
+ * FormData exactly like `:input` — no runtime change needed.
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function handleTextarea(line, ctx) {
+  const match = line.match(/^:textarea\s+([A-Za-z_][\w-]*)\s*(.*)$/);
+  if (!match) throw new Error(`Malformed :textarea in ${ctx.file}: ${line}. Use: :textarea name [placeholder="…"] [rows=N] [required]`);
+  const attrs = [`name="${escapeHtml(match[1])}"`];
+  let placeholder;
+  let hasAria = false;
+  const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
+  for (const token of (match[2] || "").matchAll(re)) {
+    if (token[3]) {
+      if (!["required", "autofocus", "disabled", "readonly"].includes(token[3])) {
+        throw new Error(`Unknown :textarea flag "${token[3]}" in ${ctx.file}`);
+      }
+      attrs.push(token[3]);
+      continue;
+    }
+    const value = stripQuotes(token[2]);
+    if (!["placeholder", "rows", "cols", "minlength", "maxlength", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
+      throw new Error(`Unknown :textarea attribute "${token[1]}" in ${ctx.file}`);
+    }
+    if (token[1] === "placeholder") placeholder = value;
+    if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
+    attrs.push(`${token[1]}="${escapeHtml(value)}"`);
+  }
+  if (!hasAria) {
+    attrs.push(`aria-label="${escapeHtml(placeholder || humanizeName(match[1]))}"`);
+  }
+  return `<textarea ${attrs.join(" ")}></textarea>`;
+}
+
+/**
+ * `:select name [required]` followed by `- Label` list lines → a `<select>` with
+ * one `<option>` per label (value === label). Derives an aria-label from the
+ * humanized name when none is given. Captured by FormData like the other fields.
+ * @param {string} line
+ * @param {string[]} optionLines The following `- Label` lines consumed by dispatch.
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function handleSelect(line, optionLines, ctx) {
+  const match = line.match(/^:select\s+([A-Za-z_][\w-]*)\s*(.*)$/);
+  if (!match) throw new Error(`Malformed :select in ${ctx.file}: ${line}. Use: :select name [required] then "- Label" lines`);
+  const attrs = [`name="${escapeHtml(match[1])}"`];
+  let hasAria = false;
+  const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
+  for (const token of (match[2] || "").matchAll(re)) {
+    if (token[3]) {
+      if (!["required", "disabled", "autofocus"].includes(token[3])) {
+        throw new Error(`Unknown :select flag "${token[3]}" in ${ctx.file}`);
+      }
+      attrs.push(token[3]);
+      continue;
+    }
+    const value = stripQuotes(token[2]);
+    if (!["autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
+      throw new Error(`Unknown :select attribute "${token[1]}" in ${ctx.file}`);
+    }
+    if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
+    attrs.push(`${token[1]}="${escapeHtml(value)}"`);
+  }
+  if (!hasAria) {
+    attrs.push(`aria-label="${escapeHtml(humanizeName(match[1]))}"`);
+  }
+  const options = optionLines.map((l) => l.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
+  if (!options.length) {
+    throw new Error(`:select "${match[1]}" in ${ctx.file} has no options. Add "- Label" lines beneath it.`);
+  }
+  const opts = options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
+  return `<select ${attrs.join(" ")}>${opts}</select>`;
 }
 
 /**
@@ -1878,7 +1973,49 @@ function validateDemoHref(href, ctx) {
  * @returns {string}
  */
 function renderProse(text, ctx) {
+  text = resolveDestinationBindings(text, ctx);
   return (ctx.md ?? md).render(text, { resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx) });
+}
+
+/**
+ * Pre-resolve `{ expr }` interpolations sitting in a markdown link/image
+ * destination — the `](…)` slot — so a build-time `@loop` (or any static scope)
+ * can drive an href/src. A markdown destination cannot contain the spaces inside
+ * `{ … }`, so markdown-it would otherwise never form the link; substituting the
+ * static value here lets the normal link/image parser run. Only build-time
+ * (static-scope) values are substituted — reactive `:state`/reactive-loop
+ * bindings resolve to `null` and are left untouched (they cannot live in a
+ * destination). Issue #19.
+ * @param {string} text
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function resolveDestinationBindings(text, ctx) {
+  return text.replace(
+    /(\]\(\s*)\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g,
+    (whole, prefix, expr) => {
+      const raw = resolveBindingRaw(expr, ctx);
+      return raw == null ? whole : prefix + raw;
+    }
+  );
+}
+
+/**
+ * Resolve `{ expr }` to its raw static value (a plain string) for use in a
+ * destination, or `null` when the binding is reactive or not in build-time
+ * scope. Mirrors the static branch of {@link resolveBindingHtml} but returns the
+ * unescaped value (markdown-it normalizes the URL).
+ * @param {string} expr
+ * @param {Ctx} ctx
+ * @returns {string | null}
+ */
+function resolveBindingRaw(expr, ctx) {
+  const segs = expr.split(".");
+  const found = lookupVar(ctx.scope, segs[0]);
+  if (!found.found) return null;
+  const resolved = getPath(found.value, segs.slice(1));
+  const leaf = interpolateLeaf(resolved, expr, ctx);
+  return leaf == null ? null : String(leaf);
 }
 
 /**
@@ -1902,6 +2039,63 @@ function bindingPlugin(mdInstance) {
     state.pos += match[0].length;
     return true;
   });
+}
+
+/**
+ * markdown-it plugin (core rule): a `{.class .class #id}` block immediately
+ * following an inline element (link, image, em/strong, code) attaches those
+ * classes / id to that element. Lets a link be styled as a button without a
+ * wrapper container. The block must directly follow the element (no space), and
+ * `{ … }` interpolation is unaffected (its content starts with a name, not `.`/`#`).
+ * Issue #18.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
+function attrsPlugin(mdInstance) {
+  mdInstance.core.ruler.push("wd_attrs", (state) => {
+    for (const block of state.tokens) {
+      if (block.type !== "inline" || !block.children) continue;
+      const children = block.children;
+      for (let i = 0; i < children.length; i++) {
+        const tok = children[i];
+        if (tok.type !== "text") continue;
+        const m = /^\{([.#][^}]*)\}/.exec(tok.content);
+        if (!m) continue;
+        const target = attrTarget(children, i);
+        if (!target) continue;
+        for (const part of m[1].split(/\s+/).filter(Boolean)) {
+          if (part[0] === ".") target.attrJoin("class", part.slice(1));
+          else if (part[0] === "#") target.attrSet("id", part.slice(1));
+        }
+        tok.content = tok.content.slice(m[0].length);
+      }
+    }
+    return false;
+  });
+}
+
+/**
+ * The inline token an attr block attaches to: the immediately-preceding image
+ * (self-closing) or the open token matching the immediately-preceding close
+ * (link/em/strong/…). Returns null when nothing valid precedes.
+ * @param {any[]} children markdown-it inline child tokens
+ * @param {number} i Index of the attr-block text token.
+ * @returns {any} the matching markdown-it Token, or null
+ */
+function attrTarget(children, i) {
+  const prev = children[i - 1];
+  if (!prev) return null;
+  if (prev.type === "image") return prev;
+  if (prev.nesting === -1) {
+    const openType = prev.type.replace(/_close$/, "_open");
+    let depth = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const t = children[j];
+      if (t.type === prev.type) depth++;
+      else if (t.type === openType) { depth--; if (depth === 0) return t; }
+    }
+  }
+  return null;
 }
 
 /**
