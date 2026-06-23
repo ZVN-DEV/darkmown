@@ -63,6 +63,7 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 - Declared `:state` becomes a live binding.
 - The page's own frontmatter is in scope as `meta` — `{ meta.title }` prints a field.
 - Anything else stays literal text — braces in prose never break a page or pull in the runtime.
+- Build-time values also resolve **inside a link or image destination** — `[{ item.label }]({ item.url })` or `![{ p.alt }]({ p.src })` — so an `@loop` can drive an `href`/`src` and the page stays static. (Reactive `:state` cannot live in a destination.)
 
 ## Frontmatter
 
@@ -489,6 +490,10 @@ Fetched data and a form live happily on the same page:
 
 :form into profile
 :input name placeholder="Your name" required
+:select topic
+- General
+- Billing
+:textarea note placeholder="Anything else?"
 :submit "Save"
 :endform
 
@@ -497,9 +502,21 @@ Fetched data and a form live happily on the same page:
 
 - `:form into name` captures submits straight into state (no backend). `:form action="/url"` emits a plain native form instead — zero JS, full progressive enhancement. Form actions use the same URL scheme guard as `:fetch`: relative paths, explicit `http(s)://`, or leading `{ state }` interpolation; protocol-relative and non-http(s) schemes are compile errors.
 - `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Darkmown adapts to any backend — it does not own one.
+- Field directives: `:input`, `:textarea name [rows=N]`, and `:select name` (with `- Label` option lines) all capture into `:form into` state the same way. Each derives a non-visual `aria-label` from its placeholder, else a humanized field name, unless you supply `aria-label`/`aria-describedby`.
 - `:state x = [] persist` keeps a single page's state in localStorage across reloads. (For state that is shared across pages and tabs, reach for [`:store`](#global-state--store) instead.)
 - `:computed total = items.length * 4` derives state from state with a compile-time-checked expression (names, numbers, arithmetic, comparisons — nothing else).
 - `:if item.path` works inside reactive loops for per-row branches, and nests — an inner `:if` resolves after the outer branch and stays reactive.
+
+## Inline attributes
+
+A trailing `{.class .class #id}` attaches classes / an id to the inline element directly before it — most often to style a link as a button without a wrapper:
+
+```wd
+[Get started](/start/){.btn .lg}
+![logo](/logo.svg){.brand}
+```
+
+The block must follow the element with no space, and works on links, images, emphasis, and inline code. It never collides with `{ name }` interpolation — an interpolation always starts with a name, never a `.` or `#`.
 
 ## The escape hatch
 

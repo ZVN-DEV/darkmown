@@ -148,4 +148,36 @@ The list below uses `when=visible` — the request only fires once this section 
 Scroll me into view and I will load.
 :endif
 
+## Richer form controls
+
+`:textarea` and `:select` join `:input`, all captured into the same `:form into` state with no backend:
+
+:form into inquiry
+:input fullname placeholder="Your full name"
+:select topic
+- General question
+- New case
+- Billing
+:textarea message placeholder="How can we help?"
+:submit "Send inquiry"
+:endform
+
+:if inquiry
+Thanks **{ inquiry.fullname }** — we logged your "{ inquiry.topic }" note.
+:else
+Pick a topic and send — it is captured client-side, no backend.
+:endif
+
+## Dynamic links from data, and link buttons
+
+A build-time `@loop` can drive the `href` itself — `[{ link.label }]({ link.url })` resolves the destination at compile time, so these stay plain static links:
+
+@loop /links.json into link
+- [{ link.label }]({ link.url })
+@endloop
+
+A trailing `{.class}` styles a single link as a button — no wrapper container:
+
+[Read the docs](/docs/){.pulse-button}
+
 </main>
