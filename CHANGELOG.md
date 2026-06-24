@@ -2,6 +2,15 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.18.0 — 2026-06-24
+
+Navigation goes instant and flash-free, and images are hardened at compile time.
+
+- **Prerendered, gap-free navigation.** `transitions: true` now also emits a declarative `<script type="speculationrules">` that **prerenders** same-origin links on hover/pointerdown (eagerness `moderate`). The next page is fully rendered before the click, so activation is instant — eliminating the white render-gap flash that plain navigation (and even prefetch, which only warms the cache) leaves for the view transition to paper over. It is browser-interpreted JSON, not framework runtime JS, so static pages stay zero-JS; unsupported browsers (or those with preloading disabled) ignore it and navigate normally. Mark a link `{.no-prefetch}` to opt it out; `rel=nofollow` links are never speculated. (Chrome disables prerendering while DevTools is open — verify on the built site with DevTools closed.)
+- **Directional view transition.** The root transition is no longer the UA cross-fade, which left both pages superimposed at ~50 % opacity mid-navigation — a visible double-exposure ghost. `transitions: true` now emits a short directional fade+slide (old lifts up and out, new rises up and in, 200 ms eased) so pages move past each other instead of stacking. Honors `prefers-reduced-motion`.
+- **Compile-time image hardening.** Every `<img>` is stamped with its intrinsic `width`/`height` (read from the file on disk via `image-size`, a new build-time dependency — no runtime cost), `decoding="async"`, and a load-priority split: the first image stays eager with `fetchpriority="high"` (the LCP candidate), the rest get `loading="lazy"`. This removes the layout-shift "jump" as images decode and stops below-the-fold images competing for bandwidth. Author-set attributes are never overwritten; remote or unreadable sources degrade gracefully (no dimensions, no error).
+- All three are compile-time only — the shipped reactive runtime is unchanged (still ~5.8 KB gzipped, under the 6 KB budget). The demo site (`site/pages/`) now opts into `transitions: true` to dogfood the navigation.
+
 ## 0.17.0 — 2026-06-23
 
 Multi-select and single-choice form groups: **`:checkbox` and `:radio`**.

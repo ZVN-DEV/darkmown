@@ -1,6 +1,6 @@
 {
   "name": "@zvndev/darkmown",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -42,6 +42,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "image-size": "^1.2.1",
     "markdown-it": "^14.2.0"
   },
   "devDependencies": {

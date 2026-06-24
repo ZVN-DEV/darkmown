@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import MarkdownIt from "markdown-it";
+import { imageSize } from "image-size";
 
 /**
  * @typedef {import("./config.js").Paths} Paths
@@ -135,12 +136,48 @@ export function compilePage(file, context) {
   const scriptSrcs = compiled.assets.runtime ? ["/__wd/runtime.js", ...compiled.assets.scripts] : [...compiled.assets.scripts];
   const scripts = scriptSrcs.map((src) => `<script type="module" src="${src}"></script>`).join("\n");
   // Cross-document view transitions: opt in per page with `transitions: true` in
-  // frontmatter to emit the CSS-only @view-transition rule — a smooth same-origin
-  // cross-fade on navigation, with zero JavaScript. Ignored by browsers without
-  // support (graceful fade-free fallback) and only applies to same-origin
+  // frontmatter to emit a CSS-only stylesheet — a smooth same-origin transition
+  // on navigation, with zero JavaScript. Ignored by browsers without support
+  // (graceful, transition-free fallback) and only applies to same-origin
   // navigations where both the outgoing and incoming page opt in.
+  //
+  // The default UA animation cross-fades the root: outgoing opacity 1→0 while
+  // incoming 0→1, both at once. Mid-navigation that leaves the two pages
+  // superimposed at ~50% opacity — headings ghost over headings. We override it
+  // with a directional fade+slide (old lifts up and out, new rises up and in) so
+  // the pages move past each other instead of stacking. Short + eased = peppy.
   const wantTransitions = compiled.meta.transitions === true || compiled.meta.transitions === "true";
-  const transitions = wantTransitions ? `\n  <style>@view-transition { navigation: auto; }</style>` : "";
+  const transitions = wantTransitions
+    ? `\n  <style>
+    @view-transition { navigation: auto; }
+    ::view-transition-old(root) { animation: wd-nav-out 200ms cubic-bezier(0.4, 0, 1, 1) both; }
+    ::view-transition-new(root) { animation: wd-nav-in 200ms cubic-bezier(0, 0, 0.2, 1) both; }
+    @keyframes wd-nav-out { to { opacity: 0; transform: translateY(-1rem); } }
+    @keyframes wd-nav-in { from { opacity: 0; transform: translateY(1rem); } }
+    @media (prefers-reduced-motion: reduce) {
+      ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 1ms; }
+      @keyframes wd-nav-out { to { opacity: 0; } }
+      @keyframes wd-nav-in { from { opacity: 0; } }
+    }
+  </style>`
+    : "";
+
+  // The latency half of smooth navigation — and what kills the white flash. A
+  // declarative speculationrules script (the browser interprets it — not
+  // framework runtime JS, so the zero-JS invariant holds) *prerenders* the next
+  // same-origin page on hover/pointerdown. Prefetch only warms the cache, so the
+  // page still has to render on click — that render gap is the white flash. A
+  // prerender renders the whole page in a hidden tab ahead of the click, so
+  // activation is instant: no render gap, and the view transition fires on the
+  // already-painted page. Safe now that pages are light. Eagerness `moderate` =
+  // ~200ms hover / pointerdown, capped at two. Mark a link `{.no-prefetch}` to
+  // opt it out; `rel=nofollow` links are never speculated. Browsers without
+  // support (or with preloading disabled) ignore the tag and navigate normally.
+  const speculation = wantTransitions
+    ? `\n  <script type="speculationrules">{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"selector_matches":".no-prefetch"}},{"not":{"selector_matches":"[rel~=nofollow]"}}]},"eagerness":"moderate"}]}</script>`
+    : "";
+
+  const body = enhanceImages(compiled.html, context);
 
   return {
     meta: compiled.meta,
@@ -151,16 +188,90 @@ export function compilePage(file, context) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>${descriptionTag}
   <link rel="icon" href="${favicon}">
-  ${cssLinks}${transitions}
+  ${cssLinks}${transitions}${speculation}
 </head>
 <body>
-${compiled.html}
+${body}
 ${scripts}
 </body>
 </html>`,
     assets: compiled.assets,
     warnings: compiled.warnings
   };
+}
+
+/**
+ * Harden every `<img>` in the assembled page body — compile-time only, zero
+ * runtime JS. Bare markdown images reflow the page as they decode (cumulative
+ * layout shift — the literal "jump" on navigation) and load eagerly. This
+ * stamps intrinsic `width`/`height` (read from the file on disk so the browser
+ * reserves space), `decoding="async"` on all, and a load-priority split: the
+ * first image is the LCP candidate (eager + `fetchpriority="high"`), the rest
+ * lazy-load. Author-set attributes are never overwritten.
+ * @param {string} html Assembled page body HTML.
+ * @param {Paths} paths Resolved project paths.
+ * @returns {string}
+ */
+export function enhanceImages(html, paths) {
+  let index = 0;
+  return html.replace(/<img\b[^>]*?\/?>/g, (tag) => {
+    const i = index++;
+    const has = (/** @type {string} */ attr) => new RegExp(`\\b${attr}\\s*=`, "i").test(tag);
+    /** @type {string[]} */
+    const add = [];
+    // Dimensions only when the author hasn't sized it — adding one axis to a
+    // manually-sized image would distort its aspect ratio.
+    if (!has("width") && !has("height")) {
+      const dim = measureImage(srcOf(tag), paths);
+      if (dim) add.push(`width="${dim.width}"`, `height="${dim.height}"`);
+    }
+    if (!has("decoding")) add.push(`decoding="async"`);
+    if (i === 0) {
+      // First image is the LCP candidate: stays eager, gets a priority hint.
+      if (!has("fetchpriority")) add.push(`fetchpriority="high"`);
+    } else if (!has("loading")) {
+      add.push(`loading="lazy"`);
+    }
+    if (!add.length) return tag;
+    return `${tag.replace(/\s*\/?>\s*$/, "")} ${add.join(" ")}>`;
+  });
+}
+
+/**
+ * Extract the `src` attribute value from an `<img>` tag, or "" if absent.
+ * @param {string} tag
+ * @returns {string}
+ */
+function srcOf(tag) {
+  const m = tag.match(/\bsrc\s*=\s*["']([^"']*)["']/i);
+  return m ? m[1] : "";
+}
+
+/**
+ * Read an image's intrinsic dimensions from disk, or null when the src is
+ * remote/relative/unreadable. Resolution mirrors the asset emit: `/__wd/media/x`
+ * comes from the shelf (`site/_`), other absolute paths from `site/pages`.
+ * @param {string} src
+ * @param {Paths} paths
+ * @returns {{ width: number, height: number } | null}
+ */
+function measureImage(src, paths) {
+  if (!src || /^(https?:)?\/\//i.test(src) || src.startsWith("data:")) return null;
+  let filePath;
+  if (src.startsWith("/__wd/media/")) {
+    filePath = path.join(paths.shelfRoot, src.slice("/__wd/media/".length));
+  } else if (src.startsWith("/")) {
+    filePath = path.join(paths.routesRoot, src.slice(1));
+  } else {
+    return null; // page-relative: the source directory is lost after assembly
+  }
+  try {
+    const { width, height } = imageSize(fs.readFileSync(filePath));
+    if (typeof width === "number" && typeof height === "number") return { width, height };
+  } catch {
+    /* missing or unreadable — degrade to no dimensions */
+  }
+  return null;
 }
 
 /**

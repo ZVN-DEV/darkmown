@@ -1,5 +1,6 @@
 ---
 title: Loop ergonomics
+transitions: true
 ---
 
 @include /nav.wd

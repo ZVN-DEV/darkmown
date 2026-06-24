@@ -37,7 +37,7 @@ test("@loop interpolates item values into an image src", () => {
     ["@loop /items.json into it", "![photo]({ it.img })", "@endloop"],
     { "items.json": [{ img: "/media/a.png" }] }
   );
-  assert.match(html, /<img src="\/media\/a\.png" alt="photo">/);
+  assert.match(html, /<img src="\/media\/a\.png" alt="photo"[^>]*>/);
 });
 
 test("a build-time loop driving link hrefs stays static (no runtime markers)", () => {
