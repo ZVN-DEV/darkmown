@@ -112,3 +112,84 @@ test(":select with no options is a clear compile error", () => {
     /:select.*option/i
   );
 });
+
+// ---------------------------------------------------------------------------
+// :checkbox — multi-select group, captured as an array (data-wd-multi marker)
+// ---------------------------------------------------------------------------
+
+test(":checkbox renders a labelled checkbox group marked for array capture", () => {
+  const html = compileWd([
+    ":form into profile",
+    ":checkbox interests",
+    "- Ortho",
+    "- Pedo",
+    ':submit "Go"',
+    ":endform"
+  ]);
+  assert.match(
+    html,
+    /<div class="wd-checkboxes" role="group" data-wd-multi="interests" aria-label="Interests"><label><input type="checkbox" name="interests" value="Ortho"> Ortho<\/label><label><input type="checkbox" name="interests" value="Pedo"> Pedo<\/label><\/div>/
+  );
+});
+
+test(":checkbox escapes option labels", () => {
+  const html = compileWd([
+    ":form into profile",
+    ":checkbox services",
+    "- Crowns & bridges",
+    ':submit "Go"',
+    ":endform"
+  ]);
+  assert.match(html, /<input type="checkbox" name="services" value="Crowns &amp; bridges"> Crowns &amp; bridges<\/label>/);
+});
+
+test(":checkbox with no options is a clear compile error", () => {
+  assert.throws(
+    () => compileWd([":form into profile", ":checkbox interests", ':submit "Go"', ":endform"]),
+    /:checkbox.*option/i
+  );
+});
+
+// ---------------------------------------------------------------------------
+// :radio — single-select group, scalar capture (no data-wd-multi)
+// ---------------------------------------------------------------------------
+
+test(":radio renders a labelled radio group with no array marker", () => {
+  const html = compileWd([
+    ":form into profile",
+    ":radio contact-pref",
+    "- Email",
+    "- Phone",
+    ':submit "Go"',
+    ":endform"
+  ]);
+  assert.match(
+    html,
+    /<div class="wd-radios" role="radiogroup" aria-label="Contact pref"><label><input type="radio" name="contact-pref" value="Email"> Email<\/label><label><input type="radio" name="contact-pref" value="Phone"> Phone<\/label><\/div>/
+  );
+  assert.doesNotMatch(html, /data-wd-multi/);
+});
+
+test(":radio required marks the group required", () => {
+  const html = compileWd([
+    ":form into profile",
+    ":radio plan required",
+    "- Basic",
+    "- Pro",
+    ':submit "Go"',
+    ":endform"
+  ]);
+  assert.match(html, /<input type="radio" name="plan" value="Basic" required>/);
+});
+
+test(":checkbox honors an explicit aria-label over the humanized name", () => {
+  const html = compileWd([
+    ":form into profile",
+    ':checkbox interests aria-label="Your interests"',
+    "- A",
+    ':submit "Go"',
+    ":endform"
+  ]);
+  const labels = [...html.matchAll(/aria-label="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(labels, ["Your interests"]);
+});

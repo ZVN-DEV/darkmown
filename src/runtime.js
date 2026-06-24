@@ -557,7 +557,14 @@ document.addEventListener("submit", (event) => {
   const action = form.getAttribute("action");
 
   if (!action) {
-    state[key] = Object.fromEntries(new FormData(form));
+    const fd = new FormData(form);
+    const data = /** @type {Record<string, any>} */ (Object.fromEntries(fd));
+    // :checkbox groups share one name; collect every checked value as an array.
+    for (const group of form.querySelectorAll("[data-wd-multi]")) {
+      const field = group.getAttribute("data-wd-multi");
+      if (field) data[field] = fd.getAll(field);
+    }
+    state[key] = data;
     savePersisted();
     render();
     return;

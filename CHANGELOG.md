@@ -2,6 +2,14 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.17.0 — 2026-06-23
+
+Multi-select and single-choice form groups: **`:checkbox` and `:radio`**.
+
+- **`:checkbox name` and `:radio name`** (each followed by `- Label` option lines) render a labelled group of `<input>`s that share one `name`, wrapped in `<label>`s inside a `role="group"` / `role="radiogroup"` container with a derived aria-label. They join `:input`/`:textarea`/`:select` as `:form into` field directives.
+- **Checkbox groups capture an array.** A `:checkbox` group is marked `data-wd-multi`, and the runtime's submit handler now collects every checked value via `FormData.getAll` instead of collapsing duplicate names to the last one. A `:radio` group captures a single value like `:input`. This is the only runtime change (shipped reactive runtime is 5836 B gzipped, still under the 6 KB budget); everything else is compile-time.
+- Live demo on `/data/` (the inquiry form), and the AGENTS.md inline-`{.class}` note is corrected (it had stale "no `{.class}` syntax" copy from before 0.15.0).
+
 ## 0.16.0 — 2026-06-23
 
 Cross-document **view transitions** return as a per-page opt-in.

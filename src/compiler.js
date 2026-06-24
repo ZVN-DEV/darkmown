@@ -413,6 +413,16 @@ function compileBody(lines, ctx) {
       i = j - 1;
       continue;
     }
+    const choiceMatch = line.match(/^:(checkbox|radio)\s/);
+    if (choiceMatch) {
+      flush();
+      const opts = [];
+      let j = i + 1;
+      while (j < lines.length && /^\s*-\s+/.test(lines[j])) { opts.push(lines[j]); j++; }
+      out.push(handleChoiceGroup(line, opts, ctx, /** @type {"checkbox" | "radio"} */ (choiceMatch[1])));
+      i = j - 1;
+      continue;
+    }
     if (/^:bind\s/.test(line)) {
       flush();
       out.push(handleBind(line, ctx));
@@ -1207,6 +1217,66 @@ function handleSelect(line, optionLines, ctx) {
   }
   const opts = options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
   return `<select ${attrs.join(" ")}>${opts}</select>`;
+}
+
+/**
+ * `:checkbox name [required]` / `:radio name [required]` followed by `- Label`
+ * lines → a labelled group of `<input type=checkbox|radio>`, each sharing `name`
+ * with value === label and wrapped in its own `<label>`. The group is a
+ * `role="group"` / `role="radiogroup"` container with an aria-label (explicit or
+ * humanized from the name). Checkbox groups are marked `data-wd-multi="name"` so
+ * the runtime captures every checked value as an array (`FormData.getAll`); radio
+ * groups capture a single value like `:input`. Flags: `required` (radio → the
+ * group; not emitted on checkboxes, where "at least one" has no native HTML form),
+ * `disabled` (whole group), `autofocus` (first control).
+ * @param {string} line
+ * @param {string[]} optionLines The following `- Label` lines consumed by dispatch.
+ * @param {Ctx} ctx
+ * @param {"checkbox" | "radio"} kind
+ * @returns {string}
+ */
+function handleChoiceGroup(line, optionLines, ctx, kind) {
+  const directive = `:${kind}`;
+  const match = line.match(kind === "checkbox" ? /^:checkbox\s+([A-Za-z_][\w-]*)\s*(.*)$/ : /^:radio\s+([A-Za-z_][\w-]*)\s*(.*)$/);
+  if (!match) throw new Error(`Malformed ${directive} in ${ctx.file}: ${line}. Use: ${directive} name [required] then "- Label" lines`);
+  const name = match[1];
+  const flags = [];
+  let ariaLabel = null;
+  let ariaDescribedby = null;
+  const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
+  for (const token of (match[2] || "").matchAll(re)) {
+    if (token[3]) {
+      if (!["required", "disabled", "autofocus"].includes(token[3])) {
+        throw new Error(`Unknown ${directive} flag "${token[3]}" in ${ctx.file}`);
+      }
+      flags.push(token[3]);
+      continue;
+    }
+    const value = stripQuotes(token[2]);
+    if (token[1] === "aria-label") ariaLabel = value;
+    else if (token[1] === "aria-describedby") ariaDescribedby = value;
+    else throw new Error(`Unknown ${directive} attribute "${token[1]}" in ${ctx.file}`);
+  }
+  const options = optionLines.map((l) => l.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
+  if (!options.length) {
+    throw new Error(`${directive} "${name}" in ${ctx.file} has no options. Add "- Label" lines beneath it.`);
+  }
+  const isCheckbox = kind === "checkbox";
+  const groupAttrs = [`class="wd-${isCheckbox ? "checkboxes" : "radios"}"`, `role="${isCheckbox ? "group" : "radiogroup"}"`];
+  if (isCheckbox) groupAttrs.push(`data-wd-multi="${escapeHtml(name)}"`);
+  groupAttrs.push(`aria-label="${escapeHtml(ariaLabel || humanizeName(name))}"`);
+  if (ariaDescribedby) groupAttrs.push(`aria-describedby="${escapeHtml(ariaDescribedby)}"`);
+  const disabled = flags.includes("disabled");
+  const required = flags.includes("required");
+  const autofocus = flags.includes("autofocus");
+  const controls = options.map((opt, idx) => {
+    const a = [`type="${kind}"`, `name="${escapeHtml(name)}"`, `value="${escapeHtml(opt)}"`];
+    if (disabled) a.push("disabled");
+    if (required && !isCheckbox) a.push("required");
+    if (autofocus && idx === 0) a.push("autofocus");
+    return `<label><input ${a.join(" ")}> ${escapeHtml(opt)}</label>`;
+  }).join("");
+  return `<div ${groupAttrs.join(" ")}>${controls}</div>`;
 }
 
 /**

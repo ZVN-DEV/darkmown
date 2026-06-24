@@ -495,6 +495,12 @@ Fetched data and a form live happily on the same page:
 :select topic
 - General
 - Billing
+:checkbox channels
+- Email
+- SMS
+:radio plan
+- Basic
+- Pro
 :textarea note placeholder="Anything else?"
 :submit "Save"
 :endform
@@ -504,7 +510,7 @@ Fetched data and a form live happily on the same page:
 
 - `:form into name` captures submits straight into state (no backend). `:form action="/url"` emits a plain native form instead — zero JS, full progressive enhancement. Form actions use the same URL scheme guard as `:fetch`: relative paths, explicit `http(s)://`, or leading `{ state }` interpolation; protocol-relative and non-http(s) schemes are compile errors.
 - `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Darkmown adapts to any backend — it does not own one.
-- Field directives: `:input`, `:textarea name [rows=N]`, and `:select name` (with `- Label` option lines) all capture into `:form into` state the same way. Each derives a non-visual `aria-label` from its placeholder, else a humanized field name, unless you supply `aria-label`/`aria-describedby`.
+- Field directives: `:input`, `:textarea name [rows=N]`, `:select name`, `:checkbox name`, and `:radio name` (the last three take `- Label` option lines) all capture into `:form into` state the same way. A `:checkbox` group captures **every checked value as an array**; a `:radio` group captures a single value. Each derives a non-visual `aria-label` from its placeholder, else a humanized field name, unless you supply `aria-label`/`aria-describedby`.
 - `:state x = [] persist` keeps a single page's state in localStorage across reloads. (For state that is shared across pages and tabs, reach for [`:store`](#global-state--store) instead.)
 - `:computed total = items.length * 4` derives state from state with a compile-time-checked expression (names, numbers, arithmetic, comparisons — nothing else).
 - `:if item.path` works inside reactive loops for per-row branches, and nests — an inner `:if` resolves after the outer branch and stays reactive.
