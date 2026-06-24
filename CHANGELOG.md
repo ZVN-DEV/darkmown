@@ -2,6 +2,20 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.16.0 — 2026-06-23
+
+Cross-document **view transitions** return as a per-page opt-in.
+
+- **`transitions: true` frontmatter** emits the CSS-only `@view-transition { navigation: auto; }` rule, giving a smooth same-origin cross-fade on navigation with zero JavaScript. It only animates between same-origin pages that both opt in, and browsers without support silently skip the fade (no hang, no layout change). Default-off; opt out explicitly with `transitions: false`. Re-enabled after the original cross-document render-blocking regression (stalled rAF / hanging navigation on deployed pages) was verified resolved on modern Chrome. Compile-time only — no change to the shipped runtime size.
+
+## 0.15.0 — 2026-06-23
+
+Form controls and inline styling reach the authoring layer.
+
+- **`:textarea` and `:select` field directives.** Forms gain a multi-line `:textarea name [rows=N]` and a `:select name` (with `- Label` option lines). Both capture into `:form into` state exactly like `:input`, and derive a non-visual accessible name from their placeholder or humanized field name.
+- **Inline attributes.** A trailing `{.class .class #id}` (no leading space) attaches classes / an id to the inline element directly before it — link, image, emphasis, or inline code — most often to style a link as a button without a wrapping container. It never collides with `{ name }` interpolation, which always begins with a name.
+- **Interpolated link destinations.** `{ name }` now resolves inside markdown link and image destinations, so `@loop` / state values can data-drive an `href` or `src`.
+
 ## 0.14.1 — 2026-06-19
 
 Patch-release hardening for page assets, form actions, and release metadata.
