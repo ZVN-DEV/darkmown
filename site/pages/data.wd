@@ -1,5 +1,6 @@
 ---
 title: Data, forms, and persistence
+transitions: true
 ---
 
 @include /nav.wd

@@ -79,6 +79,11 @@ Three capability gaps from the 2026-06-16 audit, closed together over a shared `
 - **Interpolation in link/image destinations:** `{ name.path }` now resolves inside a markdown destination — `[{ it.label }]({ it.url })`, `![{ p.alt }]({ p.src })` — so a build-time `@loop` can drive `href`/`src` and the page stays static. Only build-time (static-scope) values substitute; reactive `:state` is left untouched (it cannot live in a destination).
 - **Inline attributes (`{.class #id}`):** a trailing attribute block attaches classes / an id to the inline element before it (link, image, emphasis, code), so a link can be styled as a button without a wrapper container. The block must follow with no space; it never collides with `{ name }` interpolation (which always starts with a name, not `.`/`#`).
 
+## Stage 14 additions (2026-06-24, v0.18.0)
+
+- **Instant, flash-free navigation under `transitions: true`:** alongside the cross-document view transition, the page emits a declarative `<script type="speculationrules">` that **prerenders** same-origin links at `moderate` eagerness (hover/pointerdown). A prerendered page activates instantly, so there is no render-gap white flash for the transition to cover; the transition itself is now a directional fade+slide (old lifts out, new rises in, 200 ms eased) instead of the UA cross-fade that superimposed both pages at ~50 % opacity. Browser-interpreted JSON, not framework JS — static pages stay zero-JS; `prefers-reduced-motion` is honored; `{.no-prefetch}` / `rel=nofollow` opt links out. (Chrome disables prerendering while DevTools is open.)
+- **Compile-time image hardening:** every emitted `<img>` is stamped with intrinsic `width`/`height` (read from disk via the `image-size` build-time dependency — no runtime cost), `decoding="async"`, and `fetchpriority="high"` on the first image / `loading="lazy"` on the rest. Eliminates cumulative layout shift and de-prioritizes below-the-fold images. Author attributes are never overwritten; remote/unreadable sources degrade to no dimensions.
+
 ## Stage 13 additions (2026-06-23, v0.17.0)
 
 - **`:checkbox` and `:radio` field groups:** `:checkbox name` / `:radio name` (with `- Label` option lines) render a labelled `role="group"` / `role="radiogroup"` of `<input>`s that share one `name`, each wrapped in its own `<label>` and deriving an aria-label like the other fields. A `:checkbox` group is marked `data-wd-multi` so the runtime's submit handler collects **every** checked value into an array (`FormData.getAll`) instead of collapsing to the last — the one runtime change (compile-time only otherwise; shipped runtime stays ~5.8 KB). A `:radio` group captures a single value like `:input`. Closes the multi-select / single-choice gap that previously forced raw HTML and lost `:form into` capture.
@@ -107,7 +112,7 @@ The compiler recognizes three directives — `:note`, `:try`, and `:sprint` — 
 ## Still missing from the full vision
 
 - First-party server runtime (`site/api/`), HTML-fragment `swap` semantics, and cart server sync — parked behind the adapter decision until a real project needs them.
-- **View transitions:** named/typed transitions (`view-transition-name`, per-element morphs) and `@starting-style` emission on top of the opt-in cross-document fade shipped in 0.16.0 (see Stage 4).
+- **View transitions:** named/typed transitions (`view-transition-name`, per-element morphs) and `@starting-style` emission, on top of the directional fade + speculation-rules prerender shipped in 0.18.0 (see Stage 4 / Stage 14).
 - Richer diagnostics and package-consumer QA in regular CI. Editor tooling exists as a source-installable VS Code extension; public Marketplace/Open VSX distribution remains a launch/distribution follow-up.
 
 ## Current claim

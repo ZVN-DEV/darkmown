@@ -82,7 +82,7 @@ tags: [sales, revenue, "q1, q2"]
 
 Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card).
 
-`transitions: true` opts a page into **cross-document view transitions** — a smooth same-origin cross-fade on navigation, emitted as the CSS-only `@view-transition { navigation: auto; }` rule. It ships zero JavaScript, only animates between same-origin pages that both opt in, and is silently ignored by browsers without support (the navigation just doesn't fade). Off by default; opt out explicitly with `transitions: false`.
+`transitions: true` opts a page into **instant, flash-free navigation** — zero JavaScript, all declarative. It emits a directional fade+slide **view transition** for the page swap (old lifts up and out, new rises up and in — replacing the default cross-fade, which left both pages ghosted at ~50 % opacity mid-navigation), plus a **`<script type="speculationrules">` prerender** hint that renders the next same-origin page on hover/pointerdown so the click activates an already-painted page (no white render-gap flash). It honors `prefers-reduced-motion`. Only same-origin pages that both opt in transition; browsers without support — or with page-preloading disabled — navigate normally. Off by default; opt out with `transitions: false`. Mark a link `{.no-prefetch}` to exclude it from prerendering. (Chrome disables prerendering while DevTools is open, so test the built site with DevTools closed.)
 
 ## Static assets
 
@@ -92,6 +92,8 @@ Images, fonts, icons, and other non-page files live on the include shelf at `sit
 - `.json` files → served at `/__wd/data/<name>` (this is what `:fetch` reads).
 
 Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`serve` layer returns the correct `Content-Type` per extension.
+
+**Images are hardened at compile time.** Every `<img>` the compiler emits is stamped with its intrinsic `width`/`height` (read from the source file, so the browser reserves space and the page doesn't reflow as images decode), `decoding="async"`, and a load-priority split — the first image on the page stays eager with `fetchpriority="high"` (the LCP candidate), the rest get `loading="lazy"`. Author-set attributes always win, and remote or unreadable sources just skip the dimensions. The compiler **measures**, it doesn't resize — keep source images web-sized (modern formats, sensible dimensions).
 
 **Or colocate an asset next to the page that uses it.** Any non-page file under `site/pages/` (anything but `.md`/`.wd` routes and the colocated `.skin`/`.js`) is copied to `dist/` at its own path, so a clean relative URL just works:
 

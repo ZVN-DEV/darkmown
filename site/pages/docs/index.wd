@@ -1,6 +1,7 @@
 ---
 title: Darkmown docs
 description: Learn Darkmown routing, directives, state, loops, forms, and the static-to-reactive model.
+transitions: true
 ---
 
 @include /nav.wd
@@ -163,6 +164,14 @@ tags: [sales, revenue, "q1, q2"]
 ```
 
 `{ meta.title }` prints a scalar and `{ meta.tags }` joins an array with `, `. You can loop a frontmatter array at build time — `@loop meta.tags into tag` — and the page stays static. Arrays are inline flow only (`[a, b]`); quoted items keep their commas.
+
+## Instant navigation
+
+Add `transitions: true` to a page's frontmatter for **instant, flash-free navigation** — zero JavaScript. It emits a directional fade+slide view transition for the page swap and a `<script type="speculationrules">` prerender hint, so the browser renders the next same-origin page on hover/pointerdown and the click activates an already-painted page (no white render-gap). It honors `prefers-reduced-motion`, and only same-origin pages that both opt in transition. Off by default; opt out with `transitions: false`, or exclude a single link from prerendering with `{.no-prefetch}`. (Chrome turns prerendering off while DevTools is open — test the built site with DevTools closed.)
+
+## Images
+
+You don't size images by hand. Every `<img>` the compiler emits gets its intrinsic `width`/`height` read from the source file (so the page doesn't reflow as images decode), `decoding="async"`, and a priority split — the first image stays eager with `fetchpriority="high"`, the rest `loading="lazy"`. Anything you set yourself wins. The compiler measures, it doesn't resize, so keep source images web-sized.
 
 ## Sections
 

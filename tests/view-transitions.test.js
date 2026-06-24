@@ -8,22 +8,35 @@ import { createPaths } from "../src/config.js";
 
 // ---------------------------------------------------------------------------
 // Cross-document view transitions: opt-in via `transitions: true` frontmatter.
-// Emits the CSS-only @view-transition rule (no JS, same-origin, graceful
-// fallback). Was previously disabled; re-enabled per page so authors choose.
+// Emits a CSS-only stylesheet (no JS, same-origin, graceful fallback). The
+// default UA cross-fade dissolves both pages simultaneously, so mid-navigation
+// the outgoing and incoming pages sit superimposed at ~50% opacity — a visible
+// "double-exposure" ghost. We override it with a directional fade+slide so the
+// pages move past each other instead of stacking. Re-enabled per page.
 // ---------------------------------------------------------------------------
 
-const STYLE = "<style>@view-transition { navigation: auto; }</style>";
-
-test("transitions: true emits the @view-transition style in <head>", () => {
+test("transitions: true emits the @view-transition opt-in in <head>", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", ["---", "transitions: true", "---", "<main>", "", "Hi", "", "</main>"].join("\n"));
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.ok(page.html.includes(STYLE), "expected the @view-transition style to be emitted");
-  // it belongs to the document head, before </head>
   const head = page.html.slice(0, page.html.indexOf("</head>"));
-  assert.ok(head.includes(STYLE), "the style must live in <head>");
+  assert.match(head, /@view-transition\s*\{\s*navigation:\s*auto/, "the @view-transition opt-in must live in <head>");
   // opting into transitions is presentational only — the page stays zero-JS
   assert.equal(page.assets.runtime, false, "view transitions must not force the runtime on");
+});
+
+test("transitions: true overrides the default root cross-fade with a directional fade+slide", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", ["---", "transitions: true", "---", "<main>", "", "Hi", "", "</main>"].join("\n"));
+  const html = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).html;
+  // The outgoing and incoming root snapshots each get their own keyed animation
+  // (not the UA cross-fade), so they never sit superimposed at 50% opacity.
+  assert.match(html, /::view-transition-old\(root\)[^}]*animation:[^};]*wd-nav-out/, "old(root) must use the custom leave animation");
+  assert.match(html, /::view-transition-new\(root\)[^}]*animation:[^};]*wd-nav-in/, "new(root) must use the custom enter animation");
+  // Both keyframes must exist and include a translate (the directional slide
+  // that separates the two pages so text doesn't ghost over text).
+  assert.match(html, /@keyframes wd-nav-out\s*\{[^}]*translateY/, "wd-nav-out keyframes must slide");
+  assert.match(html, /@keyframes wd-nav-in\s*\{[^}]*translateY/, "wd-nav-in keyframes must slide");
 });
 
 test("no transitions frontmatter → no @view-transition style (default off)", () => {

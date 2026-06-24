@@ -39,7 +39,9 @@ test("plain .md renders CommonMark and keeps directives inert", () => {
   assert.match(page.html, /<ol>/);
   assert.match(page.html, /<blockquote>/);
   assert.match(page.html, /<table>/);
-  assert.match(page.html, /<img src="\/logo.svg" alt="logo">/);
+  // images are hardened at compile time (decoding/loading/priority); the first
+  // image is the LCP candidate, so it stays eager with a priority hint.
+  assert.match(page.html, /<img src="\/logo.svg" alt="logo"[^>]*decoding="async"[^>]*fetchpriority="high"[^>]*>/);
   assert.match(page.html, /:state count = 0/);
   assert.match(page.html, /\{ count \}/);
   assert.match(page.html, /@include \/nav\.wd/);
@@ -66,7 +68,7 @@ test(".wd renders full CommonMark too", () => {
   assert.match(page.html, /<ol>/);
   assert.match(page.html, /<blockquote>/);
   assert.match(page.html, /<em>emphasis<\/em>/);
-  assert.match(page.html, /<img src="\/x.png" alt="img">/);
+  assert.match(page.html, /<img src="\/x.png" alt="img"[^>]*decoding="async"[^>]*>/);
 });
 
 test("mdx files are not includable or routable formats", () => {
@@ -1139,7 +1141,7 @@ test("view transitions: transitions:true emits the cross-document @view-transiti
   const root = fixture();
   write(root, "site/pages/index.wd", "---\ntitle: Home\ntransitions: true\n---\n\n# Home");
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<style>@view-transition \{ navigation: auto; \}<\/style>/);
+  assert.match(page.html, /@view-transition\s*\{\s*navigation:\s*auto;?\s*\}/);
 });
 
 test(":fetch emits a marker span and when=visible is carried through", () => {
