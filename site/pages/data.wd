@@ -150,7 +150,7 @@ Scroll me into view and I will load.
 
 ## Richer form controls
 
-`:textarea` and `:select` join `:input`, all captured into the same `:form into` state with no backend:
+`:textarea`, `:select`, `:checkbox`, and `:radio` join `:input`, all captured into the same `:form into` state with no backend. A `:checkbox` group captures every checked value as an **array**; a `:radio` group captures a single value:
 
 :form into inquiry
 :input fullname placeholder="Your full name"
@@ -158,12 +158,18 @@ Scroll me into view and I will load.
 - General question
 - New case
 - Billing
+:checkbox services
+- Cleaning
+- Whitening
+:radio urgency
+- Routine
+- Urgent
 :textarea message placeholder="How can we help?"
 :submit "Send inquiry"
 :endform
 
 :if inquiry
-Thanks **{ inquiry.fullname }** — we logged your "{ inquiry.topic }" note.
+Thanks **{ inquiry.fullname }** — we logged your "{ inquiry.topic }" note. Services: { inquiry.services }. Urgency: { inquiry.urgency }.
 :else
 Pick a topic and send — it is captured client-side, no backend.
 :endif

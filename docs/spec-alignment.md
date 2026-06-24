@@ -79,6 +79,10 @@ Three capability gaps from the 2026-06-16 audit, closed together over a shared `
 - **Interpolation in link/image destinations:** `{ name.path }` now resolves inside a markdown destination — `[{ it.label }]({ it.url })`, `![{ p.alt }]({ p.src })` — so a build-time `@loop` can drive `href`/`src` and the page stays static. Only build-time (static-scope) values substitute; reactive `:state` is left untouched (it cannot live in a destination).
 - **Inline attributes (`{.class #id}`):** a trailing attribute block attaches classes / an id to the inline element before it (link, image, emphasis, code), so a link can be styled as a button without a wrapper container. The block must follow with no space; it never collides with `{ name }` interpolation (which always starts with a name, not `.`/`#`).
 
+## Stage 13 additions (2026-06-23, v0.17.0)
+
+- **`:checkbox` and `:radio` field groups:** `:checkbox name` / `:radio name` (with `- Label` option lines) render a labelled `role="group"` / `role="radiogroup"` of `<input>`s that share one `name`, each wrapped in its own `<label>` and deriving an aria-label like the other fields. A `:checkbox` group is marked `data-wd-multi` so the runtime's submit handler collects **every** checked value into an array (`FormData.getAll`) instead of collapsing to the last — the one runtime change (compile-time only otherwise; shipped runtime stays ~5.8 KB). A `:radio` group captures a single value like `:input`. Closes the multi-select / single-choice gap that previously forced raw HTML and lost `:form into` capture.
+
 ## Stage 11 additions (2026-06-19, v0.14.1)
 
 - **Release hardening — page asset privacy:** page-colocated assets now honor the same hidden-path convention as routes. A file under `site/pages` is emitted only when no relative path segment starts with `.`, `-`, or `_`; symlinked page assets are skipped too. This preserves normal colocated media (`logo.svg`, `blog/cover.png`) while preventing accidental publication of `.env`, `_private/*`, `-draft/*`, or symlink-to-outside files.

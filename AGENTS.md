@@ -156,13 +156,16 @@ Your `.skin` selectors must match the **real** output. The emitted HTML is:
 | `::: name .card … :::` (non-`section`) | `<div class="card">…</div>` |
 | `:button "x" -> …` | `<button>x</button>` |
 | `:input email …` | `<input type="…">` |
+| `:textarea note …` | `<textarea>` |
+| `:select name` + `- Label` lines | `<select>` of `<option>`s |
+| `:checkbox name` / `:radio name` + `- Label` lines | labelled `<input type=checkbox\|radio>` group (`:checkbox` captures an **array**, `:radio` one value) |
 | `:bind q placeholder="…"` | `<input>` bound two-way to `:state q` |
 | `:submit "Go"` | `<button type="submit">Go</button>` |
 | `:form …` | `<form>…</form>` |
 | reactive `@loop` of a list | `<ul>`/`<ol>` (or `<div>`) of items |
 | `{ name }` | a text node |
 
-So style with real selectors: `section`, `.card`, `button`, `input`, `form`, `h1`. **To add a class to a container, use `::: name .class`. For any other custom element, write raw HTML `<div class="…">`. There is NO `{.class}` attribute syntax.** A container class can also be reactive: `::: card .on-sale when p.price < 50` toggles the class from a predicate (same grammar as `:if`).
+So style with real selectors: `section`, `.card`, `button`, `input`, `form`, `h1`. **To add a class to a container, use `::: name .class`; to add one to a single inline element (link, image, emphasis, inline code), use a trailing `{.class .class #id}` — e.g. `[Get started](/start/){.btn}`.** A container class can also be reactive: `::: card .on-sale when p.price < 50` toggles the class from a predicate (same grammar as `:if`).
 
 ## Styling with `.skin` — ship this on every page
 

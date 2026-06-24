@@ -41,6 +41,24 @@ test.describe("/data/ — fetch, forms, computed", () => {
     ).toBeHidden();
   });
 
+  test(":checkbox captures multiple values as an array; :radio captures one", async ({ page }) => {
+    // A :checkbox group shares one name, so the runtime must collect every
+    // checked value into an array (not collapse to the last one). :radio is
+    // single-valued. The inquiry sentence echoes both back.
+    await page.getByPlaceholder("Your full name").fill("Ada");
+    await page.getByRole("checkbox", { name: "Cleaning" }).check();
+    await page.getByRole("checkbox", { name: "Whitening" }).check();
+    await page.getByRole("radio", { name: "Urgent" }).check();
+    await page.getByRole("button", { name: "Send inquiry" }).click();
+
+    const sentence = page.getByText(/we logged your/);
+    // both checked values present → the group captured an array, not just the last
+    await expect(sentence).toContainText("Cleaning");
+    await expect(sentence).toContainText("Whitening");
+    // the radio captured its single value
+    await expect(sentence).toContainText("Urgent");
+  });
+
   test("computed total tracks the persisted cart", async ({ page }) => {
     // Fresh context: cart empty, total 0 (length 0 * 4).
     const cartLine = page.locator("#cart");
