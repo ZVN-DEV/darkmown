@@ -33,7 +33,7 @@ This audit compares the current Darkmown implementation with the original MARROW
 
 ## Stage 4 additions (2026-06-11, same day)
 
-- **View transitions (currently disabled):** `transitions: true` in frontmatter was wired to emit `@view-transition { navigation: auto; }` — the original doc's zero-JS MPA navigation polish. **This is turned off as of now:** cross-document `@view-transition` render-blocked deployed pages (stalled rAF, hanging navigation), so `transitions` is hardcoded to `""` in `src/compiler.js`. The frontmatter key is accepted but has no effect today. Reintroduction is tracked pending proper activation fallbacks (see "Still missing from the full vision").
+- **View transitions (re-enabled in 0.16.0, opt-in):** `transitions: true` in frontmatter emits `@view-transition { navigation: auto; }` — the original doc's zero-JS MPA navigation polish (a same-origin cross-fade on navigation). Previously pulled back because cross-document `@view-transition` render-blocked deployed pages (stalled rAF, hanging navigation); verified resolved on modern Chrome (CSS-only, same-origin, graceful no-support fallback, no nav hang), so it returns as a per-page opt-in. Default-off; opt out with `transitions: false`.
 - **Lazy loading:** `:fetch … when=visible` defers the request until the marker scrolls into view (IntersectionObserver) — the adapted form of `:lazy`.
 - **Computed state:** `:computed name = expr` with a compile-time-validated grammar (state refs, numbers, strings, arithmetic, comparisons; assignment, calls, and prototype walks rejected). Initial values are evaluated at build time.
 - **Dev self-reload:** `darkmown dev` rebuilds in a child process, so changes to the framework's own `src/` always compile with fresh modules.
@@ -103,7 +103,7 @@ The compiler recognizes three directives — `:note`, `:try`, and `:sprint` — 
 ## Still missing from the full vision
 
 - First-party server runtime (`site/api/`), HTML-fragment `swap` semantics, and cart server sync — parked behind the adapter decision until a real project needs them.
-- **View transitions:** re-enabling `transitions: true` with proper activation fallbacks (disabled today — see Stage 4), plus `@starting-style` emission and browser fallbacks for older engines.
+- **View transitions:** named/typed transitions (`view-transition-name`, per-element morphs) and `@starting-style` emission on top of the opt-in cross-document fade shipped in 0.16.0 (see Stage 4).
 - Richer diagnostics and package-consumer QA in regular CI. Editor tooling exists as a source-installable VS Code extension; public Marketplace/Open VSX distribution remains a launch/distribution follow-up.
 
 ## Current claim

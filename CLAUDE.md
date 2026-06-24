@@ -5,7 +5,7 @@ Darkmown is a markdown-native web framework: `.md` files are strict CommonMark, 
 ## Architecture in one pass
 
 Compile pipeline (`src/compiler.js`):
-1. `compilePage` → HTML shell (title, favicon, skins, scripts). Note: view transitions are currently disabled — `transitions` is hardcoded to `""` in `src/compiler.js` pending proper activation fallbacks.
+1. `compilePage` → HTML shell (title, favicon, skins, scripts). View transitions are a per-page opt-in: `transitions: true` frontmatter emits the CSS-only `@view-transition { navigation: auto; }` rule (`src/compiler.js`); default-off, opt out with `transitions: false`.
 2. `compileFile` → frontmatter + colocated assets; `.md` renders via markdown-it directly; `.wd` goes to `compileBody`
 3. `compileBody` → line-based directive parser; prose segments render through markdown-it with the `wd_binding` inline plugin
 4. Interpolation `{ name.path }` resolves in priority order: reactive loop item → static scope (include args, loop vars) → declared state (section scope chain, qualified keys like `cart:items`) → literal text

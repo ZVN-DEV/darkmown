@@ -82,6 +82,8 @@ tags: [sales, revenue, "q1, q2"]
 
 Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card).
 
+`transitions: true` opts a page into **cross-document view transitions** — a smooth same-origin cross-fade on navigation, emitted as the CSS-only `@view-transition { navigation: auto; }` rule. It ships zero JavaScript, only animates between same-origin pages that both opt in, and is silently ignored by browsers without support (the navigation just doesn't fade). Off by default; opt out explicitly with `transitions: false`.
+
 ## Static assets
 
 Images, fonts, icons, and other non-page files live on the include shelf at `site/_/` and are copied into the build untouched:
