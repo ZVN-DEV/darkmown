@@ -75,7 +75,11 @@ export function compileSkin(source) {
     // `prefers-color-scheme: dark` override (OS-driven), while a bracketed
     // `tokens [data-theme=dark]` scopes the override to a `:root` attribute for
     // manual toggling. Both reuse the same `--name` properties.
-    const tokenMatch = /^tokens(?:\s+(\S+))?$/.exec(text);
+    // Capture the whole modifier (`.+`, not `\S+`) so a malformed bracketed
+    // modifier with internal spaces (`[data-theme=dark extra]`) is still routed
+    // to normalizeAttr's null fail-safe rather than slipping through as a bogus
+    // `tokens …` selector.
+    const tokenMatch = /^tokens(?:\s+(.+))?$/.exec(text);
     if (tokenMatch && opensBlock) {
       tokenIndent = indent;
       const modifier = tokenMatch[1];
@@ -84,9 +88,14 @@ export function compileSkin(source) {
       } else if (modifier === "dark") {
         tokenVars = darkVars;
       } else if (modifier.startsWith("[") && modifier.endsWith("]")) {
-        const selector = `:root${normalizeAttr(modifier)}`;
-        tokenVars = attrVars.get(selector) ?? [];
-        attrVars.set(selector, tokenVars);
+        const attr = normalizeAttr(modifier);
+        if (attr) {
+          const selector = `:root${attr}`;
+          tokenVars = attrVars.get(selector) ?? [];
+          attrVars.set(selector, tokenVars);
+        } else {
+          tokenVars = rootVars; // malformed `[…]` modifier → fall back to default :root tokens
+        }
       } else {
         tokenVars = rootVars;
       }
@@ -138,15 +147,15 @@ export function compileSkin(source) {
 /**
  * Normalize a bracketed token modifier into a valid attribute selector,
  * quoting the value so `[data-theme=dark]` becomes `[data-theme="dark"]`.
+ * Returns null for a malformed modifier (`[]`, `[a=b c]`, injection-shaped
+ * input) so the caller can fall back to default `:root` tokens instead of
+ * emitting a junk selector.
  * @param {string} bracketed
- * @returns {string}
+ * @returns {string | null}
  */
 function normalizeAttr(bracketed) {
-  return bracketed.replace(
-    /^\[\s*([^\]=\s]+)\s*=\s*"?([^\]"]*)"?\s*\]$/,
-    (/** @type {string} */ whole, /** @type {string} */ name, /** @type {string} */ val) =>
-      `[${name}="${val}"]`
-  );
+  const m = bracketed.match(/^\[\s*([^\]=\s]+)\s*=\s*"?([^\]"]*)"?\s*\]$/);
+  return m ? `[${m[1]}="${m[2]}"]` : null;
 }
 
 /**

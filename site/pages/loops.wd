@@ -84,4 +84,26 @@ No sort key needed — `reverse` walks the list back to front:
 - { r.label }
 @endloop
 
+## Nested reactive loops
+
+*New in 0.19.0.* A reactive `@loop` can hold an inner reactive `@loop` over a
+field of the outer row — one level of nesting. Type to filter the teams: the
+outer list re-filters live and every team keeps its own member list.
+
+:state teams = [{"id": 1, "name": "Platform", "members": [{"id": 11, "name": "Ada"}, {"id": 12, "name": "Bao"}]}, {"id": 2, "name": "Growth", "members": [{"id": 21, "name": "Cyrus"}, {"id": 22, "name": "Dax"}]}, {"id": 3, "name": "Research", "members": [{"id": 31, "name": "Esme"}]}]
+:state teamQuery = ""
+
+:bind teamQuery placeholder="Filter teams…"
+
+@loop teams into team where team.name contains teamQuery
+::: card .person-row
+**{ team.name }**
+@loop team.members into member
+- { member.name }
+@endloop
+:::
+@empty
+No teams match.
+@endloop
+
 </main>

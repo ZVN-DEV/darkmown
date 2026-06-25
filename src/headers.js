@@ -2,7 +2,12 @@
  * Security headers Darkmown emits on every delivery surface — the local
  * `darkmown serve`/preview server (`src/statics.js`), Cloudflare Pages
  * (`dist/_headers`, written by `src/builder.js`), and Vercel (`vercel.json`).
- * Keep all three in sync by deriving them from the values here.
+ *
+ * `statics.js` and the generated `_headers` derive from the values here, so they
+ * never drift. `vercel.json` is the exception: Vercel reads it BEFORE the build
+ * runs, so its CSP strings and static-route list are hand-maintained copies, not
+ * build output. The `vercel-csp-routes` test cross-checks vercel.json against the
+ * built route manifest so a new static route can't silently miss the strict CSP.
  *
  * The CSP is derived from what the framework's own output actually emits
  * (verify against built `dist/` HTML):

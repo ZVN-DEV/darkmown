@@ -97,6 +97,39 @@ test("npm run build writes dist/_headers with the CSP for static and reactive ro
   assert.doesNotMatch(headers, /^\/\n/m);
 });
 
+// ---------------------------------------------------------------------------
+// Drift guard: vercel.json is hand-maintained (Vercel reads it before the build,
+// so it can't be generated from the manifest like _headers). Cross-check its
+// static-CSP route list against the real demo build so a new static route can't
+// silently miss the eval-free CSP on Vercel.
+// ---------------------------------------------------------------------------
+
+test("vercel.json static-CSP route list covers every runtime:false demo route", () => {
+  const repoRoot = process.cwd();
+  const vercel = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
+  const staticRule = (vercel.headers || []).find((h) =>
+    (h.headers || []).some((x) => x.key === "Content-Security-Policy" && !x.value.includes("unsafe-eval"))
+  );
+  assert.ok(staticRule, "vercel.json must define a static (eval-free) CSP rule");
+  const alts = (staticRule.source.match(/\(([^)]+)\)/) || [, ""])[1].split("|").filter(Boolean);
+
+  // Build the real demo (copied into a temp dir so we never clobber ./dist).
+  const root = fixture();
+  fs.cpSync(path.join(repoRoot, "site"), path.join(root, "site"), { recursive: true });
+  buildSite(root);
+  const routes = JSON.parse(fs.readFileSync(path.join(root, "dist/routes.json"), "utf8"));
+
+  const staticRoutes = routes.filter((r) => r.assets.runtime === false);
+  assert.ok(staticRoutes.length > 0, "expected at least one static demo route");
+  for (const r of staticRoutes) {
+    const segment = r.route.replace(/^\//, "").split("/")[0] || "";
+    assert.ok(
+      alts.includes(segment),
+      `static route ${r.route} (segment "${segment}") is missing from vercel.json static-CSP source /(${alts.join("|")})/ — add it or its CSP drifts to the relaxed (unsafe-eval) policy on Vercel.`
+    );
+  }
+});
+
 function escapeRe(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

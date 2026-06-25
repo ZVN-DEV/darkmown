@@ -136,6 +136,21 @@ test("tokens [data-theme=dark] compiles to a manual-toggle :root attribute scope
   assert.match(css, /body \{ color: var\(--ink\); \}/);
 });
 
+test("a malformed tokens modifier never breaks out of the attribute selector", () => {
+  // Empty and breakout-shaped modifiers fall back to plain :root tokens — no
+  // stray rule leaks (the `}body{…}` injection attempt is neutralized).
+  for (const bad of ["tokens []", "tokens [data-theme=dark]{}body{x:1}]"]) {
+    const css = compileSkin([bad, "  ink #fff"].join("\n"));
+    assert.match(css, /^:root \{\n {2}--ink: #fff;\n\}$/, `bad modifier "${bad}" should fall back to :root`);
+    assert.doesNotMatch(css, /body\s*\{/);
+  }
+  // A bracketed value containing a space is still safe: it normalizes to a
+  // *quoted* attribute selector, never a junk rule or a breakout.
+  const spaced = compileSkin(["tokens [data-theme=dark extra]", "  ink #fff"].join("\n"));
+  assert.match(spaced, /:root\[data-theme="dark extra"\] \{/);
+  assert.doesNotMatch(spaced, /body\s*\{/);
+});
+
 test("block comments and decorative divider lines are skipped, not parsed as rules", () => {
   const css = compileSkin([
     "/* Brand skin",

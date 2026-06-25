@@ -265,6 +265,8 @@ That is a full add-to-cart / remove-line flow — and a to-do list with delete �
 - Build-time loops over JSON/frontmatter already nest freely (the "loops nest" behavior above); what's new is **reactive-inside-reactive** over a `:state`/`:store`/`:fetch` row field.
 
 > **Honest caveat:** nesting is **one level only** — an inner reactive loop may not itself contain a third reactive loop. Build-time loop nesting is unaffected by this limit.
+>
+> **Per-row actions inside an inner loop:** `cart += member` (append-row) works from an inner loop — it carries the inner item into a top-level `:state`/`:store` list. But a per-row **`remove`** needs a top-level list as its source, and an inner loop's source is a path off the outer row (`team.members`), so deleting an inner row in place is **not** supported — the compiler rejects it with a corrective message. Carry the row into a top-level list and remove it there.
 
 ## Sections
 

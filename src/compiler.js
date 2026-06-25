@@ -625,7 +625,11 @@ const KNOWN_DIRECTIVE =
  * @returns {void}
  */
 function warnUnknownDirective(line, ctx) {
-  const m = line.match(/^([@:][a-z]+)(?:\s|$)/);
+  // Catch capitalized (`:State`) and hyphenated (`:end-loop`) typos too — the
+  // known-directive whitelist stays case-sensitive, so a mis-cased real
+  // directive correctly trips the warning. Still unindented-only, to keep prose
+  // that legitimately starts lines with `@`/`:` from false-positiving.
+  const m = line.match(/^([@:][A-Za-z][A-Za-z-]*)(?:\s|$)/);
   if (m && !KNOWN_DIRECTIVE.test(line)) {
     ctx.comp.warnings.push(
       `${ctx.file}: "${m[1]}" looks like a directive but matches none — it will render as literal text. Check the spelling (e.g. @loop, @include, :state, :if).`
@@ -1983,15 +1987,7 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   const templateCtx = { ...ctx, loopItem: itemName, loopKey: key ?? undefined, loopMeta: true, scope: createScope(ctx.scope) };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
 
-  let wrapperTag = "div";
-  let itemTemplate = templateHtml;
-  const listMatch = templateHtml.match(/^<(ul|ol)>\s*([\s\S]*?)\s*<\/\1>$/);
-  if (listMatch && (listMatch[2].match(/<li>/g) || []).length === 1) {
-    wrapperTag = listMatch[1];
-    itemTemplate = listMatch[2].trim();
-  } else {
-    itemTemplate = `<div data-wd-loop-piece>${templateHtml}</div>`;
-  }
+  const { wrapperTag, itemTemplate } = wrapRowTemplate(templateHtml);
 
   const where = opts?.where || null;
   const sort = opts?.sort || null;
@@ -2025,12 +2021,39 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
     })
     .join("");
 
-  const emptyTemplate = emptyLines ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>` : "";
+  const emptyTemplate = loopEmptyTemplate(emptyLines, ctx);
   const initialOut = count === 0 && emptyLines ? compileBody(emptyLines, { ...ctx, loopMeta: true }).trim() : initial;
 
   const attrs = loopClauseAttrs({ where, sort, reverse, offset, limit }) +
     (baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "");
   return `<div data-wd-loop="${escapeHtml(key || "")}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out>${initialOut}</${wrapperTag}></div>`;
+}
+
+/**
+ * Unwrap a compiled row body into a wrapper tag + row template. A body that is a
+ * single-`<li>` `<ul>`/`<ol>` becomes an `<li>` row under that list wrapper;
+ * anything else is wrapped in a `<div data-wd-loop-piece>` under a `<div>`. Shared
+ * by top-level reactive loops and item-relative (nested) loops.
+ * @param {string} templateHtml
+ * @returns {{ wrapperTag: string, itemTemplate: string }}
+ */
+function wrapRowTemplate(templateHtml) {
+  const listMatch = templateHtml.match(/^<(ul|ol)>\s*([\s\S]*?)\s*<\/\1>$/);
+  if (listMatch && (listMatch[2].match(/<li>/g) || []).length === 1) {
+    return { wrapperTag: listMatch[1], itemTemplate: listMatch[2].trim() };
+  }
+  return { wrapperTag: "div", itemTemplate: `<div data-wd-loop-piece>${templateHtml}</div>` };
+}
+
+/**
+ * Compile an `@empty` branch body into a `<template data-wd-loop-empty>` (or "" when
+ * there is no empty branch). Shared by top-level and item-relative loops.
+ * @param {string[] | null} emptyLines
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function loopEmptyTemplate(emptyLines, ctx) {
+  return emptyLines ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>` : "";
 }
 
 /**
@@ -2066,21 +2089,15 @@ function loopClauseAttrs(c) {
  */
 function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
   /** @type {Ctx} */
-  const templateCtx = { ...ctx, loopItem: itemName, loopMeta: true, scope: createScope(ctx.scope) };
+  // loopKey: undefined — an item-relative loop's source is a path off the outer
+  // row, not a top-level state key, so a per-row `remove` inside it has no valid
+  // target and must be rejected (rather than inheriting the outer loop's key).
+  const templateCtx = { ...ctx, loopItem: itemName, loopKey: undefined, loopMeta: true, scope: createScope(ctx.scope) };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
 
-  let wrapperTag = "div";
-  let itemTemplate;
-  const listMatch = templateHtml.match(/^<(ul|ol)>\s*([\s\S]*?)\s*<\/\1>$/);
-  if (listMatch && (listMatch[2].match(/<li>/g) || []).length === 1) {
-    wrapperTag = listMatch[1];
-    itemTemplate = listMatch[2].trim();
-  } else {
-    itemTemplate = `<div data-wd-loop-piece>${templateHtml}</div>`;
-  }
+  const { wrapperTag, itemTemplate } = wrapRowTemplate(templateHtml);
 
-  const emptyLines = opts.empty || null;
-  const emptyTemplate = emptyLines ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>` : "";
+  const emptyTemplate = loopEmptyTemplate(opts.empty || null, ctx);
   const attrs = loopClauseAttrs({ where: opts.where || null, sort: opts.sort || null, reverse: opts.reverse || false, offset: opts.offset || null, limit: opts.limit || null });
   return `<div data-wd-loop-item="${escapeHtml(path)}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out></${wrapperTag}></div>`;
 }
@@ -2663,7 +2680,13 @@ function parseSingleAction(expression, raw, ctx) {
   if (remove) {
     const operand = remove[2].trim();
     if (ctx.loopItem && operand === ctx.loopItem) {
-      if (!ctx.loopKey || resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
+      // A nested (item-relative) loop has a loop item but no top-level state key —
+      // its source is a path off the outer row, which the runtime's row-remove
+      // can't target. Fail loud with the honest workaround.
+      if (!ctx.loopKey) {
+        throw new Error(`Button action "${raw}" can't delete a row of a nested (item-relative) loop in ${ctx.file}. Per-row "remove" needs a top-level :state/:store list; carry the row into one (cart += ${ctx.loopItem}) and remove it there.`);
+      }
+      if (resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
         throw new Error(`Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`);
       }
       return { op: "remove", target: ctx.loopKey };
