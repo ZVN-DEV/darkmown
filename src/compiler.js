@@ -327,6 +327,7 @@ function compileFile(file, context, stack, scope, comp, sections, loopItem) {
 
   const raw = fs.readFileSync(file, "utf8");
   const { meta, body } = parseFrontmatter(raw, file);
+  warnLikelyFrontmatter(raw, file, comp);
   collectColocatedAssets(file, context, comp.assets);
 
   if (path.extname(file) === ".md") {
@@ -363,6 +364,37 @@ export function parseFrontmatter(raw, file) {
     if (match) meta[match[1]] = parseFrontmatterValue(match[2]);
   }
   return { meta, body };
+}
+
+/**
+ * Warn (non-fatal) when a file looks like it MEANT to open frontmatter but forgot
+ * the leading `---`: the first content line is a `key: value` pair and a bare
+ * `---` fence appears within the opening lines. Conservative — a normal markdown
+ * body whose first line happens to contain a colon (with no early `---`) is left
+ * alone, since `---` is also a valid horizontal rule.
+ * @param {string} raw
+ * @param {string} file
+ * @param {Compilation} comp
+ * @returns {void}
+ */
+function warnLikelyFrontmatter(raw, file, comp) {
+  if (raw.startsWith("---\n")) return; // a real opener: parseFrontmatter handled it
+  const lines = raw.replace(/\r\n?/g, "\n").split("\n");
+  let i = 0;
+  while (i < lines.length && !lines[i].trim()) i++; // skip leading blanks
+  if (i >= lines.length || !/^[A-Za-z][\w-]*:\s*\S/.test(lines[i])) return;
+  // Only warn when the run of lines up to a bare `---` is ALL `key: value` pairs:
+  // a forgotten opener, not prose that merely contains a colon and a later rule.
+  for (let j = i; j < lines.length && j < i + 12; j++) {
+    const t = lines[j].trim();
+    if (t === "---") {
+      comp.warnings.push(
+        `${file}: this looks like frontmatter missing its opening "---". Use: a "---" line before the fields (and another "---" to close) — otherwise the block renders as page text.`
+      );
+      return;
+    }
+    if (t && !/^[A-Za-z][\w-]*:\s*\S/.test(t)) return; // hit prose → not frontmatter
+  }
 }
 
 // Frontmatter values are scalars, except an inline flow array `[a, b, c]`.
@@ -571,11 +603,46 @@ function compileBody(lines, ctx) {
     if (/^(@endloop|:endif|:endfor|:endform|:else)\s*$/.test(line)) {
       throw new Error(`Stray "${line.trim()}" with no matching opener in ${ctx.file}`);
     }
+    warnUnknownDirective(line, ctx);
     prose.push(line);
   }
 
   flush();
   return out.join("\n");
+}
+
+// Lines that reached prose but LOOK like a directive (a `@word`/`:word` token at
+// the very start, followed by a space or end of line) and match no handler are
+// almost always a typo — every real directive was intercepted above. Warn, never
+// throw: prose legitimately contains `@` and `:`, so the match is deliberately
+// narrow (lowercase token + boundary; emoji shortcodes, times, and `@user`
+// followed by punctuation do not match).
+const KNOWN_DIRECTIVE =
+  /^(?:@(?:include|loop|empty|endloop)|:(?:state|store|fetch|computed|effect|form|endform|input|textarea|select|checkbox|radio|bind|submit|button|if|endif|else|try|note|sprint))(?:\s|$)/;
+/**
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @returns {void}
+ */
+function warnUnknownDirective(line, ctx) {
+  const m = line.match(/^([@:][a-z]+)(?:\s|$)/);
+  if (m && !KNOWN_DIRECTIVE.test(line)) {
+    ctx.comp.warnings.push(
+      `${ctx.file}: "${m[1]}" looks like a directive but matches none — it will render as literal text. Check the spelling (e.g. @loop, @include, :state, :if).`
+    );
+  }
+}
+
+/**
+ * Format a source location as `file:line` (1-based) for compile errors. Keeps the
+ * file path intact so existing message matchers still pass, while pointing at the
+ * unclosed opener's line.
+ * @param {string} file
+ * @param {number} index 0-based line index of the opener.
+ * @returns {string}
+ */
+function at(file, index) {
+  return `${file}:${index + 1}`;
 }
 
 /**
@@ -612,7 +679,7 @@ function scanBlock(lines, start, openRe, endToken, file) {
     }
     body.push(line);
   }
-  throw new Error(`Missing ${endToken} for "${lines[start]}" in ${file}`);
+  throw new Error(`Missing ${endToken} for "${lines[start]}" in ${at(file, start)}`);
 }
 
 /**
@@ -683,7 +750,7 @@ function scanContainer(lines, start, file) {
     }
     body.push(line);
   }
-  throw new Error(`Missing closing ::: for "${lines[start]}" in ${file}`);
+  throw new Error(`Missing closing ::: for "${lines[start]}" in ${at(file, start)}`);
 }
 
 /**
@@ -752,7 +819,7 @@ function scanConditional(lines, start, file) {
     }
     current.push(line);
   }
-  throw new Error(`Missing :endif for "${lines[start]}" in ${file}`);
+  throw new Error(`Missing :endif for "${lines[start]}" in ${at(file, start)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1637,6 +1704,11 @@ function handleLoop(line, bodyLines, emptyLines, ctx) {
       const fullKey = segs.length > 1 ? `${key}.${segs.slice(1).join(".")}` : key;
       return reactiveLoop(fullKey, itemName, bodyLines, ctx, opts);
     }
+    // Inside a reactive loop, `@loop <outerItem>.<path> into x` loops a field of
+    // the enclosing row item — an ITEM-RELATIVE loop the runtime fills per row.
+    if (ctx.loopItem && segs[0] === ctx.loopItem && segs.length > 1) {
+      return itemRelativeLoop(segs.slice(1).join("."), itemName, bodyLines, ctx, opts);
+    }
   }
 
   throw new Error(
@@ -1941,25 +2013,109 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   /** @type {Map<string, number>} */
   const counts = new Map();
   const count = rows.length;
+  // Inner ITEM-RELATIVE loop regions are filled per row by the runtime, not at
+  // build time; mask them so the outer initial-paint string fill leaves their
+  // pristine <template>/empty-out markup untouched, then restore.
+  const { masked, regions } = maskItemLoops(itemTemplate);
   const initial = rows
     .map((/** @type {unknown} */ item, i) => {
       const itemKey = loopKeyOf(item, counts);
       const meta = { index: i, number: i + 1, first: i === 0, last: i === count - 1, count };
-      return fillTemplateString(withLoopKey(itemTemplate, itemKey), item, meta);
+      return unmaskItemLoops(fillTemplateString(withLoopKey(masked, itemKey), item, meta), regions);
     })
     .join("");
 
   const emptyTemplate = emptyLines ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>` : "";
   const initialOut = count === 0 && emptyLines ? compileBody(emptyLines, { ...ctx, loopMeta: true }).trim() : initial;
 
-  const attrs =
-    (where ? ` data-wd-loop-where="${escapeHtml(where.body)}"` : "") +
-    (sort ? ` data-wd-loop-sort="${escapeHtml(sort.key)}" data-wd-loop-sort-dir="${sort.dir}"` : "") +
-    (reverse ? ` data-wd-loop-reverse` : "") +
-    (offset ? ` data-wd-loop-offset="${numArgAttr(offset)}"` : "") +
-    (limit ? ` data-wd-loop-limit="${numArgAttr(limit)}"` : "") +
+  const attrs = loopClauseAttrs({ where, sort, reverse, offset, limit }) +
     (baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "");
   return `<div data-wd-loop="${escapeHtml(key || "")}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out>${initialOut}</${wrapperTag}></div>`;
+}
+
+/**
+ * Serialize the shared `where`/`sort`/`reverse`/`offset`/`limit` clause config to
+ * the `data-wd-loop-*` attribute string consumed by the runtime pipeline. Shared
+ * by top-level reactive loops and item-relative (nested) loops.
+ * @param {Pick<LoopOpts, "where" | "sort" | "reverse" | "offset" | "limit">} c
+ * @returns {string}
+ */
+function loopClauseAttrs(c) {
+  return (
+    (c.where ? ` data-wd-loop-where="${escapeHtml(c.where.body)}"` : "") +
+    (c.sort ? ` data-wd-loop-sort="${escapeHtml(c.sort.key)}" data-wd-loop-sort-dir="${c.sort.dir}"` : "") +
+    (c.reverse ? ` data-wd-loop-reverse` : "") +
+    (c.offset ? ` data-wd-loop-offset="${numArgAttr(c.offset)}"` : "") +
+    (c.limit ? ` data-wd-loop-limit="${numArgAttr(c.limit)}"` : "")
+  );
+}
+
+/**
+ * Emit ONE level of nested reactive loop: a `@loop <outerItem>.<path> into x`
+ * whose rows are read off the enclosing loop row at runtime. The region carries
+ * its own row <template> + clause config but, unlike a top-level loop, its source
+ * is the relative `path` (not a global state key) — `fillItem` resolves the rows
+ * off the current outer item and reconciles per row. The output starts empty; the
+ * runtime fills it on first render (the page already ships the runtime).
+ * @param {string} path Dotted sub-path off the outer item (e.g. `items`).
+ * @param {string} itemName Inner loop item name.
+ * @param {string[]} bodyLines Inner loop body.
+ * @param {Ctx} ctx
+ * @param {Partial<LoopOpts>} opts
+ * @returns {string}
+ */
+function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
+  /** @type {Ctx} */
+  const templateCtx = { ...ctx, loopItem: itemName, loopMeta: true, scope: createScope(ctx.scope) };
+  const templateHtml = compileBody(bodyLines, templateCtx).trim();
+
+  let wrapperTag = "div";
+  let itemTemplate;
+  const listMatch = templateHtml.match(/^<(ul|ol)>\s*([\s\S]*?)\s*<\/\1>$/);
+  if (listMatch && (listMatch[2].match(/<li>/g) || []).length === 1) {
+    wrapperTag = listMatch[1];
+    itemTemplate = listMatch[2].trim();
+  } else {
+    itemTemplate = `<div data-wd-loop-piece>${templateHtml}</div>`;
+  }
+
+  const emptyLines = opts.empty || null;
+  const emptyTemplate = emptyLines ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>` : "";
+  const attrs = loopClauseAttrs({ where: opts.where || null, sort: opts.sort || null, reverse: opts.reverse || false, offset: opts.offset || null, limit: opts.limit || null });
+  return `<div data-wd-loop-item="${escapeHtml(path)}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out></${wrapperTag}></div>`;
+}
+
+/**
+ * Replace each top-level `data-wd-loop-item` region in a row template with an
+ * opaque placeholder so the outer initial-paint string fill cannot reach inside
+ * its pristine markup. Returns the masked string and the excised regions in order.
+ * @param {string} template
+ * @returns {{ masked: string, regions: string[] }}
+ */
+function maskItemLoops(template) {
+  const marker = "<div data-wd-loop-item=";
+  /** @type {string[]} */
+  const regions = [];
+  let masked = "";
+  let i = 0;
+  for (;;) {
+    const start = template.indexOf(marker, i);
+    if (start === -1) return { masked: masked + template.slice(i), regions };
+    const end = matchElement(template, start, "div");
+    masked += template.slice(i, start) + `\x00WDLI${regions.length}\x00`;
+    regions.push(template.slice(start, end));
+    i = end;
+  }
+}
+
+/**
+ * Restore the masked `data-wd-loop-item` regions into a filled row string.
+ * @param {string} str
+ * @param {string[]} regions
+ * @returns {string}
+ */
+function unmaskItemLoops(str, regions) {
+  return regions.length ? str.replace(/\x00WDLI(\d+)\x00/g, (_, n) => regions[Number(n)]) : str;
 }
 
 /**
