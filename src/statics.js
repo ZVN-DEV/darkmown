@@ -1,6 +1,19 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { BASE_SECURITY_HEADERS, REACTIVE_CSP } from "./headers.js";
+
+/**
+ * Security headers for an HTML response from the local server. The relaxed
+ * (reactive) CSP is a superset that satisfies both static and reactive pages,
+ * so the runtime server uses it for every HTML response; the build-time
+ * outputs (`vercel.json`, `dist/_headers`) tighten static routes per-path.
+ * @type {Record<string, string>}
+ */
+const HTML_SECURITY_HEADERS = {
+  ...BASE_SECURITY_HEADERS,
+  "Content-Security-Policy": REACTIVE_CSP
+};
 
 /**
  * Serve a built file for a request URL out of `distRoot`, or a 404 page.
@@ -12,7 +25,7 @@ import path from "node:path";
 export function serve(distRoot, url, res) {
   const file = resolvePublicFile(distRoot, url || "/");
   if (!file || !fs.existsSync(file)) {
-    res.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+    res.writeHead(404, { "content-type": "text/html; charset=utf-8", ...HTML_SECURITY_HEADERS });
     const notFound = path.join(distRoot, "404.html");
     if (fs.existsSync(notFound)) {
       res.end(fs.readFileSync(notFound));
@@ -21,7 +34,11 @@ export function serve(distRoot, url, res) {
     res.end("<h1>Not found</h1><p>This route is hidden or has not been created.</p>");
     return;
   }
-  res.writeHead(200, { "content-type": contentType(file) });
+  const type = contentType(file);
+  const headers = type.startsWith("text/html")
+    ? { "content-type": type, ...HTML_SECURITY_HEADERS }
+    : { "content-type": type };
+  res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 }
 

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compilePage } from "./compiler.js";
 import { createPaths } from "./config.js";
+import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
 import { discoverRoutes, outputPathForRoute } from "./router.js";
 import { compileSkin } from "./skin.js";
 
@@ -72,6 +73,12 @@ export function buildSite(cwd = process.cwd()) {
 
   fs.writeFileSync(path.join(paths.distRoot, "routes.json"), JSON.stringify(manifest, null, 2));
 
+  // Cloudflare Pages reads dist/_headers for security headers (Vercel reads
+  // vercel.json; the local server adds them in src/statics.js). Static routes
+  // get the stricter CSP (no 'unsafe-eval'); reactive routes get the relaxed
+  // one. A catch-all keeps assets and any future path covered.
+  fs.writeFileSync(path.join(paths.distRoot, "_headers"), renderCloudflareHeaders(manifest));
+
   // Page-colocated static assets (images, SVG, fonts, …) copy last, so the guard
   // sees every emitted route/framework file already on disk.
   emitPageAssets(paths);
@@ -101,6 +108,49 @@ export function stripRuntimeComments(source) {
     .replace(/^[ \t]*\/\/.*$/gm, "")
     // Drop the now blank/whitespace-only lines the removals leave behind.
     .replace(/^[ \t]*\n/gm, "");
+}
+
+/**
+ * Render the Cloudflare Pages `_headers` file from the route manifest.
+ *
+ * Cloudflare applies every matching block in order; when blocks set the same
+ * header, the later block wins. So we emit the catch-all `/*` first (baseline
+ * security headers + the relaxed reactive CSP that satisfies every page), then
+ * one block per static route that overrides `Content-Security-Policy` with the
+ * stricter, eval-free CSP. Reactive routes need no override — the catch-all
+ * already carries the relaxed CSP.
+ *
+ * Clean URLs mean a route like `/docs/` is served at both `/docs` and `/docs/`,
+ * so each static route emits a path glob (`/docs`, `/docs/*`) that covers both.
+ * @param {RouteManifestEntry[]} manifest
+ * @returns {string}
+ */
+export function renderCloudflareHeaders(manifest) {
+  const baseLines = Object.entries(BASE_SECURITY_HEADERS).map(([name, value]) => `  ${name}: ${value}`);
+  const blocks = [
+    ["/*", [...baseLines, `  Content-Security-Policy: ${REACTIVE_CSP}`]]
+  ];
+
+  for (const entry of manifest) {
+    if (entry.assets.runtime) continue; // reactive routes keep the catch-all (relaxed) CSP
+    for (const pattern of cloudflarePathPatterns(entry.route)) {
+      blocks.push([pattern, [`  Content-Security-Policy: ${STATIC_CSP}`]]);
+    }
+  }
+
+  return `${blocks.map(([pattern, lines]) => [pattern, ...lines].join("\n")).join("\n\n")}\n`;
+}
+
+/**
+ * Cloudflare `_headers` path patterns covering a clean-URL route. `/` →
+ * `["/", "/index.html"]`; `/docs/` → `["/docs", "/docs/*"]`.
+ * @param {string} route Route path from the manifest (always trailing-slashed).
+ * @returns {string[]}
+ */
+function cloudflarePathPatterns(route) {
+  if (route === "/") return ["/", "/index.html"];
+  const trimmed = route.replace(/\/$/, ""); // "/docs/" -> "/docs"
+  return [trimmed, `${trimmed}/*`];
 }
 
 /**

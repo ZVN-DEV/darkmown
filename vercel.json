@@ -10,5 +10,29 @@
       "source": "/__wd/echo",
       "destination": "/api/echo"
     }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+        }
+      ]
+    },
+    {
+      "comment": "Static routes ship zero framework JS, so they never call `new Function` — a later, more specific rule drops 'unsafe-eval' for them. Vercel applies all matching header rules and the last match wins for a duplicate key, so these override the catch-all CSP above. (`connect-src 'self'` fits the demo's same-origin :fetch — widen to e.g. `connect-src *` if your :fetch targets a remote host.)",
+      "source": "/(docs|markdown|404)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+        }
+      ]
+    }
   ]
 }
