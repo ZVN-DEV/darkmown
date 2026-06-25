@@ -74,13 +74,31 @@ class El {
   get innerHTML() { return ""; }
   set innerHTML(v) { if (!v) this.children = []; }
 
-  matches(selector) { return matchSelector(this, selector); }
+  matches(selector) {
+    // Support the comma-separated multi-selector the click handler uses
+    // ("[data-wd-action],[data-wd-actions]"): match if ANY clause matches.
+    return selector.split(",").some((s) => matchSelector(this, s.trim()));
+  }
+  // closest walks up the parent chain (including self), like the real DOM, so the
+  // runtime's event handlers (input/submit/click) can resolve their owning node.
+  closest(selector) {
+    let node = this;
+    while (node) {
+      if (node.matches(selector)) return node;
+      node = node.parent;
+    }
+    return null;
+  }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   querySelectorAll(selector) {
     const out = [];
     walk(this, (node) => { if (node !== this && matchSelector(node, selector)) out.push(node); });
     return out;
   }
+  // <input>/<textarea>/<select> value, the surface :bind-input reads & writes.
+  // Backed by an attribute so cloneNode + setAttribute("value") stay coherent.
+  get value() { return this.attrs.has("value") ? this.attrs.get("value") : ""; }
+  set value(v) { this.attrs.set("value", v == null ? "" : String(v)); }
 }
 
 class Fragment extends El {
@@ -109,9 +127,52 @@ function matchSelector(node, selector) {
   return true;
 }
 
+// --- Form serialization stubs ----------------------------------------------
+//
+// Minimal FormData/URLSearchParams so the runtime's :form submit handler can run
+// against the DOM stub. FormData walks the form's input/select/textarea
+// descendants the way a browser collects "successful controls": name/value
+// pairs, but a checkbox/radio contributes only when it carries a `checked`
+// attribute. getAll(name) returns every value for a repeated name (the
+// :checkbox-group array path). It is iterable so Object.fromEntries works.
+
+function collectFormControls(form) {
+  const pairs = [];
+  for (const el of form.querySelectorAll("[name]")) {
+    const tag = el.tagName;
+    if (tag !== "INPUT" && tag !== "SELECT" && tag !== "TEXTAREA") continue;
+    const type = (el.getAttribute("type") || "").toLowerCase();
+    if ((type === "checkbox" || type === "radio") && !el.hasAttribute("checked")) continue;
+    pairs.push([el.getAttribute("name"), el.value]);
+  }
+  return pairs;
+}
+
+class FormDataStub {
+  constructor(form) { this._pairs = form ? collectFormControls(form) : []; }
+  getAll(name) { return this._pairs.filter(([k]) => k === name).map(([, v]) => v); }
+  get(name) { const hit = this._pairs.find(([k]) => k === name); return hit ? hit[1] : null; }
+  append(name, value) { this._pairs.push([name, String(value)]); }
+  *[Symbol.iterator]() { yield* this._pairs; }
+  entries() { return this._pairs[Symbol.iterator](); }
+}
+
+class URLSearchParamsStub {
+  // The runtime builds this from a FormData, then calls .toString().
+  constructor(init) {
+    this._pairs = [];
+    if (init && typeof init[Symbol.iterator] === "function") {
+      for (const [k, v] of init) this._pairs.push([k, v]);
+    }
+  }
+  toString() {
+    return this._pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+  }
+}
+
 // --- Sandbox harness -------------------------------------------------------
 
-function makeSandbox(rootBuilder, { withRAF = false, globals = {} } = {}) {
+function makeSandbox(rootBuilder, { withRAF = false, globals = {}, initialStore = {} } = {}) {
   const root = new El("body");
   rootBuilder(root, El);
 
@@ -123,7 +184,9 @@ function makeSandbox(rootBuilder, { withRAF = false, globals = {} } = {}) {
     addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); }
   };
 
-  const store = new Map();
+  // localStorage backing store; pre-seeded so a :persist/:store override can be
+  // present BEFORE the runtime reads it on load.
+  const store = new Map(Object.entries(initialStore));
   const localStorage = {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
@@ -145,7 +208,10 @@ function makeSandbox(rootBuilder, { withRAF = false, globals = {} } = {}) {
     Set,
     Boolean,
     Function,
-    queueMicrotask
+    queueMicrotask,
+    // Form serialization the :form submit handler relies on.
+    FormData: FormDataStub,
+    URLSearchParams: URLSearchParamsStub
   };
   if (withRAF) {
     sandbox.requestAnimationFrame = (fn) => { sandbox.__rafQueue.push(fn); return sandbox.__rafQueue.length; };
@@ -170,8 +236,14 @@ function makeSandbox(rootBuilder, { withRAF = false, globals = {} } = {}) {
   return {
     root,
     sandbox,
+    document,
+    store, // localStorage backing Map, for :persist / :store assertions
+    // Dispatch an event of `type` at `target`. Returns whether a handler called
+    // preventDefault() (the :form submit handler must, to suppress navigation).
     fire(type, target) {
-      for (const fn of listeners[type] || []) fn({ target, preventDefault() {} });
+      let defaultPrevented = false;
+      for (const fn of listeners[type] || []) fn({ target, preventDefault() { defaultPrevented = true; } });
+      return defaultPrevented;
     },
     get renderCount() { return sandbox.__renderCount || 0; },
     flushRAF() {
@@ -892,4 +964,340 @@ test("expression :if supports == and a negated operand", () => {
   h.sandbox.wd.state.banned = true;
   h.sandbox.wd.render();
   assert.equal(node.getAttribute("data-wd-if-active"), "false", "banned → false");
+});
+
+// ===========================================================================
+// TASK-3B — runtime-behavior backfill for shipped-but-runtime-untested features.
+// Each section drives the REAL src/runtime.js event handlers via the harness
+// `fire(type, target)` dispatcher, asserting one solid behavior per feature.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// TASK-3B.1 — :bind two-way (runtime.js input handler ~470 + reflect-back ~420)
+// ---------------------------------------------------------------------------
+
+function stateScript(root, El, obj, attrs = {}) {
+  const s = new El("script");
+  s.setAttribute("data-wd-state", "");
+  for (const [k, v] of Object.entries(attrs)) s.setAttribute(k, v);
+  s.textContent = JSON.stringify(obj);
+  root.appendChild(s);
+  return s;
+}
+
+test(":bind input event updates state.q (input → state)", () => {
+  let input;
+  const h = makeSandbox((root, El) => {
+    stateScript(root, El, { q: "" });
+    input = new El("input");
+    input.setAttribute("data-wd-bind-input", "q");
+    root.appendChild(input);
+  });
+
+  input.value = "hello";
+  h.fire("input", input);
+
+  assert.equal(h.sandbox.wd.state.q, "hello", "input event wrote the field value into state.q");
+});
+
+test(":bind reflects a programmatic state change back into input.value when not focused", () => {
+  let input;
+  const h = makeSandbox((root, El) => {
+    stateScript(root, El, { q: "seed" });
+    input = new El("input");
+    input.setAttribute("data-wd-bind-input", "q");
+    root.appendChild(input);
+  });
+
+  // On load the seed should already be reflected.
+  assert.equal(input.value, "seed", "initial seed reflected into the input");
+
+  // Not focused (document.activeElement !== input) → state change reflects back.
+  h.sandbox.wd.set("q", "fromState");
+  h.sandbox.wd.render();
+  assert.equal(input.value, "fromState", "unfocused input mirrors the new state value");
+});
+
+test(":bind does NOT overwrite a focused input's value on render", () => {
+  let input;
+  const h = makeSandbox((root, El) => {
+    stateScript(root, El, { q: "seed" });
+    input = new El("input");
+    input.setAttribute("data-wd-bind-input", "q");
+    root.appendChild(input);
+  });
+  // Simulate the user focused & mid-typing: activeElement is the input.
+  h.document.activeElement = input;
+  input.value = "user-typing";
+  h.sandbox.wd.state.q = "fromState";
+  h.sandbox.wd.render();
+  assert.equal(input.value, "user-typing", "focused input is left untouched by render");
+});
+
+// ---------------------------------------------------------------------------
+// TASK-3B.2 — :form into name submit capture (runtime.js submit handler ~552)
+// ---------------------------------------------------------------------------
+
+// Build a <form data-wd-form="key"> with the given field-building callback.
+function formRegion(root, El, { key, action = null, method = null, build }) {
+  stateScript(root, El, { [key]: null });
+  const form = new El("form");
+  form.setAttribute("data-wd-form", key);
+  if (action) form.setAttribute("action", action);
+  if (method) form.setAttribute("method", method);
+  build(form, El);
+  root.appendChild(form);
+  return form;
+}
+
+function textInput(form, El, name, value) {
+  const i = new El("input");
+  i.setAttribute("type", "text");
+  i.setAttribute("name", name);
+  i.value = value;
+  form.appendChild(i);
+  return i;
+}
+
+test(":form (no action) submit collects field values into state[name]", () => {
+  let form;
+  const h = makeSandbox((root, El) => {
+    form = formRegion(root, El, {
+      key: "profile",
+      build: (f, E) => {
+        textInput(f, E, "name", "Ada");
+        textInput(f, E, "city", "London");
+      }
+    });
+  });
+
+  const prevented = h.fire("submit", form);
+  assert.equal(prevented, true, "submit default is prevented (no real navigation)");
+  assert.deepEqual(h.sandbox.wd.state.profile, { name: "Ada", city: "London" });
+});
+
+test(":form :checkbox group collects every checked value as an ARRAY (getAll)", () => {
+  let form;
+  const h = makeSandbox((root, El) => {
+    form = formRegion(root, El, {
+      key: "prefs",
+      build: (f, E) => {
+        // The compiler wraps a :checkbox group in a div[data-wd-multi="name"]
+        // with <input type=checkbox name=topics value=…> controls.
+        const group = new E("div");
+        group.setAttribute("data-wd-multi", "topics");
+        for (const [val, checked] of [["news", true], ["sales", false], ["beta", true]]) {
+          const cb = new E("input");
+          cb.setAttribute("type", "checkbox");
+          cb.setAttribute("name", "topics");
+          cb.value = val;
+          if (checked) cb.setAttribute("checked", "");
+          group.appendChild(cb);
+        }
+        f.appendChild(group);
+      }
+    });
+  });
+
+  h.fire("submit", form);
+  assert.deepEqual(
+    h.sandbox.wd.state.prefs.topics,
+    ["news", "beta"],
+    "only the checked checkboxes are collected, as an array"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TASK-3B.3 — :form action+into round-trip (runtime.js submit handler ~573)
+// ---------------------------------------------------------------------------
+
+test(":form action posts and lands a JSON reply into state[key] on success", async () => {
+  const stub = makeFetchStub({ "/api/save": { status: 200, body: { id: 7, ok: true } } });
+  let form;
+  const h = makeSandbox(
+    (root, El) => {
+      form = formRegion(root, El, {
+        key: "saved",
+        action: "/api/save",
+        method: "post",
+        build: (f, E) => textInput(f, E, "name", "Ada")
+      });
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+
+  h.fire("submit", form);
+  await settle();
+
+  assert.equal(stub.count("/api/save"), 1, "the form POSTed once");
+  assert.deepEqual(h.sandbox.wd.state.saved, { id: 7, ok: true }, "success reply written to state[key]");
+  assert.equal(h.sandbox.wd.state.saved_error, null, "no error flag on success");
+});
+
+test(":form action writes state[key+'_error'] on a failure response", async () => {
+  const stub = makeFetchStub({ "/api/save": { status: 500, body: { error: "boom" } } });
+  let form;
+  const h = makeSandbox(
+    (root, El) => {
+      form = formRegion(root, El, {
+        key: "saved",
+        action: "/api/save",
+        method: "post",
+        build: (f, E) => textInput(f, E, "name", "Ada")
+      });
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+
+  h.fire("submit", form);
+  await settle();
+
+  assert.match(String(h.sandbox.wd.state.saved_error), /HTTP 500/, "failure surfaces as *_error");
+  assert.equal(h.sandbox.wd.state.saved ?? null, null, "no success value on failure");
+});
+
+// ---------------------------------------------------------------------------
+// TASK-3B.4 — per-row append-row / remove (runtime.js applyAction ~522-535)
+// ---------------------------------------------------------------------------
+
+// A loop region whose row proto carries a button with the given per-row action.
+function actionLoop(root, El, { srcKey, initial, op, target }) {
+  stateScript(root, El, { [srcKey]: initial, ...(target && target !== srcKey ? { [target]: [] } : {}) });
+  const region = new El("div");
+  region.setAttribute("data-wd-loop", srcKey);
+  const template = new El("template");
+  template.setAttribute("data-wd-loop-template", "");
+  const proto = new El("li");
+  const label = new El("span");
+  label.setAttribute("data-wd-each", "");
+  label.setAttribute("data-wd-path", "name");
+  proto.appendChild(label);
+  const button = new El("button");
+  button.setAttribute("data-wd-action", op);
+  if (target) button.setAttribute("data-wd-target", target);
+  proto.appendChild(button);
+  template.content.appendChild(proto);
+  region.appendChild(template);
+  const out = new El("ul");
+  out.setAttribute("data-wd-loop-out", "");
+  region.appendChild(out);
+  root.appendChild(region);
+  return { region, out };
+}
+
+test("per-row :button remove deletes the exact clicked row from the looped source", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = actionLoop(root, El, {
+      srcKey: "lines",
+      initial: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }, { id: "c", name: "Gamma" }],
+      op: "remove"
+    }));
+  });
+  assert.equal(out.children.length, 3);
+  // Click the remove button inside row "b".
+  const rowB = out.children[1];
+  const buttonB = rowB.querySelector("[data-wd-action]");
+  h.fire("click", buttonB);
+  h.sandbox.wd.render();
+
+  assert.deepEqual(h.sandbox.wd.state.lines.map((x) => x.id), ["a", "c"], "row b removed from source");
+  assert.equal(out.children.length, 2, "the rendered list dropped a row");
+});
+
+test("per-row :button append-row appends a CLONED copy of the row item to the target list", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = actionLoop(root, El, {
+      srcKey: "menu",
+      initial: [{ id: "a", name: "Espresso" }, { id: "b", name: "Latte" }],
+      op: "append-row",
+      target: "cart"
+    }));
+  });
+  const rowA = out.children[0];
+  const buttonA = rowA.querySelector("[data-wd-action]");
+  h.fire("click", buttonA);
+
+  assert.equal(h.sandbox.wd.state.cart.length, 1, "one item appended to the target list");
+  assert.deepEqual(h.sandbox.wd.state.cart[0], { id: "a", name: "Espresso" }, "the clicked row item was appended");
+  assert.notStrictEqual(
+    h.sandbox.wd.state.cart[0],
+    h.sandbox.wd.state.menu[0],
+    "appended item is a CLONE, not a shared reference"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TASK-3B.5 — :state … persist (runtime.js ~20-54)
+// ---------------------------------------------------------------------------
+
+test(":state persist writes the mutated value to localStorage['wd:cart']", () => {
+  const h = makeSandbox((root, El) => {
+    stateScript(root, El, { cart: ["seed"] }, { "data-wd-persist": "cart" });
+  });
+  // A mutation through the public setter triggers savePersisted().
+  h.sandbox.wd.set("cart", ["apple", "pear"]);
+
+  assert.equal(h.store.get("wd:cart"), JSON.stringify(["apple", "pear"]), "mutation persisted under wd:cart");
+});
+
+test(":state persist — an existing localStorage value overrides the declared seed on init", () => {
+  const h = makeSandbox(
+    (root, El) => {
+      stateScript(root, El, { cart: ["seed-only"] }, { "data-wd-persist": "cart" });
+    },
+    { initialStore: { "wd:cart": JSON.stringify(["restored", "from", "storage"]) } }
+  );
+  assert.deepEqual(
+    h.sandbox.wd.state.cart,
+    ["restored", "from", "storage"],
+    "persisted value wins over the seed at init time"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TASK-3B.6 — :fetch when=visible (runtime.js ~720-732)
+// ---------------------------------------------------------------------------
+
+// A controllable IntersectionObserver stub: records observed nodes and lets the
+// test fire intersection manually. Exposes the latest instance for the test.
+function makeIOStub() {
+  const instances = [];
+  class IntersectionObserver {
+    constructor(cb) { this.cb = cb; this.observed = []; this.disconnected = false; instances.push(this); }
+    observe(node) { this.observed.push(node); }
+    disconnect() { this.disconnected = true; }
+    // Drive an intersection for all observed nodes.
+    intersect() { this.cb(this.observed.map((target) => ({ isIntersecting: true, target }))); }
+  }
+  return { IntersectionObserver, instances };
+}
+
+test(":fetch when=visible does NOT fetch until its IntersectionObserver intersects", async () => {
+  const stub = makeFetchStub({ "/api/lazy": { status: 200, body: { loaded: true } } });
+  const io = makeIOStub();
+  const h = makeSandbox(
+    (root, El) => {
+      const span = new El("span");
+      span.setAttribute("data-wd-fetch", "");
+      span.setAttribute("data-wd-fetch-key", "lazy");
+      span.setAttribute("data-wd-fetch-url", "/api/lazy");
+      span.setAttribute("data-wd-fetch-when", "visible");
+      root.appendChild(span);
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise, IntersectionObserver: io.IntersectionObserver } }
+  );
+
+  await settle();
+  assert.equal(stub.count("/api/lazy"), 0, "no fetch before the node becomes visible");
+  assert.equal(io.instances.length, 1, "an IntersectionObserver was created for the lazy node");
+
+  // Now the node scrolls into view.
+  io.instances[0].intersect();
+  await settle();
+
+  assert.equal(stub.count("/api/lazy"), 1, "fetch ran exactly once after intersection");
+  assert.ok(io.instances[0].disconnected, "observer disconnected after firing (one-shot)");
+  assert.deepEqual(h.sandbox.wd.state.lazy, { loaded: true }, "lazy fetch result landed in state");
 });
