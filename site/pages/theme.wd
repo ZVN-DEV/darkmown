@@ -1,0 +1,58 @@
+---
+title: Dark-mode tokens
+transitions: true
+---
+
+@include /nav.wd
+
+<main>
+
+# Dark-mode tokens
+
+Darkmown skins get automatic, OS-driven theming with **zero JavaScript**. Declare
+your design tokens once under `tokens`, then declare the dark overrides under
+`tokens dark`. The light values land on `:root`; the dark values compile to a
+`prefers-color-scheme: dark` media query over the same custom properties.
+
+```
+tokens
+  ink #1a1a1a
+  paper #ffffff
+tokens dark
+  ink #f0f0f0
+  paper #14140f
+```
+
+Every `$ink` / `$paper` reference keeps working unchanged — the variables simply
+resolve to their dark values when the operating system asks for dark mode.
+
+## See it live
+
+This page's `theme.skin` uses exactly that pattern. Switch your OS (or browser)
+appearance between light and dark and watch the panel below recolor itself — no
+toggle, no runtime, no flash.
+
+::: card .swatch
+The card surface, border, ink, and accent below are all driven by `tokens` plus
+a `tokens dark` override. Nothing on this page ships framework JavaScript.
+:::
+
+[A link tinted with the accent token](/docs/) sits in the same scope, so it
+recolors with the theme too.
+
+## Manual toggle (optional variant)
+
+For an author who wants an explicit switch instead of (or alongside) the OS
+preference, a bracketed modifier scopes the same tokens to a `:root` attribute:
+
+```
+tokens [data-theme=dark]
+  ink #f0f0f0
+  paper #14140f
+```
+
+That compiles to `:root[data-theme="dark"] { … }`, so setting `data-theme="dark"`
+on the document root flips the palette — pair it with your own toggle when you
+need manual control.
+
+</main>
