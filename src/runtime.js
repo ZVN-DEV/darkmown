@@ -246,9 +246,15 @@ function loopKeyOf(item, counts) {
  * @returns {void}
  */
 function fillItem(node, item, meta = {}) {
+  // Nested item-relative loops (data-wd-loop-item) own their descendants' binds;
+  // when present, `skip` excludes a node living inside one so the outer row's
+  // text/meta/each-if/class passes never overwrite an inner row's values.
+  const inners = node.querySelectorAll("[data-wd-loop-item]");
+  const skip = inners.length ? (/** @type {Element} */ el) => el.closest("[data-wd-loop-item]") : () => false;
   // querySelectorAll skips <template> content, so this sees only the outermost
   // regions; recursing into each injected branch fills the rest.
   for (const region of node.querySelectorAll("[data-wd-each-if]")) {
+    if (skip(region)) continue;
     const expr = region.getAttribute("data-wd-if-expr");
     const m = region.getAttribute("data-wd-meta");
     const value = expr ? evalPredicate(expr, item) : (m ? meta[m] : getPath(item, region.getAttribute("data-wd-path")));
@@ -262,13 +268,17 @@ function fillItem(node, item, meta = {}) {
     ? [node, ...node.querySelectorAll("[data-wd-each]")]
     : [...node.querySelectorAll("[data-wd-each]")];
   for (const target of targets) {
+    if (skip(target)) continue;
     target.textContent = getPath(item, target.getAttribute("data-wd-path")) ?? "";
   }
   for (const marker of node.querySelectorAll("[data-wd-each-meta]")) {
+    if (skip(marker)) continue;
     marker.textContent = meta[marker.getAttribute("data-wd-each-meta") || ""] ?? "";
   }
   const classNodes = node.matches("[data-wd-each-class]") ? [node, ...node.querySelectorAll("[data-wd-each-class]")] : [...node.querySelectorAll("[data-wd-each-class]")];
-  for (const el of classNodes) classToggle(el, el.getAttribute("data-wd-each-class"), item);
+  for (const el of classNodes) { if (!skip(el)) classToggle(el, el.getAttribute("data-wd-each-class"), item); }
+  // Reconcile nested loops last, against the now-settled outer row.
+  for (const region of inners) reconcile(region, getPath(item, region.getAttribute("data-wd-loop-item")));
 }
 
 /**
@@ -336,6 +346,75 @@ function renderIf(node) {
 }
 
 /**
+ * Reconcile one loop region (top-level or nested) from a resolved row source:
+ * filter (`where`) → pipeline (sort/reverse/offset/limit) → @empty → keyed
+ * reconcile. Each surviving row is `fillItem`-ed, which itself recurses into any
+ * nested item-relative loops. Shared by the global pass and `fillItem`.
+ * @param {Element} region
+ * @param {any} rows Source list (state-resolved globally; item-relative inside fillItem).
+ * @returns {void}
+ */
+function reconcile(region, rows) {
+  const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-template]"));
+  const out = region.querySelector("[data-wd-loop-out]");
+  if (!template || !out) return;
+  let list = Array.isArray(rows) ? rows.slice() : [];
+  const where = region.getAttribute("data-wd-loop-where");
+  if (where) {
+    const predicate = loopPredicate(where);
+    list = list.filter((/** @type {any} */ item) => {
+      try {
+        return predicate((/** @type {string | null} */ path) => getPath(item, path), (/** @type {string} */ k, /** @type {string} */ r) => getPath(state[k], r || ""), containsFn);
+      } catch (error) {
+        warn(where, error);
+        return false;
+      }
+    });
+  }
+  list = pipeline(list, region);
+
+  // Empty branch: clone the [data-wd-loop-empty] template into the output.
+  const emptyTpl = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-empty]"));
+  if (!list.length && emptyTpl) {
+    if (out.getAttribute("data-wd-empty") !== "1") {
+      out.textContent = "";
+      for (const child of [...emptyTpl.content.children]) out.appendChild(child.cloneNode(true));
+      out.setAttribute("data-wd-empty", "1");
+    }
+    return;
+  }
+  if (out.getAttribute("data-wd-empty") === "1") { out.textContent = ""; out.removeAttribute("data-wd-empty"); }
+
+  /** @type {Map<string, WdRow>} */
+  const existing = new Map();
+  for (const child of [...out.children]) {
+    existing.set(child.getAttribute("data-wd-loop-key") || "", /** @type {WdRow} */ (child));
+  }
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  /** @type {Set<string>} */
+  const used = new Set();
+  const count = list.length;
+  for (let i = 0; i < count; i++) {
+    const item = list[i];
+    const key = loopKeyOf(item, counts);
+    let node = existing.get(key);
+    if (!node || used.has(key)) {
+      node = /** @type {WdRow} */ (template.content.firstElementChild?.cloneNode(true));
+      if (!node) continue;
+      node.setAttribute("data-wd-loop-key", key);
+    }
+    used.add(key);
+    fillItem(node, item, { index: i, number: i + 1, first: i === 0, last: i === count - 1, count });
+    node.__wdItem = item; /** let per-row actions resolve which row was clicked */
+    out.appendChild(node);
+  }
+  for (const [key, node] of existing) {
+    if (!used.has(key)) node.remove();
+  }
+}
+
+/**
  * Synchronously render the whole document from current `state`:
  * computed → if-regions → keyed loop reconcile → text/input binds.
  * @returns {void}
@@ -348,69 +427,14 @@ function renderNow() {
   // bindings (data-wd-each-class) are handled per item inside fillItem.
   for (const el of document.querySelectorAll("[data-wd-class]")) classToggle(el, el.getAttribute("data-wd-class"), undefined);
 
+  // Nested item-relative loops use data-wd-loop-item, so this top-level query
+  // skips them; fillItem reconciles those against their enclosing row.
   for (const region of document.querySelectorAll("[data-wd-loop]")) {
     const key = region.getAttribute("data-wd-loop");
     const data = region.getAttribute("data-wd-loop-data");
     /** Source may be a dotted path (e.g. team.members) read off state via getPath. */
     const dot = key ? key.indexOf(".") : -1;
-    const rows = key ? (dot < 0 ? state[key] : getPath(state[key.slice(0, dot)], key.slice(dot + 1))) : (data ? JSON.parse(data) : []);
-    const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-template]"));
-    const out = region.querySelector("[data-wd-loop-out]");
-    if (!template || !out) continue;
-    let list = Array.isArray(rows) ? rows.slice() : [];
-    const where = region.getAttribute("data-wd-loop-where");
-    if (where) {
-      const predicate = loopPredicate(where);
-      list = list.filter((/** @type {any} */ item) => {
-        try {
-          return predicate((/** @type {string | null} */ path) => getPath(item, path), (/** @type {string} */ k, /** @type {string} */ r) => getPath(state[k], r || ""), containsFn);
-        } catch (error) {
-          warn(where, error);
-          return false;
-        }
-      });
-    }
-    list = pipeline(list, region);
-
-    // Empty branch: clone the [data-wd-loop-empty] template into the output.
-    const emptyTpl = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-empty]"));
-    if (!list.length && emptyTpl) {
-      if (out.getAttribute("data-wd-empty") !== "1") {
-        out.textContent = "";
-        for (const child of [...emptyTpl.content.children]) out.appendChild(child.cloneNode(true));
-        out.setAttribute("data-wd-empty", "1");
-      }
-      continue;
-    }
-    if (out.getAttribute("data-wd-empty") === "1") { out.textContent = ""; out.removeAttribute("data-wd-empty"); }
-
-    /** @type {Map<string, WdRow>} */
-    const existing = new Map();
-    for (const child of [...out.children]) {
-      existing.set(child.getAttribute("data-wd-loop-key") || "", /** @type {WdRow} */ (child));
-    }
-    /** @type {Map<string, number>} */
-    const counts = new Map();
-    /** @type {Set<string>} */
-    const used = new Set();
-    const count = list.length;
-    for (let i = 0; i < count; i++) {
-      const item = list[i];
-      const key = loopKeyOf(item, counts);
-      let node = existing.get(key);
-      if (!node || used.has(key)) {
-        node = /** @type {WdRow} */ (template.content.firstElementChild?.cloneNode(true));
-        if (!node) continue;
-        node.setAttribute("data-wd-loop-key", key);
-      }
-      used.add(key);
-      fillItem(node, item, { index: i, number: i + 1, first: i === 0, last: i === count - 1, count });
-      node.__wdItem = item; /** let per-row actions resolve which row was clicked */
-      out.appendChild(node);
-    }
-    for (const [key, node] of existing) {
-      if (!used.has(key)) node.remove();
-    }
+    reconcile(region, key ? (dot < 0 ? state[key] : getPath(state[key.slice(0, dot)], key.slice(dot + 1))) : (data ? JSON.parse(data) : []));
   }
 
   for (const node of document.querySelectorAll("[data-wd-bind]")) {
