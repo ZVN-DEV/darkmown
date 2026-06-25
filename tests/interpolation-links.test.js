@@ -65,3 +65,99 @@ test("a destination interpolation with a title still forms the link", () => {
   );
   assert.match(html, /<a href="\/p\/aurora\/" title="Profile">Aurora<\/a>/);
 });
+
+// ---------------------------------------------------------------------------
+// TASK-3A — URL-scheme safety regression lock-in
+//
+// Dangerous schemes in a markdown link/image destination must never compile to
+// an executable href/src. Today this is guaranteed by markdown-it's incidental
+// `validateLink` (a rejected scheme is left as literal text, never wrapped in an
+// <a>/<img>). These tests LOCK IN that behavior so a future markdown-it bump or a
+// custom renderer cannot silently reintroduce an XSS sink. Two surfaces are
+// covered: (1) a PLAIN markdown destination, (2) an INTERPOLATED `{ … }`
+// destination whose build-time value is a dangerous scheme.
+// ---------------------------------------------------------------------------
+
+// Schemes + obfuscations that must NEVER survive into an href/src.
+const DANGEROUS_LINK_DESTINATIONS = [
+  "javascript:alert(1)",
+  "JavaScript:alert(1)",        // case obfuscation
+  " javascript:alert(1)",       // leading-space obfuscation
+  "java\tscript:alert(1)",      // embedded-tab obfuscation
+  "vbscript:msgbox(1)",
+  "data:text/html,<script>alert(1)</script>",
+  "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+];
+
+// Assert nothing in the compiled HTML is an anchor/image pointing at an
+// executable scheme. Checks the post-normalization form markdown-it would emit
+// AND the obfuscated raw forms, so neither survives.
+function assertNoExecutableSink(html, label) {
+  // No anchor/image whose href/src begins with a dangerous scheme — tolerate any
+  // case and a small amount of leading whitespace inside the attribute.
+  assert.doesNotMatch(
+    html,
+    /<a\b[^>]*\bhref\s*=\s*["']\s*(?:javascript|data|vbscript)\s*:/i,
+    `${label}: produced an <a> with an executable href`
+  );
+  assert.doesNotMatch(
+    html,
+    /<img\b[^>]*\bsrc\s*=\s*["']\s*(?:javascript|data|vbscript)\s*:/i,
+    `${label}: produced an <img> with an executable src`
+  );
+}
+
+for (const dest of DANGEROUS_LINK_DESTINATIONS) {
+  test(`plain markdown link destination "${dest}" never yields an executable href`, () => {
+    const html = compileWithShelf([`[click](${dest})`]);
+    assertNoExecutableSink(html, `link ${dest}`);
+  });
+
+  test(`plain markdown image destination "${dest}" never yields an executable src`, () => {
+    const html = compileWithShelf([`![alt](${dest})`]);
+    assertNoExecutableSink(html, `image ${dest}`);
+  });
+}
+
+test("plain javascript: link is left as literal text, not an anchor", () => {
+  const html = compileWithShelf(["[click](javascript:alert(1))"]);
+  // Positive proof of the neutralization: the destination survives as text, and
+  // the only thing it is NOT is an executable link.
+  assert.ok(!/<a /i.test(html), "no <a> element emitted at all for the rejected scheme");
+});
+
+test("an INTERPOLATED destination resolving to javascript: is neutralized (href)", () => {
+  const html = compileWithShelf(
+    ["@loop /items.json into it", "- [x]({ it.u })", "@endloop"],
+    { "items.json": [{ u: "javascript:alert(1)" }] }
+  );
+  // Build-time value is substituted into the destination, then markdown-it parses
+  // it — and rejects the scheme, so no <a href="javascript: is produced.
+  assertNoExecutableSink(html, "interpolated link javascript:");
+});
+
+test("an INTERPOLATED image src resolving to javascript: is neutralized (src)", () => {
+  const html = compileWithShelf(
+    ["@loop /items.json into it", "![a]({ it.s })", "@endloop"],
+    { "items.json": [{ s: "javascript:alert(1)" }] }
+  );
+  assertNoExecutableSink(html, "interpolated image javascript:");
+});
+
+test("an INTERPOLATED destination resolving to data:text/html is neutralized", () => {
+  const html = compileWithShelf(
+    ["@loop /items.json into it", "- [x]({ it.d })", "![a]({ it.d })", "@endloop"],
+    { "items.json": [{ d: "data:text/html,<script>alert(1)</script>" }] }
+  );
+  assertNoExecutableSink(html, "interpolated data:text/html");
+});
+
+test("an INTERPOLATED destination resolving to a SAFE url still forms the link (control)", () => {
+  // Guards against a future over-broad sanitizer that strips legitimate hrefs:
+  // a benign interpolated destination must continue to produce a real anchor.
+  const html = compileWithShelf(
+    ["@loop /items.json into it", "- [x]({ it.u })", "@endloop"],
+    { "items.json": [{ u: "/p/safe/" }] }
+  );
+  assert.match(html, /<a href="\/p\/safe\/">x<\/a>/, "safe interpolated destination still links");
+});
