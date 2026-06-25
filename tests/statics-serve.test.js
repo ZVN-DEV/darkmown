@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -57,6 +58,62 @@ test("serve falls back to the inline 404 string when dist/404.html is absent", (
   }
 });
 
+test("serve sets security headers (incl. CSP) on a 200 HTML response", async () => {
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), "wd-serve-csp-"));
+  try {
+    fs.writeFileSync(path.join(dist, "index.html"), "<h1>Home</h1>");
+    const res = await request(dist, "/");
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers["content-type"], "text/html; charset=utf-8");
+    assert.equal(res.headers["x-content-type-options"], "nosniff");
+    assert.equal(res.headers["referrer-policy"], "strict-origin-when-cross-origin");
+    assert.equal(res.headers["x-frame-options"], "SAMEORIGIN");
+    const csp = res.headers["content-security-policy"];
+    assert.match(csp, /default-src 'self'/);
+    assert.match(csp, /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
+    assert.match(csp, /frame-ancestors 'self'/);
+    assert.match(csp, /object-src 'none'/);
+    assert.equal(res.body, "<h1>Home</h1>");
+  } finally {
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
+});
+
+test("serve does not attach the CSP to non-HTML assets", async () => {
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), "wd-serve-asset-"));
+  try {
+    fs.mkdirSync(path.join(dist, "__wd"), { recursive: true });
+    fs.writeFileSync(path.join(dist, "__wd", "runtime.js"), "export const x = 1;");
+    const res = await request(dist, "/__wd/runtime.js");
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers["content-type"], "text/javascript; charset=utf-8");
+    assert.equal(res.headers["content-security-policy"], undefined);
+    assert.equal(res.headers["x-content-type-options"], undefined);
+  } finally {
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
+});
+
+test("serve sets security headers on the 404 response", () => {
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), "wd-serve-csp404-"));
+  try {
+    fs.writeFileSync(path.join(dist, "404.html"), "<h1>Custom not found</h1>");
+
+    const captured = capture();
+    serve(dist, "/does-not-exist/", captured.res);
+
+    assert.equal(captured.res.statusCode, 404);
+    assert.equal(captured.res.headers["X-Content-Type-Options"], "nosniff");
+    assert.equal(captured.res.headers["Referrer-Policy"], "strict-origin-when-cross-origin");
+    assert.equal(captured.res.headers["X-Frame-Options"], "SAMEORIGIN");
+    assert.match(captured.res.headers["Content-Security-Policy"], /default-src 'self'/);
+  } finally {
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
+});
+
 // A minimal http.ServerResponse double that records status, headers, and body.
 function capture() {
   const chunks = [];
@@ -72,4 +129,28 @@ function capture() {
     }
   };
   return { res, body: () => chunks.join("") };
+}
+
+// Spin up the real static server (which streams 200 bodies via res.pipe) and
+// make an actual HTTP request, returning status, headers, and body.
+function request(distRoot, url) {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => serve(distRoot, req.url || "/", res));
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
+      http
+        .get({ host: "127.0.0.1", port, path: url }, (res) => {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            server.close();
+            resolve({ statusCode: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString() });
+          });
+        })
+        .on("error", (error) => {
+          server.close();
+          reject(error);
+        });
+    });
+  });
 }
