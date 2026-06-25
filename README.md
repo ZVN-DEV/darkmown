@@ -240,6 +240,32 @@ A `:button` inside a reactive `@loop` can act on its own row. `cart += product` 
 
 That is a full add-to-cart / remove-line flow — and a to-do list with delete — in plain Markdown, no JavaScript.
 
+### Nested reactive loops
+
+*New in 0.19.0.* A reactive `@loop` may contain an inner reactive `@loop` over one of the outer row's fields — one level of nesting. The inner source is a dotted path rooted at the outer item (`order.lines`), so each row renders its own list and both stay live as state changes:
+
+```wd
+:state orders = [
+  {"id": 1, "ref": "A-100", "lines": [{"sku": "x1", "qty": 2}, {"sku": "x2", "qty": 1}]},
+  {"id": 2, "ref": "A-101", "lines": [{"sku": "y9", "qty": 5}]}
+]
+
+@loop orders into order
+::: card
+**{ order.ref }**
+@loop order.lines into line
+- { line.sku } × { line.qty }
+@endloop
+:::
+@endloop
+```
+
+- The inner loop is keyed and reconciled per outer row, like any reactive loop.
+- Interpolation inside the inner body resolves the inner item first, then the outer item — `{ line.qty }` and `{ order.ref }` are both in scope.
+- Build-time loops over JSON/frontmatter already nest freely (the "loops nest" behavior above); what's new is **reactive-inside-reactive** over a `:state`/`:store`/`:fetch` row field.
+
+> **Honest caveat:** nesting is **one level only** — an inner reactive loop may not itself contain a third reactive loop. Build-time loop nesting is unaffected by this limit.
+
 ## Sections
 
 ```wd
@@ -528,6 +554,26 @@ A trailing `{.class .class #id}` attaches classes / an id to the inline element 
 
 The block must follow the element with no space, and works on links, images, emphasis, and inline code. It never collides with `{ name }` interpolation — an interpolation always starts with a name, never a `.` or `#`.
 
+## Dark mode — `tokens dark`
+
+*New in 0.19.0.* A colocated `.skin` file already declares its palette in a `tokens` block (`name value` pairs referenced elsewhere as `$name`). Add a second `tokens dark` block to override any of those tokens under the visitor's OS dark preference — it compiles to a `@media (prefers-color-scheme: dark) :root { … }` rule, so the page follows the system theme with **zero JavaScript**.
+
+```skin
+tokens
+  paper #ffffff
+  ink #171717
+
+tokens dark
+  paper #0b0b0f
+  ink #f4f4f5
+
+page
+  bg $paper
+  color $ink
+```
+
+The `tokens dark` values override the matching base tokens only when the OS reports a dark preference; the rules below keep referencing the same `$paper` / `$ink`. The base `tokens` block stays the light default, so a skin with no `tokens dark` block is unchanged.
+
 ## The escape hatch
 
 Reactive pages expose `window.wd` — `wd.get(key)`, `wd.set(key, value)`, `wd.state`, `wd.render()` — so colocated `.js` can do anything the directives can't. Section-scoped keys are addressed as `sectionId:name`.
@@ -548,9 +594,18 @@ Darkmown is a **trusted-author** site generator: you compile content you wrote, 
 - **Raw HTML passes through by default.** Darkmown runs `markdown-it` with `html: true`, so raw HTML in your content is emitted verbatim — by design, like every Markdown site generator. There is no built-in sanitizer; a raw `<script>` or event-handler attribute in untrusted content would execute in the visitor's browser. A page can opt into strict mode with `html: false` frontmatter, which drops raw HTML entirely.
 - **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** A fetch/form URL is taken straight from the page source; the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Reactive pages also require `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function` — a strict CSP without `unsafe-eval` will break reactive pages (static pages are unaffected).
 
-> **The single biggest footgun:** do not compile untrusted or user-submitted Markdown without sanitizing it first. There is no built-in sanitizer.
+> **The single biggest footgun:** do not compile untrusted or user-submitted Markdown without sanitizing it first. There is no built-in sanitizer. A page can flip to strict mode with `html: false` frontmatter, which drops raw HTML entirely (see [SECURITY.md](SECURITY.md)).
 
 Directive actions and `:computed`/`@loop … where` expressions are never `eval`'d as raw user content — they compile to a whitelisted grammar (item paths, declared `:state`, numbers, strings) that runs via `new Function`. See [SECURITY.md](SECURITY.md) for the full security model.
+
+### Shipped security headers
+
+Builds emit security response headers so a deployed site gets sane defaults without hand-writing a config. The build writes a `dist/_headers` file (Cloudflare Pages format), and the Vercel/local `serve` paths apply the equivalent. On every page:
+
+- **`Content-Security-Policy`** — static pages get a tight policy; **reactive pages** (those that ship `/__wd/runtime.js`) add `script-src 'unsafe-eval' 'unsafe-inline'`, which the runtime needs to compile validated `:computed` / `@loop … where` / `.class when` expressions via `new Function`. Static pages stay strict.
+- **`X-Content-Type-Options: nosniff`**, **`Referrer-Policy`**, and a **`frame-ancestors`** directive (clickjacking protection) on every page.
+
+**If you use `:fetch` or `:form action=` against another host, widen `connect-src`.** The shipped CSP allows same-origin connections; calling a third-party API is otherwise blocked by the policy. Add the host to `connect-src` in your deploy config (it is not auto-derived from your page sources). The CSP is a defense-in-depth layer — it does not replace the trust-boundary rules above; see [SECURITY.md](SECURITY.md) for tightening guidance.
 
 ## Spec status
 

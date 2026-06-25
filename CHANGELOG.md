@@ -2,6 +2,16 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.19.0 — 2026-06-25
+
+Post-review sprint: deeper reactive loops, hardened deploys, and OS-aware theming.
+
+- **Nested reactive loops (one level).** A reactive `@loop` can now contain an inner reactive `@loop <outerItem>.<field> into x` — the inner source is a dotted path on the outer row, so each reconciled row renders its own keyed inner list and both stay live. Interpolation resolves the inner item first, then the outer (`{ line.qty }` and `{ order.ref }` both in scope). Build-time loop nesting over JSON/frontmatter was already supported; what's new is reactive-inside-reactive. Nesting is **one level only** — an inner reactive loop may not contain a third.
+- **Security headers / CSP on deploy.** Builds now emit security response headers so a deployed site is hardened by default: a `dist/_headers` file (Cloudflare Pages format), with the Vercel and local `serve` paths applying the equivalent. Every page carries `X-Content-Type-Options: nosniff`, a `Referrer-Policy`, and a `frame-ancestors` directive. The **Content-Security-Policy is tiered**: static pages get a tight policy, and reactive pages (those shipping `/__wd/runtime.js`) add `script-src 'unsafe-eval' 'unsafe-inline'` for the runtime's `new Function` expression compiler. The default CSP allows same-origin connections only — a `:fetch`/`:form action=` to another host must widen `connect-src` by hand. It is defense-in-depth, not a host allowlist; SSRF protection stays the author's responsibility.
+- **Dark-mode theming — `tokens dark`.** A `.skin` file can add a `tokens dark` block beside its base `tokens`; the dark tokens compile to `@media (prefers-color-scheme: dark) :root { … }`, overriding the matching base tokens under the visitor's OS dark preference. Rules keep referencing the same `$name` tokens, so dark mode is a zero-JavaScript palette swap. A skin with no `tokens dark` block is unchanged.
+- **Runtime test backfill.** Added runtime/compiler tests covering the new reactive-loop nesting and the security-header and theming output.
+- **Compile errors carry a line number.** A compile error now includes the offending line number alongside the file path and corrective suggestion, so the source of a directive mistake is easier to find.
+
 ## 0.18.0 — 2026-06-24
 
 Navigation goes instant and flash-free, and images are hardened at compile time.

@@ -31,10 +31,45 @@ Things Darkmown deliberately guards at compile time and runtime:
 - **Output escaping.** Interpolated values are HTML-escaped; state scripts escape `<` to prevent script-tag breakout.
 - **Static server path containment.** The dev/preview servers resolve requests strictly inside `dist`.
 
-## The biggest footgun: raw HTML passthrough
+## The #1 footgun: raw HTML passthrough (`html: true`)
 
-Darkmown configures markdown-it with `html: true`, so **raw HTML in `.md`/`.wd` files is passed through verbatim** — by design, like every Markdown site generator. This is the single most important thing to understand about Darkmown's security model.
+This is the single most important thing to understand about Darkmown's security model. **Read this before pointing Darkmown at anything you did not write yourself.**
 
-- Treat all content files as **trusted input**, the same way you trust your own source code.
-- **Do not compile untrusted or user-submitted Markdown** (comments, form input, third-party docs) without sanitizing it first. Darkmown ships no built-in sanitizer; raw `<script>` and event-handler attributes in untrusted content would execute in the visitor's browser.
+Darkmown configures markdown-it with `html: true`, so **raw HTML in `.md`/`.wd` files is passed through verbatim** — by design, like every Markdown site generator. A raw `<script>` or an `onerror=` attribute in your content reaches the visitor's browser and runs.
+
+- **Treat every content file as trusted input**, the same way you trust your own source code.
+- **Never compile untrusted or user-submitted Markdown** (comments, form input, third-party docs, scraped content) without sanitizing it first. Darkmown ships **no built-in sanitizer**.
 - If you must render untrusted content, sanitize it (for example with a library like DOMPurify) before it reaches the compiler.
+
+### The `html: false` per-page opt-out
+
+The built-in mitigation is per-page strict mode. Add `html: false` to a page's frontmatter and that page's Markdown renders through a strict renderer that **escapes raw HTML entirely** — a stray `<script>` becomes inert text instead of executing.
+
+```wd
+---
+title: User comments
+html: false
+---
+```
+
+Use it for any page whose content is even partly out of your hands. The default stays `html: true` because the framework targets trusted authors; `html: false` is the switch for the pages where that assumption doesn't hold.
+
+> **Note:** `html: false` is a *per-page* frontmatter key — there is no global/site-wide `html: false` default today (no config loader exists yet). Flipping the global default to strict-by-default is a deliberate future option, not a shipped setting; until then, set `html: false` on each page that needs it.
+
+## Deploying with a Content-Security-Policy
+
+Builds emit security response headers so a deployed site is hardened by default rather than relying on hand-written config. The build writes a `dist/_headers` file (Cloudflare Pages format) and the Vercel and local `serve` paths apply the equivalent. Every page gets:
+
+- **`Content-Security-Policy`** — **static pages** (no runtime) get a tight policy. **Reactive pages** (those that ship `/__wd/runtime.js`) additionally need `script-src 'unsafe-eval' 'unsafe-inline'`, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function`. A strict CSP without `unsafe-eval` breaks reactive pages; static pages are unaffected and stay strict.
+- **`X-Content-Type-Options: nosniff`** — stops MIME-type sniffing.
+- **`Referrer-Policy`** — limits referrer leakage.
+- **`frame-ancestors`** — clickjacking protection (controls who may frame the page).
+
+### Tightening the policy
+
+The shipped CSP is a sensible default, not a finished policy for every site. Tighten or widen it for your deployment:
+
+- **`:fetch` / `:form action=` to another host needs a wider `connect-src`.** The default CSP permits same-origin connections; a call to a third-party API is otherwise blocked. Add each external host to `connect-src` explicitly — it is **not** auto-derived from your page sources.
+- **Remote images, fonts, or embeds** need their hosts added to `img-src` / `font-src` / `frame-src`.
+- **Reactive pages** require `unsafe-eval` in `script-src`; do not remove it on a page that ships the runtime. If you can keep a page static, it can run under a stricter policy.
+- The CSP is **defense-in-depth** — it limits the blast radius of a mistake but does **not** replace the trust-boundary rules above. It is not a substitute for sanitizing untrusted content, and it does not add a host allowlist to `:fetch`/`:form` (SSRF/exfiltration protection remains the author's responsibility).
