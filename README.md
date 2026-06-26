@@ -9,6 +9,15 @@
 
 Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~5.8 KB gzipped, CI-enforced under 6 KB.
 
+## Showcase
+
+Four complete apps, each a readable `.wd` file — see them at **[darkmown.com/showcase](https://darkmown.com/showcase/)**:
+
+- **[Folio](https://darkmown.com/folio/)** — a boutique storefront whose cart persists across pages, reloads, and browser tabs (`:store`), with live search and a checkout form.
+- **[Pulse](https://darkmown.com/pulse/)** — a service dashboard driven by `:fetch`: loading / error / empty states, live refresh, and status badges, with no hand-written JavaScript.
+- **[Forge](https://darkmown.com/forge/)** — a plan configurator where `:computed` recomputes the price as you toggle features and seats, with conditional upsell hints.
+- **[Compass](https://darkmown.com/compass/)** — a product-finder quiz: a branching state machine expressed entirely as `:if` steps over scored answers.
+
 ## Quick start
 
 ```sh
