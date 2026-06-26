@@ -24,7 +24,8 @@
     "types": "tsc -p tsconfig.types.json",
     "smoke": "node scripts/smoke-consumer.mjs",
     "prepublish:check": "npm run typecheck && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
-    "prepublishOnly": "npm run prepublish:check"
+    "prepublishOnly": "npm run prepublish:check",
+    "og": "node scripts/og-image.mjs"
   },
   "files": [
     "src",
