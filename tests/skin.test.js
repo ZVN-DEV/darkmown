@@ -156,6 +156,14 @@ test("a malformed tokens modifier never breaks out of the attribute selector", (
   assert.doesNotMatch(spaced, /body\s*\{/);
 });
 
+test("an unrecognized tokens modifier falls back to plain :root tokens", () => {
+  // `tokens light` is neither the bare form, `dark`, nor a bracketed attribute —
+  // it takes the final else branch and seeds the default :root token scope.
+  const css = compileSkin(["tokens light", "  ink #fff"].join("\n"));
+  assert.match(css, /^:root \{\n {2}--ink: #fff;\n\}$/);
+  assert.doesNotMatch(css, /light/);
+});
+
 test("block comments and decorative divider lines are skipped, not parsed as rules", () => {
   const css = compileSkin(
     [

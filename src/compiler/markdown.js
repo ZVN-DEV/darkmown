@@ -159,27 +159,32 @@ function attrsPlugin(mdInstance) {
 /**
  * The inline token an attr block attaches to: the immediately-preceding image
  * (self-closing) or the open token matching the immediately-preceding close
- * (link/em/strong/…). Returns null when nothing valid precedes.
+ * (link/em/strong/…). Returns null when nothing valid precedes. Exported so its
+ * contract — including the defensive unbalanced-close fallback that markdown-it's
+ * always-balanced token stream never triggers in practice — is unit-testable.
  * @param {any[]} children markdown-it inline child tokens
  * @param {number} i Index of the attr-block text token.
  * @returns {any} the matching markdown-it Token, or null
  */
-function attrTarget(children, i) {
+export function attrTarget(children, i) {
   const prev = children[i - 1];
   if (!prev) return null;
   if (prev.type === "image") return prev;
-  if (prev.nesting === -1) {
-    const openType = prev.type.replace(/_close$/, "_open");
-    let depth = 0;
-    for (let j = i - 1; j >= 0; j--) {
-      const t = children[j];
-      if (t.type === prev.type) depth++;
-      else if (t.type === openType) {
-        depth--;
-        if (depth === 0) return t;
-      }
+  // Not a close token (e.g. text, softbreak, or an open) → nothing to attach to.
+  if (prev.nesting !== -1) return null;
+  // Walk back to the matching open, counting nested same-type close/open pairs.
+  const openType = prev.type.replace(/_close$/, "_open");
+  let depth = 0;
+  for (let j = i - 1; j >= 0; j--) {
+    const t = children[j];
+    if (t.type === prev.type) depth++;
+    else if (t.type === openType) {
+      depth--;
+      if (depth === 0) return t;
     }
   }
+  // Unbalanced close with no matching open — markdown-it never emits this, but
+  // the guard keeps attrTarget total: no element is attached.
   return null;
 }
 

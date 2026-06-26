@@ -10,40 +10,101 @@ import { initProject } from "./scaffold.js";
 import { contentType, resolvePublicFile, serve } from "./statics.js";
 
 const cliPath = fileURLToPath(import.meta.url);
-// Bare `darkmown` prints help (discovery) rather than silently building — a new
-// user typing the command alone expects to see what it can do, not a no-op build.
-const command = process.argv[2] || "help";
 
-if (command === "help" || command === "--help" || command === "-h") {
-  printHelp();
-} else if (command === "version" || command === "--version" || command === "-v") {
-  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  console.log(pkg.version);
-} else if (command === "init") {
-  try {
-    const target = process.argv[3] || ".";
-    const result = initProject(path.resolve(process.cwd(), target));
-    const relativeRoot = path.relative(process.cwd(), result.root) || ".";
-    console.log(`Created Darkmown project at ${relativeRoot}`);
-    console.log(`Next: ${nextStep(relativeRoot)}`);
-  } catch (error) {
-    failClean(error);
+/**
+ * Run the Darkmown CLI. Extracted from the top-level script so every command
+ * branch is unit-testable in-process: it never reads `process.argv` or calls
+ * `process.exit` directly. Instead it takes the argv tail and an injectable
+ * environment, RETURNS a value (and a server/close handle for `dev`/`serve`),
+ * and throws `CliError` for the failure paths the binary maps to exit code 1.
+ *
+ * The thin top-level wrapper below preserves identical binary behavior: it reads
+ * `process.argv`, calls `run`, prints `CliError` messages the same way the old
+ * inline `failClean`/`console.error` did, and exits with the right code.
+ *
+ * @typedef {object} RunEnv
+ * @property {string} [cwd] Working directory (defaults to `process.cwd()`).
+ * @property {(message?: unknown, ...rest: unknown[]) => void} [log] stdout sink.
+ * @property {(message?: unknown, ...rest: unknown[]) => void} [warn] stderr (warn) sink.
+ * @property {(message?: unknown, ...rest: unknown[]) => void} [error] stderr (error) sink.
+ *
+ * @param {string[]} argv The argv tail (i.e. `process.argv.slice(2)`).
+ * @param {RunEnv} [env]
+ * @returns {Promise<{ command: string, server?: import("node:http").Server, close?: () => Promise<void> }>}
+ */
+export async function run(argv, env = {}) {
+  const cwd = env.cwd ?? process.cwd();
+  const log = env.log ?? console.log;
+  const warn = env.warn ?? console.warn;
+  const error = env.error ?? console.error;
+  // Bare `darkmown` prints help (discovery) rather than silently building — a new
+  // user typing the command alone expects to see what it can do, not a no-op build.
+  const command = argv[0] || "help";
+
+  if (command === "help" || command === "--help" || command === "-h") {
+    log(helpText());
+    return { command: "help" };
   }
-} else if (command === "build") {
-  try {
-    const result = buildSite();
-    console.log(
-      `Built ${result.routes.length} routes into ${path.relative(process.cwd(), result.distRoot)}`
-    );
-  } catch (error) {
-    // A compile error has a clear, file-pathed message — print just that, not a
-    // Node stack trace, so a typo reads as "fix your page", not "the tool crashed".
-    failClean(error);
+  if (command === "version" || command === "--version" || command === "-v") {
+    const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    log(pkg.version);
+    return { command: "version" };
   }
-} else if (command === "dev") {
+  if (command === "init") {
+    const target = argv[1] || ".";
+    const result = initProject(path.resolve(cwd, target));
+    const relativeRoot = path.relative(cwd, result.root) || ".";
+    log(`Created Darkmown project at ${relativeRoot}`);
+    log(`Next: ${nextStep(relativeRoot)}`);
+    return { command: "init" };
+  }
+  if (command === "build") {
+    const result = buildSite(cwd);
+    log(`Built ${result.routes.length} routes into ${path.relative(cwd, result.distRoot)}`);
+    return { command: "build" };
+  }
+  if (command === "dev") {
+    return startDevServer({ cwd, log, warn, error });
+  }
+  if (command === "serve") {
+    return startPreviewServer({ cwd, log, error });
+  }
+  // No command matched: report it, show help, and fail like the binary always
+  // did (exit 1). `silent` keeps `main` from re-printing a `✗` line on top.
+  error(`Unknown command: ${command}`);
+  log(helpText());
+  throw new CliError(`Unknown command: ${command}`, { silent: true });
+}
+
+/**
+ * An error whose message is already user-facing. The binary prints it (prefixed
+ * with `✗` unless `silent`) and exits 1 — never a Node stack trace.
+ */
+export class CliError extends Error {
+  /**
+   * @param {string} message
+   * @param {{ silent?: boolean }} [options] `silent` skips the `✗`-prefixed print
+   *   (used when the message was already shown, e.g. unknown command + help).
+   */
+  constructor(message, options = {}) {
+    super(message);
+    this.name = "CliError";
+    this.silent = Boolean(options.silent);
+  }
+}
+
+/**
+ * Start the live-compiler dev server. Builds once (recording, not crashing on, a
+ * broken initial build), watches `site/` and `src/`, and serves dist with the
+ * dev client + SSE reload channel injected. Returns the server and a clean
+ * `close()` that tears down the watchers and the rebuild debounce timer.
+ * @param {{ cwd: string, log: typeof console.log, warn: typeof console.warn, error: typeof console.error }} io
+ * @returns {Promise<{ command: "dev", server: import("node:http").Server, close: () => Promise<void> }>}
+ */
+function startDevServer({ cwd, log, warn, error }) {
   const port = Number(process.env.PORT || 5173);
   const host = process.env.HOST || "127.0.0.1";
-  const distRoot = path.join(process.cwd(), "dist");
+  const distRoot = path.join(cwd, "dist");
   /** @type {Set<import("node:http").ServerResponse>} */
   const clients = new Set();
   /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -55,10 +116,10 @@ if (command === "help" || command === "--help" || command === "-h") {
   // and thus the error overlay — comes up. Record the error so new SSE clients
   // see it on connect; the next successful rebuild clears it via `reload`.
   try {
-    buildSite();
-  } catch (error) {
-    lastBuildError = (error instanceof Error ? error.message : String(error)).trim();
-    console.error(lastBuildError);
+    buildSite(cwd);
+  } catch (err) {
+    lastBuildError = (err instanceof Error ? err.message : String(err)).trim();
+    error(lastBuildError);
   }
 
   // Rebuild in a child process so changes to Darkmown's own src/ always load
@@ -67,34 +128,32 @@ if (command === "help" || command === "--help" || command === "-h") {
     clearTimeout(timer);
     timer = setTimeout(() => {
       const started = performance.now();
-      execFile(
-        process.execPath,
-        [cliPath, "build"],
-        { cwd: process.cwd() },
-        (error, stdout, stderr) => {
-          if (error) {
-            const message = (stderr || stdout || String(error)).trim();
-            lastBuildError = message;
-            console.error(message);
-            broadcast(
-              clients,
-              `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`
-            );
-            return;
-          }
-          lastBuildError = undefined;
-          const elapsed = Math.round(performance.now() - started);
-          if (stderr.trim()) console.warn(stderr.trim());
-          broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
-          console.log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
+      execFile(process.execPath, [cliPath, "build"], { cwd }, (err, stdout, stderr) => {
+        if (err) {
+          const message = (stderr || stdout || String(err)).trim();
+          lastBuildError = message;
+          error(message);
+          broadcast(
+            clients,
+            `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`
+          );
+          return;
         }
-      );
+        lastBuildError = undefined;
+        const elapsed = Math.round(performance.now() - started);
+        if (stderr.trim()) warn(stderr.trim());
+        broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
+        log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
+      });
     }, 30);
   };
 
+  /** @type {import("node:fs").FSWatcher[]} */
+  const watchers = [];
   for (const dir of ["site", "src"]) {
-    if (fs.existsSync(dir)) {
-      fs.watch(dir, { recursive: true }, rebuild);
+    const abs = path.join(cwd, dir);
+    if (fs.existsSync(abs)) {
+      watchers.push(fs.watch(abs, { recursive: true }, rebuild));
     }
   }
 
@@ -140,32 +199,56 @@ if (command === "help" || command === "--help" || command === "-h") {
         return;
       }
       serveDev(distRoot, url, res);
-    } catch (error) {
+    } catch (err) {
       res.writeHead(500, { "content-type": "text/plain" });
-      res.end((error instanceof Error && error.stack) || String(error));
+      res.end((err instanceof Error && err.stack) || String(err));
     }
   });
-  server.listen(port, host, () => {
-    console.log(`Darkmown dev server ready at http://${host}:${port}`);
-    console.log(`Live compiler watching site/ and src/`);
+
+  return new Promise((resolve) => {
+    server.listen(port, host, () => {
+      log(`Darkmown dev server ready at http://${host}:${port}`);
+      log(`Live compiler watching site/ and src/`);
+      resolve({
+        command: "dev",
+        server,
+        close: () => {
+          clearTimeout(timer);
+          for (const watcher of watchers) watcher.close();
+          for (const client of clients) client.end();
+          clients.clear();
+          return new Promise((done) => server.close(() => done()));
+        }
+      });
+    });
   });
-} else if (command === "serve") {
+}
+
+/**
+ * Start the static preview server for an existing `dist/`. Throws `CliError`
+ * when there is nothing built to serve.
+ * @param {{ cwd: string, log: typeof console.log, error: typeof console.error }} io
+ * @returns {Promise<{ command: "serve", server: import("node:http").Server, close: () => Promise<void> }>}
+ */
+function startPreviewServer({ cwd, log, error }) {
   const port = Number(process.env.PORT || 4173);
   const host = process.env.HOST || "127.0.0.1";
-  const distRoot = path.join(process.cwd(), "dist");
+  const distRoot = path.join(cwd, "dist");
   if (!fs.existsSync(distRoot)) {
-    console.error("No dist directory found. Run `darkmown build` first.");
-    process.exit(1);
+    error("No dist directory found. Run `darkmown build` first.");
+    throw new CliError("No dist directory found. Run `darkmown build` first.", { silent: true });
   }
-  http
-    .createServer((req, res) => serve(distRoot, req.url || "/", res))
-    .listen(port, host, () => {
-      console.log(`Darkmown preview of dist at http://${host}:${port}`);
+  const server = http.createServer((req, res) => serve(distRoot, req.url || "/", res));
+  return new Promise((resolve) => {
+    server.listen(port, host, () => {
+      log(`Darkmown preview of dist at http://${host}:${port}`);
+      resolve({
+        command: "serve",
+        server,
+        close: () => new Promise((done) => server.close(() => done()))
+      });
     });
-} else {
-  console.error(`Unknown command: ${command}`);
-  printHelp();
-  process.exit(1);
+  });
 }
 
 /**
@@ -181,8 +264,12 @@ function serveDev(distRoot, url, res) {
     return;
   }
   if (file.endsWith(".html")) {
+    // Read BEFORE writing headers: if the read throws (e.g. the path is a
+    // directory), the handler's catch can still send a clean 500 instead of
+    // failing to overwrite an already-sent 200.
+    const html = injectDevClient(fs.readFileSync(file, "utf8"));
     res.writeHead(200, { "content-type": "text/html" });
-    res.end(injectDevClient(fs.readFileSync(file, "utf8")));
+    res.end(html);
     return;
   }
   res.writeHead(200, { "content-type": contentType(file) });
@@ -199,18 +286,11 @@ function broadcast(clients, message) {
 }
 
 /**
- * Print a compile/CLI error as a single clean line and exit non-zero — no Node
- * stack trace. The thrown Error already carries the file path + corrective hint.
- * @param {unknown} error
- * @returns {never}
+ * The CLI help text. Returned (not printed) so `run` and tests share one source.
+ * @returns {string}
  */
-function failClean(error) {
-  console.error(`✗ ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-}
-
-function printHelp() {
-  console.log(`Darkmown
+export function helpText() {
+  return `Darkmown
 
 Usage:
   darkmown init [dir]   Scaffold a new Darkmown project
@@ -226,14 +306,58 @@ Authoring:
   @loop x into item   Loop over JSON files, in-scope values, or :state lists
   *.skin              Colocated indentation-based CSS
   *.js                Colocated page behavior
-`);
+`;
 }
 
 /**
  * @param {string} relativeRoot
  * @returns {string}
  */
-function nextStep(relativeRoot) {
+export function nextStep(relativeRoot) {
   if (relativeRoot === ".") return "npm install && npm run dev";
   return `cd ${relativeRoot} && npm install && npm run dev`;
+}
+
+/**
+ * Binary entry point: read argv, dispatch, and map failures to a clean
+ * `✗`-prefixed line + exit code 1 — never a Node stack trace. The thrown Error
+ * already carries the file path + corrective hint.
+ * @returns {Promise<void>}
+ */
+async function main() {
+  try {
+    await run(process.argv.slice(2));
+  } catch (error) {
+    if (!(error instanceof CliError && error.silent)) {
+      // A compile error has a clear, file-pathed message — print just that.
+      console.error(`✗ ${error instanceof Error ? error.message : String(error)}`);
+    }
+    process.exit(1);
+  }
+}
+
+/**
+ * Whether `entryArg` (typically `process.argv[1]`) points at THIS module — i.e.
+ * the binary is being executed, not imported by a test. npm installs the
+ * `darkmown` bin as a SYMLINK in node_modules/.bin, so the entry arg is the link
+ * path while `import.meta.url` resolves to the real file; comparing realpaths
+ * lets the binary still self-execute. Exported so the symlink/missing-path
+ * branches are unit-testable.
+ * @param {string | undefined} entryArg
+ * @returns {boolean}
+ */
+export function isEntryPoint(entryArg) {
+  if (!entryArg) return false;
+  if (entryArg === cliPath) return true;
+  try {
+    // Resolve symlinks on BOTH sides: npm's .bin/darkmown is a link to this file.
+    return fs.realpathSync(entryArg) === fs.realpathSync(cliPath);
+  } catch {
+    return false; // a non-existent entry path can never be this module
+  }
+}
+
+// Auto-run only when this file is the process entry point.
+if (isEntryPoint(process.argv[1])) {
+  main();
 }

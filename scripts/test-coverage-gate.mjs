@@ -212,11 +212,20 @@ function reportAndGate(dir) {
     return { total, hit };
   };
 
-  // Enumerate every real src/*.js so we can name files that were NEVER loaded
-  // (0 coverage) and files that are deliberately not measured here.
-  const allSrcFiles = readdirSync(srcDir)
-    .filter((n) => n.endsWith(".js"))
-    .sort();
+  // Enumerate every real src/**/*.js (RECURSIVELY — src/ has subdirectories like
+  // src/compiler/) so we can name files that were NEVER loaded (0 coverage) and
+  // files that are deliberately not measured here. Paths are relative to src/
+  // (e.g. "compiler/directives.js"); top-level files stay bare ("runtime.js").
+  const walkSrc = (dir, prefix = "") => {
+    const found = [];
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+      if (ent.isDirectory()) found.push(...walkSrc(join(dir, ent.name), rel));
+      else if (ent.name.endsWith(".js")) found.push(rel);
+    }
+    return found;
+  };
+  const allSrcFiles = walkSrc(srcDir).sort();
 
   // src/runtime.js is browser-only and loaded as a vm string by the unit suite,
   // so it is structurally invisible to V8 coverage here. Disclose, don't fold in.

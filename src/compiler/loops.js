@@ -101,16 +101,16 @@ function parseLoopClauses(tail, itemName, ctx) {
  * @returns {NumArg}
  */
 function parseNumArg(tok, ctx) {
+  // Callers (parseLoopClauses) only ever pass a token the clause regex already
+  // constrained to `\d+` or an identifier, so the two branches below are
+  // exhaustive — a bare integer literal, or a name that must resolve to :state.
   if (/^\d+$/.test(tok)) return { kind: "literal", value: Number(tok) };
-  if (/^[A-Za-z_$][\w$]*$/.test(tok)) {
-    const key = resolveStateKey(tok, ctx);
-    if (!key)
-      throw new Error(
-        `@loop offset/limit "${tok}" in ${ctx.file} is neither a non-negative integer nor a declared :state. ${LOOP_USAGE}`
-      );
-    return { kind: "key", value: key };
-  }
-  throw new Error(`@loop offset/limit "${tok}" in ${ctx.file} is invalid. ${LOOP_USAGE}`);
+  const key = resolveStateKey(tok, ctx);
+  if (!key)
+    throw new Error(
+      `@loop offset/limit "${tok}" in ${ctx.file} is neither a non-negative integer nor a declared :state. ${LOOP_USAGE}`
+    );
+  return { kind: "key", value: key };
 }
 
 /** @param {NumArg} arg @returns {string} */
@@ -589,14 +589,17 @@ function fillEachText(str, item) {
 
 // Return the index just past the balanced close of the element of `tag` that
 // begins at `start`. Counts nested same-tag opens/closes so regions that embed
-// their own spans/templates (nested :if) match correctly.
+// their own spans/templates (nested :if) match correctly. Falls back to the end
+// of the string for an unbalanced (never-closed) region — defensive, since the
+// compiler only feeds it its own balanced output. Exported for that contract to
+// be unit-tested directly.
 /**
  * @param {string} str
  * @param {number} start
  * @param {string} tag
  * @returns {number}
  */
-function matchElement(str, start, tag) {
+export function matchElement(str, start, tag) {
   const openPrefix = `<${tag}`;
   const closeTag = `</${tag}>`;
   let depth = 0;

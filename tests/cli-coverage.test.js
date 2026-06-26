@@ -1,0 +1,453 @@
+// In-process unit coverage for src/cli.js.
+//
+// The CLI's command dispatch lives in an exported `run(argv, env)` that takes an
+// injectable { cwd, log, warn, error } and RETURNS instead of touching
+// process.argv / process.exit. That lets every branch — help, version, init,
+// build (success + failClean error path), unknown command, and the dev/serve
+// servers — run in this process so V8 attributes their coverage here. The
+// servers start on an ephemeral port (PORT=0), get a real HTTP + SSE request,
+// then shut down cleanly via the returned close() so coverage flushes.
+//
+// External binary behavior is covered by tests/cli.test.js + cli-e2e.test.js
+// (subprocess spawns); those must stay green. This file is purely additive.
+
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { CliError, helpText, isEntryPoint, nextStep, run } from "../src/cli.js";
+
+const cliPath = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+
+function freshDir(label) {
+  return fs.mkdtempSync(path.join(os.tmpdir(), `darkmown-cli-${label}-`));
+}
+
+// A capturing IO env: collects everything written to log/warn/error.
+function capture(cwd) {
+  const out = { log: [], warn: [], error: [] };
+  return {
+    env: {
+      cwd,
+      log: (...a) => out.log.push(a.join(" ")),
+      warn: (...a) => out.warn.push(a.join(" ")),
+      error: (...a) => out.error.push(a.join(" "))
+    },
+    out,
+    stdout: () => out.log.join("\n"),
+    stderr: () => out.error.join("\n")
+  };
+}
+
+// GET a path over real HTTP and read the full body.
+function httpGet(origin, urlPath) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(`${origin}${urlPath}`, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => resolve({ status: res.statusCode, body, headers: res.headers }));
+    });
+    req.on("error", reject);
+  });
+}
+
+// POST a form body over real HTTP.
+function httpPost(origin, urlPath, formBody) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      `${origin}${urlPath}`,
+      { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" } },
+      (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => resolve({ status: res.statusCode, body, headers: res.headers }));
+      }
+    );
+    req.on("error", reject);
+    req.end(formBody);
+  });
+}
+
+// Open the SSE channel and resolve with the first chunk of events received.
+function readSse(origin, urlPath, { timeout = 4000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(`${origin}${urlPath}`, (res) => {
+      let data = "";
+      res.setEncoding("utf8");
+      const timer = setTimeout(() => {
+        req.destroy();
+        resolve({ status: res.statusCode, headers: res.headers, data });
+      }, timeout);
+      res.on("data", (chunk) => {
+        data += chunk;
+      });
+      res.on("error", () => {});
+      timer.unref?.();
+    });
+    req.on("error", reject);
+  });
+}
+
+function originOf(server) {
+  const { port } = server.address();
+  return `http://127.0.0.1:${port}`;
+}
+
+// --- help / version --------------------------------------------------------
+
+test("run('help') prints the usage banner via the injected log sink", async () => {
+  const c = capture(process.cwd());
+  const result = await run(["help"], c.env);
+  assert.equal(result.command, "help");
+  assert.match(c.stdout(), /Usage:/);
+  assert.match(c.stdout(), /darkmown init/);
+});
+
+test("run() with no args (bare command) prints help", async () => {
+  const c = capture(process.cwd());
+  const result = await run([], c.env);
+  assert.equal(result.command, "help");
+  assert.match(c.stdout(), /Usage:/);
+});
+
+test("run('--help') and run('-h') both print help", async () => {
+  for (const flag of ["--help", "-h"]) {
+    const c = capture(process.cwd());
+    await run([flag], c.env);
+    assert.match(c.stdout(), /Usage:/);
+  }
+});
+
+test("run('version') prints the package version", async () => {
+  const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+  for (const flag of ["version", "--version", "-v"]) {
+    const c = capture(process.cwd());
+    const result = await run([flag], c.env);
+    assert.equal(result.command, "version");
+    assert.equal(c.out.log[0], pkg.version);
+  }
+});
+
+test("helpText() and nextStep() are exported pure helpers", () => {
+  assert.match(helpText(), /Darkmown/);
+  assert.equal(nextStep("."), "npm install && npm run dev");
+  assert.equal(nextStep("demo"), "cd demo && npm install && npm run dev");
+});
+
+test("isEntryPoint detects the binary path, a symlink to it, and rejects others", () => {
+  // No entry arg → not the binary (e.g. imported in a worker).
+  assert.equal(isEntryPoint(undefined), false);
+  // The exact module path → the binary.
+  assert.equal(isEntryPoint(cliPath), true);
+  // A symlink pointing at cli.js → still the binary (npm's .bin/darkmown case).
+  const dir = freshDir("entry-link");
+  const link = path.join(dir, "darkmown-link");
+  fs.symlinkSync(cliPath, link);
+  assert.equal(isEntryPoint(link), true);
+  // A path that does not exist → realpathSync throws → not the binary (catch).
+  assert.equal(isEntryPoint(path.join(dir, "does-not-exist")), false);
+  // An unrelated real file → not the binary.
+  assert.equal(isEntryPoint(fileURLToPath(import.meta.url)), false);
+});
+
+// --- init ------------------------------------------------------------------
+
+test("run('init', '.') scaffolds and reports the in-place next step", async () => {
+  const root = freshDir("init");
+  const c = capture(root);
+  const result = await run(["init", "."], c.env);
+  assert.equal(result.command, "init");
+  assert.match(c.stdout(), /Created Darkmown project at \./);
+  assert.match(c.stdout(), /Next: npm install && npm run dev/);
+  assert.ok(fs.existsSync(path.join(root, "site/pages/index.wd")));
+});
+
+test("run('init', 'sub') reports a cd-prefixed next step", async () => {
+  const root = freshDir("init-sub");
+  const c = capture(root);
+  await run(["init", "sub"], c.env);
+  assert.match(c.stdout(), /Created Darkmown project at sub/);
+  assert.match(c.stdout(), /Next: cd sub && npm install && npm run dev/);
+});
+
+// --- build -----------------------------------------------------------------
+
+test("run('build') compiles the scaffolded site and reports the route count", async () => {
+  const root = freshDir("build");
+  await run(["init", "."], capture(root).env);
+  const c = capture(root);
+  const result = await run(["build"], c.env);
+  assert.equal(result.command, "build");
+  assert.match(c.stdout(), /Built \d+ routes into dist/);
+  assert.ok(fs.existsSync(path.join(root, "dist/index.html")));
+});
+
+test("run('build') throws on a compile error (the failClean path)", async () => {
+  const root = freshDir("build-err");
+  await run(["init", "."], capture(root).env);
+  // Unclosed @loop → a file-pathed compile Error the binary prints as `✗ …`.
+  fs.writeFileSync(path.join(root, "site/pages/broken.wd"), "@loop /x.json into item\nno end\n");
+  await assert.rejects(() => run(["build"], capture(root).env), /Missing @endloop/);
+});
+
+// --- unknown command -------------------------------------------------------
+
+test("run('bogus') reports the unknown command, prints help, and throws a silent CliError", async () => {
+  const c = capture(process.cwd());
+  await assert.rejects(
+    () => run(["bogus"], c.env),
+    (err) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.silent, true);
+      return true;
+    }
+  );
+  assert.match(c.stderr(), /Unknown command: bogus/);
+  assert.match(c.stdout(), /Usage:/);
+});
+
+// --- serve -----------------------------------------------------------------
+
+test("run('serve') without a dist directory reports the build hint and throws", async () => {
+  const root = freshDir("serve-nodist");
+  const c = capture(root);
+  await assert.rejects(
+    () => run(["serve"], c.env),
+    (err) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.silent, true);
+      return true;
+    }
+  );
+  assert.match(c.stderr(), /No dist directory found\. Run `darkmown build` first\./);
+});
+
+test("run('serve') serves the built dist over real HTTP, then closes cleanly", async () => {
+  const root = freshDir("serve");
+  await run(["init", "."], capture(root).env);
+  await run(["build"], capture(root).env);
+
+  const c = capture(root);
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0"; // ephemeral
+  let handle;
+  try {
+    handle = await run(["serve"], c.env);
+    assert.equal(handle.command, "serve");
+    assert.match(c.stdout(), /Darkmown preview of dist at http:\/\/127\.0\.0\.1:0/);
+
+    const origin = originOf(handle.server);
+    const home = await httpGet(origin, "/");
+    assert.equal(home.status, 200);
+    const missing = await httpGet(origin, "/does-not-exist/");
+    assert.equal(missing.status, 404);
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
+
+// --- dev -------------------------------------------------------------------
+
+test("run('dev') serves dist with the dev client injected, SSE + echo, then closes", async () => {
+  const root = freshDir("dev");
+  await run(["init", "."], capture(root).env);
+
+  const c = capture(root);
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["dev"], c.env);
+    assert.equal(handle.command, "dev");
+    assert.match(c.stdout(), /Darkmown dev server ready at http:\/\/127\.0\.0\.1:0/);
+    assert.match(c.stdout(), /Live compiler watching site\/ and src\//);
+
+    const origin = originOf(handle.server);
+
+    // HTML route comes back with the dev-client script injected.
+    const home = await httpGet(origin, "/");
+    assert.equal(home.status, 200);
+    assert.match(home.body, /__wd\/dev-client\.js/, "dev server injects the dev client");
+
+    // The dev-client script endpoint returns the EventSource wiring.
+    const client = await httpGet(origin, "/__wd/dev-client.js");
+    assert.equal(client.status, 200);
+    assert.match(client.headers["content-type"], /text\/javascript/);
+    assert.match(client.body, /EventSource/);
+
+    // A non-HTML asset streams with a mapped content-type (not injected).
+    const runtime = await httpGet(origin, "/__wd/runtime.js");
+    assert.equal(runtime.status, 200);
+    assert.match(runtime.headers["content-type"], /javascript/);
+
+    // A missing file falls through serveDev to the static serve() → 404.
+    const missing = await httpGet(origin, "/no-such-page/");
+    assert.equal(missing.status, 404, "dev serves a 404 for an unknown route");
+
+    // The echo endpoint round-trips a posted form body.
+    const echo = await httpPost(origin, "/__wd/echo", "name=ada&role=author");
+    assert.equal(echo.status, 200);
+    const parsed = JSON.parse(echo.body);
+    assert.equal(parsed.ok, true);
+    assert.deepEqual(parsed.received, { name: "ada", role: "author" });
+
+    // The SSE channel opens as an event-stream.
+    const sse = await readSse(origin, "/__wd/dev-events", { timeout: 300 });
+    assert.equal(sse.status, 200);
+    assert.match(sse.headers["content-type"], /text\/event-stream/);
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
+
+test("run('dev') records a broken initial build and replays it to SSE clients", async () => {
+  const root = freshDir("dev-broken");
+  await run(["init", "."], capture(root).env);
+  // Break the build BEFORE `dev` starts: the server must still come up and the
+  // recorded error replays to clients that connect while it is still failing.
+  fs.writeFileSync(path.join(root, "site/pages/broken.wd"), "@loop /x.json into item\nno end\n");
+
+  const c = capture(root);
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["dev"], c.env);
+    // The initial build error was printed to the error sink, not thrown.
+    assert.match(c.stderr(), /Missing @endloop/);
+
+    const origin = originOf(handle.server);
+    const sse = await readSse(origin, "/__wd/dev-events", { timeout: 400 });
+    assert.equal(sse.status, 200);
+    assert.match(sse.data, /event: builderror/, "broken build replays to a fresh SSE client");
+    assert.match(sse.data, /Missing @endloop/);
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
+
+test("dev server returns a 500 with the stack when serving throws", async () => {
+  // A request URL that resolves to an existing `.html` PATH which is actually a
+  // directory makes serveDev's fs.readFileSync throw EISDIR; the handler's
+  // try/catch converts that into a 500 text/plain response (cli.js 202-205).
+  const root = freshDir("dev-500");
+  await run(["init", "."], capture(root).env);
+
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["dev"], capture(root).env);
+    // Create the trap AFTER the dev server's initial build (which wipes dist).
+    // dist/trap.html as a directory: existsSync → true, endsWith(".html") → true,
+    // readFileSync(dir) → throws EISDIR, caught by the handler → 500.
+    fs.mkdirSync(path.join(root, "dist", "trap.html"), { recursive: true });
+    const origin = originOf(handle.server);
+    const res = await httpGet(origin, "/trap.html");
+    assert.equal(res.status, 500, "a throw inside the handler becomes a 500");
+    assert.match(res.headers["content-type"], /text\/plain/);
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
+
+// Wait for the next SSE event of a given type to arrive on an open connection.
+function waitForSseEvent(origin, urlPath, eventName, { timeout = 8000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(`${origin}${urlPath}`, (res) => {
+      let data = "";
+      res.setEncoding("utf8");
+      const timer = setTimeout(() => {
+        req.destroy();
+        reject(new Error(`Timed out waiting for SSE "${eventName}". Got: ${data}`));
+      }, timeout);
+      res.on("data", (chunk) => {
+        data += chunk;
+        if (data.includes(`event: ${eventName}`)) {
+          clearTimeout(timer);
+          req.destroy();
+          resolve(data);
+        }
+      });
+      res.on("error", () => {});
+    });
+    req.on("error", reject);
+  });
+}
+
+test("dev server rebuilds on a file change and broadcasts a reload to SSE clients", async () => {
+  const root = freshDir("dev-rebuild");
+  await run(["init", "."], capture(root).env);
+
+  const c = capture(root);
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["dev"], c.env);
+    const origin = originOf(handle.server);
+
+    // Open an SSE client first so the rebuild broadcast (cli.js broadcast +
+    // reload path) has a recipient.
+    const reloadPromise = waitForSseEvent(origin, "/__wd/dev-events", "reload");
+    // Give the SSE GET a moment to register the client before we touch a file.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Touch a watched site file → fs.watch fires → debounced child `build` →
+    // success path broadcasts `event: reload`.
+    fs.writeFileSync(path.join(root, "site/pages/index.wd"), "# Rebuilt\n\nFresh content.\n");
+
+    const data = await reloadPromise;
+    assert.match(data, /event: reload/, "a successful rebuild broadcasts reload");
+    assert.match(c.stdout(), /Built \d+ routes/, "the rebuild logs the child build output");
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
+
+test("dev server rebuild on a broken change broadcasts builderror to SSE clients", async () => {
+  const root = freshDir("dev-rebuild-err");
+  await run(["init", "."], capture(root).env);
+
+  const c = capture(root);
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["dev"], c.env);
+    const origin = originOf(handle.server);
+
+    const errPromise = waitForSseEvent(origin, "/__wd/dev-events", "builderror");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Introduce a compile error → child `build` exits non-zero → error path
+    // broadcasts `event: builderror`.
+    fs.writeFileSync(
+      path.join(root, "site/pages/index.wd"),
+      "@loop /missing.json into item\nno end\n"
+    );
+
+    const data = await errPromise;
+    assert.match(data, /event: builderror/, "a failed rebuild broadcasts builderror");
+    assert.match(c.stderr(), /endloop|Missing|resolve/i, "the rebuild logs the failure");
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
