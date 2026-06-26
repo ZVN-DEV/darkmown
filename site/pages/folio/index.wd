@@ -47,18 +47,19 @@ Type to filter the shelf — it narrows as you go, no page reload.
 :::
 :::
 
+::: catalog
 @loop /products.json into p where p.name contains q
 ::: card .product
-::: shelf
+::: chip
 { p.emoji }
 :::
 ::: body
-::: tag
-{ p.category }
-:::
-
 ::: pname
 { p.name }
+:::
+
+::: tag
+{ p.category }
 :::
 
 ::: blurb
@@ -80,6 +81,7 @@ ${ p.price }
 Try a shorter word, or clear the search to see all eight pieces.
 :::
 @endloop
+:::
 
 :::
 
@@ -127,9 +129,10 @@ Every product card, the live search, and the running count are written as plain 
 
 :bind q placeholder="Search the shop…"
 
+::: catalog
 @loop /products.json into p where p.name contains q
 ::: card .product
-::: shelf
+::: chip
 { p.emoji }
 :::
 ::: body
@@ -147,6 +150,7 @@ ${ p.price }
 @empty
 Nothing matches "{ q }".
 @endloop
+:::
 ```
 
 </details>

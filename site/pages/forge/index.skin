@@ -1,12 +1,19 @@
 /* ===================================================================
    Forge — interactive plan / pricing configurator.
-   Bold modern SaaS energy: confident sans headings, a vivid indigo/
-   violet accent, big rounded cards, a prominent sticky live price,
-   crisp toggle states. Layered ON TOP of /base.skin (tokens + .card +
-   .btn + .source-reveal). Everything is scoped to .app-forge so it
-   never leaks into the shared design system. The accent lives in one
-   token — --brand — with a dark-mode override, so light and dark both
-   stay premium.
+   A confident, modern SaaS identity layered ON TOP of /base.skin
+   (tokens + .card + .source-reveal). Vivid violet brand, big rounded
+   cards, a gradient price that dominates the rail, and selectable
+   tier / feature cards whose ON state is unmistakable.
+
+   IMPORTANT: the :button / :submit directives emit *bare* <button>
+   elements (no .btn class), so every interactive element here is
+   styled by targeting `button` directly inside its container — not
+   `.btn`. That mismatch is why the old buttons fell back to ugly
+   browser defaults; this file fixes it.
+
+   Everything is scoped to .app-forge so it never leaks into the
+   shared design system. The accent lives in one token — --brand —
+   with a dark-mode override, so light and dark both stay premium.
    =================================================================== */
 
 .app-forge
@@ -14,8 +21,11 @@
   --brand-deep #5a47d6
   --brand-ink #4636b8
   --brand-soft #f1eefe
+  --brand-tint #f7f5ff
   --brand-line #e0dafc
+  --brand-grad linear-gradient(135deg, #7d6bff 0%, #6d5ae6 45%, #8b5cf6 100%)
   --brand-glow rgba(109, 90, 230, .28)
+  --brand-shadow rgba(80, 60, 200, .35)
   --on-bg #ffffff
   font-family system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
 
@@ -25,8 +35,11 @@
     --brand-deep #b3a6ff
     --brand-ink #cfc6ff
     --brand-soft #1d1830
+    --brand-tint #181426
     --brand-line #2c2548
+    --brand-grad linear-gradient(135deg, #a594ff 0%, #9b8bff 45%, #b78bff 100%)
     --brand-glow rgba(155, 139, 255, .32)
+    --brand-shadow rgba(120, 100, 255, .4)
     --on-bg #1a1626
 
 /* Confident sans headings, tighter than the serif default. */
@@ -40,6 +53,32 @@
 .app-forge a
   color $brand-deep
 
+/* ── Shared button reset for this app ───────────────────────────────
+   :button emits a bare <button> — give every one of them the pill
+   foundation here, then specialize per zone below. */
+.app-forge button
+  font-family system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
+  font-size .95rem
+  font-weight 600
+  line-height 1
+  display inline-flex
+  align-items center
+  justify-content center
+  gap .45rem
+  cursor pointer
+  border 1.5px solid transparent
+  radius 12px
+  padding .8rem 1.15rem
+  transition transform .14s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease, color .18s ease
+  -webkit-tap-highlight-color transparent
+
+.app-forge button:active
+  transform translateY(1px) scale(.99)
+
+.app-forge button:focus-visible
+  outline none
+  box-shadow 0 0 0 4px $brand-glow
+
 /* ── Hero ───────────────────────────────────────────────────────── */
 
 .forge-hero
@@ -49,10 +88,11 @@
   padding 1rem 0 .5rem
 
 .forge-hero h1
-  font-size clamp(2.6rem, 6vw, 4.25rem)
-  font-weight 720
-  margin .25rem 0 .4rem
-  background linear-gradient(120deg, $ink 30%, $brand 120%)
+  font-size clamp(2.7rem, 6.5vw, 4.5rem)
+  font-weight 760
+  margin .25rem 0 .5rem
+  line-height 1.02
+  background var(--brand-grad)
   -webkit-background-clip text
   background-clip text
   color transparent
@@ -61,14 +101,14 @@
   margin-left auto
   margin-right auto
   color $ink-soft
-  font-size 1.12rem
+  font-size 1.14rem
 
 .forge-trust
   display flex
   flex-wrap wrap
-  gap .5rem .75rem
+  gap .5rem .65rem
   justify-content center
-  margin 1.4rem 0 .5rem
+  margin 1.5rem 0 .5rem
 
 .forge-trust-item
   display inline-flex
@@ -77,9 +117,9 @@
   font-size .82rem
   font-weight 600
   color $ink-soft
-  padding .4rem .85rem
+  padding .42rem .9rem
   background $panel
-  border 1px solid $line
+  border 1px solid $brand-line
   radius 999px
 
 .forge-trust-item::before
@@ -91,22 +131,33 @@
 
 .forge-layout
   display grid
-  grid-template-columns minmax(0, 1fr) 340px
-  gap 2rem
+  grid-template-columns minmax(0, 1fr) 360px
+  gap 2.25rem
   align-items start
-  margin-top 2.5rem
+  margin-top 3rem
 
 @media (max-width: 900px)
   .forge-layout
     grid-template-columns 1fr
 
 .forge-build h2
-  font-size 1.5rem
-  margin 2.6rem 0 1rem
-  font-weight 680
+  font-size 1.55rem
+  margin 2.8rem 0 1.1rem
+  font-weight 720
+  display flex
+  align-items center
+  gap .65rem
 
 .forge-build h2:first-of-type
   margin-top 0
+
+/* Step number chip drawn from the "N · " prefix is left in the text;
+   give the heading a subtle brand underline accent instead. */
+.forge-build h2::after
+  content ""
+  flex 1
+  height 1px
+  background linear-gradient(90deg, $brand-line, transparent)
 
 /* ── Tier selector ──────────────────────────────────────────────── */
 
@@ -122,60 +173,89 @@
 .app-forge .tier
   position relative
   border 1.5px solid $line
-  radius 18px
-  padding 1.4rem
-  transition border-color .15s ease, box-shadow .15s ease, transform .15s ease
+  radius 20px
+  padding 1.5rem 1.4rem
+  background $panel
+  box-shadow 0 1px 2px rgba(28,24,20,.04)
+  transition border-color .18s ease, box-shadow .2s ease, transform .18s ease, background .2s ease
   cursor default
+  overflow hidden
+
+.app-forge .tier:hover
+  border-color $brand-line
+  transform translateY(-2px)
+  box-shadow 0 16px 36px -24px $brand-shadow
 
 .app-forge .tier h3
-  margin 0 0 .35rem
-  font-size 1.15rem
+  margin 0 0 .4rem
+  font-size 1.2rem
 
 .app-forge .tier p
   font-size .92rem
   color $muted
-  margin .5rem 0 1rem
+  margin .5rem 0 1.2rem
 
-.app-forge .tier .btn
+.app-forge .tier p:first-of-type
+  color $ink
+  margin-bottom .85rem
+
+.app-forge .tier p strong
+  font-size 1.55rem
+  font-weight 760
+  color $ink
+  letter-spacing -.02em
+
+/* Default (unselected) select button — bold outline, brand text. */
+.app-forge .tier button
   width 100%
-  justify-content center
   margin 0
-  background transparent
-  border 1.5px solid $brand-line
+  background $panel
+  border-color $brand-line
   color $brand-deep
-  font-weight 620
 
-.app-forge .tier .btn:hover
+.app-forge .tier button:hover
   border-color $brand
-  background $brand-soft
+  background $brand-tint
+  transform translateY(-1px)
 
-/* Active tier — driven by `.on when base == N`. */
+/* Active tier — driven by `.on when base == N`. Filled, lifted, ringed. */
 .app-forge .tier.on
   border-color $brand
-  box-shadow 0 0 0 4px $brand-glow, 0 14px 34px -18px $brand-glow
-  transform translateY(-2px)
+  background $brand-tint
+  box-shadow 0 0 0 2px $brand, 0 22px 44px -22px $brand-shadow
+  transform translateY(-3px)
 
-.app-forge .tier.on .btn
-  background $brand
-  border-color $brand
+.app-forge .tier.on h3
+  color $brand-ink
+
+/* The active tier's button becomes a solid gradient primary. */
+.app-forge .tier.on button
+  background var(--brand-grad)
+  border-color transparent
   color #fff
+  box-shadow 0 10px 24px -10px $brand-shadow
 
-.app-forge .tier.on .btn:hover
-  background $brand-deep
-  border-color $brand-deep
+.app-forge .tier.on button:hover
+  filter brightness(1.06)
+  transform translateY(-1px)
 
+/* "Current" badge in the corner of the active card. */
 .tier-active
   position absolute
   top 1rem
   right 1rem
-  font-size .66rem
-  font-weight 700
+  font-size .64rem
+  font-weight 800
   text-transform uppercase
-  letter-spacing .07em
-  color $brand-deep
-  background $brand-soft
-  padding .25rem .55rem
+  letter-spacing .08em
+  color #fff
+  background var(--brand-grad)
+  padding .3rem .6rem
   radius 999px
+  box-shadow 0 6px 16px -8px $brand-shadow
+
+.tier-active p
+  margin 0
 
 /* ── Seats stepper ──────────────────────────────────────────────── */
 
@@ -185,131 +265,177 @@
   align-items center
   justify-content space-between
   gap 1rem
-  border 1.5px solid $line
-  radius 16px
-  padding 1.25rem 1.4rem
+  border 1.5px solid $brand-line
+  radius 18px
+  padding 1.4rem 1.5rem
+  background linear-gradient(180deg, $brand-tint, $panel 70%)
 
 .seat-stepper
   display inline-flex
   align-items center
-  gap .25rem
-  background $sunk
-  radius 14px
-  padding .35rem
-
-.app-forge .seat-stepper .btn
-  margin 0
-  width 2.6rem
-  height 2.6rem
-  padding 0
-  justify-content center
-  font-size 1.4rem
-  font-weight 600
-  line-height 1
+  gap .85rem
   background $panel
-  border 1px solid $line
-  color $brand-deep
-  radius 11px
+  border 1.5px solid $brand-line
+  radius 999px
+  padding .4rem
 
-.app-forge .seat-stepper .btn:hover
-  background $brand-soft
-  border-color $brand
-  transform none
+/* Round, brand-tinted +/- pills with a number between them. */
+.app-forge .seat-stepper button
+  margin 0
+  width 2.85rem
+  height 2.85rem
+  padding 0
+  font-size 1.5rem
+  font-weight 500
+  radius 999px
+  background var(--brand-grad)
+  border-color transparent
+  color #fff
+  box-shadow 0 6px 16px -8px $brand-shadow
+
+.app-forge .seat-stepper button:hover
+  filter brightness(1.08)
+  transform translateY(-1px)
+  box-shadow 0 12px 24px -10px $brand-shadow
 
 .seat-count
   min-width 6.5rem
   text-align center
-  font-size 1.05rem
-  color $ink
+  font-size 1rem
+  color $ink-soft
 
 .seat-count strong
-  font-size 1.5rem
-  font-weight 720
-  color $ink
+  display block
+  font-size 1.7rem
+  font-weight 780
+  color $brand-deep
+  letter-spacing -.02em
+  line-height 1.1
 
 .seat-meta
-  font-size .95rem
+  font-size .98rem
   color $ink-soft
 
 .seat-meta strong
   color $brand-deep
+  font-weight 700
 
 .seat-hint
   flex-basis 100%
-  margin-top .4rem
+  margin-top .5rem
   font-size .85rem
   color $muted
-  padding-top .7rem
-  border-top 1px dashed $line
+  padding-top .8rem
+  border-top 1px dashed $brand-line
 
-/* ── Feature toggles ────────────────────────────────────────────── */
+/* ── Feature toggles — the key fix ──────────────────────────────── */
 
 .feature-grid
   display grid
   gap 1rem
 
 .app-forge .feature
+  position relative
   border 1.5px solid $line
-  radius 16px
-  padding 1.3rem 1.4rem
-  transition border-color .15s ease, box-shadow .15s ease, background .15s ease
+  radius 18px
+  padding 1.4rem 1.5rem
+  background $panel
+  box-shadow 0 1px 2px rgba(28,24,20,.04)
+  transition border-color .18s ease, box-shadow .2s ease, background .2s ease, transform .18s ease
+
+.app-forge .feature:hover
+  border-color $brand-line
+  transform translateY(-1px)
 
 .feature-head
   display flex
-  align-items baseline
+  align-items center
   justify-content space-between
   gap 1rem
 
 .app-forge .feature-head h3
   margin 0
-  font-size 1.1rem
+  font-size 1.12rem
+  display flex
+  align-items center
+  gap .55rem
 
 .feature-head strong
-  font-size 1.05rem
+  font-size 1rem
+  font-weight 700
   color $brand-deep
   white-space nowrap
+  background $brand-soft
+  border 1px solid $brand-line
+  padding .25rem .6rem
+  radius 999px
 
 .app-forge .feature p
-  margin .5rem 0 1rem
+  margin .6rem 0 1.1rem
   font-size .92rem
   color $muted
 
-.app-forge .feature .btn
+/* OFF state — outline "Add +" button on a plain card. */
+.app-forge .feature button
   margin 0
-  background transparent
-  border 1.5px solid $brand-line
+  background $panel
+  border-color $brand-line
   color $brand-deep
-  font-weight 620
 
-.app-forge .feature .btn:hover
+.app-forge .feature button:hover
   border-color $brand
-  background $brand-soft
+  background $brand-tint
+  transform translateY(-1px)
 
-/* On state — `.on when <flag>`. */
+/* ON state — `.on when <flag>`: brand ring + tint, unmistakable. */
 .app-forge .feature.on
   border-color $brand
-  background $brand-soft
-  box-shadow 0 0 0 3px $brand-glow
+  background $brand-tint
+  box-shadow 0 0 0 2px $brand, 0 18px 40px -24px $brand-shadow
 
+/* A check dot appears before the title when the feature is on. */
 .app-forge .feature.on .feature-head h3::before
-  content "● "
-  color $brand
-  font-size .7em
-  vertical-align middle
+  content "✓"
+  display inline-flex
+  align-items center
+  justify-content center
+  width 1.35rem
+  height 1.35rem
+  font-size .8rem
+  font-weight 900
+  color #fff
+  background var(--brand-grad)
+  radius 999px
+  box-shadow 0 4px 12px -4px $brand-shadow
 
-.app-forge .feature.on .btn
-  background transparent
-  border-color $brand
-  color $brand-deep
+/* When ON, the "Remove" button is the filled "Added" affordance. */
+.app-forge .feature.on button
+  background var(--brand-grad)
+  border-color transparent
+  color #fff
+  box-shadow 0 10px 24px -12px $brand-shadow
 
+.app-forge .feature.on button:hover
+  filter brightness(1.06)
+  border-color transparent
+  background var(--brand-grad)
+  transform translateY(-1px)
+
+/* The "On — counted in your total" badge above the button. */
 .feature-state
   display inline-flex
   align-items center
-  gap .4rem
-  font-size .78rem
-  font-weight 700
+  gap .45rem
+  font-size .76rem
+  font-weight 800
+  text-transform uppercase
+  letter-spacing .05em
   color $brand-deep
-  margin-bottom .7rem
+  margin-bottom .8rem
+  background $brand-soft
+  border 1px solid $brand-line
+  padding .35rem .7rem
+  radius 999px
 
 .feature-state.is-on::before
   content ""
@@ -324,13 +450,13 @@
 .forge-hints
   display grid
   gap .6rem
-  margin-top 1.25rem
+  margin-top 1.4rem
 
 .hint
   font-size .9rem
   line-height 1.5
-  padding .85rem 1.05rem
-  radius 12px
+  padding .9rem 1.1rem
+  radius 14px
   border 1px solid $line
   border-left 3px solid $muted
   background $panel
@@ -365,79 +491,89 @@
 
 .summary-card
   border 1.5px solid $brand-line
-  radius 20px
-  padding 1.5rem 1.5rem 1.4rem
+  radius 24px
+  padding 1.6rem 1.6rem 1.5rem
   background $panel
-  box-shadow 0 18px 44px -26px $brand-glow
+  box-shadow 0 24px 60px -34px $brand-shadow, 0 1px 2px rgba(28,24,20,.05)
 
 .summary-card h3
-  margin 0 0 .25rem
-  font-size .82rem
+  margin 0 0 .35rem
+  font-size .78rem
   text-transform uppercase
-  letter-spacing .1em
+  letter-spacing .12em
   color $muted
-  font-weight 700
+  font-weight 800
 
+/* The price block — a big gradient number that dominates the rail. */
 .price-block
   display flex
   align-items baseline
-  gap .4rem
-  margin .4rem 0 1.1rem
+  flex-wrap wrap
+  gap .35rem
+  margin .5rem 0 1.2rem
 
 .price-now
-  font-size clamp(2.6rem, 8vw, 3.4rem)
-  font-weight 760
+  font-size clamp(3rem, 9vw, 4rem)
+  font-weight 820
   line-height 1
-  letter-spacing -.03em
-  color $ink
+  letter-spacing -.04em
+  background var(--brand-grad)
+  -webkit-background-clip text
+  background-clip text
+  color transparent
 
 .price-now strong
-  font-weight 760
-  color $ink
+  font-weight 820
+  color inherit
 
 .price-unit
-  font-size .92rem
+  font-size .95rem
   color $muted
-  font-weight 500
+  font-weight 600
 
 .summary-lines
   display grid
-  gap .5rem
-  padding 1rem 0
+  gap .6rem
+  padding 1.1rem 0
   border-top 1px solid $line
   border-bottom 1px solid $line
 
 .summary-line
   display flex
   justify-content space-between
-  font-size .9rem
+  font-size .92rem
   color $ink-soft
 
 .annual-block
-  margin 1rem 0
+  margin 1.1rem 0
   font-size .9rem
-  line-height 1.5
+  line-height 1.55
   color $ink-soft
+  padding .9rem 1rem
+  background $brand-soft
+  border 1px solid $brand-line
+  radius 14px
 
 .annual-block strong
   color $brand-deep
+  font-weight 750
 
 .summary-cta
-  margin .4rem 0 .9rem
+  margin .5rem 0 .9rem
 
-.app-forge .summary-cta .btn
+/* Reset = quiet ghost button. */
+.app-forge .summary-cta button
   width 100%
-  justify-content center
   margin 0
   background transparent
-  border 1.5px solid $line
+  border-color $line
   color $muted
-  font-weight 600
+  font-weight 650
 
-.app-forge .summary-cta .btn:hover
+.app-forge .summary-cta button:hover
   border-color $brand
   color $brand-deep
-  background $brand-soft
+  background $brand-tint
 
 .summary-card p
   font-size .8rem
@@ -449,11 +585,12 @@
 
 .checkout-card
   border 1.5px solid $brand-line
-  radius 20px
-  padding 1.6rem
-  background linear-gradient(180deg, $brand-soft, $panel 60%)
+  radius 24px
+  padding 1.8rem
+  background linear-gradient(165deg, $brand-soft, $panel 65%)
   max-width 560px
   margin-top 1rem
+  box-shadow 0 20px 50px -32px $brand-shadow
 
 .app-forge .checkout-card form
   display flex
@@ -462,11 +599,11 @@
 
 .app-forge .checkout-card input
   font-size 1rem
-  padding .8rem .9rem
-  border 1.5px solid $line
+  padding .85rem .95rem
+  border 1.5px solid $brand-line
   background $panel
   color $ink
-  radius 12px
+  radius 14px
   width 100%
   margin .35rem 0
   transition border-color .15s ease, box-shadow .15s ease
@@ -476,24 +613,23 @@
   border-color $brand
   box-shadow 0 0 0 4px $brand-glow
 
-.app-forge .checkout-card .btn, .app-forge .checkout-card button
-  margin .6rem 0 0
+/* Strong, filled "Start trial" submit. */
+.app-forge .checkout-card button
+  margin .7rem 0 0
   width 100%
-  justify-content center
-  padding .9rem 1.2rem
-  font-size 1rem
-  font-weight 650
-  background $brand
-  border 1px solid $brand
+  padding .95rem 1.2rem
+  font-size 1.02rem
+  font-weight 700
+  background var(--brand-grad)
+  border-color transparent
   color #fff
-  radius 12px
-  cursor pointer
+  radius 14px
+  box-shadow 0 14px 32px -14px $brand-shadow
 
-.app-forge .checkout-card .btn:hover, .app-forge .checkout-card button:hover
-  background $brand-deep
-  border-color $brand-deep
-  transform translateY(-1px)
-  box-shadow 0 12px 28px -12px $brand-glow
+.app-forge .checkout-card button:hover
+  filter brightness(1.06)
+  transform translateY(-2px)
+  box-shadow 0 20px 40px -16px $brand-shadow
 
 .checkout-note
   margin-top 1rem
@@ -505,14 +641,15 @@
 
 .receipt
   margin-top 1.1rem
-  padding 1.2rem 1.3rem
+  padding 1.3rem 1.4rem
   border 1.5px solid $brand
-  background $brand-soft
-  radius 14px
+  background $brand-tint
+  radius 18px
+  box-shadow 0 0 0 2px $brand-glow
 
 .receipt h3
   margin 0 0 .4rem
-  font-size 1.15rem
+  font-size 1.2rem
   color $brand-ink
 
 .receipt p
@@ -522,11 +659,12 @@
 
 .receipt strong
   color $brand-deep
+  font-weight 700
 
 .checkout-error
   margin-top 1rem
   padding .9rem 1.1rem
-  radius 12px
+  radius 14px
   border 1px solid $warm
   border-left 3px solid $warm
   background $warm-soft

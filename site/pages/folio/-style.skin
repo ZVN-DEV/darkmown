@@ -2,8 +2,9 @@
    Folio — a boutique storefront. Warm editorial luxe.
 
    Sits on top of /base.wd (tokens, type, dark mode, .card/.btn/.tag).
-   The DISTINCT identity: a refined terracotta accent, generous
-   whitespace, large serif product names, emoji-forward neutral cards.
+   The DISTINCT identity: a refined terracotta accent, a tight 2-column
+   product grid beside a sticky cart rail, compact uniform cards with a
+   soft emoji chip, and a filled brand "Add" button.
    Shared by /folio/ and /folio/cart/ via `@include ./style.wd`.
    =================================================================== */
 
@@ -13,6 +14,7 @@
   --brand #b8462e
   --brand-deep #97331f
   --brand-soft #f8ece5
+  --brand-tint #fbf3ee
   --shelf #fcf9f4
 
 @media (prefers-color-scheme: dark)
@@ -20,6 +22,7 @@
     --brand #e88a6f
     --brand-deep #f2a78f
     --brand-soft #2c1d16
+    --brand-tint #221710
     --shelf #18130e
 
 .app-folio
@@ -32,12 +35,12 @@
   flex-wrap wrap
   align-items flex-end
   justify-content space-between
-  gap 1.5rem 2rem
-  padding 2.5rem 0 2rem
+  gap 1.25rem 2rem
+  padding 2.25rem 0 1.75rem
   border-bottom 1px solid $line
 
 .shop-mark
-  max-width 40ch
+  max-width 44ch
 
 .shop-eyebrow
   display inline-block
@@ -47,10 +50,10 @@
   font-weight 600
   font-family system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
   color var(--brand)
-  margin 0 0 .6rem
+  margin 0 0 .55rem
 
 .shop-name
-  font-size clamp(3rem, 8vw, 5.5rem)
+  font-size clamp(2.75rem, 7vw, 4.75rem)
   line-height .92
   letter-spacing -.03em
   margin 0
@@ -61,19 +64,19 @@
   color var(--brand)
 
 .shop-tagline
-  font-size 1.15rem
+  font-size 1.08rem
   color $ink-soft
-  margin 1rem 0 0
-  max-width 38ch
+  margin .85rem 0 0
+  max-width 42ch
 
 /* ── Layout: catalog + sticky cart rail ─────────────────────────── */
 
 .shop-layout
   display grid
-  grid-template-columns 1fr 320px
-  gap 2.5rem
+  grid-template-columns 1fr 300px
+  gap 2rem
   align-items start
-  margin-top 2.25rem
+  margin-top 2rem
 
 .shop-main
   min-width 0
@@ -81,7 +84,7 @@
 @media (max-width: 900px)
   .shop-layout
     grid-template-columns 1fr
-    gap 1.75rem
+    gap 1.5rem
 
 /* ── Search field (a :bind input) ───────────────────────────────── */
 
@@ -89,13 +92,13 @@
   width 100%
   box-sizing border-box
   font-family inherit
-  font-size 1.05rem
-  padding .85rem 1.1rem
+  font-size 1.02rem
+  padding .8rem 1.1rem
   border 1px solid $line
   radius 999px
   bg $panel
   color $ink
-  margin .25rem 0 .35rem
+  margin .1rem 0 .35rem
   transition border-color .15s ease, box-shadow .15s ease
 
 .shop-search input[data-wd-bind-input]:focus
@@ -107,62 +110,83 @@
   color $faint
 
 .shop-hint
-  font-size .85rem
+  font-size .82rem
   color $muted
   font-style italic
   margin .1rem 0 0
 
-/* ── Catalog grid ───────────────────────────────────────────────── */
+/* ── Catalog grid ────────────────────────────────────────────────
+   The reactive @loop renders rows into a `<div data-wd-loop-out>`, so the
+   grid lives on that out container (its direct children are the cards). */
 
 .catalog
-  display grid
-  grid-template-columns repeat(auto-fill, minmax(230px, 1fr))
-  gap 1.25rem
-  margin 1.75rem 0 0
-  padding 0
-  list-style none
+  margin 1.5rem 0 0
 
-@media (max-width: 520px)
-  .catalog
+.catalog [data-wd-loop-out]
+  display grid
+  grid-template-columns repeat(2, 1fr)
+  gap 1rem
+
+@media (max-width: 620px)
+  .catalog [data-wd-loop-out]
     grid-template-columns 1fr
 
-/* ── Product card ───────────────────────────────────────────────── */
+/* ── Product card ─────────────────────────────────────────────────
+   Compact and uniform: a small emoji chip top-left, the name + tag,
+   a one-line blurb, then a price/Add footer pinned to the bottom. */
 
 .product
   position relative
   display flex
   flex-direction column
-  padding 0
-  overflow hidden
+  gap .7rem
+  padding 1.1rem 1.15rem 1.15rem
+  height 100%
+  box-sizing border-box
   border 1px solid $line
-  radius $radius-lg
+  radius $radius
   bg $panel
   box-shadow 0 1px 2px rgba(28,24,20,.04)
   transition transform .16s ease, box-shadow .16s ease, border-color .16s ease
 
 .product:hover
-  transform translateY(-3px)
+  transform translateY(-2px)
   border-color var(--brand)
-  box-shadow 0 18px 38px -22px rgba(28,24,20,.5)
+  box-shadow 0 16px 34px -22px rgba(28,24,20,.45)
 
-/* The emoji "shelf" — a soft neutral plinth the product sits on. */
-.product .shelf
+/* Prose inside the card containers renders as <p>; strip its margins so
+   the compact layout holds (the chip is a tight 48px box). */
+.product .chip p, .product .pname p, .product .tag p, .product .blurb p, .product .price p
+  margin 0
+  max-width none
+
+/* The emoji chip — a small soft-tinted rounded square holding the emoji. */
+.product .chip
   display flex
   align-items center
   justify-content center
-  font-size 3.6rem
+  width 48px
+  height 48px
+  font-size 1.65rem
   line-height 1
-  height 8.5rem
-  margin 0
-  background linear-gradient(160deg, var(--shelf), $paper-2)
-  border-bottom 1px solid $line-soft
+  radius 14px
+  background var(--brand-tint)
+  border 1px solid $line-soft
+  flex-shrink 0
 
 .product .body
   display flex
   flex-direction column
-  gap .55rem
-  padding 1.15rem 1.25rem 1.3rem
+  gap .4rem
   flex 1
+  min-width 0
+
+.product .pname
+  font-size 1.18rem
+  line-height 1.18
+  letter-spacing -.015em
+  margin 0
+  font-weight 600
 
 .product .body .tag
   align-self flex-start
@@ -170,63 +194,66 @@
   background var(--brand-soft)
   color var(--brand-deep)
 
-.product .pname
-  font-size 1.5rem
-  line-height 1.1
-  letter-spacing -.015em
-  margin 0
-  font-weight 600
-
 .product .blurb
-  font-size .92rem
+  font-size .86rem
   color $ink-soft
-  line-height 1.5
-  margin 0
+  line-height 1.45
+  margin .1rem 0 0
   flex 1
+  display -webkit-box
+  -webkit-line-clamp 2
+  -webkit-box-orient vertical
+  overflow hidden
 
 .product .foot
   display flex
   align-items center
   justify-content space-between
-  gap .75rem
-  margin-top .35rem
+  gap .6rem
+  margin-top .55rem
+  padding-top .8rem
+  border-top 1px solid $line-soft
 
 .product .price
-  font-size 1.35rem
-  font-weight 600
+  font-size 1.3rem
+  font-weight 650
   letter-spacing -.02em
   color $ink
   margin 0
 
-.product .add
+/* The "Add" button — filled brand terracotta, white, fully rounded.
+   The `:button` directive emits a bare <button data-wd-action>, so we
+   target it by attribute (same pattern as the cart's remove button). */
+.product .foot button[data-wd-action]
   border 0
   margin 0
   font-family system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
   font-size .85rem
   font-weight 600
   letter-spacing .01em
-  padding .55rem 1rem
+  padding .5rem 1.1rem
   radius 999px
   bg var(--brand)
   color #fff
   cursor pointer
   flex-shrink 0
-  transition background .14s ease, transform .12s ease
+  transition background .14s ease, transform .12s ease, box-shadow .12s ease
 
-.product .add:hover
+.product .foot button[data-wd-action]:hover
   bg var(--brand-deep)
   transform translateY(-1px)
+  box-shadow 0 8px 16px -8px rgba(184,70,46,.5)
 
-.product .add:active
+.product .foot button[data-wd-action]:active
   transform translateY(0)
 
-/* Empty / no-matches state inside the catalog */
+/* Empty / no-matches state — spans the whole grid row. */
 .catalog-empty
   grid-column 1 / -1
-  padding 2.5rem 1.5rem
+  padding 2.25rem 1.5rem
   text-align center
   border 1px dashed $line
-  radius $radius-lg
+  radius $radius
   bg $paper-2
   color $muted
 
@@ -234,15 +261,15 @@
   margin .3rem auto
   max-width none
 
-/* ── Sticky cart rail (catalog page) ────────────────────────────── */
+/* ── Sticky cart rail (catalog page) — same card treatment ──────── */
 
 .cart-rail
   position sticky
   top 1.25rem
   border 1px solid $line
-  radius $radius-lg
+  radius $radius
   bg $panel
-  padding 1.4rem 1.4rem 1.5rem
+  padding 1.25rem 1.25rem 1.35rem
   box-shadow 0 1px 2px rgba(28,24,20,.04)
 
 .cart-rail .rail-eyebrow
@@ -250,25 +277,25 @@
   align-items center
   justify-content space-between
   font-family system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
-  font-size .72rem
+  font-size .7rem
   font-weight 600
   text-transform uppercase
   letter-spacing .12em
   color $muted
-  margin 0 0 .25rem
+  margin 0 0 .15rem
 
 .cart-rail .rail-count
-  font-size 3rem
+  font-size 2.85rem
   line-height 1
   letter-spacing -.03em
   color var(--brand)
   margin .1rem 0 0
-  font-weight 600
+  font-weight 650
 
 .cart-rail .rail-sub
-  font-size .92rem
+  font-size .88rem
   color $ink-soft
-  margin .5rem 0 1.1rem
+  margin .5rem 0 1rem
 
 .cart-rail .rail-link
   display flex
@@ -278,29 +305,28 @@
   width 100%
   box-sizing border-box
   margin 0
-  padding .8rem 1rem
+  padding .75rem 1rem
   font-family system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
-  font-size .95rem
+  font-size .92rem
   font-weight 600
   text-decoration none
   radius 999px
   bg var(--brand)
   color #fff
   border 1px solid var(--brand)
-  transition background .14s ease, transform .12s ease
+  transition background .14s ease, transform .12s ease, box-shadow .12s ease
 
 .cart-rail .rail-link:hover
   bg var(--brand-deep)
   color #fff
   transform translateY(-1px)
+  box-shadow 0 8px 16px -8px rgba(184,70,46,.5)
 
 .cart-rail .rail-note
-  margin 1.1rem 0 0
-  padding 0
-  border 0
+  margin 1rem 0 0
   border-top 1px solid $line-soft
-  padding-top 1rem
-  font-size .82rem
+  padding-top .9rem
+  font-size .8rem
   color $muted
   font-style italic
   line-height 1.5
@@ -318,11 +344,12 @@
   radius $radius-sm
   bg var(--brand-soft)
   color $ink-soft
-  font-size .92rem
+  font-size .9rem
 
 .persist-note .dot
   font-size 1.05rem
   line-height 1.5
+  color var(--brand)
 
 /* ── Footer cross-link strip ────────────────────────────────────── */
 
