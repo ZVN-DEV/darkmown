@@ -10,6 +10,11 @@
   "bin": {
     "darkmown": "./src/cli.js"
   },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
   "types": "./types/index.d.ts",
   "scripts": {
     "build": "node src/cli.js build",
@@ -23,9 +28,17 @@
     "typecheck": "tsc --noEmit",
     "types": "tsc -p tsconfig.types.json",
     "smoke": "node scripts/smoke-consumer.mjs",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "size:check": "node scripts/size-check.mjs",
+    "prepare": "husky",
     "prepublish:check": "npm run typecheck && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
     "prepublishOnly": "npm run prepublish:check",
     "og": "node scripts/og-image.mjs"
+  },
+  "lint-staged": {
+    "*.{js,json}": "biome check --no-errors-on-unmatched --files-ignore-unknown=true"
   },
   "files": [
     "src",
@@ -47,9 +60,12 @@
     "markdown-it": "^14.2.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.1",
     "@playwright/test": "^1.49.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "typescript": "^6.0.3"
   },
   "repository": {
