@@ -9,40 +9,63 @@ tokens
   codeink #ecf3ea
   radius 8px
 
+tokens dark
+  ink #ece6db
+  paper #14110d
+  panel #1e1913
+  line #2f281f
+  accent #5ccab4
+  warm #e88a6f
+
 .topnav
   display flex
   flex-wrap wrap
-  gap .5rem 1rem
+  gap .35rem 1.1rem
   align-items center
-  padding 1rem 2rem
+  padding .85rem 1.5rem
   max-width 100%
   box-sizing border-box
   border-bottom 1px solid $line
-  bg rgba(251,250,247,.85)
-  backdrop-filter blur(8px)
+  background color-mix(in srgb, $paper 82%, transparent)
+  backdrop-filter saturate(1.4) blur(10px)
   position sticky
   top 0
-  z-index 10
+  z-index 20
+  font-size .92rem
 
 @media (max-width: 600px)
   .topnav
-    padding .85rem 1rem
-    gap .4rem .85rem
+    padding .75rem 1rem
+    gap .3rem .8rem
 
-.topnav strong
+.topnav .brand
+  font-weight 700
+  font-size 1.08rem
+  letter-spacing -.02em
   color $warm
-  font-size 1.05rem
+  text-decoration none
   margin-right .5rem
+
+.topnav .nav-links
+  display inline-flex
+  flex-wrap wrap
+  gap .35rem 1.1rem
+  align-items center
 
 .topnav a
   color $accent
   text-decoration none
 
 .topnav a:hover
-  text-decoration underline
+  color $ink
+
+.topnav .nav-gh
+  margin-left auto
+  color $ink
+  font-weight 600
 
 code
-  bg $panel
+  background color-mix(in srgb, $paper 50%, $panel)
   border 1px solid $line
   padding .1rem .32rem
   radius 5px
@@ -78,7 +101,7 @@ th
   text-align left
   border 1px solid $line
   padding .5rem .9rem
-  bg #f1ede4
+  background color-mix(in srgb, $paper 60%, $line)
 
 td
   border 1px solid $line

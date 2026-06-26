@@ -1,0 +1,329 @@
+---
+title: Forge your plan — a live pricing configurator in Markdown
+description: Build your plan, toggle features, adjust the seat count, and watch the price, savings, and upsell hints update instantly. A classic "this needs React" interaction — written as one Markdown file with a reactive :computed pricing engine.
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide app-forge">
+
+::: section #forge .forge-shell
+:state base = 20
+:state seats = 3
+:state analytics = false
+:state sso = false
+:state priority = false
+
+:computed seatCost = seats*8
+:computed total = base + seats*8 + analytics*25 + sso*50 + priority*40
+:computed annual = total*12
+:computed annualBill = total*10
+:computed annualSaved = total*2
+:computed addons = analytics*25 + sso*50 + priority*40
+
+<section class="forge-hero">
+  <span class="eyebrow">Build your plan</span>
+
+# Forge your plan.
+
+A pricing page is usually a React app in disguise — toggles, steppers, a total that recomputes, upsell logic, the works. This one is a single Markdown file. Pick a tier, set your seats, switch features on, and watch the price move.
+
+<div class="forge-trust">
+<span class="forge-trust-item">No credit card</span>
+<span class="forge-trust-item">14-day trial</span>
+<span class="forge-trust-item">Cancel anytime</span>
+</div>
+</section>
+
+::: div .forge-layout
+
+::: div .forge-build
+
+## 1 · Choose a tier
+
+::: div .tier-grid
+
+::: card .tier .on when base == 12
+### Starter
+**$12**/mo base
+
+For solo builders and side projects finding their footing.
+
+:button "Select Starter" -> base = 12
+:if base == 12
+::: div .tier-active
+Current tier
+:::
+:endif
+:::
+
+::: card .tier .on when base == 20
+### Team
+**$20**/mo base
+
+The popular pick — for small teams shipping every week.
+
+:button "Select Team" -> base = 20
+:if base == 20
+::: div .tier-active
+Current tier
+:::
+:endif
+:::
+
+::: card .tier .on when base == 40
+### Business
+**$40**/mo base
+
+Scale, controls, and the headroom growing orgs need.
+
+:button "Select Business" -> base = 40
+:if base == 40
+::: div .tier-active
+Current tier
+:::
+:endif
+:::
+
+:::
+
+## 2 · Set your seats
+
+Every plan includes a generous base; each additional seat is a flat **$8/mo**. The stepper is just `:button` actions on a `:state` number.
+
+::: card .seats-card
+
+::: div .seat-stepper
+:button "–" -> seats -= 1
+::: div .seat-count
+**{ seats }** seats
+:::
+:button "+" -> seats++
+:::
+
+::: div .seat-meta
+That's **${ seatCost }/mo** in seats right now.
+:::
+
+:if seats > 25
+::: div .seat-hint
+At 25+ seats, talk to us — volume pricing kicks in.
+:::
+:endif
+:::
+
+## 3 · Add features
+
+Toggle the capabilities you need. Each card lights up when it's on and folds straight into the total.
+
+::: div .feature-grid
+
+::: card .feature .on when analytics
+::: div .feature-head
+### Advanced analytics
+**+$25**/mo
+:::
+
+Funnels, retention cohorts, and a real-time dashboard your whole team can read.
+
+:if analytics
+::: div .feature-state .is-on
+On — counted in your total
+:::
+:button "Remove" -> analytics toggle
+:else
+:button "Add analytics" -> analytics toggle
+:endif
+:::
+
+::: card .feature .on when sso
+::: div .feature-head
+### SSO & SAML
+**+$50**/mo
+:::
+
+One-click sign-in with Okta, Google Workspace, or Entra — plus SCIM provisioning.
+
+:if sso
+::: div .feature-state .is-on
+On — counted in your total
+:::
+:button "Remove" -> sso toggle
+:else
+:button "Add SSO" -> sso toggle
+:endif
+:::
+
+::: card .feature .on when priority
+::: div .feature-head
+### Priority support
+**+$40**/mo
+:::
+
+A private channel, a named engineer, and a one-hour first-response SLA.
+
+:if priority
+::: div .feature-state .is-on
+On — counted in your total
+:::
+:button "Remove" -> priority toggle
+:else
+:button "Add priority" -> priority toggle
+:endif
+:::
+
+:::
+
+::: div .forge-hints
+:if sso and not priority
+::: div .hint .hint-suggest
+Teams that turn on **SSO** almost always add **Priority support** — fewer locked-out admins at 2am.
+:::
+:endif
+:if analytics and total > 120
+::: div .hint .hint-good
+Nice stack. With analytics on a plan this size, most teams see ROI inside the first month.
+:::
+:endif
+:if total > 150
+::: div .hint .hint-unlock
+You've unlocked the **annual discount** — pay yearly and two months are on us.
+:::
+:endif
+:if total <= 80
+::: div .hint
+Just the essentials so far. Add a feature above to see how the total moves.
+:::
+:endif
+:::
+
+:::
+
+::: aside .forge-summary
+::: div .summary-card
+
+### Your plan
+
+::: div .price-block
+::: div .price-now
+**${ total }**
+:::
+::: div .price-unit
+per month
+:::
+:::
+
+::: div .summary-lines
+::: div .summary-line
+Base plan · ${ base }/mo
+:::
+::: div .summary-line
+{ seats } seats · ${ seatCost }/mo
+:::
+::: div .summary-line
+Add-ons · ${ addons }/mo
+:::
+:::
+
+::: div .annual-block
+Billed annually: **${ annualBill }/yr** — you save **${ annualSaved }** vs. monthly.
+:::
+
+::: div .summary-cta
+:button "Reset everything" -> base reset; seats reset; analytics reset; sso reset; priority reset
+:::
+
+A month-to-month list price would run **${ annual }/yr**. Choose yearly at checkout to lock the discount.
+:::
+:::
+
+:::
+
+## 4 · Start your trial
+
+Drop in your details and we'll spin up your **${ total }/mo** workspace — no charge for 14 days.
+
+::: div .checkout-card
+:form action="/__wd/echo" into receipt
+:input name placeholder="Your name"
+:input email placeholder="Work email"
+:submit "Start 14-day trial"
+:endform
+
+:if receipt
+::: div .receipt
+### You're in 🎉
+
+We've reserved your plan at **${ total }/mo** ({ seats } seats). Confirmation sent at **{ receipt.at }** — check your inbox to finish setup.
+:::
+:else
+::: div .checkout-note
+Your plan today: **${ total }/mo** · billed annually at **${ annualBill }/yr**. You can change tiers or seats any time.
+:::
+:endif
+
+:if receipt_error
+::: div .checkout-error
+Something went wrong: { receipt_error }
+:::
+:endif
+:::
+
+---
+
+## It's just Markdown
+
+No JSX, no `useState`, no pricing library. The tier buttons, the seat stepper, the feature toggles, the live total, the upsell hints, and the checkout are all directives in one `.wd` file. The pricing engine is a single `:computed` line:
+
+<details class="source-reveal"><summary>View source — it's Markdown</summary>
+
+```wd
+:state base = 20
+:state seats = 3
+:state analytics = false
+:state sso = false
+:state priority = false
+
+:computed total = base + seats*8 + analytics*25 + sso*50 + priority*40
+:computed annualBill = total*10
+:computed annualSaved = total*2
+
+The price is ${ total }/mo.
+
+::: card .tier .on when base == 20
+:button "Select Team" -> base = 20
+:::
+
+:button "–" -> seats -= 1
+:button "+" -> seats++
+
+::: card .feature .on when analytics
+:if analytics
+:button "Remove" -> analytics toggle
+:else
+:button "Add analytics" -> analytics toggle
+:endif
+:::
+
+:if sso and not priority
+Teams that turn on SSO almost always add Priority support.
+:endif
+
+:if total > 150
+You've unlocked the annual discount.
+:endif
+
+:button "Reset everything" -> base reset; seats reset; analytics reset; sso reset; priority reset
+```
+
+</details>
+
+Booleans coerce in arithmetic, so `analytics*25` is `25` when the toggle is on and `0` when it's off — that one rule is the whole pricing engine. [Read the docs](/docs/) or [see the reactive page](/reactive/).
+
+:::
+
+</main>
+
+@include /footer.wd

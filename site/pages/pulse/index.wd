@@ -1,0 +1,288 @@
+---
+title: Pulse — service status & metrics
+description: A real-time-feeling infrastructure dashboard built in one Markdown file. Build-time rollups, a live :fetch panel with the full loading→error→empty→refresh lifecycle, and a keyed services grid — all with zero hand-written JavaScript.
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide app-pulse">
+
+<style>
+@keyframes pulse-beat {
+  0%   { box-shadow: 0 0 0 0 rgba(43, 212, 168, .5); }
+  70%  { box-shadow: 0 0 0 8px rgba(43, 212, 168, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(43, 212, 168, 0); }
+}
+@keyframes pulse-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-pulse .pulse-live .dot,
+  .app-pulse .pulse-state .spin { animation: none; }
+}
+</style>
+
+<header class="pulse-head">
+  <h1 class="pulse-title"><span class="pulse-mark">◐</span><span><span class="pulse-name">Pulse</span><span class="pulse-sub">infrastructure status</span></span></h1>
+  <span class="pulse-live"><span class="dot"></span>live · all regions</span>
+</header>
+
+A status board for eight services across four regions. The grid below is a keyed `@loop` over fetched JSON, the rollups are `:computed`, and the loading / error / empty states are the four branches of one `:fetch` — no JavaScript written by hand.
+
+:fetch board from "/__wd/data/metrics.json"
+
+## Overview
+
+:computed totalServices = board.services.length
+
+<div class="pulse-stats">
+
+::: stat .is-ok
+**Services tracked**
+
+::: div .stat-value
+{ totalServices }
+:::
+
+Across iad · sfo · fra · global
+:::
+
+::: stat .is-ok
+**Build-time render**
+
+::: div .stat-value
+0 KB
+:::
+
+Framework JS until this page fetched
+:::
+
+::: stat .is-warn
+**Live snapshot**
+
+::: div .stat-value
+06:05
+:::
+
+Sampled this morning, UTC
+:::
+
+::: stat
+**Data source**
+
+::: div .stat-value
+JSON
+:::
+
+One `:fetch`, four lifecycle states
+:::
+
+</div>
+
+<div class="pulse-bar">
+
+:button "↻ Refresh feed" -> board refetch
+:button "Simulate refresh" -> board refetch
+
+</div>
+
+The two buttons above both call `board refetch` — Darkmown re-runs the request, flips `board_loading` on, then swaps the grid back in. Watch the live dot and the network tab.
+
+## Feed status
+
+A single `:fetch` exposes four reactive flags — `board_loading`, `board_error`, `board_empty`, and the data itself. Each branch below renders for exactly one of them:
+
+:if board_loading
+::: div .pulse-state .is-loading
+<span class="spin"></span> Polling metrics endpoint…
+:::
+:else if board_error
+::: div .pulse-state .is-error
+✕ Feed unreachable — `board_error` holds: { board_error }
+:::
+:else
+::: div .pulse-state
+✓ Feed healthy — { totalServices } services reporting. Last sample loaded from `/__wd/data/metrics.json`.
+:::
+:endif
+
+To prove the **error** branch, here is the same primitive pointed at a URL that 404s — it never resolves to data, so its error flag stays lit:
+
+:fetch missing from "/__wd/data/does-not-exist.json"
+
+:if missing_error
+::: div .pulse-state .is-error
+✕ `does-not-exist.json` → { missing_error }
+:::
+:else if missing_loading
+::: div .pulse-state .is-loading
+<span class="spin"></span> Trying the missing endpoint…
+:::
+:else
+::: div .pulse-state
+Waiting…
+:::
+:endif
+
+And the **empty** branch — a fetch against a file that is literally `[]`. The loop's `@empty` clause renders the moment the result has zero rows:
+
+:fetch incidents from "/__wd/data/empty.json"
+
+@loop incidents into incident
+::: div .pulse-state .is-error
+{ incident.title }
+:::
+@empty
+::: div .pulse-state .is-empty
+○ No active incidents — `@empty` renders instead of any rows. All clear.
+:::
+@endloop
+
+## Services
+
+<div class="pulse-legend">
+  <span class="lg-ok">operational</span>
+  <span class="lg-warn">degraded</span>
+  <span class="lg-down">outage</span>
+</div>
+
+Each card is one row of `@loop board.services into s sort by s.latency desc`. The left rail color, the pill, and the metric tint all come from a reactive `.class when` keyed off `s.status` — no per-row JavaScript. Sorted slowest-first so the trouble floats to the top.
+
+:state showAll = true
+
+:button "Show all" -> showAll = true
+:button "Only problems" -> showAll = false
+
+:if showAll
+
+<div class="pulse-grid">
+
+@loop board.services into s sort by s.latency desc
+::: card .svc .svc-ok when s.status == "ok" .svc-warn when s.status == "warn" .svc-down when s.status == "down"
+::: div .svc-top
+::: div .svc-name
+**{ s.name }**
+::: div .svc-region
+{ s.region }
+:::
+:::
+::: pill
+{ s.status }
+:::
+:::
+::: div .svc-metrics
+::: div .svc-metric
+::: div .m-val .is-latency
+{ s.latency }ms
+:::
+::: div .m-key
+latency
+:::
+:::
+::: div .svc-metric
+::: div .m-val
+{ s.uptime }%
+:::
+::: div .m-key
+uptime
+:::
+:::
+:::
+::: div .svc-spark
+:::
+:::
+@empty
+::: div .pulse-state .is-empty
+○ No services in the feed.
+:::
+@endloop
+
+</div>
+
+:else
+
+Filtered to `where s.status != "ok"` — the same loop, one extra clause. Healthy services drop out live; if everything recovers, `@empty` takes over.
+
+<div class="pulse-grid">
+
+@loop board.services into s where s.status != "ok" sort by s.latency desc
+::: card .svc .svc-warn when s.status == "warn" .svc-down when s.status == "down"
+::: div .svc-top
+::: div .svc-name
+**{ s.name }**
+::: div .svc-region
+{ s.region }
+:::
+:::
+::: pill
+{ s.status }
+:::
+:::
+::: div .svc-metrics
+::: div .svc-metric
+::: div .m-val .is-latency
+{ s.latency }ms
+:::
+::: div .m-key
+latency
+:::
+:::
+::: div .svc-metric
+::: div .m-val
+{ s.uptime }%
+:::
+::: div .m-key
+uptime
+:::
+:::
+:::
+::: div .svc-spark
+:::
+:::
+@empty
+::: div .pulse-state .is-empty
+✓ Nothing degraded — every service is operational.
+:::
+@endloop
+
+</div>
+
+:endif
+
+The toggle flips a `:state showAll`; the `:if` chooses between the full grid and a `where s.status != "ok"` variant. Both are the same `@loop`, reconciled by key — the runtime patches rows in place instead of re-rendering the list.
+
+<details class="source-reveal"><summary>View source — it's Markdown</summary>
+
+```wd
+:fetch board from "/__wd/data/metrics.json"
+
+:computed totalServices = board.services.length
+
+:if board_loading
+Polling metrics endpoint…
+:else if board_error
+Feed unreachable — { board_error }
+:else
+Feed healthy — { totalServices } services reporting.
+:endif
+
+:button "↻ Refresh feed" -> board refetch
+
+@loop board.services into s sort by s.latency desc
+::: card .svc .svc-ok when s.status == "ok" .svc-warn when s.status == "warn" .svc-down when s.status == "down"
+**{ s.name }** — { s.region }
+::: span .pill
+{ s.status }
+:::
+{ s.latency }ms latency · { s.uptime }% uptime
+:::
+@empty
+No services in the feed.
+@endloop
+```
+
+</details>
+
+</main>
+
+@include /footer.wd

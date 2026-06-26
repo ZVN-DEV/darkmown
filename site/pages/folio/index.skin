@@ -1,0 +1,24 @@
+/* Folio catalog page — thin layer over style.skin (the shared boutique look)
+   and /base.wd. Only the catalog-specific header chip lives here. */
+
+/* The live basket count, sitting in the storefront header. */
+.app-folio .cart-peek
+  display inline-flex
+  align-items center
+  gap .45rem
+  font-family system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
+  font-size .82rem
+  font-weight 600
+  text-transform uppercase
+  letter-spacing .08em
+  color var(--brand-deep)
+  background var(--brand-soft)
+  border 1px solid var(--brand)
+  padding .5rem .9rem
+  radius 999px
+  white-space nowrap
+
+.app-folio .cart-peek::before
+  content "✦"
+  font-size .9rem
+  color var(--brand)

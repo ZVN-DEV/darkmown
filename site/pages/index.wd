@@ -6,18 +6,28 @@ transitions: true
 ---
 
 @include /nav.wd
+@include /base.wd
 
 <main>
 
 <section class="hero">
-  <p class="eyebrow">Darkmown vs. Markdoc</p>
+  <span class="eyebrow">Darkmown vs. Markdoc</span>
 
-# Markdown that runs. Not Markdown that needs React.
+# Markdown that *runs.* Not Markdown that needs React.
 
 The left file is Markdown. It is also a running app — a live search filter, add-to-cart, and a running total. The right file is the closest Markdoc can get on its own: a static list. To make it do what the left one already does, you add a React component, hydration, and a build step.
 
-<a class="btn primary" href="/app/">See a whole app in one file</a>
+<div class="hero-cta">
+<a class="btn primary" href="/showcase/">See the showcase</a>
 <a class="btn" href="/docs/">Read the docs</a>
+</div>
+
+<ul class="hero-stats">
+  <li><strong>0 KB</strong><span>framework JS on static pages</span></li>
+  <li><strong>~5.8 KB</strong><span>one runtime, CI-enforced &lt; 6 KB</span></li>
+  <li><strong>1</strong><span>loop and one binding to learn</span></li>
+  <li><strong>MIT</strong><span>zero runtime dependencies</span></li>
+</ul>
 </section>
 
 <section class="versus">
@@ -160,3 +170,5 @@ This button is powered by `site/pages/index.js`, discovered by matching the page
 <a class="btn" href="https://github.com/ZVN-DEV/darkmown">Star on GitHub</a>
 
 </main>
+
+@include /footer.wd

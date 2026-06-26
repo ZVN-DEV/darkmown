@@ -1,0 +1,13 @@
+{
+  "updated": "2026-06-26T05:00:00Z",
+  "services": [
+    { "id": "api",     "name": "API Gateway",    "status": "ok",      "latency": 42,  "uptime": 99.98, "region": "iad", "spark": [38,41,40,44,42,39,42] },
+    { "id": "web",     "name": "Web Frontend",   "status": "ok",      "latency": 18,  "uptime": 99.99, "region": "global", "spark": [16,18,17,19,18,18,18] },
+    { "id": "db",      "name": "Primary DB",     "status": "warn",    "latency": 137, "uptime": 99.82, "region": "iad", "spark": [90,110,120,150,140,137,137] },
+    { "id": "cache",   "name": "Edge Cache",     "status": "ok",      "latency": 4,   "uptime": 100.0, "region": "global", "spark": [4,3,4,5,4,4,4] },
+    { "id": "queue",   "name": "Job Queue",      "status": "ok",      "latency": 61,  "uptime": 99.95, "region": "sfo", "spark": [55,60,58,64,61,59,61] },
+    { "id": "search",  "name": "Search Index",   "status": "down",    "latency": 0,   "uptime": 97.40, "region": "sfo", "spark": [120,140,160,0,0,0,0] },
+    { "id": "auth",    "name": "Auth Service",   "status": "ok",      "latency": 33,  "uptime": 99.97, "region": "iad", "spark": [30,34,32,35,33,33,33] },
+    { "id": "mail",    "name": "Mail Relay",     "status": "warn",    "latency": 210, "uptime": 99.60, "region": "fra", "spark": [180,200,190,230,210,205,210] }
+  ]
+}

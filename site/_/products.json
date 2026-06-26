@@ -1,0 +1,10 @@
+[
+  { "id": "aurora",  "name": "Aurora Lamp",      "price": 149, "category": "Light",   "emoji": "🪔", "tint": "#f4d58d", "blurb": "A warm dimmable glow with a hand-turned oak base." },
+  { "id": "briza",   "name": "Briza Fan",        "price": 89,  "category": "Air",     "emoji": "🌀", "tint": "#bcd6e8", "blurb": "Whisper-quiet bladeless airflow, USB-C powered." },
+  { "id": "cove",    "name": "Cove Speaker",     "price": 199, "category": "Sound",   "emoji": "🔊", "tint": "#cbbfe6", "blurb": "Room-filling 360° sound in a palm-sized shell." },
+  { "id": "dune",    "name": "Dune Mug",         "price": 24,  "category": "Kitchen", "emoji": "☕", "tint": "#e8c9a8", "blurb": "Double-walled stoneware that keeps coffee hot for hours." },
+  { "id": "fjord",   "name": "Fjord Bottle",     "price": 39,  "category": "Kitchen", "emoji": "🧊", "tint": "#a8d8d0", "blurb": "Vacuum steel, 24h cold, sweat-proof matte finish." },
+  { "id": "glint",   "name": "Glint Desk Clock", "price": 69,  "category": "Light",   "emoji": "🕰️", "tint": "#f0c8c0", "blurb": "E-ink face, ambient backlight, three-month battery." },
+  { "id": "haven",   "name": "Haven Diffuser",   "price": 59,  "category": "Air",     "emoji": "🌿", "tint": "#c4e0b4", "blurb": "Ultrasonic mist with a refillable cedar reservoir." },
+  { "id": "isle",    "name": "Isle Earbuds",     "price": 129, "category": "Sound",   "emoji": "🎧", "tint": "#d8c4ec", "blurb": "Active noise cancelling, 30-hour case, tap controls." }
+]

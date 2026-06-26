@@ -1,39 +1,59 @@
-tokens
-  ink #171717
-  paper #fbfaf7
-  panel #ffffff
-  line #dedbd3
-  accent #16645a
-  muted #666158
-  radius 8px
+/* Docs — layers on /base.wd (tokens, type, code, dark mode). Refined,
+   readable single-column reference. Only docs-specific layout here. */
 
-page
-  margin 0
-  font ui-serif, Georgia, Cambria, serif
-  color $ink
-  bg $paper
-  line-height 1.7
+main.docs
+  max-width 760px
 
-main
-  max-width 820px
-  margin 0 auto
-  padding 3rem 2rem 5rem
+.docs-hero
+  padding 2rem 0 1.5rem
+  margin-bottom 1rem
+  border-bottom 1px solid $line
 
-h1
-  font-size 3rem
-  line-height 1
-  margin 1rem 0
+.docs-hero h1
+  margin .2rem 0 .5rem
 
-h2
-  margin-top 2.4rem
-  padding-top 1.2rem
+.docs-hero p
+  font-size 1.12rem
+  color $ink-soft
+  max-width 60ch
+
+/* Section headings get a quiet rule above them so the long page scans. */
+main.docs h2
+  margin-top 3rem
+  padding-top 1.4rem
   border-top 1px solid $line
+  font-size 1.55rem
 
-a
+main.docs h3
+  margin-top 2rem
+  color $accent-deep
+
+main.docs p, main.docs li
+  color $ink-soft
+
+main.docs strong
+  color $ink
+
+main.docs a
   color $accent
+  font-weight 550
+
+/* Tight, legible lists for the rule-heavy reference sections. */
+main.docs ul
+  padding-left 1.2rem
+
+main.docs li
+  margin .35rem 0
+
+main.docs li code
+  white-space nowrap
 
 .feature-card
   border 1px solid $line
   bg $panel
-  padding 1rem
+  padding 1.1rem 1.25rem
   radius $radius
+  margin 1rem 0
+
+.feature-card strong
+  color $warm

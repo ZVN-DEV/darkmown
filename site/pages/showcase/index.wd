@@ -1,0 +1,144 @@
+---
+title: Showcase — real apps built in Markdown
+description: Four complete, beautiful apps — a storefront, a live dashboard, a pricing configurator, and a product-finder quiz — each one a readable Markdown file. See the app, then view its source.
+image: https://darkmown.com/__wd/media/og.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide showcase">
+
+<header class="sc-hero">
+<span class="eyebrow">Built with Darkmown</span>
+
+# Real apps. Written in Markdown.
+
+Each of these is a complete, working app — a storefront with a cart, a live status dashboard, an interactive pricing builder, a guided quiz. Open one, use it, then **view its source**. It's a Markdown file you can read top to bottom.
+
+<div class="sc-cta">
+<a class="btn primary" href="/folio/">Open the storefront</a>
+<a class="btn" href="/docs/">Read the docs</a>
+</div>
+</header>
+
+<section class="sc-apps">
+
+::: card .sc-app .sc-folio
+<span class="sc-emoji">🛍️</span>
+
+### Folio — boutique storefront
+
+A multi-page shop where the cart **persists across pages, reloads, and browser tabs**, and navigation is instant. Live search, add-to-cart, checkout.
+
+<span class="tag">static → reactive</span> <span class="tag">:store</span> <span class="tag">keyed @loop</span> <span class="tag">:form</span>
+
+[Open Folio →](/folio/){.sc-open}
+:::
+
+::: card .sc-app .sc-pulse
+<span class="sc-emoji">📈</span>
+
+### Pulse — status dashboard
+
+A service dashboard driven by `:fetch` — loading, error, and empty states, live refresh, sortable metrics, status badges. No hand-written JavaScript.
+
+<span class="tag">:fetch lifecycle</span> <span class="tag">:computed</span> <span class="tag">.class when</span> <span class="tag">sort / where</span>
+
+[Open Pulse →](/pulse/){.sc-open}
+:::
+
+::: card .sc-app .sc-forge
+<span class="sc-emoji">🧩</span>
+
+### Forge — plan configurator
+
+Build your plan: toggle features, adjust seats, watch the price recompute instantly, get smart upsell hints, then check out — the classic "this needs React" interaction.
+
+<span class="tag">:computed pricing</span> <span class="tag">:if logic</span> <span class="tag">toggles</span> <span class="tag">:form</span>
+
+[Open Forge →](/forge/){.sc-open}
+:::
+
+::: card .sc-app .sc-compass
+<span class="sc-emoji">🧭</span>
+
+### Compass — product finder
+
+A guided quiz that asks a few questions, scores your answers, and recommends a match — a branching state machine expressed entirely as `:if` steps.
+
+<span class="tag">:if state machine</span> <span class="tag">:computed</span> <span class="tag">scored flow</span>
+
+[Open Compass →](/compass/){.sc-open}
+:::
+
+</section>
+
+<section class="sc-weight">
+
+## What it costs
+
+Darkmown's whole pitch is weight. A static page ships **zero** framework JavaScript — not "a little," none. The runtime loads only when a page actually declares reactivity, and it's one shared file, CI-enforced under 6 KB gzipped.
+
+::: card .sc-scale
+- **Static Darkmown page** — `0 KB` framework JS. Forever.
+- **Reactive Darkmown page** — one shared `~5.8 KB` gzipped runtime, no per-component bundles.
+- **A typical SPA** — ships a framework runtime in the **~15–45 KB** gzipped range *before* your app code, on every page.
+:::
+
+The two Darkmown numbers above are measured on every commit; the runtime budget fails CI if it crosses 6 KB. The comparison range is a ballpark for mainstream SPA runtimes — the point isn't "smallest," it's **nothing at all until you ask for it.**
+
+</section>
+
+<section class="sc-more">
+
+## The directive demos
+
+Prefer to see each feature in isolation? These pages tour the building blocks the apps are made of:
+
+<div class="grid auto">
+
+::: card .sc-mini
+**Reactive** — state, keyed loops, scoped sections.
+
+[Open →](/reactive/)
+:::
+
+::: card .sc-mini
+**Loops** — sort, paging, `@empty`, nesting.
+
+[Open →](/loops/)
+:::
+
+::: card .sc-mini
+**Store** — durable, cross-tab global state.
+
+[Open →](/store/)
+:::
+
+::: card .sc-mini
+**Theme** — zero-JS OS dark mode from a skin.
+
+[Open →](/theme/)
+:::
+
+::: card .sc-mini
+**Data & Forms** — fetch lifecycle, server round-trips.
+
+[Open →](/data/)
+:::
+
+::: card .sc-mini
+**Plain Markdown** — a `.md` page, directives inert.
+
+[Open →](/markdown/)
+:::
+
+</div>
+
+</section>
+
+</main>
+
+@include /footer.wd

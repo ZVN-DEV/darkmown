@@ -1,12 +1,10 @@
 <nav class="topnav">
-  <strong>Darkmown</strong>
-  <a href="/">Home</a>
-  <a href="/docs/">Docs</a>
-  <a href="/markdown/">Plain Markdown</a>
-  <a href="/reactive/">Reactive</a>
-  <a href="/loops/">Loops</a>
-  <a href="/store/">Store</a>
-  <a href="/theme/">Theme</a>
-  <a href="/data/">Data &amp; Forms</a>
-  <a href="/app/">Live app</a>
+  <a class="brand" href="/">Darkmown</a>
+  <span class="nav-links">
+    <a href="/docs/">Docs</a>
+    <a href="/showcase/">Showcase</a>
+    <a href="/reactive/">Reactive</a>
+    <a href="/data/">Data</a>
+  </span>
+  <a class="nav-gh" href="https://github.com/ZVN-DEV/darkmown">GitHub ↗</a>
 </nav>
