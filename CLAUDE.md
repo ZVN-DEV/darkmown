@@ -4,12 +4,19 @@ Darkmown is a markdown-native web framework: `.md` files are strict CommonMark, 
 
 ## Architecture in one pass
 
-Compile pipeline (`src/compiler.js`):
-1. `compilePage` → HTML shell (title, favicon, skins, scripts). View transitions are a per-page opt-in: `transitions: true` frontmatter emits the CSS-only `@view-transition { navigation: auto; }` rule (`src/compiler.js`); default-off, opt out with `transitions: false`.
-2. `compileFile` → frontmatter + colocated assets; `.md` renders via markdown-it directly; `.wd` goes to `compileBody`
-3. `compileBody` → line-based directive parser; prose segments render through markdown-it with the `wd_binding` inline plugin
-4. Interpolation `{ name.path }` resolves in priority order: reactive loop item → static scope (include args, loop vars) → declared state (section scope chain, qualified keys like `cart:items`) → literal text
-5. Reactive output = data attributes (`data-wd-bind`, `data-wd-loop`, `data-wd-if`, `data-wd-form`, `data-wd-fetch`, `data-wd-computed`) consumed by `src/runtime.js`
+Compile pipeline. `src/compiler.js` is a thin re-export barrel (public API: `compilePage`, `enhanceImages`, `compileDocument`, `parseFrontmatter`, `loopKeyOf`, `escapeHtml` + the shared typedefs); the implementation lives in `src/compiler/` modules wired by `src/compiler/index.js`. State threads through an explicit `Ctx`/`Compilation` object (no module-level mutable state). The modules:
+- `context.js` — shared typedefs (`Ctx`, `Compilation`, `Assets`, `LoopOpts`, `Predicate`, `Action`, …), `createCompilation`/`createScope`, the `at(file, index)` → `file:line` helper, and `LOOP_META`. Imports nothing; sits at the root of the DAG.
+- `interpolation.js` — path/value resolution (`getPath`, `validatePath`, `lookupVar`/`lookupPath`, `resolveStateKey`, `interpolateLeaf`), literal parsing, `escapeHtml`, `safeScriptJson`, `humanizeName`.
+- `frontmatter.js` — `parseFrontmatter` (the `---` block → meta + body) + inline scalar/array parsing + the "forgot the opening `---`" warning.
+- `includes.js` — `resolveInclude`/`isAllowedInclude` (traversal + the `site/pages`/`site/_` sandbox), colocated `.skin`/`.js` asset collection, and the plain-`.md` `.wd`-syntax hints.
+- `predicates.js` — the compile-time-validated expression whitelists: `@loop … where`, `::: … .class when`, `:if a <op> b`, and `:computed`; all map to safe JS over `I()`/`S()`/`C()`.
+- `markdown.js` — the markdown-it instances + the `wd_binding`/`wd_attrs` plugins + prose rendering and `{ name.path }` binding resolution.
+- `loops.js` — the `@loop` header/clause parser and the static-unroll vs reactive `data-wd-loop` pipeline, plus the row-template initial-paint string fill; exports `loopKeyOf`.
+- `directives.js` — the `handle*` family (state/store/fetch/computed/effect/form/inputs/bind/submit/button/if/include/container) + the `:button` action parser + the `:try`/`:note`/`:sprint` demo directives. Every handler takes the 0-based line `index` so malformed/invalid errors report `file:line` via `at`.
+- `body.js` — `compileBody`, the line-based directive dispatcher: walks the `.wd` body, honors fenced code, dispatches each opener to its handler (passing the line index), and flushes prose to `markdown.js`. The block scanners (`scanBlock`/`scanContainer`/`scanConditional`) capture multi-line directive bodies.
+- `page.js` — `compilePage` (HTML shell: title, favicon, skins, scripts, opt-in `transitions: true` view-transition CSS + speculationrules), `enhanceImages` (compile-time `<img>` hardening), `compileDocument`, and `compileFile` (frontmatter + colocated assets; `.md` renders via markdown-it directly, `.wd` goes to `compileBody`).
+
+Flow: `compilePage` → `compileDocument` → `compileFile` → `compileBody` → directive handlers + prose. Interpolation `{ name.path }` resolves in priority order: reactive loop item → static scope (include args, loop vars) → declared state (section scope chain, qualified keys like `cart:items`) → literal text. Reactive output = data attributes (`data-wd-bind`, `data-wd-loop`, `data-wd-if`, `data-wd-form`, `data-wd-fetch`, `data-wd-computed`) consumed by `src/runtime.js`.
 
 Runtime render order matters: computed → if-regions (skip when branch unchanged) → keyed loop reconcile → text binds.
 
