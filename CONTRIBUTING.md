@@ -14,6 +14,10 @@ npm run dev     # live demo site at http://localhost:5173
 
 There is no build step for the framework itself — `src/` is plain ESM JavaScript, Node >= 20.
 
+### Code style
+
+[Biome](https://biomejs.dev) handles linting and formatting. Run `npm run lint` to check and `npm run format` to apply fixes. A pre-commit hook (husky + lint-staged) runs Biome on staged files automatically, so a `git commit` keeps the tree consistent without extra steps.
+
 ## Repo map
 
 - `src/compiler.js` — the heart: directive parsing, markdown-it integration, interpolation, scopes
