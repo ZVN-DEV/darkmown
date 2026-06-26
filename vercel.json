@@ -25,7 +25,6 @@
       ]
     },
     {
-      "comment": "Static routes ship zero framework JS, so they never call `new Function` — a later, more specific rule drops 'unsafe-eval' for them. Vercel applies all matching header rules and the last match wins for a duplicate key, so these override the catch-all CSP above. This list is hand-maintained (Vercel reads vercel.json BEFORE the build, so it can't be generated from the route manifest like dist/_headers); KEEP IT IN SYNC with every `runtime:false` route — the `vercel-csp-routes` test fails CI if it drifts. (`connect-src 'self'` fits the demo's same-origin :fetch — widen to e.g. `connect-src *` if your :fetch targets a remote host.)",
       "source": "/(docs|markdown|theme|404)",
       "headers": [
         {

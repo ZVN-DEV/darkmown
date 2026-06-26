@@ -141,6 +141,28 @@ test("vercel.json static-CSP route list covers every runtime:false demo route", 
   }
 });
 
+// Why the static-route rule exists: static routes ship zero framework JS, so they
+// never call `new Function`; this second, more-specific rule drops 'unsafe-eval'
+// for them. Vercel applies all matching header rules and the last match wins per
+// key, so it overrides the catch-all CSP. (`connect-src 'self'` fits same-origin
+// :fetch — widen it if your :fetch targets a remote host.) This note lives HERE,
+// not in vercel.json: Vercel validates vercel.json against a strict schema and
+// REJECTS unknown properties (a stray `"comment"` key once broke every deploy).
+test("vercel.json header rules contain only Vercel-allowed properties", () => {
+  // Guards the deploy-breaking class: Vercel rejects unknown keys in a headers[]
+  // entry (e.g. a `comment`), failing the build before it starts. Keep this green.
+  const ALLOWED = new Set(["source", "headers", "has", "missing"]);
+  const vercel = JSON.parse(fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf8"));
+  for (const [i, rule] of (vercel.headers || []).entries()) {
+    for (const key of Object.keys(rule)) {
+      assert.ok(
+        ALLOWED.has(key),
+        `vercel.json headers[${i}] has invalid property "${key}" — Vercel rejects unknown keys and fails the build. Allowed: ${[...ALLOWED].join(", ")}.`
+      );
+    }
+  }
+});
+
 function escapeRe(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
