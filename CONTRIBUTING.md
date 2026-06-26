@@ -20,7 +20,7 @@ There is no build step for the framework itself — `src/` is plain ESM JavaScri
 
 ## Repo map
 
-- `src/compiler.js` — the heart: directive parsing, markdown-it integration, interpolation, scopes
+- `src/compiler/` — the heart: directive parsing, markdown-it integration, interpolation, scopes (split into cohesive modules; `src/compiler.js` is a thin re-export barrel)
 - `src/runtime.js` — the browser runtime (keyed loops, bindings, fetch, forms). **Budget: < 6 KB gzipped**, enforced in CI
 - `src/skin.js` — `.skin` → CSS
 - `src/router.js` / `src/builder.js` / `src/statics.js` / `src/cli.js` / `src/dev.js` / `src/scaffold.js` — routing, build, static serving, CLI, dev reload, `init`
