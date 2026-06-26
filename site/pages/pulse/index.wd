@@ -1,6 +1,7 @@
 ---
 title: Pulse — service status & metrics
 description: A real-time-feeling infrastructure dashboard built in one Markdown file. Build-time rollups, a live :fetch panel with the full loading→error→empty→refresh lifecycle, and a keyed services grid — all with zero hand-written JavaScript.
+image: https://darkmown.com/__wd/media/og-pulse.png
 transitions: true
 ---
 
@@ -10,16 +11,16 @@ transitions: true
 <main class="wide app-pulse">
 
 <style>
-@keyframes pulse-beat {
-  0%   { box-shadow: 0 0 0 0 rgba(43, 212, 168, .5); }
-  70%  { box-shadow: 0 0 0 8px rgba(43, 212, 168, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(43, 212, 168, 0); }
-}
-@keyframes pulse-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .app-pulse .pulse-live .dot,
-  .app-pulse .pulse-state .spin { animation: none; }
-}
+  @keyframes pulse-beat {
+    0%   { box-shadow: 0 0 0 0 rgba(43, 212, 168, .5); }
+    70%  { box-shadow: 0 0 0 8px rgba(43, 212, 168, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(43, 212, 168, 0); }
+  }
+  @keyframes pulse-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .app-pulse .pulse-live .dot,
+    .app-pulse .pulse-state .spin { animation: none; }
+  }
 </style>
 
 <header class="pulse-head">

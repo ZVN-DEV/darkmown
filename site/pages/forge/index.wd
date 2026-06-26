@@ -1,6 +1,7 @@
 ---
 title: Forge your plan — a live pricing configurator in Markdown
 description: Build your plan, toggle features, adjust the seat count, and watch the price, savings, and upsell hints update instantly. A classic "this needs React" interaction — written as one Markdown file with a reactive :computed pricing engine.
+image: https://darkmown.com/__wd/media/og-forge.png
 transitions: true
 ---
 
