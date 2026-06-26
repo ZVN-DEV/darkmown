@@ -9,13 +9,13 @@ tokens
   codeink #ecf3ea
   radius 8px
 
-tokens dark
-  ink #ece6db
-  paper #14110d
-  panel #1e1913
-  line #2f281f
-  accent #5ccab4
-  warm #e88a6f
+/* No `tokens dark` here on purpose. The shared nav loads on EVERY page,
+   including the older feature-demo pages (/reactive, /loops, …) whose bespoke
+   component styles were never designed for a dark palette — flipping their
+   shared tokens made buttons unreadable. Dark mode is therefore opt-in: it
+   lives in base.skin, which only the refreshed pages and showcase apps include.
+   On those pages base.skin's dark tokens drive the nav too, so it still goes
+   dark there. */
 
 .topnav
   display flex

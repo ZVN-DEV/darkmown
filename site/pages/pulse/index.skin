@@ -39,33 +39,14 @@
   background radial-gradient(1200px 600px at 80% -10%, rgba(47,224,192,.08), transparent 60%), $surface
   border 1px solid $hair
   border-radius 18px
-  padding 2rem 2rem 2.5rem
+  padding 1.75rem 1.9rem 2.1rem
   margin-top 1.5rem
   box-shadow 0 30px 80px -40px rgba(0,0,0,.7)
 
-.app-pulse h1, .app-pulse h2, .app-pulse h3
+.app-pulse h1
   color $txt
   letter-spacing -.02em
-
-.app-pulse h2
-  font-size 1.25rem
-  margin 2.4rem 0 1rem
-  display flex
-  align-items center
-  gap .6rem
-
-.app-pulse h2::before
-  content ""
-  width .55rem
-  height .55rem
-  border-radius 2px
-  background $brand
-  box-shadow 0 0 12px $brand
-  flex-shrink 0
-
-.app-pulse p
-  color $txt-soft
-  max-width 70ch
+  margin 0
 
 .app-pulse a
   color $brand
@@ -83,18 +64,16 @@
 .pulse-head
   display flex
   flex-wrap wrap
-  align-items flex-end
+  align-items center
   justify-content space-between
   gap 1rem
-  padding-bottom 1.5rem
+  padding-bottom 1.25rem
   border-bottom 1px solid $hair
-  margin-bottom .5rem
 
-.pulse-title
+.pulse-id
   display flex
   align-items center
-  gap .8rem
-  margin 0
+  gap .85rem
 
 .pulse-mark
   width 2.4rem
@@ -109,30 +88,34 @@
   flex-shrink 0
 
 .pulse-name
-  font-size 1.9rem
+  font-size 1.7rem
   font-weight 700
   letter-spacing -.03em
   line-height 1
   color $txt
 
 .pulse-sub
-  display block
-  font-size .8rem
-  letter-spacing .14em
-  text-transform uppercase
-  color $txt-mute
-  margin-top .3rem
+  margin .35rem 0 0
+  font-size .82rem
+  color $txt-soft
   font-family $mono
 
-/* The live status line: a pulsing dot + monospace timestamp. */
+.pulse-actions
+  display flex
+  align-items center
+  gap .75rem
+
+/* The live status line: a pulsing dot + monospace label. */
 .pulse-live
   display inline-flex
   align-items center
-  gap .55rem
+  gap .5rem
   font-family $mono
-  font-size .82rem
+  font-size .78rem
+  letter-spacing .1em
+  text-transform uppercase
   color $txt-soft
-  padding .5rem .85rem
+  padding .45rem .8rem
   background $surface-2
   border 1px solid $hair
   border-radius 999px
@@ -145,21 +128,30 @@
   box-shadow 0 0 0 0 rgba(43,212,168,.55)
   animation pulse-beat 2s infinite
 
-/* ── Toolbar (refresh / filter controls) ───────────────────────── */
+/* ── Toolbar (summary line + refresh) ───────────────────────────── */
 
 .pulse-bar
   display flex
   flex-wrap wrap
   align-items center
-  gap .6rem
-  margin 1.25rem 0 .5rem
+  justify-content space-between
+  gap .75rem
+  margin 1.25rem 0 .25rem
+
+.pulse-summary
+  font-family $mono
+  font-size .85rem
+  color $txt-soft
+
+.pulse-summary p
+  margin 0
 
 .app-pulse .btn
   background $surface-2
   color $txt
   border 1px solid $hair
   font-size .85rem
-  padding .55rem 1rem
+  padding .5rem 1rem
   box-shadow none
 
 .app-pulse .btn:hover
@@ -168,33 +160,23 @@
   transform translateY(-1px)
   box-shadow 0 6px 18px -10px rgba(47,224,192,.6)
 
-.app-pulse .btn.primary
-  background linear-gradient(145deg, $brand, $brand-dim)
-  color #04130f
-  border-color transparent
-  font-weight 650
-
-.app-pulse .btn.primary:hover
-  background $brand
-  color #04130f
-
-/* ── Stat cards (rollups) ───────────────────────────────────────── */
+/* ── Stat cards (rollups) — one tidy row ────────────────────────── */
 
 .pulse-stats
   display grid
   grid-template-columns repeat(4, 1fr)
-  gap 1rem
-  margin 1.25rem 0 .5rem
+  gap .85rem
+  margin 1rem 0 1.5rem
 
-@media (max-width: 820px)
+@media (max-width: 720px)
   .pulse-stats
     grid-template-columns 1fr 1fr
 
 .stat
   background linear-gradient(180deg, $surface-2, $surface)
   border 1px solid $hair
-  border-radius 14px
-  padding 1.1rem 1.2rem
+  border-radius 12px
+  padding .9rem 1rem
   position relative
   overflow hidden
 
@@ -211,11 +193,11 @@
   margin 0
 
 .stat > p:first-child
-  font-size .72rem
+  font-size .68rem
   text-transform uppercase
   letter-spacing .1em
   color $txt-mute
-  margin-bottom .55rem
+  margin-bottom .4rem
 
 .stat > p:first-child strong
   font-weight 600
@@ -223,7 +205,7 @@
 
 .stat .stat-value
   font-family $mono
-  font-size 2rem
+  font-size 1.6rem
   font-weight 600
   letter-spacing -.02em
   color $txt
@@ -234,8 +216,8 @@
 
 /* Foot = the trailing caption paragraph after the value block. */
 .stat > p:last-child
-  margin-top .55rem
-  font-size .76rem
+  margin-top .4rem
+  font-size .72rem
   color $txt-soft
   font-family $mono
   line-height 1.4
@@ -254,27 +236,23 @@
 .stat.is-down .stat-value
   color $down
 
-/* ── Lifecycle states (loading / error / empty) ─────────────────── */
+/* ── Lifecycle states (loading / error / empty) — one quiet line ── */
 
 .pulse-state
   display flex
   align-items center
-  gap .9rem
-  padding 1.1rem 1.25rem
-  border-radius 14px
+  gap .65rem
+  padding .7rem 1rem
+  border-radius 10px
   border 1px solid $hair
   background $surface-2
   font-family $mono
-  font-size .9rem
+  font-size .82rem
   color $txt-soft
-  margin 1rem 0
+  margin .75rem 0 0
 
 .pulse-state p
   margin 0
-
-.pulse-state.is-loading
-  border-color $hair
-  color $txt-soft
 
 .pulse-state.is-error
   border-color rgba(255,107,107,.5)
@@ -285,189 +263,151 @@
   border-style dashed
   color $txt-mute
 
-.pulse-state .spin
-  width 1.1rem
-  height 1.1rem
+.pulse-spin
+  width 1rem
+  height 1rem
   border-radius 50%
   border 2px solid $hair
   border-top-color $brand
   animation pulse-spin .8s linear infinite
   flex-shrink 0
+  display inline-block
 
-/* ── Services grid ──────────────────────────────────────────────── */
+/* ── Services table — aligned rows, monospace numerics ──────────── */
 
-.pulse-grid
-  display grid
-  grid-template-columns repeat(auto-fill, minmax(250px, 1fr))
-  gap 1rem
-  margin 1.25rem 0
-
-.app-pulse .card.svc
-  background linear-gradient(180deg, $surface-2, $surface)
+.svc-table
   border 1px solid $hair
   border-radius 14px
-  padding 1.1rem 1.2rem 1.15rem
-  box-shadow none
-  position relative
   overflow hidden
-  transition border-color .15s ease, transform .15s ease
+  background $surface-2
 
-.app-pulse .card.svc:hover
-  transform translateY(-2px)
-  border-color $brand
+/* Shared column grid: status · name · latency · uptime · region.
+   Applied to BOTH the header and every loop row so columns line up. */
+.svc-row
+  display grid
+  grid-template-columns 7.5rem minmax(8rem, 1fr) 6.5rem 6rem 5rem
+  align-items center
+  gap 1rem
+  padding .7rem 1.1rem
+  border-top 1px solid $hair-soft
 
-/* Reset the <p> wrappers markdown adds around interpolated values so the
-   card layout stays tight. */
-.app-pulse .card.svc p
+.svc-head
+  border-top none
+  background $surface-3
+  font-family $mono
+  font-size .68rem
+  text-transform uppercase
+  letter-spacing .1em
+  color $txt-mute
+
+.svc-head .c-num
+  text-align right
+
+/* Each loop row arrives wrapped in <div data-wd-loop-piece>; reset that
+   wrapper so rows stack flush and the grid lives on .svc-row itself. */
+.app-pulse [data-wd-loop-out]
+  display block
+
+.app-pulse [data-wd-loop-piece]
+  display block
+
+.app-pulse .svc-row:not(.svc-head)
+  transition background .15s ease
+
+.app-pulse [data-wd-loop-piece]:first-child .svc-row
+  border-top none
+
+.app-pulse .svc-row:not(.svc-head):hover
+  background $surface-3
+
+.app-pulse .svc-row p
   margin 0
 
-/* Left status rail per row, driven by `.class when` */
-.app-pulse .card.svc::before
-  content ""
-  position absolute
-  inset 0 auto 0 0
-  width 4px
-  background $hair
-
-.app-pulse .card.svc-ok::before
-  background $ok
-.app-pulse .card.svc-warn::before
-  background $warn
-.app-pulse .card.svc-down::before
-  background $down
-  box-shadow 0 0 16px $down
-
-.svc-top
+/* Status cell: a colored dot + a small pill, both driven by `.class when`. */
+.c-status
   display flex
-  align-items flex-start
-  justify-content space-between
-  gap .6rem
-  margin 0 0 .85rem
+  align-items center
+  gap .55rem
 
-.app-pulse .card.svc strong
-  font-size 1.02rem
-  color $txt
-  display block
+.c-status .dot
+  width .6rem
+  height .6rem
+  border-radius 50%
+  background $txt-mute
+  flex-shrink 0
 
-.svc-region
-  display block
+.app-pulse .svc-ok .c-status .dot
+  background $ok
+.app-pulse .svc-warn .c-status .dot
+  background $warn
+.app-pulse .svc-down .c-status .dot
+  background $down
+  box-shadow 0 0 10px $down
+
+.app-pulse .svc-row .pill
   font-family $mono
-  font-size .72rem
-  letter-spacing .08em
-  text-transform uppercase
-  color $txt-mute
-  margin-top .2rem
-
-/* Status pill — recolored per state via the row class. */
-.app-pulse .card.svc .pill
-  font-family $mono
-  letter-spacing .08em
+  font-size .68rem
+  letter-spacing .06em
+  padding .12rem .5rem
+  border-radius 999px
   background $surface-3
   color $txt-soft
   border 1px solid $hair
-  flex-shrink 0
 
-.app-pulse .card.svc-ok .pill
+.app-pulse .svc-ok .pill
   background rgba(43,212,168,.14)
   color $ok
   border-color rgba(43,212,168,.4)
 
-.app-pulse .card.svc-warn .pill
+.app-pulse .svc-warn .pill
   background rgba(240,180,41,.14)
   color $warn
   border-color rgba(240,180,41,.4)
 
-.app-pulse .card.svc-down .pill
+.app-pulse .svc-down .pill
   background rgba(255,107,107,.16)
   color $down
   border-color rgba(255,107,107,.45)
 
-/* Metric readout row inside each service card. */
-.svc-metrics
-  display flex
-  gap 1.4rem
-  margin-top .25rem
-
-.svc-metric
-  display flex
-  flex-direction column
-  gap .15rem
-
-.svc-metric .m-val
-  font-family $mono
-  font-size 1.15rem
-  font-weight 600
+/* Name column. */
+.c-name strong
+  font-size .95rem
   color $txt
-  letter-spacing -.01em
 
-.svc-metric .m-key
-  font-size .68rem
-  text-transform uppercase
+/* Numeric columns — monospace, right-aligned. */
+.c-num
+  font-family $mono
+  font-size .9rem
+  color $txt
+  text-align right
+  font-variant-numeric tabular-nums
+
+.app-pulse .svc-warn .c-num.is-latency
+  color $warn
+.app-pulse .svc-down .c-num.is-latency
+  color $down
+
+/* Region column. */
+.c-region
+  font-family $mono
+  font-size .76rem
   letter-spacing .08em
+  text-transform uppercase
   color $txt-mute
+  text-align right
 
-.app-pulse .card.svc-warn .m-val.is-latency
-  color $warn
-.app-pulse .card.svc-down .m-val.is-latency
-  color $down
-
-/* Decorative unicode sparkline strip — CSS-only, one glyph per status.
-   (The spark array can't be transformed via directives, so the trend
-   line is purely ornamental and set by the row's status class.) */
-.svc-spark
-  margin-top .9rem
-  font-family $mono
-  font-size .82rem
-  letter-spacing .06em
-  color $txt-mute
-  white-space nowrap
-  overflow hidden
-
-.app-pulse .card.svc-ok .svc-spark::before
-  content "▁▂▃▂▃▄▃▅ steady"
-  color $ok
-.app-pulse .card.svc-warn .svc-spark::before
-  content "▃▅▄▆▅▇▆█ rising"
-  color $warn
-.app-pulse .card.svc-down .svc-spark::before
-  content "▆▇█▁▁▁▁▁ dropped"
-  color $down
-
-/* ── Legend ─────────────────────────────────────────────────────── */
-
-.pulse-legend
-  display flex
-  flex-wrap wrap
-  gap 1.25rem
-  margin 1rem 0
-  font-family $mono
-  font-size .78rem
-  color $txt-soft
-
-.pulse-legend span
-  display inline-flex
-  align-items center
-  gap .45rem
-
-.pulse-legend span::before
-  content ""
-  width .6rem
-  height .6rem
-  border-radius 50%
-
-.pulse-legend .lg-ok::before
-  background $ok
-.pulse-legend .lg-warn::before
-  background $warn
-.pulse-legend .lg-down::before
-  background $down
+/* An empty feed renders the @empty branch instead of rows. */
+.svc-table .pulse-state
+  margin 0
+  border none
+  border-radius 0
 
 /* ── Source reveal (dark variant) ───────────────────────────────── */
 
 .app-pulse .source-reveal
   background $surface-2
   border 1px solid $hair
-  margin-top 2rem
+  margin-top 1.75rem
 
 .app-pulse .source-reveal summary
   color $brand
@@ -486,5 +426,9 @@
 @media (max-width: 600px)
   .app-pulse
     padding 1.4rem 1.1rem 1.8rem
-  .pulse-grid
-    grid-template-columns 1fr
+  .svc-row
+    grid-template-columns 5rem minmax(6rem, 1fr) 5rem 5rem
+    gap .6rem
+    padding .65rem .8rem
+  .c-region
+    display none
