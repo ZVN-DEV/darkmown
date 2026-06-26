@@ -5,12 +5,17 @@ transitions: true
 ---
 
 @include /nav.wd
+@include /base.wd
 
-<main>
+<main class="docs">
 
-# Docs
+<header class="docs-hero">
+<span class="eyebrow">Documentation</span>
+
+# The Darkmown docs
 
 Darkmown is a Markdown-native framework for mostly-static sites with tiny reactive islands. Pages are plain files: `.md` stays pure CommonMark, and `.wd` ("whateverdown") is the same Markdown plus first-party directives.
+</header>
 
 @include ./-relative-note.wd
 
@@ -345,4 +350,8 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in 
 
 The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:store`, the full `:fetch` lifecycle (loading/error/empty states, dynamic URLs, `refetch`, dotted loop sources, authenticated `headers=` + `refresh=` token renewal), `:form` (including server round-trips), loop ergonomics (`sort by`/`limit`/`offset`/`reverse`/`@empty` and `$index`/`$number`/`$first`/`$last`/`$count`), `:if … :else if … :else`, reactive `.class when …`, `:effect`, `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/) and the [Reactive page](/reactive/). Still on the roadmap: a first-party server runtime (`site/api/`) and HTML-fragment swaps. See `docs/spec-alignment.md` in the package for the full audit.
 
+See these directives composed into real apps on the [showcase](/showcase/).
+
 </main>
+
+@include /footer.wd

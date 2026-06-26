@@ -1,0 +1,6 @@
+<!-- Folio — shared style carrier.
+
+     Both the catalog (/folio/) and the cart (/folio/cart/) `@include ./style.wd`
+     so the boutique look lives in exactly one place. This file renders no markup;
+     including it pulls in style.skin (the warm editorial-luxe layer that sits on
+     top of the base design system from /base.wd). -->

@@ -1,0 +1,127 @@
+/* Showcase hub — layers on /base.wd. Gallery of the flagship apps. */
+
+main.showcase
+  max-width 1080px
+
+.sc-hero
+  padding 3.5rem 0 2.5rem
+  border-bottom 1px solid $line
+  margin-bottom 2.5rem
+
+.sc-hero h1
+  max-width 18ch
+
+.sc-hero > p
+  max-width 64ch
+  font-size 1.18rem
+  color $ink-soft
+  margin 1rem 0 1.75rem
+
+.sc-cta
+  display flex
+  flex-wrap wrap
+
+/* ── App gallery ────────────────────────────────────────────────── */
+
+.sc-apps
+  display grid
+  grid-template-columns 1fr 1fr
+  gap 1.25rem
+  margin 1rem 0 3rem
+
+@media (max-width: 760px)
+  .sc-apps
+    grid-template-columns 1fr
+
+.sc-app
+  position relative
+  padding 1.6rem 1.6rem 1.4rem
+  border 1px solid $line
+  radius $radius-lg
+  overflow hidden
+  transition transform .14s ease, box-shadow .14s ease
+
+.sc-app:hover
+  transform translateY(-3px)
+  box-shadow 0 18px 40px -22px rgba(28,24,20,.45)
+
+/* A soft accent wash per app — its identity color. */
+.sc-app::before
+  content ""
+  position absolute
+  inset 0 0 auto 0
+  height 4px
+
+.sc-folio::before
+  background #b8462e
+
+.sc-pulse::before
+  background #18b89a
+
+.sc-forge::before
+  background #6d5ae6
+
+.sc-compass::before
+  background #e0894a
+
+.sc-emoji
+  font-size 2rem
+  line-height 1
+
+.sc-app h3
+  margin .6rem 0 .5rem
+  font-size 1.45rem
+
+.sc-app p
+  color $ink-soft
+  margin .4rem 0 1rem
+
+.sc-open
+  display inline-block
+  margin-top .4rem
+  font-weight 600
+  text-decoration none
+  color $accent-deep
+
+.sc-open:hover
+  text-decoration underline
+
+/* ── Weight section ─────────────────────────────────────────────── */
+
+.sc-weight
+  margin 1rem 0 3rem
+
+.sc-scale
+  list-style none
+  padding 1.25rem 1.5rem
+  margin 1.25rem 0
+
+.sc-scale li
+  padding .55rem 0
+  border-bottom 1px solid $line-soft
+  color $ink-soft
+
+.sc-scale li:last-child
+  border-bottom 0
+
+.sc-scale strong
+  color $ink
+
+.sc-scale code
+  font-size 1em
+  font-weight 700
+  color $accent-deep
+  background $accent-soft
+
+/* ── Mini demos ─────────────────────────────────────────────────── */
+
+.sc-mini
+  padding 1.1rem 1.25rem
+
+.sc-mini p
+  margin 0 0 .6rem
+  color $ink-soft
+
+.sc-mini a
+  font-weight 600
+  text-decoration none

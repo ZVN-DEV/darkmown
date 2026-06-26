@@ -1,0 +1,163 @@
+---
+title: Folio — a boutique storefront
+description: A multi-page store written in pure Markdown. The cart persists across pages, reloads, and browser tabs; navigation is instant. No framework JavaScript written by hand.
+image: https://darkmown.com/__wd/media/og-folio.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+@include ./-style.wd
+
+<main class="wide app-folio">
+
+::: section #store
+
+:store cart = []
+:computed count = cart.length
+:state q = ""
+
+::: shop-head
+::: shop-mark
+::: shop-eyebrow
+Objects for everyday rituals
+:::
+
+# Fol*i*o
+
+::: shop-tagline
+A small, considered shop — eight things, chosen well. Your basket follows you from page to page, through a reload, even into a second tab.
+:::
+:::
+
+::: cart-peek
+{ count } in your basket
+:::
+:::
+
+::: shop-layout
+
+::: shop-main
+
+::: shop-search
+:bind q placeholder="Search the shop…"
+
+::: shop-hint
+Type to filter the shelf — it narrows as you go, no page reload.
+:::
+:::
+
+@loop /products.json into p where p.name contains q
+::: card .product
+::: shelf
+{ p.emoji }
+:::
+::: body
+::: tag
+{ p.category }
+:::
+
+::: pname
+{ p.name }
+:::
+
+::: blurb
+{ p.blurb }
+:::
+
+::: foot
+::: price
+${ p.price }
+:::
+:button "Add" -> cart += p
+:::
+:::
+:::
+@empty
+::: card .catalog-empty
+**Nothing on the shelf matches "{ q }".**
+
+Try a shorter word, or clear the search to see all eight pieces.
+:::
+@endloop
+
+:::
+
+::: cart-rail
+::: rail-eyebrow
+Your basket
+{ count } items
+:::
+
+::: rail-count
+{ count }
+:::
+
+::: rail-sub
+Saved to this browser. Add a few pieces, then head to checkout when you're ready.
+:::
+
+[View basket →](/folio/cart/){.rail-link}
+
+::: rail-note
+Persisted with a single `:store cart = []`. The very same line on the cart page shares this basket — no backend, no wiring.
+:::
+:::
+
+:::
+
+::: persist-note
+::: dot
+✷
+:::
+**Your basket persists across pages, reloads, and tabs.** Open this page in two tabs, add something in one, and watch the count rise in the other — that's a `:store`, synced over the browser's storage event.
+:::
+
+## Built from Markdown
+
+Every product card, the live search, and the running count are written as plain Markdown with a handful of Darkmown directives. The catalog unrolls from a JSON file; the basket is one shared `:store`. No components, no JSX, no hand-written event handlers.
+
+<details class="source-reveal">
+<summary>View source — it's Markdown</summary>
+
+```wd
+:store cart = []
+:computed count = cart.length
+:state q = ""
+
+:bind q placeholder="Search the shop…"
+
+@loop /products.json into p where p.name contains q
+::: card .product
+::: shelf
+{ p.emoji }
+:::
+::: body
+::: pname
+{ p.name }
+:::
+::: foot
+::: price
+${ p.price }
+:::
+:button "Add" -> cart += p
+:::
+:::
+:::
+@empty
+Nothing matches "{ q }".
+@endloop
+```
+
+</details>
+
+::: folio-foot
+A storefront in two `.wd` files.
+[Open the basket →](/folio/cart/)
+:::
+
+:::
+
+</main>
+
+@include /footer.wd

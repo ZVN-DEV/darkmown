@@ -25,7 +25,7 @@
       ]
     },
     {
-      "source": "/(docs|markdown|theme|404)",
+      "source": "/(docs|markdown|theme|404|showcase)",
       "headers": [
         {
           "key": "Content-Security-Policy",

@@ -1,0 +1,14 @@
+<footer class="sitefooter">
+  <div class="foot-inner">
+    <div>
+      <strong>Darkmown</strong> — Markdown that runs.
+      <div class="small">Zero JS on static pages · one ~5.8&nbsp;KB runtime when reactive.</div>
+    </div>
+    <nav class="foot-links">
+      <a href="/docs/">Docs</a>
+      <a href="/showcase/">Showcase</a>
+      <a href="https://github.com/ZVN-DEV/darkmown">GitHub</a>
+      <a href="https://www.npmjs.com/package/@zvndev/darkmown">npm</a>
+    </nav>
+  </div>
+</footer>

@@ -1,140 +1,65 @@
-tokens
-  ink #171717
-  paper #fbfaf7
-  panel #ffffff
-  line #dedbd3
-  accent #16645a
-  warm #a83f2a
-  muted #666158
-  gap 1rem
-  radius 8px
+/* Landing page — layers on /base.wd (tokens, type, components, dark mode).
+   Only landing-specific layout lives here. */
 
-page
-  margin 0
-  font ui-serif, Georgia, Cambria, serif
-  color $ink
-  bg $paper
-  line-height 1.6
-  padding 0 0 4rem
+/* ── Hero ───────────────────────────────────────────────────────── */
 
 .hero
-  display flex
-  flex-direction column
-  align-items flex-start
-  justify-content center
-  padding 2.5rem 0 2.25rem
+  padding 3.5rem 0 2.75rem
   border-bottom 1px solid $line
   margin-bottom 2.5rem
 
-.hero > p:not(.eyebrow)
-  max-width 70ch
-  margin .75rem 0 1.5rem
+.hero h1
+  max-width 16ch
 
-.eyebrow
-  color $accent
-  text-transform uppercase
-  letter-spacing .08em
-  font-size .78rem
-  margin 0
-
-main
-  max-width 920px
-  margin 0 auto
-  padding 0 2rem 2rem
-
-h1
-  font-size clamp(2.4rem, 6vw, 5rem)
-  line-height .95
-  margin .75rem 0 1rem
-  max-width 14ch
-
-h2
-  margin-top 2.75rem
-  border-bottom 1px solid $line
-  padding-bottom .35rem
-
-a
+.hero h1 em
+  font-style italic
   color $accent
 
-.btn
-  display inline-block
-  margin .5rem .5rem .5rem 0
-  padding .75rem 1rem
-  border 1px solid $line
-  radius $radius
-  bg $panel
-  text-decoration none
+.hero > p
+  max-width 64ch
+  font-size 1.18rem
+  color $ink-soft
+  margin 1rem 0 1.75rem
 
-.btn.primary
-  bg $ink
-  color white
-  border 1px solid $ink
-
-.note
-  border 1px solid $line
-  bg $panel
-  padding 1rem
-  radius $radius
-
-.try-card
-  display inline-flex
-  align-items center
-  gap .65rem
-  margin .35rem .5rem .35rem 0
-  padding .75rem 1rem
-  border 1px solid $line
-  radius $radius
-  bg $panel
-  text-decoration none
-
-.try-card span
-  color white
-  bg $accent
-  padding .1rem .45rem
+.hero .eyebrow
+  background $accent-soft
+  padding .3rem .7rem
   radius 999px
 
-.feature-card
+.hero-cta
+  display flex
+  flex-wrap wrap
+  margin-bottom 2rem
+
+.hero-stats
   display grid
-  gap .35rem
-  margin 1rem 0
-  padding 1rem
-  bg $panel
-  border 1px solid $line
-  radius $radius
+  grid-template-columns repeat(4, auto)
+  gap 1.25rem 2.5rem
+  list-style none
+  padding 0
+  margin 0
+  border-top 1px solid $line-soft
+  padding-top 1.5rem
 
-.feature-card strong
-  color $warm
+.hero-stats li
+  display flex
+  flex-direction column
 
-.pulse-button
-  border 0
-  bg $ink
-  color white
-  padding .85rem 1rem
-  radius $radius
-  font inherit
-  cursor pointer
-
-.pulse-button.is-on
-  bg $warm
-
-.sprint-board
-  display grid
-  grid-template-columns repeat(auto-fit, minmax(130px, 1fr))
-  gap $gap
-  margin 1rem 0
-
-.sprint-board article
-  bg $panel
-  border 1px solid $line
-  padding 1rem
-  radius $radius
-
-.sprint-board span
-  display block
+.hero-stats strong
+  font-size 1.6rem
   color $accent
-  font-size .9rem
+  letter-spacing -.02em
 
-/* ── vs-Markdoc comparison ───────────────────────────────────────── */
+.hero-stats span
+  font-size .82rem
+  color $muted
+  max-width 18ch
+
+@media (max-width: 720px)
+  .hero-stats
+    grid-template-columns 1fr 1fr
+
+/* ── vs-Markdoc comparison ──────────────────────────────────────── */
 
 .versus
   display grid
@@ -147,15 +72,15 @@ a
   border 1px solid $line
   radius $radius
   bg $panel
-  padding 1.25rem 1.25rem 1.1rem
+  padding 1.35rem
   display flex
   flex-direction column
   min-width 0
+  box-shadow 0 1px 2px rgba(28,24,20,.04)
 
 .vs-card.vs-dark
-  bg #fbf7ef
-  border 1px solid #e3d8c4
-  box-shadow 0 1px 0 #efe7d6
+  background linear-gradient(180deg, $accent-soft, $panel)
+  border 1px solid $accent
 
 .vs-head
   display flex
@@ -179,7 +104,7 @@ a
 
 .vs-tag-md
   color $muted
-  bg #efece3
+  bg $sunk
   border 1px solid $line
 
 .vs-sub
@@ -189,7 +114,7 @@ a
 
 .vs-card pre
   margin .25rem 0 0
-  font-size .82rem
+  font-size .8rem
   line-height 1.55
 
 .vs-live-label
@@ -199,21 +124,22 @@ a
   font-style italic
 
 .vs-live
-  border 1px dashed #cdbfa6
-  radius $radius
-  bg #fffdf8
+  border 1px dashed $accent
+  radius $radius-sm
+  background color-mix(in srgb, $accent-soft 50%, $panel)
   padding 1rem 1.1rem .85rem
   margin .15rem 0 0
 
 .vs-live input[data-wd-bind-input]
   width 100%
   box-sizing border-box
-  font inherit
+  font-family inherit
   font-size .95rem
   padding .55rem .7rem
   border 1px solid $line
-  radius 6px
-  bg white
+  radius 8px
+  bg $panel
+  color $ink
   margin 0 0 .75rem
 
 .vs-live .product
@@ -225,7 +151,7 @@ a
   margin .35rem 0
   bg $panel
   border 1px solid $line
-  radius 6px
+  radius 8px
   font-size .95rem
 
 .vs-live .product p
@@ -235,15 +161,15 @@ a
   border 0
   bg $accent
   color white
-  font inherit
+  font-family inherit
   font-size .82rem
-  padding .35rem .7rem
-  radius 6px
+  padding .4rem .8rem
+  radius 999px
   cursor pointer
   flex-shrink 0
 
 .vs-live .product button:hover
-  bg #11514a
+  bg $accent-deep
 
 .vs-live > p:last-of-type
   margin .85rem 0 0
@@ -253,8 +179,8 @@ a
   margin 1rem 0 0
   padding 1rem 1.1rem
   border-left 3px solid $warm
-  bg #fcf4ef
-  radius 6px
+  bg $warm-soft
+  radius 8px
 
 .vs-needs strong
   color $warm
@@ -277,9 +203,14 @@ a
   font-size .95rem
 
 .vs-card.vs-dark .vs-caption
-  color $accent
+  color $accent-deep
 
-/* Secondary value-prop row, demoted below the comparison */
+@media (max-width: 720px)
+  .versus
+    grid-template-columns 1fr
+    gap 1rem
+
+/* ── Secondary value props ──────────────────────────────────────── */
 
 .props
   margin 1.5rem 0 0
@@ -287,7 +218,67 @@ a
 .props h2
   margin-top 1.5rem
 
-@media (max-width: 720px)
-  .versus
-    grid-template-columns 1fr
-    gap 1rem
+/* ── Demo-directive widgets (`:try`, feature-card include, index.js) ─ */
+
+.try-card
+  display inline-flex
+  align-items center
+  gap .65rem
+  margin .35rem .5rem .35rem 0
+  padding .75rem 1rem
+  border 1px solid $line
+  radius 999px
+  bg $panel
+  text-decoration none
+  color $ink
+
+.try-card:hover
+  border-color $accent
+
+.try-card span
+  color white
+  bg $accent
+  padding .1rem .5rem
+  radius 999px
+  font-size .8rem
+
+.feature-card
+  display grid
+  gap .35rem
+  margin 1rem 0
+  padding 1.1rem 1.25rem
+  bg $panel
+  border 1px solid $line
+  radius $radius
+
+.feature-card strong
+  color $warm
+
+.pulse-button
+  border 0
+  bg $ink
+  color $paper
+  padding .85rem 1.15rem
+  radius 999px
+  font-family inherit
+  cursor pointer
+
+.pulse-button.is-on
+  bg $warm
+
+.sprint-board
+  display grid
+  grid-template-columns repeat(auto-fit, minmax(130px, 1fr))
+  gap 1rem
+  margin 1rem 0
+
+.sprint-board article
+  bg $panel
+  border 1px solid $line
+  padding 1rem
+  radius $radius
+
+.sprint-board span
+  display block
+  color $accent
+  font-size .9rem

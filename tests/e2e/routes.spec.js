@@ -6,7 +6,14 @@ const routes = [
   { path: "/markdown/", runtime: false },
   { path: "/reactive/", runtime: true },
   { path: "/data/", runtime: true },
-  { path: "/app/", runtime: true }
+  { path: "/app/", runtime: true },
+  // Showcase hub (static) + the four flagship apps (reactive).
+  { path: "/showcase/", runtime: false },
+  { path: "/folio/", runtime: true },
+  { path: "/folio/cart/", runtime: true },
+  { path: "/pulse/", runtime: true },
+  { path: "/forge/", runtime: true },
+  { path: "/compass/", runtime: true }
 ];
 
 test.describe("demo routes — launch smoke", () => {
@@ -22,7 +29,7 @@ test.describe("demo routes — launch smoke", () => {
 
   test("top nav links resolve and hidden demo files stay unroutable", async ({ page }) => {
     await page.goto("/");
-    for (const href of ["/", "/docs/", "/markdown/", "/reactive/", "/data/", "/app/"]) {
+    for (const href of ["/", "/docs/", "/showcase/", "/reactive/", "/data/"]) {
       await expect(page.locator(`.topnav a[href="${href}"]`).first()).toBeVisible();
     }
 

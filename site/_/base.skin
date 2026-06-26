@@ -1,0 +1,372 @@
+/* ===================================================================
+   Darkmown design system — the refreshed brand foundation.
+   Warm, literary, premium. Serif for prose, system sans for chrome,
+   a refined mono for code. Ships zero JS; dark mode is OS-driven via
+   `tokens dark` (a pure CSS media query — no flash, no toggle script).
+   Every refreshed page and demo app includes this via /base.wd.
+   =================================================================== */
+
+tokens
+  ink #1c1814
+  ink-soft #4b4239
+  muted #756a5d
+  faint #9b9082
+  paper #faf8f3
+  paper-2 #f4f0e7
+  sunk #efe9dc
+  panel #ffffff
+  line #e7e1d4
+  line-soft #f0ebe0
+  accent #0f6b5e
+  accent-deep #0a4f45
+  accent-soft #e3f0ec
+  warm #b8462e
+  warm-soft #f8eae3
+  gold #b6822b
+  code-bg #1b2420
+  code-ink #e9efe7
+  code-line #2c3b34
+  ring #0f6b5e
+  radius 12px
+  radius-sm 8px
+  radius-lg 20px
+
+tokens dark
+  ink #ece6db
+  ink-soft #c3bbab
+  muted #9a9081
+  faint #6f6657
+  paper #14110d
+  paper-2 #1a1612
+  sunk #221d17
+  panel #1e1913
+  line #2f281f
+  line-soft #261f18
+  accent #5ccab4
+  accent-deep #8fe0cf
+  accent-soft #16302a
+  warm #e88a6f
+  warm-soft #2c1f18
+  gold #d6a24e
+  code-bg #100d0a
+  code-ink #e4ebe2
+  code-line #2a231b
+  ring #5ccab4
+
+/* ── Reset & base ───────────────────────────────────────────────── */
+
+*
+  box-sizing border-box
+
+page
+  margin 0
+  font-family ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, Cambria, serif
+  font-size 18px
+  line-height 1.65
+  color $ink
+  bg $paper
+  -webkit-font-smoothing antialiased
+  text-rendering optimizeLegibility
+
+::selection
+  bg $accent-soft
+  color $accent-deep
+
+/* ── Typography ─────────────────────────────────────────────────── */
+
+h1, h2, h3, h4
+  line-height 1.1
+  letter-spacing -.012em
+  color $ink
+  font-weight 600
+
+h1
+  font-size clamp(2.5rem, 6vw, 4.5rem)
+  letter-spacing -.025em
+  margin .2em 0 .35em
+
+h2
+  font-size clamp(1.6rem, 3vw, 2.25rem)
+  margin 2.4em 0 .6em
+
+h3
+  font-size 1.3rem
+  margin 1.8em 0 .4em
+
+p
+  margin 1em 0
+  max-width 68ch
+
+a
+  color $accent
+  text-underline-offset 2px
+  text-decoration-thickness 1px
+
+a:hover
+  color $accent-deep
+
+strong
+  font-weight 650
+  color $ink
+
+hr
+  border 0
+  border-top 1px solid $line
+  margin 3rem 0
+
+small, .small
+  font-size .82rem
+  color $muted
+
+/* Chrome (nav, buttons, labels, badges) leans on a clean sans for a
+   modern editorial contrast against the serif prose. */
+.topnav, .btn, .eyebrow, .pill, .tag, .badge, .kbd, .sitefooter, .source-reveal summary
+  font-family system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+
+main
+  max-width 940px
+  margin 0 auto
+  padding 0 1.5rem 5rem
+
+.wide
+  max-width 1140px
+
+.eyebrow
+  display inline-block
+  text-transform uppercase
+  letter-spacing .14em
+  font-size .74rem
+  font-weight 600
+  color $accent
+  margin 0 0 .35rem
+
+/* ── Buttons ────────────────────────────────────────────────────── */
+
+.btn
+  display inline-flex
+  align-items center
+  gap .5rem
+  margin .4rem .5rem .4rem 0
+  padding .7rem 1.15rem
+  font-size .95rem
+  font-weight 550
+  line-height 1
+  color $ink
+  bg $panel
+  border 1px solid $line
+  radius 999px
+  text-decoration none
+  cursor pointer
+  transition transform .12s ease, box-shadow .12s ease, background .12s ease
+
+.btn:hover
+  transform translateY(-1px)
+  box-shadow 0 6px 18px -8px rgba(28,24,20,.35)
+
+.btn.primary
+  bg $accent
+  color #fff
+  border-color $accent
+
+.btn.primary:hover
+  bg $accent-deep
+  color #fff
+
+.btn.warm
+  bg $warm
+  color #fff
+  border-color $warm
+
+.btn.ghost
+  bg transparent
+
+/* ── Cards & surfaces ───────────────────────────────────────────── */
+
+.card
+  bg $panel
+  border 1px solid $line
+  radius $radius
+  padding 1.4rem
+  box-shadow 0 1px 2px rgba(28,24,20,.04)
+
+.grid
+  display grid
+  gap 1.1rem
+
+.grid.cols-2
+  grid-template-columns repeat(2, 1fr)
+
+.grid.cols-3
+  grid-template-columns repeat(3, 1fr)
+
+.grid.auto
+  grid-template-columns repeat(auto-fit, minmax(240px, 1fr))
+
+@media (max-width: 760px)
+  .grid.cols-2, .grid.cols-3
+    grid-template-columns 1fr
+
+/* ── Pills, tags, badges ────────────────────────────────────────── */
+
+.pill, .tag
+  display inline-flex
+  align-items center
+  gap .35rem
+  font-size .72rem
+  font-weight 600
+  text-transform uppercase
+  letter-spacing .06em
+  padding .28rem .6rem
+  radius 999px
+
+.pill
+  bg $accent-soft
+  color $accent-deep
+
+.tag
+  bg $sunk
+  color $muted
+
+.kbd
+  font-family ui-monospace, "SF Mono", Menlo, monospace
+  font-size .8rem
+  padding .15rem .4rem
+  radius 6px
+  bg $panel
+  border 1px solid $line
+  color $ink-soft
+
+/* ── Callout (the demo :note directive renders <aside class="note">) ─ */
+
+.note, .callout
+  margin 1.6rem 0
+  padding 1rem 1.25rem
+  border 1px solid $line
+  border-left 3px solid $accent
+  bg $panel
+  radius $radius-sm
+  color $ink-soft
+  font-size .96rem
+
+/* ── Code ───────────────────────────────────────────────────────── */
+
+code
+  font-family ui-monospace, "SF Mono", Menlo, Consolas, monospace
+  font-size .88em
+  bg $sunk
+  color $accent-deep
+  padding .12rem .36rem
+  radius 6px
+
+h1 code, h2 code, h3 code
+  font-size .82em
+
+pre
+  bg $code-bg
+  color $code-ink
+  padding 1.2rem 1.35rem
+  margin 1.5rem 0
+  radius $radius
+  overflow-x auto
+  line-height 1.62
+  font-size .87rem
+  box-shadow inset 0 0 0 1px $code-line
+
+pre code
+  bg transparent
+  color inherit
+  padding 0
+  font-size 1em
+
+/* ── Tables ─────────────────────────────────────────────────────── */
+
+table
+  border-collapse collapse
+  width 100%
+  margin 1.5rem 0
+  font-size .95rem
+
+th
+  text-align left
+  padding .6rem .9rem
+  border-bottom 2px solid $line
+  color $muted
+  font-weight 600
+  font-size .82rem
+  text-transform uppercase
+  letter-spacing .04em
+
+td
+  padding .6rem .9rem
+  border-bottom 1px solid $line-soft
+
+blockquote
+  margin 1.6rem 0
+  padding .6rem 1.3rem
+  border-left 3px solid $accent
+  color $ink-soft
+  font-style italic
+
+/* ── "View source" reveal — the two-beat trick: a slick app, then the
+     Markdown it's made of. Wrap a fenced ```wd block in <details>. ── */
+
+.source-reveal
+  margin 1.5rem 0
+  border 1px solid $line
+  radius $radius
+  bg $panel
+  overflow hidden
+
+.source-reveal summary
+  cursor pointer
+  padding .85rem 1.1rem
+  font-size .9rem
+  font-weight 600
+  color $accent-deep
+  list-style none
+  display flex
+  align-items center
+  gap .5rem
+
+.source-reveal summary::-webkit-details-marker
+  display none
+
+.source-reveal summary::before
+  content "›"
+  font-size 1.1rem
+  transition transform .15s ease
+
+.source-reveal[open] summary::before
+  transform rotate(90deg)
+
+.source-reveal pre
+  margin 0
+  radius 0
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+
+.sitefooter
+  border-top 1px solid $line
+  margin-top 4rem
+  padding 2.5rem 1.5rem
+  color $muted
+  font-size .9rem
+
+.sitefooter .foot-inner
+  max-width 940px
+  margin 0 auto
+  display flex
+  flex-wrap wrap
+  gap 1rem 2rem
+  align-items center
+  justify-content space-between
+
+.sitefooter a
+  color $muted
+  text-decoration none
+  margin-right 1.1rem
+
+.sitefooter a:hover
+  color $accent

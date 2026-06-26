@@ -1,0 +1,194 @@
+---
+title: Compass — find your match
+description: A guided product-finder quiz built in one Markdown file. Four questions advance a state machine with :if branching, accumulate scores with :button actions, and a :computed recommendation lands the perfect pick. Zero hand-written JavaScript.
+image: https://darkmown.com/__wd/media/og-compass.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<style>@keyframes pop { 0% { transform: scale(0) rotate(-18deg); opacity: 0 } 100% { transform: scale(1) rotate(0); opacity: 1 } }</style>
+
+<main class="app-compass">
+
+:state step = 1
+:state calm = 0
+:state bold = 0
+:state budget = 0
+
+::: section #quiz .compass-stage
+
+::: compass-card .compass-card
+
+:if step <= 4
+
+::: compass-top .compass-top
+
+::: eyebrow .compass-eyebrow
+Question { step } of 4
+:::
+
+::: compass-rail .compass-rail .at-1 when step == 1 .at-2 when step == 2 .at-3 when step == 3 .at-4 when step == 4
+:::
+
+:::
+
+:endif
+
+:if step == 1
+
+## Where should it live?
+
+::: lead .compass-lead
+Picture the spot you'd reach for it most. That tells us a lot.
+:::
+
+::: answers .compass-answers
+:button "🛋️  A cozy nook to unwind" -> calm += 2; step++
+:button "🎉  The room where people gather" -> bold += 2; step++
+:button "🧺  Wherever — it should just be useful" -> budget += 2; step++
+:::
+
+:else if step == 2
+
+## What's the mood you're after?
+
+::: lead .compass-lead
+No wrong answers. Go with your gut.
+:::
+
+::: answers .compass-answers
+:button "🌙  Soft, calm, a little dreamy" -> calm += 2; step++
+:button "⚡  Lively, bold, turn it up" -> bold += 2; step++
+:button "🧘  Fresh and easy — no fuss" -> calm += 1; budget += 1; step++
+:::
+
+:else if step == 3
+
+## How does it earn its keep?
+
+::: lead .compass-lead
+The thing it has to nail before anything else.
+:::
+
+::: answers .compass-answers
+:button "✨  It sets the whole vibe" -> calm += 2; step++
+:button "🔊  It fills the room" -> bold += 2; step++
+:button "💧  It quietly makes the day nicer" -> calm += 1; budget += 1; step++
+:::
+
+:else if step == 4
+
+## And the budget?
+
+::: lead .compass-lead
+Last one — then we'll find your match.
+:::
+
+::: answers .compass-answers
+:button "🌱  Keep it gentle" -> budget += 3; step++
+:button "⚖️  A fair middle" -> budget += 1; step++
+:button "💎  Splurge for the right one" -> bold += 2; step++
+:::
+
+:else
+
+::: result .compass-result
+
+::: burst .compass-burst
+🎉
+:::
+
+::: eyebrow .compass-eyebrow .is-result
+Your match
+:::
+
+:if bold > calm and bold > budget
+
+# The Cove Speaker
+
+::: why .compass-why
+You're here to fill the room. The **Cove Speaker** throws warm, room-filling 360° sound out of a palm-sized shell — the heart of every gathering, turned all the way up.
+:::
+
+[Shop this →](/folio/){.compass-cta}
+
+:else if calm > bold and calm > budget
+
+# The Aurora Lamp
+
+::: why .compass-why
+You want a space that *feels* like something. The **Aurora Lamp** pours a warm, dimmable glow from a hand-turned oak base — the quiet centerpiece of your cozy nook.
+:::
+
+[Shop this →](/folio/){.compass-cta}
+
+:else if budget > calm and budget > bold
+
+# The Haven Diffuser
+
+::: why .compass-why
+You like things that quietly make the day nicer — without the splurge. The **Haven Diffuser** breathes a soft cedar-scented mist into the room, refillable and easy to love.
+:::
+
+[Shop this →](/folio/){.compass-cta}
+
+:else
+
+# The Isle Earbuds
+
+::: why .compass-why
+You're a little of everything — calm, bold, and practical. The **Isle Earbuds** go anywhere you do: active noise cancelling, a 30-hour case, and tap controls for whatever the day brings.
+:::
+
+[Shop this →](/folio/){.compass-cta}
+
+:endif
+
+::: restart .compass-restart
+:button "↺  Start over" -> step reset; calm reset; bold reset; budget reset
+:::
+
+:::
+
+:endif
+
+:::
+
+:::
+
+<details class="source-reveal">
+<summary>View source — it's Markdown</summary>
+
+```wd
+:state step = 1
+:state calm = 0
+:state bold = 0
+:state budget = 0
+
+:if step <= 4
+Question { step } of 4
+:endif
+
+:if step == 1
+## Where should it live?
+:button "🛋️  A cozy nook to unwind" -> calm += 2; step++
+:button "🎉  The room where people gather" -> bold += 2; step++
+:else if step == 2
+## What's the mood you're after?
+:button "🌙  Soft, calm, a little dreamy" -> calm += 2; step++
+... three more questions ...
+:else
+:if bold > calm and bold > budget
+# The Cove Speaker
+:else if calm > bold and calm > budget
+# The Aurora Lamp
+:endif
+:button "↺  Start over" -> step reset; calm reset; bold reset; budget reset
+:endif
+```
+
+</details>
+
+</main>

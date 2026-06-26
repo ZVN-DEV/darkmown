@@ -1,0 +1,173 @@
+---
+title: Folio — your basket
+description: The Folio checkout. The same :store cart shared with the catalog, a per-row remove, and a form that round-trips to a server — all written in Markdown.
+image: https://darkmown.com/__wd/media/og-folio.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+@include ./-style.wd
+
+<main class="wide app-folio">
+
+::: section #checkout
+
+:store cart = []
+:computed count = cart.length
+
+::: shop-head
+::: shop-mark
+::: shop-eyebrow
+Checkout
+:::
+
+# Your *basket*
+
+::: shop-tagline
+The same basket you filled on the shelf — it carried over on its own. Review it, then place a test order through a live server round-trip.
+:::
+:::
+
+::: cart-peek
+{ count } items
+:::
+:::
+
+::: cart-grid
+
+::: cart-lines
+
+## Items
+
+@loop cart into item
+::: card .line
+::: line-emoji
+{ item.emoji }
+:::
+::: line-body
+::: line-name
+{ item.name }
+:::
+::: line-cat
+{ item.category }
+:::
+:::
+::: line-price
+${ item.price }
+:::
+:button "Remove" -> cart remove item
+:::
+@empty
+::: card .cart-blank
+**Your basket is empty.**
+
+Nothing here yet — the shelf is just a click away.
+
+[← Back to the shop](/folio/)
+:::
+@endloop
+
+:if count > 0
+::: cart-actions
+{ count } item(s) ready to check out.
+:button "Clear basket" -> cart clear
+:::
+:endif
+
+:::
+
+::: checkout-panel
+
+## Place your order
+
+This is a real form. With the runtime it posts over `fetch` and shows the reply inline; with JavaScript off, the identical markup degrades to a native POST. The demo endpoint simply echoes your order back.
+
+:form action="/__wd/echo" into receipt
+:input name placeholder="Full name" required
+:input email type=email placeholder="you@studio.com" required
+:select shipping
+- Standard — 3-5 days
+- Express — overnight
+- Local pickup
+:submit "Place order"
+:endform
+
+:if receipt
+::: card .receipt
+**Order received ✓**
+
+Thank you, **{ receipt.received.name }** — a confirmation is on its way to { receipt.received.email }. Shipping: { receipt.received.shipping }.
+
+::: receipt-stamp
+Logged by the server at { receipt.at }
+:::
+:::
+:else
+::: checkout-hint
+Fill in your details and place the order to see the server's reply appear right here.
+:::
+:endif
+
+:if receipt_error
+::: card .receipt-error
+Something went wrong: { receipt_error }
+:::
+:endif
+
+:::
+
+:::
+
+::: persist-note
+::: dot
+✷
+:::
+This basket is the **same `:store`** declared on the catalog — one name, one shared storage. Remove a line here and it's gone on the shelf too, in every open tab, even after a reload.
+:::
+
+<details class="source-reveal">
+<summary>View source — it's Markdown</summary>
+
+```wd
+:store cart = []
+:computed count = cart.length
+
+@loop cart into item
+::: card .line
+{ item.emoji } **{ item.name }** — ${ item.price }
+:button "Remove" -> cart remove item
+:::
+@empty
+Your basket is empty.
+@endloop
+
+:button "Clear basket" -> cart clear
+
+:form action="/__wd/echo" into receipt
+:input name placeholder="Full name" required
+:input email type=email placeholder="you@studio.com" required
+:select shipping
+- Standard — 3-5 days
+- Express — overnight
+- Local pickup
+:submit "Place order"
+:endform
+
+:if receipt
+Thank you, { receipt.received.name }!
+:endif
+```
+
+</details>
+
+::: folio-foot
+Keep browsing —
+[← Back to the shop](/folio/)
+:::
+
+:::
+
+</main>
+
+@include /footer.wd
