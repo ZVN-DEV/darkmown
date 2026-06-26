@@ -132,5 +132,5 @@ jobs:
       - name: Tokenize .wd and .skin through the VS Code engine
         working-directory: editors/vscode
         run: |
-          npm install
+          npm ci
           npm test

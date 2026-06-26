@@ -93,7 +93,24 @@ test(":computed rejects a call to a non-state name", () => {
   compileThrows([
     ":state a = 1",
     ":computed x = alert(a)"
-  ], /unknown state "alert"/);
+  ], /Function calls are not allowed/);
+});
+
+test(":computed rejects a method call on real state (x.valueOf())", () => {
+  compileThrows([
+    ":state x = 1",
+    ":computed y = x.valueOf()"
+  ], /Function calls are not allowed/);
+});
+
+test(":computed still allows grouping parens around arithmetic", () => {
+  const page = compile([
+    ":state a = 2",
+    ":state b = 3",
+    ":computed grouped = (a + b) * 2"
+  ]);
+  assert.match(page.html, /data-wd-computed-expr="\(S\(&quot;a&quot;\) \+ S\(&quot;b&quot;\)\) \* 2"/);
+  assert.match(page.html, /"grouped":10/);
 });
 
 test(":computed rejects assignment", () => {

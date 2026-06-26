@@ -142,3 +142,28 @@ test("A1: a plain string literal :computed evaluates to that string", () => {
   const expr = extractComputedExpr(html);
   assert.equal(evalExpr(expr), "sale");
 });
+
+test("A2: a method call on state (x.valueOf()) is REJECTED, never compiled to S(...)()", () => {
+  // Before the function-call guard, `x.valueOf()` compiled to `S("x","valueOf")()`
+  // — a live invocation reaching `new Function`. It is inert under the JSON-state
+  // model (S returns data, not functions), but SECURITY.md guarantees function
+  // calls are compile errors. Assert the rejection so the artifact can never carry
+  // a trailing `()`.
+  assert.throws(
+    () => compileWd([
+      ":state x = 1",
+      ":computed pwned = x.valueOf()"
+    ].join("\n")),
+    /Function calls are not allowed in :computed/
+  );
+});
+
+test("A2: a bare call x() is REJECTED", () => {
+  assert.throws(
+    () => compileWd([
+      ":state x = 1",
+      ":computed pwned = x()"
+    ].join("\n")),
+    /Function calls are not allowed in :computed/
+  );
+});

@@ -1173,6 +1173,16 @@ function compileComputedExpr(raw, ctx) {
   if (/(^|[^=!<>])=(?!=)/.test(expr)) {
     throw new Error(`Assignment is not allowed in :computed expressions ("${raw}" in ${ctx.file})`);
   }
+  // Reject function-call syntax: a `(` that directly follows an identifier, a
+  // string literal, or a closing `)` (e.g. `x()`, `x.valueOf()`, `(a)(b)`). Only
+  // grouping parens — where `(` follows an operator or starts the expression —
+  // survive. Without this, `x.valueOf()` compiled to `S("x","valueOf")()`, a live
+  // call; it is inert under the trusted-author/JSON-state model but contradicts the
+  // SECURITY.md guarantee that function calls are compile errors. Runs BEFORE the
+  // identifier→S() mapping so it never trips on the emitted helper calls.
+  if (/[\w$)]\s*\(/.test(expr)) {
+    throw new Error(`Function calls are not allowed in :computed expressions ("${raw}" in ${ctx.file})`);
+  }
   expr = expr.replace(/[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/g, (ref) => {
     if (/^__WDSTR\d+__$/.test(ref)) return ref;
     if (["true", "false", "null"].includes(ref)) return ref;
