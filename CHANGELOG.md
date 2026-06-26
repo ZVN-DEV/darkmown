@@ -2,6 +2,18 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 0.20.0 — 2026-06-26
+
+Engineering hardening: a real programmatic API, plus a gold-standard pass on tooling, tests, and internals. No behavior change for existing sites — the runtime is byte-for-byte the same (~5.8 KB gzipped).
+
+- **Programmatic API.** `@zvndev/darkmown` now ships a proper entry point: `import { buildSite, compilePage, compileDocument, parseFrontmatter, escapeHtml, … } from "@zvndev/darkmown"` resolves through an `exports` map and a `src/index.js` barrel that mirrors the public surface already declared in `types/index.d.ts`. The package was CLI-only before; the `darkmown` CLI is unchanged.
+- **Compiler internals split.** The ~2,900-line `src/compiler.js` is now a `src/compiler/` folder along its existing seams (page shell, frontmatter, includes, interpolation, predicates, markdown plugin, loops, directives, body). Public exports and output are identical — `src/compiler.js` stays as a thin re-export barrel. Purely internal.
+- **Sharper compile errors.** Malformed-directive errors now report `file:line` (matching the unclosed-block errors that already did), and action-literal failures name the offending page. Easier to trace a mistake back to its source.
+- **Lint + format with Biome.** Added Biome (one binary, lint + format) with `npm run lint` / `npm run format:check`, a `lint` CI job, and a husky + lint-staged pre-commit that checks staged files. `src/runtime.js` is excluded from the formatter so the byte budget is never moved by a reformat. Style commands are documented in CONTRIBUTING.md.
+- **100% line coverage, CI-gated.** The test suite now covers every line of `src/`, and the coverage gate is raised from 90% to 100%. Covering the CLI and dev-server paths surfaced and fixed two real bugs: symlinked-bin entry-point detection and a dev-server response that wrote headers before reading the file.
+- **Runtime size trend.** A committed `.size-snapshot.json` baseline lets CI report the gzipped-runtime delta on every change, alongside the existing hard < 6 KB gate.
+- **Fixed a production-breaking `vercel.json`.** An invalid `comment` property was rejected by Vercel's strict schema and failed every deploy before install; removed, with a regression test that rejects any non-allowlisted key in a `headers[]` rule.
+
 ## 0.19.0 — 2026-06-25
 
 Post-review sprint: deeper reactive loops, hardened deploys, and OS-aware theming.
