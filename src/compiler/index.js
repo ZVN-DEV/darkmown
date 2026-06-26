@@ -16,7 +16,7 @@
 // so every existing `import … from "./compiler.js"` keeps working unchanged.
 // ---------------------------------------------------------------------------
 
-export { compilePage, enhanceImages, compileDocument } from "./page.js";
 export { parseFrontmatter } from "./frontmatter.js";
-export { loopKeyOf } from "./loops.js";
 export { escapeHtml } from "./interpolation.js";
+export { loopKeyOf } from "./loops.js";
+export { compileDocument, compilePage, enhanceImages } from "./page.js";

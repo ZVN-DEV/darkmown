@@ -1,9 +1,9 @@
-import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { compilePage } from "../../src/compiler.js";
+import { expect, test } from "@playwright/test";
 import { stripRuntimeComments } from "../../src/builder.js";
+import { compilePage } from "../../src/compiler.js";
 import { createPaths } from "../../src/config.js";
 
 // ---------------------------------------------------------------------------
@@ -53,17 +53,23 @@ test.describe("fetch lifecycle", () => {
     // Hold the response open briefly so the loading branch is observable.
     await page.route("**/team.json", async (route) => {
       await new Promise((r) => setTimeout(r, 300));
-      await route.fulfill({ contentType: "application/json", body: JSON.stringify([{ id: 1, name: "Ada" }]) });
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([{ id: 1, name: "Ada" }])
+      });
     });
-    await mount(page, [
-      ':fetch team from "/team.json"',
-      ":if team_loading",
-      "Loading…",
-      ":endif",
-      "@loop team into m",
-      "- { m.name }",
-      "@endloop"
-    ].join("\n"));
+    await mount(
+      page,
+      [
+        ':fetch team from "/team.json"',
+        ":if team_loading",
+        "Loading…",
+        ":endif",
+        "@loop team into m",
+        "- { m.name }",
+        "@endloop"
+      ].join("\n")
+    );
 
     await expect(page.getByText("Loading…")).toBeVisible();
     await expect(page.getByText("Ada")).toBeVisible();
@@ -72,25 +78,30 @@ test.describe("fetch lifecycle", () => {
 
   test("non-2xx surfaces name_error", async ({ page }) => {
     await page.route("**/team.json", (route) => route.fulfill({ status: 500, body: "boom" }));
-    await mount(page, [
-      ':fetch team from "/team.json"',
-      ":if team_error",
-      "Failed: { team_error }",
-      ":endif"
-    ].join("\n"));
+    await mount(
+      page,
+      [':fetch team from "/team.json"', ":if team_error", "Failed: { team_error }", ":endif"].join(
+        "\n"
+      )
+    );
 
     await expect(page.getByText(/Failed: .*HTTP 500/)).toBeVisible();
   });
 
   test("timeout aborts into name_error", async ({ page }) => {
     // Route never resolves; the AbortController timeout must fire.
-    await page.route("**/slow.json", async () => { /* hang forever */ });
-    await mount(page, [
-      ':fetch slow from "/slow.json" timeout=400',
-      ":if slow_error",
-      "Timed out: { slow_error }",
-      ":endif"
-    ].join("\n"));
+    await page.route("**/slow.json", async () => {
+      /* hang forever */
+    });
+    await mount(
+      page,
+      [
+        ':fetch slow from "/slow.json" timeout=400',
+        ":if slow_error",
+        "Timed out: { slow_error }",
+        ":endif"
+      ].join("\n")
+    );
 
     await expect(page.getByText(/Timed out:/)).toBeVisible();
   });
@@ -99,12 +110,10 @@ test.describe("fetch lifecycle", () => {
     await page.route("**/team.json", (route) =>
       route.fulfill({ contentType: "application/json", body: "[]" })
     );
-    await mount(page, [
-      ':fetch team from "/team.json"',
-      ":if team_empty",
-      "Nobody here yet.",
-      ":endif"
-    ].join("\n"));
+    await mount(
+      page,
+      [':fetch team from "/team.json"', ":if team_empty", "Nobody here yet.", ":endif"].join("\n")
+    );
 
     await expect(page.getByText("Nobody here yet.")).toBeVisible();
   });
@@ -112,16 +121,22 @@ test.describe("fetch lifecycle", () => {
   test("dynamic URL auto-refetches when a :bind field changes", async ({ page }) => {
     await page.route("**/u/*", (route) => {
       const id = route.request().url().split("/").pop();
-      route.fulfill({ contentType: "application/json", body: JSON.stringify({ id, name: `User ${id}` }) });
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ id, name: `User ${id}` })
+      });
     });
-    await mount(page, [
-      ':state userId = 1',
-      ':fetch user from "/u/{ userId }"',
-      ":bind userId",
-      ":if user",
-      "Loaded { user.name }",
-      ":endif"
-    ].join("\n"));
+    await mount(
+      page,
+      [
+        ":state userId = 1",
+        ':fetch user from "/u/{ userId }"',
+        ":bind userId",
+        ":if user",
+        "Loaded { user.name }",
+        ":endif"
+      ].join("\n")
+    );
 
     await expect(page.getByText("Loaded User 1")).toBeVisible();
     await page.locator('[data-wd-bind-input="userId"]').fill("7");
@@ -134,11 +149,10 @@ test.describe("fetch lifecycle", () => {
       hits++;
       route.fulfill({ contentType: "application/json", body: JSON.stringify({ name: "set" }) });
     });
-    await mount(page, [
-      ':state userId = ""',
-      ':fetch user from "/u/{ userId }"',
-      ":bind userId"
-    ].join("\n"));
+    await mount(
+      page,
+      [':state userId = ""', ':fetch user from "/u/{ userId }"', ":bind userId"].join("\n")
+    );
 
     // No request should have fired with an empty dep.
     await page.waitForTimeout(300);
@@ -154,13 +168,16 @@ test.describe("fetch lifecycle", () => {
       n++;
       route.fulfill({ contentType: "application/json", body: JSON.stringify({ n }) });
     });
-    await mount(page, [
-      ':fetch counter from "/count.json"',
-      ":if counter",
-      "Count is { counter.n }",
-      ":endif",
-      ':button "Reload" -> counter refetch'
-    ].join("\n"));
+    await mount(
+      page,
+      [
+        ':fetch counter from "/count.json"',
+        ":if counter",
+        "Count is { counter.n }",
+        ":endif",
+        ':button "Reload" -> counter refetch'
+      ].join("\n")
+    );
 
     await expect(page.getByText("Count is 1")).toBeVisible();
     await page.getByRole("button", { name: "Reload" }).click();
@@ -171,15 +188,23 @@ test.describe("fetch lifecycle", () => {
     await page.route("**/payload.json", (route) =>
       route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({ items: [{ id: 1, name: "Alpha" }, { id: 2, name: "Beta" }] })
+        body: JSON.stringify({
+          items: [
+            { id: 1, name: "Alpha" },
+            { id: 2, name: "Beta" }
+          ]
+        })
       })
     );
-    await mount(page, [
-      ':fetch payload from "/payload.json"',
-      "@loop payload.items into row",
-      "- { row.name }",
-      "@endloop"
-    ].join("\n"));
+    await mount(
+      page,
+      [
+        ':fetch payload from "/payload.json"',
+        "@loop payload.items into row",
+        "- { row.name }",
+        "@endloop"
+      ].join("\n")
+    );
 
     await expect(page.getByText("Alpha")).toBeVisible();
     await expect(page.getByText("Beta")).toBeVisible();

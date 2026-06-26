@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 // Drives /data/: declarative :fetch into a loop, a :form that writes state,
 // the computed cart total, and the error fallback when a server form posts
@@ -24,21 +24,15 @@ test.describe("/data/ — fetch, forms, computed", () => {
 
   test(":form into state updates the page", async ({ page }) => {
     // Before submit, the conditional sentence is in its else branch.
-    await expect(
-      page.getByText("Submit the form and this sentence reacts.")
-    ).toBeVisible();
+    await expect(page.getByText("Submit the form and this sentence reacts.")).toBeVisible();
 
     await page.getByPlaceholder("Your name").fill("Ada");
     await page.getByPlaceholder("Your quest").fill("the moat");
     await page.getByRole("button", { name: "Save profile" }).click();
 
     // State now exists → the reactive sentence renders with the values.
-    await expect(
-      page.getByText("Hello Ada — good luck with the moat.")
-    ).toBeVisible();
-    await expect(
-      page.getByText("Submit the form and this sentence reacts.")
-    ).toBeHidden();
+    await expect(page.getByText("Hello Ada — good luck with the moat.")).toBeVisible();
+    await expect(page.getByText("Submit the form and this sentence reacts.")).toBeHidden();
   });
 
   test(":checkbox captures multiple values as an array; :radio captures one", async ({ page }) => {
@@ -74,23 +68,17 @@ test.describe("/data/ — fetch, forms, computed", () => {
     await expect(cartLine).toContainText("holds 0 item(s) worth $0");
   });
 
-  test("the four-state fetch demo renders its error and empty branches", async ({
-    page,
-  }) => {
+  test("the four-state fetch demo renders its error and empty branches", async ({ page }) => {
     // `broken` fetches a missing URL → 404 → the :else if error branch renders.
     await expect(page.getByText(/The request failed on purpose/)).toBeVisible();
     // `roster` fetches empty.json ([]) → the loop's @empty branch renders.
-    await expect(
-      page.getByText("The roster came back empty")
-    ).toBeVisible();
+    await expect(page.getByText("The roster came back empty")).toBeVisible();
     // The authenticated fetch (headers=session) hits a static file that ignores
     // the header, so the data branch renders the row count.
     await expect(page.getByText(/Authenticated fetch returned 5 row/)).toBeVisible();
   });
 
-  test("server form surfaces the error fallback when the endpoint 404s", async ({
-    page,
-  }) => {
+  test("server form surfaces the error fallback when the endpoint 404s", async ({ page }) => {
     // Under the static `serve`, /__wd/echo doesn't exist, so the fetch fails
     // and the :if reply_error branch must render.
     await page.getByPlaceholder("Say something to the server").fill("hi");

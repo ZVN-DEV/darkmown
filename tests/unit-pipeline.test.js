@@ -39,12 +39,9 @@ function compileThrows(lines, re, extra) {
 // --- Static vs reactive gating (the core invariant) -------------------------
 
 test("a page with only prose + a static loop stays runtime:false", () => {
-  const page = compile([
-    "# Title",
-    "@loop /rows.json into r",
-    "- { r.name }",
-    "@endloop"
-  ], { "site/_/rows.json": JSON.stringify([{ name: "x" }]) });
+  const page = compile(["# Title", "@loop /rows.json into r", "- { r.name }", "@endloop"], {
+    "site/_/rows.json": JSON.stringify([{ name: "x" }])
+  });
   assert.equal(page.assets.runtime, false);
   assert.doesNotMatch(page.html, /data-wd/);
 });
@@ -63,7 +60,10 @@ test(":input emits type, attributes, and boolean flags", () => {
     ':submit "Go"',
     ":endform"
   ]);
-  assert.match(page.html, /<input type="email" name="email" placeholder="you@x.com" required autofocus aria-label="you@x.com">/);
+  assert.match(
+    page.html,
+    /<input type="email" name="email" placeholder="you@x.com" required autofocus aria-label="you@x.com">/
+  );
 });
 
 test(":input emits escaped accessibility attributes", () => {
@@ -88,19 +88,17 @@ test(":bind emits escaped accessibility attributes", () => {
 });
 
 test(":input rejects an unknown attribute", () => {
-  compileThrows([
-    ":form into f",
-    ':input email onfocus="evil()"',
-    ":endform"
-  ], /Unknown :input attribute "onfocus"/);
+  compileThrows(
+    [":form into f", ':input email onfocus="evil()"', ":endform"],
+    /Unknown :input attribute "onfocus"/
+  );
 });
 
 test(":input rejects an unknown boolean flag", () => {
-  compileThrows([
-    ":form into f",
-    ":input email sketchy",
-    ":endform"
-  ], /Unknown :input flag "sketchy"/);
+  compileThrows(
+    [":form into f", ":input email sketchy", ":endform"],
+    /Unknown :input flag "sketchy"/
+  );
 });
 
 // --- :fetch error paths -----------------------------------------------------
@@ -119,7 +117,10 @@ test(":fetch when=visible carries the attribute through", () => {
 test(":form with neither into nor action is rejected with all three forms shown", () => {
   // `:form method="post"` matches the directive but supplies neither a target
   // (into) nor a destination (action) → the corrective error lists all 3 forms.
-  compileThrows([':form method="post"', ":endform"], /Use ':form into name'[\s\S]*action[\s\S]*both/);
+  compileThrows(
+    [':form method="post"', ":endform"],
+    /Use ':form into name'[\s\S]*action[\s\S]*both/
+  );
 });
 
 test(":form with leftover unknown tokens is rejected", () => {
@@ -139,17 +140,15 @@ test(":form action-only stays native (no runtime, no data-wd-form)", () => {
 });
 
 test(":form action rejects unsafe URL schemes", () => {
-  compileThrows([
-    ':form action="javascript:alert(1)"',
-    ':submit "Go"',
-    ":endform"
-  ], /Unsafe :form action URL[\s\S]*javascript/);
+  compileThrows(
+    [':form action="javascript:alert(1)"', ':submit "Go"', ":endform"],
+    /Unsafe :form action URL[\s\S]*javascript/
+  );
 
-  compileThrows([
-    ':form action="//evil.example/collect" into reply',
-    ':submit "Go"',
-    ":endform"
-  ], /Protocol-relative URLs are not allowed/);
+  compileThrows(
+    [':form action="//evil.example/collect" into reply', ':submit "Go"', ":endform"],
+    /Protocol-relative URLs are not allowed/
+  );
 });
 
 // --- :state error paths -----------------------------------------------------
@@ -159,12 +158,10 @@ test(":state declared twice in the same scope throws", () => {
 });
 
 test(":state inside a reactive @loop body is rejected", () => {
-  compileThrows([
-    ":state items = [1, 2]",
-    "@loop items into item",
-    ":state inner = 0",
-    "@endloop"
-  ], /cannot be declared inside a reactive @loop/);
+  compileThrows(
+    [":state items = [1, 2]", "@loop items into item", ":state inner = 0", "@endloop"],
+    /cannot be declared inside a reactive @loop/
+  );
 });
 
 test(":state malformed (no value) throws", () => {
@@ -198,38 +195,40 @@ test("@include traversal outside the shelf/pages roots is rejected", () => {
 // --- @loop error paths ------------------------------------------------------
 
 test("@loop over an in-scope non-array value is rejected clearly", () => {
-  compileThrows([
-    "---",
-    "name: solo",
-    "---",
-    "<main>",
-    "@loop meta.name into x",
-    "- { x }",
-    "@endloop",
-    "</main>"
-  ], /found an in-scope value, but it is not a list/);
+  compileThrows(
+    [
+      "---",
+      "name: solo",
+      "---",
+      "<main>",
+      "@loop meta.name into x",
+      "- { x }",
+      "@endloop",
+      "</main>"
+    ],
+    /found an in-scope value, but it is not a list/
+  );
 });
 
 test("@loop over a JSON file that is not an array is rejected", () => {
-  compileThrows([
-    "@loop /obj.json into x",
-    "- { x }",
-    "@endloop"
-  ], /must be a JSON array/, { "site/_/obj.json": JSON.stringify({ not: "array" }) });
+  compileThrows(["@loop /obj.json into x", "- { x }", "@endloop"], /must be a JSON array/, {
+    "site/_/obj.json": JSON.stringify({ not: "array" })
+  });
 });
 
 test("malformed @loop (missing 'into') throws with a Use: hint", () => {
-  compileThrows([
-    "@loop /rows.json",
-    "- x",
-    "@endloop"
-  ], /Malformed @loop[\s\S]*Use: @loop/, { "site/_/rows.json": "[]" });
+  compileThrows(["@loop /rows.json", "- x", "@endloop"], /Malformed @loop[\s\S]*Use: @loop/, {
+    "site/_/rows.json": "[]"
+  });
 });
 
 // --- Retired syntax & strays ------------------------------------------------
 
 test("retired @repeat throws with the @loop replacement", () => {
-  compileThrows("@repeat /card.wd from /cards.json", /@repeat was replaced by @loop[\s\S]*Use: @loop/);
+  compileThrows(
+    "@repeat /card.wd from /cards.json",
+    /@repeat was replaced by @loop[\s\S]*Use: @loop/
+  );
 });
 
 test("retired :for throws with the @loop replacement", () => {
@@ -246,26 +245,14 @@ test("a stray :endloop / :endif / :else / :endform throws with no-matching-opene
 // --- :if reactive vs static -------------------------------------------------
 
 test(":if over :state emits both branch templates and the active initial branch", () => {
-  const page = compile([
-    ":state open = true",
-    ":if open",
-    "Visible",
-    ":else",
-    "Hidden",
-    ":endif"
-  ]);
+  const page = compile([":state open = true", ":if open", "Visible", ":else", "Hidden", ":endif"]);
   assert.match(page.html, /data-wd-if="open" data-wd-if-active="true"/);
   assert.match(page.html, /<div data-wd-if-out><p>Visible<\/p><\/div>/);
   assert.match(page.html, /<template data-wd-false><p>Hidden<\/p><\/template>/);
 });
 
 test(":if with a comparison compiles to a predicate-driven region", () => {
-  const page = compile([
-    ":state n = 0",
-    ":if n > 5",
-    "Big",
-    ":endif"
-  ]);
+  const page = compile([":state n = 0", ":if n > 5", "Big", ":endif"]);
   assert.equal(page.assets.runtime, true);
   assert.match(page.html, /data-wd-if-expr=/);
   // n=0 so the truthy branch is not the initial active one.
@@ -273,31 +260,18 @@ test(":if with a comparison compiles to a predicate-driven region", () => {
 });
 
 test(":if over an unknown name in a comparison still throws", () => {
-  compileThrows([
-    ":state n = 0",
-    ":if ghost > 5",
-    "x",
-    ":endif"
-  ], /unknown name "ghost"/);
+  compileThrows([":state n = 0", ":if ghost > 5", "x", ":endif"], /unknown name "ghost"/);
 });
 
 // --- Containers & demo directives -------------------------------------------
 
 test("a named container becomes a div with the name as a class plus extra classes", () => {
-  const page = compile([
-    "::: hero .center #top",
-    "Welcome",
-    ":::"
-  ]);
+  const page = compile(["::: hero .center #top", "Welcome", ":::"]);
   assert.match(page.html, /<div id="top" class="hero center">/);
 });
 
 test("an unexpected container token is rejected", () => {
-  compileThrows([
-    "::: section !bad",
-    "x",
-    ":::"
-  ], /Unexpected token "!bad"/);
+  compileThrows(["::: section !bad", "x", ":::"], /Unexpected token "!bad"/);
 });
 
 test(":try, :note, and :sprint demo directives render their markup", () => {
@@ -324,16 +298,16 @@ test(":try escapes safe hrefs and allows whitelisted schemes", () => {
 });
 
 test(":try rejects dangerous href schemes", () => {
-  compileThrows(':try "Bad" href="javascript:alert(1)"', /Unsafe :try href[\s\S]*Use a relative URL/);
+  compileThrows(
+    ':try "Bad" href="javascript:alert(1)"',
+    /Unsafe :try href[\s\S]*Use a relative URL/
+  );
 });
 
 // --- safeScriptJson escaping (via state script tag) -------------------------
 
 test("state JSON containing < is escaped to \\u003c so it can't break out of the script tag", () => {
-  const page = compile([
-    ':state payload = "</script><img>"',
-    "{ payload }"
-  ]);
+  const page = compile([':state payload = "</script><img>"', "{ payload }"]);
   // The literal "</script>" must not appear inside the JSON state block.
   const stateBlock = page.html.match(/data-wd-state>([^<]*?)<\/script>/);
   assert.ok(stateBlock, "state script block present");
@@ -343,24 +317,13 @@ test("state JSON containing < is escaped to \\u003c so it can't break out of the
 // --- html:false opt-out on .wd ----------------------------------------------
 
 test("frontmatter html:false escapes raw HTML in a .wd prose body", () => {
-  const page = compile([
-    "---",
-    "html: false",
-    "---",
-    '<div class="raw">hi</div>'
-  ]);
+  const page = compile(["---", "html: false", "---", '<div class="raw">hi</div>']);
   assert.doesNotMatch(page.html, /<div class="raw">hi<\/div>/);
   assert.match(page.html, /&lt;div/);
 });
 
 test("page title and description from frontmatter populate head meta tags", () => {
-  const page = compile([
-    "---",
-    "title: My Page",
-    "description: A great page",
-    "---",
-    "# Body"
-  ]);
+  const page = compile(["---", "title: My Page", "description: A great page", "---", "# Body"]);
   assert.match(page.html, /<title>My Page<\/title>/);
   assert.match(page.html, /<meta name="description" content="A great page">/);
   assert.match(page.html, /<meta property="og:title" content="My Page">/);
@@ -369,12 +332,7 @@ test("page title and description from frontmatter populate head meta tags", () =
 // --- code fences keep directives literal across the parser ------------------
 
 test("a fenced block keeps directive-looking lines as literal code", () => {
-  const page = compile([
-    "```",
-    ":state x = 0",
-    "@loop a into b",
-    "```"
-  ]);
+  const page = compile(["```", ":state x = 0", "@loop a into b", "```"]);
   assert.match(page.html, /<code>/);
   assert.match(page.html, /:state x = 0/);
   assert.equal(page.assets.runtime, false);

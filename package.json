@@ -32,7 +32,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "size:check": "node scripts/size-check.mjs",
-    "prepare": "husky",
+    "prepare": "husky || true",
     "prepublish:check": "npm run typecheck && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
     "prepublishOnly": "npm run prepublish:check",
     "og": "node scripts/og-image.mjs"

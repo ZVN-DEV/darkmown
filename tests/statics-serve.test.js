@@ -144,7 +144,11 @@ function request(distRoot, url) {
           res.on("data", (chunk) => chunks.push(chunk));
           res.on("end", () => {
             server.close();
-            resolve({ statusCode: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString() });
+            resolve({
+              statusCode: res.statusCode,
+              headers: res.headers,
+              body: Buffer.concat(chunks).toString()
+            });
           });
         })
         .on("error", (error) => {

@@ -13,7 +13,11 @@ import { createPaths } from "../src/config.js";
 test("an unclosed @loop reports the opener's line as file:line", () => {
   const root = fixture();
   // No frontmatter, so body line indices are 1:1 with the file. @loop is line 3.
-  write(root, "site/pages/bad.wd", ["Intro copy.", "", "@loop items into item", "- { item.x }"].join("\n"));
+  write(
+    root,
+    "site/pages/bad.wd",
+    ["Intro copy.", "", "@loop items into item", "- { item.x }"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
     /Missing @endloop.*bad\.wd:3/
@@ -68,11 +72,11 @@ test("a malformed directive error includes file:line for several directives", ()
 
 test("an unsupported action literal names the file", () => {
   const root = fixture();
-  write(root, "site/pages/bad.wd", [
-    ":state n = 0",
-    "",
-    ':button "Go" -> n = {not json}'
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/bad.wd",
+    [":state n = 0", "", ':button "Go" -> n = {not json}'].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
     /Unsupported action literal.*bad\.wd/
@@ -97,7 +101,11 @@ test("a mistyped directive warns (lowercase, capitalized, and hyphenated forms)"
 
 test("a real directive and ordinary prose do NOT warn", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [":state count = 0", "", "Count: { count }", "", "Reach me at hello@example.com."].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [":state count = 0", "", "Count: { count }", "", "Reach me at hello@example.com."].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.warnings.filter((w) => /looks like a directive/.test(w)).length, 0);
 });
@@ -108,15 +116,19 @@ test("a real directive and ordinary prose do NOT warn", () => {
 
 test("deleting a row of a nested (item-relative) loop fails loud with a corrective hint", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state teams = [{"id": 1, "name": "A", "members": [{"id": 11, "name": "x"}]}]',
-    "",
-    "@loop teams into team",
-    "@loop team.members into member",
-    ':button "Remove" -> members remove member',
-    "@endloop",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state teams = [{"id": 1, "name": "A", "members": [{"id": 11, "name": "x"}]}]',
+      "",
+      "@loop teams into team",
+      "@loop team.members into member",
+      ':button "Remove" -> members remove member',
+      "@endloop",
+      "@endloop"
+    ].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /nested \(item-relative\) loop/

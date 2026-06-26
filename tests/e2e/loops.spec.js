@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 // Drives the real runtime loop pipeline on /loops/: sort asc/desc, limit/offset,
 // reverse, per-row meta vars ($index/$first/$last), the @empty branch, and a
@@ -45,7 +45,7 @@ test.describe("/loops/ — loop ergonomics in a real browser", () => {
 
   test("offset + limit slice the rendered window", async ({ page }) => {
     // The paginated region renders exactly `pageSize` rows to start.
-    const paged = page.locator('[data-wd-loop-limit] [data-wd-loop-key]');
+    const paged = page.locator("[data-wd-loop-limit] [data-wd-loop-key]");
     await expect(paged).toHaveCount(2);
   });
 
@@ -78,7 +78,7 @@ test.describe("/loops/ — loop ergonomics in a real browser", () => {
   });
 
   test("reactive limit grows the list via a pageSize button", async ({ page }) => {
-    const paged = page.locator('[data-wd-loop-limit] [data-wd-loop-key]');
+    const paged = page.locator("[data-wd-loop-limit] [data-wd-loop-key]");
     await expect(paged).toHaveCount(2);
     await page.getByRole("button", { name: "Show more" }).click();
     // Bumping :state pageSize re-slices the loop reactively (no reload).

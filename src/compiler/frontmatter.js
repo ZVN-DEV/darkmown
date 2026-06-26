@@ -22,7 +22,9 @@ export function parseFrontmatter(raw, file) {
   const end = raw.indexOf("\n---", 3);
   if (end === -1) {
     const where = file ? ` in ${file}` : "";
-    throw new Error(`Unterminated frontmatter${where}: opening "---" has no closing "---". Use: --- on its own line to open and another --- to close, then the page body.`);
+    throw new Error(
+      `Unterminated frontmatter${where}: opening "---" has no closing "---". Use: --- on its own line to open and another --- to close, then the page body.`
+    );
   }
   const front = raw.slice(4, end).trim();
   const body = raw.slice(end + 4).replace(/^\n/, "");

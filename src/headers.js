@@ -65,10 +65,9 @@ export const REACTIVE_CSP = [
  * keep `'unsafe-inline'` on script/style.
  * @type {string}
  */
-export const STATIC_CSP = [
-  "script-src 'self' 'unsafe-inline'",
-  ...COMMON_CSP_DIRECTIVES
-].join("; ");
+export const STATIC_CSP = ["script-src 'self' 'unsafe-inline'", ...COMMON_CSP_DIRECTIVES].join(
+  "; "
+);
 
 /**
  * Baseline security headers applied to every HTML response, independent of the

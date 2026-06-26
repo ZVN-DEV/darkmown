@@ -10,13 +10,13 @@
       "src/**",
       "tests/**",
       "scripts/**",
-      "!dist/**",
-      "!node_modules/**",
-      "!site/**",
-      "!types/**",
-      "!editors/**",
-      "!.vercel/**",
-      "!.omx/**",
+      "!dist",
+      "!node_modules",
+      "!site",
+      "!types",
+      "!editors",
+      "!.vercel",
+      "!.omx",
       "!**/*.png"
     ]
   },
@@ -36,7 +36,26 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "style": {
+        "useTemplate": "off"
+      },
+      "complexity": {
+        "useOptionalChain": "off"
+      },
+      "suspicious": {
+        "noAssignInExpressions": "off"
+      }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["src/runtime.js"],
+      "formatter": { "enabled": false }
+    },
+    {
+      "includes": ["tests/**"],
+      "linter": { "rules": { "suspicious": { "noTemplateCurlyInString": "off" } } }
+    }
+  ]
 }

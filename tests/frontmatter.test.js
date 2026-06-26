@@ -31,7 +31,9 @@ test("a scalar field beside an array field both parse correctly", () => {
 });
 
 test("scalars without a leading bracket keep their existing behavior", () => {
-  const { meta } = parseFrontmatter('---\ntitle: "Quoted Title"\ncount: 3\nresource: bq://t\n---\n');
+  const { meta } = parseFrontmatter(
+    '---\ntitle: "Quoted Title"\ncount: 3\nresource: bq://t\n---\n'
+  );
   assert.equal(meta.title, "Quoted Title");
   assert.equal(meta.count, "3"); // still a string — no numeric coercion
   assert.equal(meta.resource, "bq://t"); // a bracket-free scalar is untouched
@@ -48,7 +50,20 @@ test("an unbalanced bracket stays a scalar string", () => {
 
 test("{ meta.field } interpolates a frontmatter scalar in the body", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", ["---", "subtitle: From frontmatter", "---", "<main>", "", "Note: { meta.subtitle }", "", "</main>"].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      "---",
+      "subtitle: From frontmatter",
+      "---",
+      "<main>",
+      "",
+      "Note: { meta.subtitle }",
+      "",
+      "</main>"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /Note: From frontmatter/);
   assert.equal(page.assets.runtime, false);
@@ -56,7 +71,20 @@ test("{ meta.field } interpolates a frontmatter scalar in the body", () => {
 
 test("{ meta.tags } renders an array joined with ', '", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", ["---", "tags: [sales, revenue, ops]", "---", "<main>", "", "Tags: { meta.tags }", "", "</main>"].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      "---",
+      "tags: [sales, revenue, ops]",
+      "---",
+      "<main>",
+      "",
+      "Tags: { meta.tags }",
+      "",
+      "</main>"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /Tags: sales, revenue, ops/);
   assert.equal(page.assets.runtime, false);
@@ -64,18 +92,22 @@ test("{ meta.tags } renders an array joined with ', '", () => {
 
 test("@loop over a frontmatter array unrolls at build time and stays static", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    "---",
-    "tags: [alpha, beta]",
-    "---",
-    "<main>",
-    "",
-    "@loop meta.tags into tag",
-    "- { tag }",
-    "@endloop",
-    "",
-    "</main>"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      "---",
+      "tags: [alpha, beta]",
+      "---",
+      "<main>",
+      "",
+      "@loop meta.tags into tag",
+      "- { tag }",
+      "@endloop",
+      "",
+      "</main>"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /<li>alpha<\/li>/);
   assert.match(page.html, /<li>beta<\/li>/);

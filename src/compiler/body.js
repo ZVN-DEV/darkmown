@@ -59,7 +59,8 @@ export function compileBody(lines, ctx) {
     const fenceMatch = line.match(/^(```+|~~~+)/);
     if (fence) {
       prose.push(line);
-      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
       continue;
     }
     if (fenceMatch) {
@@ -84,7 +85,8 @@ export function compileBody(lines, ctx) {
     const container = line.match(/^:::\s*(.*)$/);
     if (container) {
       flush();
-      if (!container[1].trim()) throw new Error(`Stray ::: close with no open container in ${ctx.file}`);
+      if (!container[1].trim())
+        throw new Error(`Stray ::: close with no open container in ${ctx.file}`);
       const block = scanContainer(lines, i, ctx.file);
       out.push(handleContainer(container[1].trim(), block.body, ctx, i));
       i = block.end;
@@ -136,7 +138,10 @@ export function compileBody(lines, ctx) {
       flush();
       const opts = [];
       let j = i + 1;
-      while (j < lines.length && /^\s*-\s+/.test(lines[j])) { opts.push(lines[j]); j++; }
+      while (j < lines.length && /^\s*-\s+/.test(lines[j])) {
+        opts.push(lines[j]);
+        j++;
+      }
       out.push(handleSelect(line, opts, ctx, i));
       i = j - 1;
       continue;
@@ -146,8 +151,13 @@ export function compileBody(lines, ctx) {
       flush();
       const opts = [];
       let j = i + 1;
-      while (j < lines.length && /^\s*-\s+/.test(lines[j])) { opts.push(lines[j]); j++; }
-      out.push(handleChoiceGroup(line, opts, ctx, /** @type {"checkbox" | "radio"} */ (choiceMatch[1]), i));
+      while (j < lines.length && /^\s*-\s+/.test(lines[j])) {
+        opts.push(lines[j]);
+        j++;
+      }
+      out.push(
+        handleChoiceGroup(line, opts, ctx, /** @type {"checkbox" | "radio"} */ (choiceMatch[1]), i)
+      );
       i = j - 1;
       continue;
     }
@@ -180,10 +190,14 @@ export function compileBody(lines, ctx) {
       continue;
     }
     if (/^@repeat\b/.test(line)) {
-      throw new Error(`@repeat was replaced by @loop in ${ctx.file}. Use: @loop /data.json into item ... @endloop`);
+      throw new Error(
+        `@repeat was replaced by @loop in ${ctx.file}. Use: @loop /data.json into item ... @endloop`
+      );
     }
     if (/^:for\b/.test(line)) {
-      throw new Error(`:for was replaced by @loop in ${ctx.file}. Use: @loop items into item ... @endloop`);
+      throw new Error(
+        `:for was replaced by @loop in ${ctx.file}. Use: @loop items into item ... @endloop`
+      );
     }
     if (/^(@endloop|:endif|:endfor|:endform|:else)\s*$/.test(line)) {
       throw new Error(`Stray "${line.trim()}" with no matching opener in ${ctx.file}`);
@@ -240,7 +254,8 @@ function scanBlock(lines, start, openRe, endToken, file) {
     const line = lines[i];
     const fenceMatch = line.match(/^(```+|~~~+)/);
     if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
       body.push(line);
       continue;
     }
@@ -277,14 +292,23 @@ function splitEmptyBranch(body) {
   for (const line of body) {
     const fenceMatch = line.match(/^(```+|~~~+)/);
     if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
       target.push(line);
       continue;
     }
-    if (fenceMatch) { fence = fenceMatch[1]; target.push(line); continue; }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      target.push(line);
+      continue;
+    }
     if (/^@loop\s/.test(line)) depth++;
     if (line.trim() === "@endloop") depth--;
-    if (depth === 0 && line.trim() === "@empty") { empty = []; target = empty; continue; }
+    if (depth === 0 && line.trim() === "@empty") {
+      empty = [];
+      target = empty;
+      continue;
+    }
     target.push(line);
   }
   return { body: rows, empty };
@@ -306,7 +330,8 @@ function scanContainer(lines, start, file) {
     const line = lines[i];
     const fenceMatch = line.match(/^(```+|~~~+)/);
     if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
       body.push(line);
       continue;
     }
@@ -360,7 +385,8 @@ function scanConditional(lines, start, file) {
     const line = lines[i];
     const fenceMatch = line.match(/^(```+|~~~+)/);
     if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
       current.push(line);
       continue;
     }
@@ -381,14 +407,20 @@ function scanConditional(lines, start, file) {
       const t = line.trim();
       const elseIf = t.match(/^:else if\s+(.+?)\s*$/);
       if (elseIf) {
-        if (mode === "else") throw new Error(`":else if" after ":else" in ${file}. ":else" must be the last branch — order the "else if" conditions before the bare ":else".`);
+        if (mode === "else")
+          throw new Error(
+            `":else if" after ":else" in ${file}. ":else" must be the last branch — order the "else if" conditions before the bare ":else".`
+          );
         falsy.push(`:if ${elseIf[1]}`); // desugar the chain tail into a nested :if
         current = falsy;
         mode = "elseif";
         continue;
       }
       if (t === ":else") {
-        if (mode === "else") throw new Error(`Duplicate ":else" in ${file}. A conditional may have only one bare ":else".`);
+        if (mode === "else")
+          throw new Error(
+            `Duplicate ":else" in ${file}. A conditional may have only one bare ":else".`
+          );
         current = falsy;
         mode = "else";
         continue;

@@ -25,7 +25,10 @@ import { stripQuotes } from "./interpolation.js";
 export function collectColocatedAssets(file, context, assets) {
   const ext = path.extname(file);
   const stem = file.slice(0, -ext.length);
-  for (const [assetExt, folder] of [[".skin", "styles"], [".js", "scripts"]]) {
+  for (const [assetExt, folder] of [
+    [".skin", "styles"],
+    [".js", "scripts"]
+  ]) {
     const candidate = `${stem}${assetExt}`;
     if (!fs.existsSync(candidate)) continue;
     const rel = path.relative(context.cwd, candidate).replaceAll(path.sep, "/");
@@ -92,14 +95,17 @@ export function scanMarkdownHints(body, file, comp) {
   for (const line of body.split("\n")) {
     const fenceMatch = line.match(/^(```+|~~~+)/);
     if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
       continue;
     }
     if (fenceMatch) {
       fence = fenceMatch[1];
       continue;
     }
-    const hit = line.match(/^(@include|@loop|@repeat|:state|:button|:if|:for|:try|:note|:sprint|:::)(\s|$)/);
+    const hit = line.match(
+      /^(@include|@loop|@repeat|:state|:button|:if|:for|:try|:note|:sprint|:::)(\s|$)/
+    );
     if (hit) {
       comp.warnings.push(
         `${file}: "${hit[1]}" is .wd syntax and stays plain text in .md — rename the file to .wd to activate it.`

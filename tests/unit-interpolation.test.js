@@ -34,12 +34,13 @@ test("a loop item shadows a same-named :state (loop item wins)", () => {
   // { item } must resolve to the per-row each-binding, not the state bind.
   const root = fixture();
   write(root, "site/_/rows.json", JSON.stringify([{ id: 1, label: "row" }]));
-  write(root, "site/pages/index.wd", [
-    ':state item = "STATE"',
-    "@loop /rows.json into item",
-    "- { item.label }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [':state item = "STATE"', "@loop /rows.json into item", "- { item.label }", "@endloop"].join(
+      "\n"
+    )
+  );
   // /rows.json is a static source so the loop unrolls; { item.label } resolves
   // to the row's value ("row"), never the :state string. The state declaration
   // still emits its JSON block, but { item.label } never reads it.
@@ -51,10 +52,11 @@ test("a loop item shadows a same-named :state (loop item wins)", () => {
 
 test("static include-arg scope wins over a declared :state of the same name", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state title = "FROM_STATE"',
-    '@include /card.wd with title="FROM_ARG"'
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [':state title = "FROM_STATE"', '@include /card.wd with title="FROM_ARG"'].join("\n")
+  );
   write(root, "site/_/card.wd", "Title is { title }");
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   // Inside the include, the static arg shadows the outer :state: the rendered
@@ -64,10 +66,7 @@ test("static include-arg scope wins over a declared :state of the same name", ()
 });
 
 test("declared :state wins over a literal fallback", () => {
-  const page = compile([
-    ":state count = 7",
-    "Total: { count }"
-  ]);
+  const page = compile([":state count = 7", "Total: { count }"]);
   assert.match(page.html, /Total: <span data-wd-bind="count">7<\/span>/);
 });
 
@@ -79,16 +78,13 @@ test("an unresolved name falls through to literal text and stays static", () => 
 
 test("static scope arrays render joined with ', ' while state arrays bind reactively", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    "---",
-    "tags: [a, b, c]",
-    "---",
-    "<main>",
-    "",
-    "Static: { meta.tags }",
-    "",
-    "</main>"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["---", "tags: [a, b, c]", "---", "<main>", "", "Static: { meta.tags }", "", "</main>"].join(
+      "\n"
+    )
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /Static: a, b, c/);
   assert.equal(page.assets.runtime, false);
@@ -112,10 +108,7 @@ test("escapeHtml coerces non-string input to string", () => {
 });
 
 test("interpolated state values are HTML-escaped in the bound span", () => {
-  const page = compile([
-    ':state note = "<b>tag</b> & more"',
-    "Note: { note }"
-  ]);
+  const page = compile([':state note = "<b>tag</b> & more"', "Note: { note }"]);
   // The raw markup never survives unescaped inside the span.
   assert.doesNotMatch(page.html, /<span data-wd-bind="note"><b>/);
   assert.match(page.html, /<span data-wd-bind="note">&lt;b&gt;tag&lt;\/b&gt; &amp; more<\/span>/);

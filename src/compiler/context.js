@@ -119,7 +119,13 @@ export const pageIncludeExtensions = [".md", ".wd"];
 // Reserved per-row meta variables, mapped to their runtime marker token. Shared
 // by the body parser, the `:if` handler, and prose interpolation.
 /** @type {Record<string, string>} */
-export const LOOP_META = { $index: "index", $number: "number", $first: "first", $last: "last", $count: "count" };
+export const LOOP_META = {
+  $index: "index",
+  $number: "number",
+  $first: "first",
+  $last: "last",
+  $count: "count"
+};
 
 /** @returns {Compilation} */
 export function createCompilation() {

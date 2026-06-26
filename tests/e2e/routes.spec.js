@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 const routes = [
   { path: "/", runtime: true },
@@ -6,7 +6,7 @@ const routes = [
   { path: "/markdown/", runtime: false },
   { path: "/reactive/", runtime: true },
   { path: "/data/", runtime: true },
-  { path: "/app/", runtime: true },
+  { path: "/app/", runtime: true }
 ];
 
 test.describe("demo routes — launch smoke", () => {

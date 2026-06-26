@@ -7,11 +7,11 @@
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
+import { compileBody } from "./body.js";
 import { createScope } from "./context.js";
 import { resolveInclude } from "./includes.js";
 import { escapeHtml, getPath, lookupPath, resolveStateKey, stripQuotes } from "./interpolation.js";
 import { compilePredicate, evalPredicate } from "./predicates.js";
-import { compileBody } from "./body.js";
 
 /**
  * @typedef {import("./context.js").Ctx} Ctx
@@ -44,21 +44,37 @@ function parseLoopClauses(tail, itemName, ctx) {
   /** @type {NumArg|null} */ let limit = null;
   let refsState = false;
   /** @returns {never} */
-  const bad = () => { throw new Error(`Malformed @loop clause in ${ctx.file}: "${tail.trim()}". ${LOOP_USAGE}`); };
+  const bad = () => {
+    throw new Error(`Malformed @loop clause in ${ctx.file}: "${tail.trim()}". ${LOOP_USAGE}`);
+  };
 
   let m = s.match(/(^|\s)limit\s+(\d+|[A-Za-z_$][\w$]*)$/);
-  if (m) { limit = parseNumArg(m[2], ctx); refsState = refsState || limit.kind === "key"; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+  if (m) {
+    limit = parseNumArg(m[2], ctx);
+    refsState = refsState || limit.kind === "key";
+    s = s.slice(0, s.length - m[0].length + m[1].length).trim();
+  }
 
   m = s.match(/(^|\s)offset\s+(\d+|[A-Za-z_$][\w$]*)$/);
-  if (m) { offset = parseNumArg(m[2], ctx); refsState = refsState || offset.kind === "key"; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+  if (m) {
+    offset = parseNumArg(m[2], ctx);
+    refsState = refsState || offset.kind === "key";
+    s = s.slice(0, s.length - m[0].length + m[1].length).trim();
+  }
 
   m = s.match(/(^|\s)reverse$/);
-  if (m) { reverse = true; s = s.slice(0, s.length - m[0].length + m[1].length).trim(); }
+  if (m) {
+    reverse = true;
+    s = s.slice(0, s.length - m[0].length + m[1].length).trim();
+  }
 
   m = s.match(/(^|\s)sort\s+by\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\s+(asc|desc))?$/);
   if (m) {
     const segs = m[2].split(".");
-    if (segs[0] !== itemName) throw new Error(`@loop sort key "${m[2]}" must start with the loop item "${itemName}" in ${ctx.file}. ${LOOP_USAGE}`);
+    if (segs[0] !== itemName)
+      throw new Error(
+        `@loop sort key "${m[2]}" must start with the loop item "${itemName}" in ${ctx.file}. ${LOOP_USAGE}`
+      );
     const rest = segs.slice(1);
     if (rest.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
       throw new Error(`Sort key "${m[2]}" is not allowed in @loop (${ctx.file})`);
@@ -88,7 +104,10 @@ function parseNumArg(tok, ctx) {
   if (/^\d+$/.test(tok)) return { kind: "literal", value: Number(tok) };
   if (/^[A-Za-z_$][\w$]*$/.test(tok)) {
     const key = resolveStateKey(tok, ctx);
-    if (!key) throw new Error(`@loop offset/limit "${tok}" in ${ctx.file} is neither a non-negative integer nor a declared :state. ${LOOP_USAGE}`);
+    if (!key)
+      throw new Error(
+        `@loop offset/limit "${tok}" in ${ctx.file} is neither a non-negative integer nor a declared :state. ${LOOP_USAGE}`
+      );
     return { kind: "key", value: key };
   }
   throw new Error(`@loop offset/limit "${tok}" in ${ctx.file} is invalid. ${LOOP_USAGE}`);
@@ -111,12 +130,27 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
   if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. ${LOOP_USAGE}`);
   const source = stripQuotes(match[1].trim());
   const itemName = match[2];
-  const clauses = match[3] ? parseLoopClauses(match[3], itemName, ctx) : { where: null, sort: null, reverse: false, offset: null, limit: null, refsState: false };
+  const clauses = match[3]
+    ? parseLoopClauses(match[3], itemName, ctx)
+    : { where: null, sort: null, reverse: false, offset: null, limit: null, refsState: false };
   const where = clauses.where ? compilePredicate(clauses.where, itemName, ctx) : null;
   /** @type {LoopOpts} */
-  const opts = { where, sort: clauses.sort, reverse: clauses.reverse, offset: clauses.offset, limit: clauses.limit, empty: emptyLines, clauseRefsState: clauses.refsState };
+  const opts = {
+    where,
+    sort: clauses.sort,
+    reverse: clauses.reverse,
+    offset: clauses.offset,
+    limit: clauses.limit,
+    empty: emptyLines,
+    clauseRefsState: clauses.refsState
+  };
 
-  if (source.startsWith("/") || source.startsWith("./") || source.startsWith("../") || source.endsWith(".json")) {
+  if (
+    source.startsWith("/") ||
+    source.startsWith("./") ||
+    source.startsWith("../") ||
+    source.endsWith(".json")
+  ) {
     const dataFile = resolveInclude(source, ctx.file, ctx.context, true);
     const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
@@ -126,7 +160,9 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
   const resolved = lookupPath(source, ctx);
   if (resolved.found) {
     if (!Array.isArray(resolved.value)) {
-      throw new Error(`@loop ${source} in ${ctx.file} found an in-scope value, but it is not a list`);
+      throw new Error(
+        `@loop ${source} in ${ctx.file} found an in-scope value, but it is not a list`
+      );
     }
     return loopOverData(resolved.value, itemName, bodyLines, ctx, opts);
   }
@@ -172,12 +208,18 @@ function pipelineRows(rows, where, opts, ctx) {
   if (opts.sort) {
     const k = opts.sort.key;
     const dir = opts.sort.dir === "desc" ? -1 : 1;
-    list = list.map((value, index) => ({ value, index })).sort((a, b) => {
-      const av = getPath(a.value, k ? k.split(".") : []);
-      const bv = getPath(b.value, k ? k.split(".") : []);
-      let c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
-      return (c || a.index - b.index) * dir;
-    }).map((w) => w.value);
+    list = list
+      .map((value, index) => ({ value, index }))
+      .sort((a, b) => {
+        const av = getPath(a.value, k ? k.split(".") : []);
+        const bv = getPath(b.value, k ? k.split(".") : []);
+        const c =
+          typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
+        return (c || a.index - b.index) * dir;
+      })
+      .map((w) => w.value);
   }
   if (opts.reverse) list.reverse();
   const off = opts.offset && opts.offset.kind === "literal" ? opts.offset.value : 0;
@@ -198,7 +240,13 @@ function loopOverData(rows, itemName, bodyLines, ctx, opts) {
   // Reactive when the where reads state OR an offset/limit references a state key.
   const reactive = (opts.where && opts.where.refsState) || opts.clauseRefsState;
   if (reactive) return reactiveLoop(null, itemName, bodyLines, ctx, { ...opts, data: rows });
-  return staticUnroll(pipelineRows(rows, opts.where, opts, ctx), itemName, bodyLines, ctx, opts.empty);
+  return staticUnroll(
+    pipelineRows(rows, opts.where, opts, ctx),
+    itemName,
+    bodyLines,
+    ctx,
+    opts.empty
+  );
 }
 
 /**
@@ -214,8 +262,18 @@ function staticUnroll(rows, itemName, bodyLines, ctx, empty = null) {
   const out = [];
   const count = rows.length;
   for (let i = 0; i < count; i++) {
-    const meta = { $index: i, $number: i + 1, $first: i === 0, $last: i === count - 1, $count: count };
-    const rowCtx = { ...ctx, loopMeta: true, scope: createScope(ctx.scope, { [itemName]: rows[i], ...meta }) };
+    const meta = {
+      $index: i,
+      $number: i + 1,
+      $first: i === 0,
+      $last: i === count - 1,
+      $count: count
+    };
+    const rowCtx = {
+      ...ctx,
+      loopMeta: true,
+      scope: createScope(ctx.scope, { [itemName]: rows[i], ...meta })
+    };
     out.push(compileBody(bodyLines, rowCtx));
   }
   return out.join("\n");
@@ -235,7 +293,13 @@ function staticUnroll(rows, itemName, bodyLines, ctx, empty = null) {
 function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   ctx.comp.assets.runtime = true;
   /** @type {Ctx} */
-  const templateCtx = { ...ctx, loopItem: itemName, loopKey: key ?? undefined, loopMeta: true, scope: createScope(ctx.scope) };
+  const templateCtx = {
+    ...ctx,
+    loopItem: itemName,
+    loopKey: key ?? undefined,
+    loopMeta: true,
+    scope: createScope(ctx.scope)
+  };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
 
   const { wrapperTag, itemTemplate } = wrapRowTemplate(templateHtml);
@@ -246,17 +310,35 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   const offset = opts?.offset || null;
   const limit = opts?.limit || null;
   const emptyLines = opts?.empty || null;
-  const baked = opts?.data || null;       // rows for a static source filtered by state
+  const baked = opts?.data || null; // rows for a static source filtered by state
   // Resolve the (possibly dotted) source for the initial paint.
   const segs = key ? key.split(".") : [];
   const stateRows = key ? getPath(ctx.comp.state.get(segs[0]), segs.slice(1)) : null;
   /** @type {unknown[]} */
-  const allRows = key ? (Array.isArray(stateRows) ? stateRows : []) : (baked || []);
+  const allRows = key ? (Array.isArray(stateRows) ? stateRows : []) : baked || [];
   // Initial paint runs the same pipeline the runtime will, reading state-key
   // offset/limit from their current declared values.
   /** @param {NumArg|null} a */
-  const num = (a) => a ? (a.kind === "literal" ? a.value : Number(ctx.comp.state.get(a.value) ?? 0)) : null;
-  const rows = pipelineRows(allRows, where, { where, sort, reverse, offset: offset && offset.kind === "key" ? { kind: "literal", value: num(offset) || 0 } : offset, limit: limit && limit.kind === "key" ? { kind: "literal", value: num(limit) ?? allRows.length } : limit, empty: null, clauseRefsState: false }, ctx);
+  const num = (a) =>
+    a ? (a.kind === "literal" ? a.value : Number(ctx.comp.state.get(a.value) ?? 0)) : null;
+  const rows = pipelineRows(
+    allRows,
+    where,
+    {
+      where,
+      sort,
+      reverse,
+      offset:
+        offset && offset.kind === "key" ? { kind: "literal", value: num(offset) || 0 } : offset,
+      limit:
+        limit && limit.kind === "key"
+          ? { kind: "literal", value: num(limit) ?? allRows.length }
+          : limit,
+      empty: null,
+      clauseRefsState: false
+    },
+    ctx
+  );
   /** @type {Map<string, number>} */
   const counts = new Map();
   const count = rows.length;
@@ -273,9 +355,13 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
     .join("");
 
   const emptyTemplate = loopEmptyTemplate(emptyLines, ctx);
-  const initialOut = count === 0 && emptyLines ? compileBody(emptyLines, { ...ctx, loopMeta: true }).trim() : initial;
+  const initialOut =
+    count === 0 && emptyLines
+      ? compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()
+      : initial;
 
-  const attrs = loopClauseAttrs({ where, sort, reverse, offset, limit }) +
+  const attrs =
+    loopClauseAttrs({ where, sort, reverse, offset, limit }) +
     (baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "");
   return `<div data-wd-loop="${escapeHtml(key || "")}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out>${initialOut}</${wrapperTag}></div>`;
 }
@@ -304,7 +390,9 @@ function wrapRowTemplate(templateHtml) {
  * @returns {string}
  */
 function loopEmptyTemplate(emptyLines, ctx) {
-  return emptyLines ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>` : "";
+  return emptyLines
+    ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>`
+    : "";
 }
 
 /**
@@ -317,7 +405,9 @@ function loopEmptyTemplate(emptyLines, ctx) {
 function loopClauseAttrs(c) {
   return (
     (c.where ? ` data-wd-loop-where="${escapeHtml(c.where.body)}"` : "") +
-    (c.sort ? ` data-wd-loop-sort="${escapeHtml(c.sort.key)}" data-wd-loop-sort-dir="${c.sort.dir}"` : "") +
+    (c.sort
+      ? ` data-wd-loop-sort="${escapeHtml(c.sort.key)}" data-wd-loop-sort-dir="${c.sort.dir}"`
+      : "") +
     (c.reverse ? ` data-wd-loop-reverse` : "") +
     (c.offset ? ` data-wd-loop-offset="${numArgAttr(c.offset)}"` : "") +
     (c.limit ? ` data-wd-loop-limit="${numArgAttr(c.limit)}"` : "")
@@ -343,13 +433,25 @@ function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
   // loopKey: undefined — an item-relative loop's source is a path off the outer
   // row, not a top-level state key, so a per-row `remove` inside it has no valid
   // target and must be rejected (rather than inheriting the outer loop's key).
-  const templateCtx = { ...ctx, loopItem: itemName, loopKey: undefined, loopMeta: true, scope: createScope(ctx.scope) };
+  const templateCtx = {
+    ...ctx,
+    loopItem: itemName,
+    loopKey: undefined,
+    loopMeta: true,
+    scope: createScope(ctx.scope)
+  };
   const templateHtml = compileBody(bodyLines, templateCtx).trim();
 
   const { wrapperTag, itemTemplate } = wrapRowTemplate(templateHtml);
 
   const emptyTemplate = loopEmptyTemplate(opts.empty || null, ctx);
-  const attrs = loopClauseAttrs({ where: opts.where || null, sort: opts.sort || null, reverse: opts.reverse || false, offset: opts.offset || null, limit: opts.limit || null });
+  const attrs = loopClauseAttrs({
+    where: opts.where || null,
+    sort: opts.sort || null,
+    reverse: opts.reverse || false,
+    offset: opts.offset || null,
+    limit: opts.limit || null
+  });
   return `<div data-wd-loop-item="${escapeHtml(path)}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out></${wrapperTag}></div>`;
 }
 
@@ -383,6 +485,7 @@ function maskItemLoops(template) {
  * @returns {string}
  */
 function unmaskItemLoops(str, regions) {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: \x00 is the internal nested-loop sentinel (paired with the mask above); it cannot appear in user content.
   return regions.length ? str.replace(/\x00WDLI(\d+)\x00/g, (_, n) => regions[Number(n)]) : str;
 }
 
@@ -392,7 +495,10 @@ function unmaskItemLoops(str, regions) {
  * @returns {string}
  */
 function withLoopKey(template, itemKey) {
-  return template.replace(/^<([a-zA-Z][a-zA-Z0-9-]*)/, `<$1 data-wd-loop-key="${escapeHtml(itemKey)}"`);
+  return template.replace(
+    /^<([a-zA-Z][a-zA-Z0-9-]*)/,
+    `<$1 data-wd-loop-key="${escapeHtml(itemKey)}"`
+  );
 }
 
 /**
@@ -430,7 +536,7 @@ function fillEachMeta(str, meta) {
  * @returns {string}
  */
 function fillEachIfRegions(str, item, meta = {}) {
-  const marker = '<span data-wd-each-if ';
+  const marker = "<span data-wd-each-if ";
   let result = "";
   let i = 0;
   for (;;) {
@@ -460,7 +566,9 @@ function fillOneEachIf(region, item, meta) {
   const close = "</template>".length;
   const truthy = region.slice(trueStart + open, trueEnd - close);
   const falsy = region.slice(falseStart + "<template data-wd-if-false>".length, falseEnd - close);
-  const test = metaMatch ? Boolean(meta[metaMatch[1]]) : Boolean(getPath(item, path ? path.split(".") : []));
+  const test = metaMatch
+    ? Boolean(meta[metaMatch[1]])
+    : Boolean(getPath(item, path ? path.split(".") : []));
   const branch = test ? truthy : falsy;
   const head = region.slice(0, falseEnd);
   return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item, meta)}</span></span>`;
@@ -494,7 +602,10 @@ function matchElement(str, start, tag) {
   let depth = 0;
   let i = start;
   while (i < str.length) {
-    if (str.startsWith(openPrefix, i) && (str[i + openPrefix.length] === " " || str[i + openPrefix.length] === ">")) {
+    if (
+      str.startsWith(openPrefix, i) &&
+      (str[i + openPrefix.length] === " " || str[i + openPrefix.length] === ">")
+    ) {
       depth++;
       const gt = str.indexOf(">", i);
       i = gt === -1 ? str.length : gt + 1;
@@ -518,7 +629,11 @@ function matchElement(str, start, tag) {
 export function loopKeyOf(item, counts) {
   const base =
     item && typeof item === "object"
-      ? String(/** @type {Record<string, unknown>} */ (item).id ?? /** @type {Record<string, unknown>} */ (item).key ?? JSON.stringify(item))
+      ? String(
+          /** @type {Record<string, unknown>} */ (item).id ??
+            /** @type {Record<string, unknown>} */ (item).key ??
+            JSON.stringify(item)
+        )
       : String(item);
   const seen = counts.get(base) || 0;
   counts.set(base, seen + 1);

@@ -16,4 +16,11 @@
  * @typedef {import("./compiler/context.js").CompiledPage} CompiledPage
  */
 
-export { compilePage, enhanceImages, compileDocument, parseFrontmatter, loopKeyOf, escapeHtml } from "./compiler/index.js";
+export {
+  compileDocument,
+  compilePage,
+  enhanceImages,
+  escapeHtml,
+  loopKeyOf,
+  parseFrontmatter
+} from "./compiler/index.js";

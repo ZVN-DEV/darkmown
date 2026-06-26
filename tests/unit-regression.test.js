@@ -19,7 +19,7 @@ function compile(lines) {
 
 test("button action errors name the offending file (invariant: errors include file path)", () => {
   // Unsupported action shape.
-  const a = compile(['# Title', ':button "X" -> badAction()']);
+  const a = compile(["# Title", ':button "X" -> badAction()']);
   assert.throws(a.run, (err) => {
     assert.match(err.message, /Unsupported button action/);
     assert.match(err.message, /index\.wd/); // file path present
@@ -27,7 +27,7 @@ test("button action errors name the offending file (invariant: errors include fi
   });
 
   // `+=` with a non-number value against a non-list state target.
-  const b = compile([':state n = 0', '# Title', ':button "Y" -> n += "oops"']);
+  const b = compile([":state n = 0", "# Title", ':button "Y" -> n += "oops"']);
   assert.throws(b.run, (err) => {
     assert.match(err.message, /index\.wd/);
     assert.match(err.message, /list state target/);
@@ -37,7 +37,7 @@ test("button action errors name the offending file (invariant: errors include fi
 
 test("interpolating a bare object errors instead of emitting [object Object]", () => {
   // `meta` is the frontmatter object; interpolating it bare is a mistake.
-  const { run } = compile(['---', 'title: Hi', 'tags: [a, b]', '---', '- { meta }']);
+  const { run } = compile(["---", "title: Hi", "tags: [a, b]", "---", "- { meta }"]);
   assert.throws(run, (err) => {
     assert.doesNotMatch(err.message, /\[object Object\]/);
     assert.match(err.message, /Cannot interpolate the object value/);
@@ -48,14 +48,14 @@ test("interpolating a bare object errors instead of emitting [object Object]", (
 });
 
 test("interpolating an array frontmatter value joins with ', ' (not [object Object])", () => {
-  const { run } = compile(['---', 'tags: [sales, revenue]', '---', '# T', 'Tags: { meta.tags }']);
+  const { run } = compile(["---", "tags: [sales, revenue]", "---", "# T", "Tags: { meta.tags }"]);
   const { html } = run();
   assert.match(html, /Tags: sales, revenue/);
   assert.doesNotMatch(html, /\[object Object\]/);
 });
 
 test("a scalar frontmatter field still interpolates normally", () => {
-  const { run } = compile(['---', 'title: Hello', '---', '# { meta.title }']);
+  const { run } = compile(["---", "title: Hello", "---", "# { meta.title }"]);
   const { html } = run();
   assert.match(html, /Hello/);
 });

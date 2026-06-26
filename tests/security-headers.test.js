@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildSite, renderCloudflareHeaders } from "../src/builder.js";
-import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP, securityHeaders } from "../src/headers.js";
+import {
+  BASE_SECURITY_HEADERS,
+  REACTIVE_CSP,
+  STATIC_CSP,
+  securityHeaders
+} from "../src/headers.js";
 
 // ---------------------------------------------------------------------------
 // Header constants — the CSP the framework's own output actually satisfies.
@@ -53,7 +58,11 @@ test("renderCloudflareHeaders emits a catch-all with baseline headers + reactive
 test("renderCloudflareHeaders overrides static routes with the eval-free CSP and leaves reactive ones to the catch-all", () => {
   const manifest = [
     { route: "/", file: "site/pages/index.wd", assets: { skins: [], scripts: [], runtime: true } },
-    { route: "/docs/", file: "site/pages/docs/index.wd", assets: { skins: [], scripts: [], runtime: false } }
+    {
+      route: "/docs/",
+      file: "site/pages/docs/index.wd",
+      assets: { skins: [], scripts: [], runtime: false }
+    }
   ];
   const out = renderCloudflareHeaders(manifest);
 
@@ -73,11 +82,11 @@ test("renderCloudflareHeaders overrides static routes with the eval-free CSP and
 
 test("npm run build writes dist/_headers with the CSP for static and reactive routes", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ":state count = 0",
-    "Count: { count }",
-    ":button \"Increment\" -> count++"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [":state count = 0", "Count: { count }", ':button "Increment" -> count++'].join("\n")
+  );
   write(root, "site/pages/about.wd", "# About\n\nPlain static copy.");
 
   buildSite(root);
@@ -108,10 +117,12 @@ test("vercel.json static-CSP route list covers every runtime:false demo route", 
   const repoRoot = process.cwd();
   const vercel = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
   const staticRule = (vercel.headers || []).find((h) =>
-    (h.headers || []).some((x) => x.key === "Content-Security-Policy" && !x.value.includes("unsafe-eval"))
+    (h.headers || []).some(
+      (x) => x.key === "Content-Security-Policy" && !x.value.includes("unsafe-eval")
+    )
   );
   assert.ok(staticRule, "vercel.json must define a static (eval-free) CSP rule");
-  const alts = (staticRule.source.match(/\(([^)]+)\)/) || [, ""])[1].split("|").filter(Boolean);
+  const alts = (staticRule.source.match(/\(([^)]+)\)/) || ["", ""])[1].split("|").filter(Boolean);
 
   // Build the real demo (copied into a temp dir so we never clobber ./dist).
   const root = fixture();

@@ -45,7 +45,8 @@ const createPaths = (root) => ({
   skins: path.join(root, "site/skins")
 });
 
-const GROUPS = '[{"id":1,"name":"A","items":[{"id":11,"label":"x"},{"id":12,"label":"y"}]},{"id":2,"name":"B","items":[{"id":21,"label":"z"}]}]';
+const GROUPS =
+  '[{"id":1,"name":"A","items":[{"id":11,"label":"x"},{"id":12,"label":"y"}]},{"id":2,"name":"B","items":[{"id":21,"label":"z"}]}]';
 
 function compileNested(body) {
   const root = fixture();
@@ -56,15 +57,17 @@ function compileNested(body) {
 }
 
 test("compiler emits an item-relative region for a nested reactive loop", () => {
-  const page = compileNested([
-    `:state groups = ${GROUPS}`,
-    "@loop groups into g",
-    "**{ g.name }**",
-    "@loop g.items into it",
-    "- { it.label }",
-    "@endloop",
-    "@endloop"
-  ].join("\n"));
+  const page = compileNested(
+    [
+      `:state groups = ${GROUPS}`,
+      "@loop groups into g",
+      "**{ g.name }**",
+      "@loop g.items into it",
+      "- { it.label }",
+      "@endloop",
+      "@endloop"
+    ].join("\n")
+  );
 
   assert.equal(page.assets.runtime, true, "a reactive nested loop pulls in the runtime");
   // Outer region is a normal global loop keyed on `groups`.
@@ -72,22 +75,30 @@ test("compiler emits an item-relative region for a nested reactive loop", () => 
   // Inner region uses the distinct item-relative marker carrying the relative path.
   assert.match(page.html, /data-wd-loop-item="items"/);
   // The inner region keeps its own pristine row template (binds the inner item).
-  assert.match(page.html, /data-wd-loop-item="items"><template data-wd-loop-template><li><span data-wd-each data-wd-path="label"><\/span><\/li><\/template>/);
+  assert.match(
+    page.html,
+    /data-wd-loop-item="items"><template data-wd-loop-template><li><span data-wd-each data-wd-path="label"><\/span><\/li><\/template>/
+  );
   // Inner output starts empty (the runtime fills it on first render).
   assert.match(page.html, /<ul data-wd-loop-out><\/ul><\/div>/);
   // The inner `it.label` markers are NOT clobbered by the outer initial paint.
-  assert.ok(!/data-wd-path="label">x</.test(page.html), "inner template stays unfilled at build time");
+  assert.ok(
+    !/data-wd-path="label">x</.test(page.html),
+    "inner template stays unfilled at build time"
+  );
 });
 
 test("compiler keeps the inner region out of the global [data-wd-loop] pass", () => {
-  const page = compileNested([
-    `:state groups = ${GROUPS}`,
-    "@loop groups into g",
-    "@loop g.items into it",
-    "- { it.label }",
-    "@endloop",
-    "@endloop"
-  ].join("\n"));
+  const page = compileNested(
+    [
+      `:state groups = ${GROUPS}`,
+      "@loop groups into g",
+      "@loop g.items into it",
+      "- { it.label }",
+      "@endloop",
+      "@endloop"
+    ].join("\n")
+  );
   // Exactly one global data-wd-loop="..." region (the outer one); the inner one
   // is data-wd-loop-item, so the runtime's document-wide loop query skips it.
   const globalLoops = (page.html.match(/data-wd-loop="/g) || []).length;
@@ -96,27 +107,32 @@ test("compiler keeps the inner region out of the global [data-wd-loop] pass", ()
 });
 
 test("compiler carries the inner loop's where clause onto the item-relative region", () => {
-  const page = compileNested([
-    `:state groups = ${GROUPS}`,
-    "@loop groups into g",
-    "@loop g.items into it where it.label != \"y\"",
-    "- { it.label }",
-    "@endloop",
-    "@endloop"
-  ].join("\n"));
+  const page = compileNested(
+    [
+      `:state groups = ${GROUPS}`,
+      "@loop groups into g",
+      '@loop g.items into it where it.label != "y"',
+      "- { it.label }",
+      "@endloop",
+      "@endloop"
+    ].join("\n")
+  );
   assert.match(page.html, /data-wd-loop-item="items"[^>]*data-wd-loop-where=/);
 });
 
 test("compiler rejects a prototype-pollution segment in a nested loop source", () => {
   assert.throws(
-    () => compileNested([
-      `:state groups = ${GROUPS}`,
-      "@loop groups into g",
-      "@loop g.constructor into it",
-      "- { it.label }",
-      "@endloop",
-      "@endloop"
-    ].join("\n")),
+    () =>
+      compileNested(
+        [
+          `:state groups = ${GROUPS}`,
+          "@loop groups into g",
+          "@loop g.constructor into it",
+          "- { it.label }",
+          "@endloop",
+          "@endloop"
+        ].join("\n")
+      ),
     /not allowed/
   );
 });
@@ -124,11 +140,22 @@ test("compiler rejects a prototype-pollution segment in a nested loop source", (
 // --- Runtime DOM stub ------------------------------------------------------
 
 class ClassList {
-  constructor() { this._set = new Set(); }
-  add(c) { this._set.add(c); }
-  remove(c) { this._set.delete(c); }
-  contains(c) { return this._set.has(c); }
-  toggle(c, on) { on ? this.add(c) : this.remove(c); return on; }
+  constructor() {
+    this._set = new Set();
+  }
+  add(c) {
+    this._set.add(c);
+  }
+  remove(c) {
+    this._set.delete(c);
+  }
+  contains(c) {
+    return this._set.has(c);
+  }
+  toggle(c, on) {
+    on ? this.add(c) : this.remove(c);
+    return on;
+  }
 }
 
 class El {
@@ -141,10 +168,18 @@ class El {
     this.classList = new ClassList();
     if (this.tagName === "TEMPLATE") this.content = new Fragment();
   }
-  setAttribute(name, value) { this.attrs.set(name, String(value)); }
-  getAttribute(name) { return this.attrs.has(name) ? this.attrs.get(name) : null; }
-  hasAttribute(name) { return this.attrs.has(name); }
-  removeAttribute(name) { this.attrs.delete(name); }
+  setAttribute(name, value) {
+    this.attrs.set(name, String(value));
+  }
+  getAttribute(name) {
+    return this.attrs.has(name) ? this.attrs.get(name) : null;
+  }
+  hasAttribute(name) {
+    return this.attrs.has(name);
+  }
+  removeAttribute(name) {
+    this.attrs.delete(name);
+  }
   appendChild(node) {
     if (node.parent) node.parent.removeChild(node);
     node.parent = this;
@@ -157,7 +192,9 @@ class El {
     node.parent = null;
     return node;
   }
-  remove() { if (this.parent) this.parent.removeChild(this); }
+  remove() {
+    if (this.parent) this.parent.removeChild(this);
+  }
   cloneNode() {
     const copy = new El(this.tagName);
     for (const [k, v] of this.attrs) copy.attrs.set(k, v);
@@ -165,29 +202,49 @@ class El {
     for (const child of this.children) copy.appendChild(child.cloneNode(true));
     // Real DOM deep-clones <template> content too; the nested-loop path relies on
     // an inner row template surviving a clone of its enclosing outer row.
-    if (this.content) for (const child of this.content.children) copy.content.appendChild(child.cloneNode(true));
+    if (this.content)
+      for (const child of this.content.children) copy.content.appendChild(child.cloneNode(true));
     return copy;
   }
-  get firstElementChild() { return this.children[0] || null; }
-  get textContent() { return this._text; }
-  set textContent(v) { this._text = v == null ? "" : String(v); this.children = []; }
-  get innerHTML() { return ""; }
-  set innerHTML(v) { if (!v) this.children = []; }
-  matches(selector) { return matchSelector(this, selector); }
+  get firstElementChild() {
+    return this.children[0] || null;
+  }
+  get textContent() {
+    return this._text;
+  }
+  set textContent(v) {
+    this._text = v == null ? "" : String(v);
+    this.children = [];
+  }
+  get innerHTML() {
+    return "";
+  }
+  set innerHTML(v) {
+    if (!v) this.children = [];
+  }
+  matches(selector) {
+    return matchSelector(this, selector);
+  }
   closest(selector) {
     for (let n = this; n; n = n.parent) if (n.matches && matchSelector(n, selector)) return n;
     return null;
   }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
   querySelectorAll(selector) {
     const out = [];
-    walk(this, (node) => { if (node !== this && matchSelector(node, selector)) out.push(node); });
+    walk(this, (node) => {
+      if (node !== this && matchSelector(node, selector)) out.push(node);
+    });
     return out;
   }
 }
 
 class Fragment extends El {
-  constructor() { super("#fragment"); }
+  constructor() {
+    super("#fragment");
+  }
 }
 
 function walk(node, fn) {
@@ -218,7 +275,9 @@ function makeSandbox(rootBuilder) {
     activeElement: null,
     querySelectorAll: (sel) => root.querySelectorAll(sel),
     querySelector: (sel) => root.querySelector(sel),
-    addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); }
+    addEventListener: (type, fn) => {
+      (listeners[type] ||= []).push(fn);
+    }
   };
   const store = new Map();
   const localStorage = {
@@ -227,10 +286,24 @@ function makeSandbox(rootBuilder) {
     removeItem: (k) => store.delete(k)
   };
   const sandbox = {
-    document, localStorage, console, JSON, structuredClone,
-    Object, Array, Number, String, Map, Set, Boolean, Function, queueMicrotask
+    document,
+    localStorage,
+    console,
+    JSON,
+    structuredClone,
+    Object,
+    Array,
+    Number,
+    String,
+    Map,
+    Set,
+    Boolean,
+    Function,
+    queueMicrotask
   };
-  sandbox.addEventListener = (type, fn) => { (listeners[type] ||= []).push(fn); };
+  sandbox.addEventListener = (type, fn) => {
+    (listeners[type] ||= []).push(fn);
+  };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(runtimeSource, sandbox);
@@ -288,15 +361,24 @@ function nestedRegion(root, El, groups) {
 
 // Read the inner loop's rendered labels for the outer row at `index`.
 function innerLabels(outerRow) {
-  const innerOut = outerRow.querySelector("[data-wd-loop-item]").querySelector("[data-wd-loop-out]");
+  const innerOut = outerRow
+    .querySelector("[data-wd-loop-item]")
+    .querySelector("[data-wd-loop-out]");
   return innerOut.children.map((li) => li.textContent);
 }
 
 test("runtime renders inner reactive loop rows from the outer item", () => {
   let out;
-  const h = makeSandbox((root, El) => {
+  makeSandbox((root, El) => {
     ({ out } = nestedRegion(root, El, [
-      { id: 1, name: "A", items: [{ id: 11, label: "x" }, { id: 12, label: "y" }] },
+      {
+        id: 1,
+        name: "A",
+        items: [
+          { id: 11, label: "x" },
+          { id: 12, label: "y" }
+        ]
+      },
       { id: 2, name: "B", items: [{ id: 21, label: "z" }] }
     ]));
   });
@@ -304,24 +386,41 @@ test("runtime renders inner reactive loop rows from the outer item", () => {
   assert.equal(out.children.length, 2, "two outer rows");
   assert.equal(out.children[0].querySelector("[data-wd-each]").textContent, "A");
   assert.equal(out.children[1].querySelector("[data-wd-each]").textContent, "B");
-  assert.deepEqual(innerLabels(out.children[0]), ["x", "y"], "inner rows come from the first outer item");
-  assert.deepEqual(innerLabels(out.children[1]), ["z"], "inner rows come from the second outer item");
+  assert.deepEqual(
+    innerLabels(out.children[0]),
+    ["x", "y"],
+    "inner rows come from the first outer item"
+  );
+  assert.deepEqual(
+    innerLabels(out.children[1]),
+    ["z"],
+    "inner rows come from the second outer item"
+  );
 });
 
 test("runtime reconciles inner rows when inner state changes (and reuses outer rows)", () => {
   let out;
   const h = makeSandbox((root, El) => {
-    ({ out } = nestedRegion(root, El, [
-      { id: 1, name: "A", items: [{ id: 11, label: "x" }] }
-    ]));
+    ({ out } = nestedRegion(root, El, [{ id: 1, name: "A", items: [{ id: 11, label: "x" }] }]));
   });
   const outerRowBefore = out.children[0];
-  const innerOutBefore = outerRowBefore.querySelector("[data-wd-loop-item]").querySelector("[data-wd-loop-out]");
+  const innerOutBefore = outerRowBefore
+    .querySelector("[data-wd-loop-item]")
+    .querySelector("[data-wd-loop-out]");
   const firstLi = innerOutBefore.children[0];
   assert.deepEqual(innerLabels(out.children[0]), ["x"]);
 
   // Append an inner item to the existing group.
-  h.sandbox.wd.state.groups = [{ id: 1, name: "A", items: [{ id: 11, label: "x" }, { id: 13, label: "w" }] }];
+  h.sandbox.wd.state.groups = [
+    {
+      id: 1,
+      name: "A",
+      items: [
+        { id: 11, label: "x" },
+        { id: 13, label: "w" }
+      ]
+    }
+  ];
   h.sandbox.wd.render();
 
   assert.strictEqual(out.children[0], outerRowBefore, "outer row reused (keyed reconcile)");
@@ -341,14 +440,28 @@ test("runtime reconciles inner loops when outer rows are added or removed", () =
 
   // Drop the first group, add a third with two items.
   h.sandbox.wd.state.groups = [
-    { id: 2, name: "B", items: [{ id: 21, label: "z" }, { id: 22, label: "q" }] },
+    {
+      id: 2,
+      name: "B",
+      items: [
+        { id: 21, label: "z" },
+        { id: 22, label: "q" }
+      ]
+    },
     { id: 3, name: "C", items: [{ id: 31, label: "m" }] }
   ];
   h.sandbox.wd.render();
 
   assert.equal(out.children.length, 2, "outer count tracks the new list");
-  assert.deepEqual(out.children.map((r) => r.querySelector("[data-wd-each]").textContent), ["B", "C"]);
-  assert.deepEqual(innerLabels(out.children[0]), ["z", "q"], "reused B row's inner loop re-reconciled");
+  assert.deepEqual(
+    out.children.map((r) => r.querySelector("[data-wd-each]").textContent),
+    ["B", "C"]
+  );
+  assert.deepEqual(
+    innerLabels(out.children[0]),
+    ["z", "q"],
+    "reused B row's inner loop re-reconciled"
+  );
   assert.deepEqual(innerLabels(out.children[1]), ["m"], "new C row's inner loop rendered");
 });
 
@@ -358,10 +471,21 @@ test("runtime does not let the outer pass overwrite inner row text", () => {
   let out;
   const h = makeSandbox((root, El) => {
     ({ out } = nestedRegion(root, El, [
-      { id: 1, name: "A", items: [{ id: 11, label: "x" }, { id: 12, label: "y" }] }
+      {
+        id: 1,
+        name: "A",
+        items: [
+          { id: 11, label: "x" },
+          { id: 12, label: "y" }
+        ]
+      }
     ]));
   });
   // Force a second render so the outer pass runs with inner rows already live.
   h.sandbox.wd.render();
-  assert.deepEqual(innerLabels(out.children[0]), ["x", "y"], "inner labels survive the outer text pass");
+  assert.deepEqual(
+    innerLabels(out.children[0]),
+    ["x", "y"],
+    "inner labels survive the outer text pass"
+  );
 });

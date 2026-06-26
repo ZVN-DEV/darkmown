@@ -32,7 +32,9 @@ if (command === "help" || command === "--help" || command === "-h") {
 } else if (command === "build") {
   try {
     const result = buildSite();
-    console.log(`Built ${result.routes.length} routes into ${path.relative(process.cwd(), result.distRoot)}`);
+    console.log(
+      `Built ${result.routes.length} routes into ${path.relative(process.cwd(), result.distRoot)}`
+    );
   } catch (error) {
     // A compile error has a clear, file-pathed message — print just that, not a
     // Node stack trace, so a typo reads as "fix your page", not "the tool crashed".
@@ -65,20 +67,28 @@ if (command === "help" || command === "--help" || command === "-h") {
     clearTimeout(timer);
     timer = setTimeout(() => {
       const started = performance.now();
-      execFile(process.execPath, [cliPath, "build"], { cwd: process.cwd() }, (error, stdout, stderr) => {
-        if (error) {
-          const message = (stderr || stdout || String(error)).trim();
-          lastBuildError = message;
-          console.error(message);
-          broadcast(clients, `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`);
-          return;
+      execFile(
+        process.execPath,
+        [cliPath, "build"],
+        { cwd: process.cwd() },
+        (error, stdout, stderr) => {
+          if (error) {
+            const message = (stderr || stdout || String(error)).trim();
+            lastBuildError = message;
+            console.error(message);
+            broadcast(
+              clients,
+              `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`
+            );
+            return;
+          }
+          lastBuildError = undefined;
+          const elapsed = Math.round(performance.now() - started);
+          if (stderr.trim()) console.warn(stderr.trim());
+          broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
+          console.log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
         }
-        lastBuildError = undefined;
-        const elapsed = Math.round(performance.now() - started);
-        if (stderr.trim()) console.warn(stderr.trim());
-        broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
-        console.log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
-      });
+      );
     }, 30);
   };
 
@@ -102,7 +112,9 @@ if (command === "help" || command === "--help" || command === "-h") {
         // Replay a broken build to clients that connect while it's still failing,
         // so the overlay shows even after a startup or pre-connect compile error.
         if (lastBuildError) {
-          res.write(`event: builderror\ndata: ${JSON.stringify({ message: lastBuildError.slice(0, 4000) })}\n\n`);
+          res.write(
+            `event: builderror\ndata: ${JSON.stringify({ message: lastBuildError.slice(0, 4000) })}\n\n`
+          );
         }
         req.on("close", () => clients.delete(res));
         return;
@@ -117,11 +129,13 @@ if (command === "help" || command === "--help" || command === "-h") {
         req.on("data", (chunk) => (body += chunk));
         req.on("end", () => {
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({
-            ok: true,
-            received: Object.fromEntries(new URLSearchParams(body)),
-            at: new Date().toISOString()
-          }));
+          res.end(
+            JSON.stringify({
+              ok: true,
+              received: Object.fromEntries(new URLSearchParams(body)),
+              at: new Date().toISOString()
+            })
+          );
         });
         return;
       }
@@ -143,9 +157,11 @@ if (command === "help" || command === "--help" || command === "-h") {
     console.error("No dist directory found. Run `darkmown build` first.");
     process.exit(1);
   }
-  http.createServer((req, res) => serve(distRoot, req.url || "/", res)).listen(port, host, () => {
-    console.log(`Darkmown preview of dist at http://${host}:${port}`);
-  });
+  http
+    .createServer((req, res) => serve(distRoot, req.url || "/", res))
+    .listen(port, host, () => {
+      console.log(`Darkmown preview of dist at http://${host}:${port}`);
+    });
 } else {
   console.error(`Unknown command: ${command}`);
   printHelp();
@@ -212,7 +228,6 @@ Authoring:
   *.js                Colocated page behavior
 `);
 }
-
 
 /**
  * @param {string} relativeRoot

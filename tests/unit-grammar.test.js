@@ -58,20 +58,14 @@ test(":computed compiles arithmetic, comparisons, and boolean operators safely",
 });
 
 test(":computed allows string literals as a safe operand", () => {
-  const page = compile([
-    ':state name = "Kirby"',
-    ':computed greet = name == "Kirby"'
-  ]);
+  const page = compile([':state name = "Kirby"', ':computed greet = name == "Kirby"']);
   // The quoted literal is preserved and the identifier is mapped to S().
   assert.match(page.html, /data-wd-computed-expr="S\(&quot;name&quot;\) == &quot;Kirby&quot;"/);
   assert.match(page.html, /"greet":true/);
 });
 
 test(":computed resolves dotted state paths through S(key, rest)", () => {
-  const page = compile([
-    ':state cart = {"count": 4}',
-    ":computed double = cart.count * 2"
-  ]);
+  const page = compile([':state cart = {"count": 4}', ":computed double = cart.count * 2"]);
   assert.match(page.html, /data-wd-computed-expr="S\(&quot;cart&quot;,&quot;count&quot;\) \* 2"/);
   assert.match(page.html, /"double":8/);
 });
@@ -79,10 +73,7 @@ test(":computed resolves dotted state paths through S(key, rest)", () => {
 // --- :computed — DANGEROUS forms rejected ----------------------------------
 
 test(":computed rejects a backtick template literal", () => {
-  compileThrows([
-    ":state a = 1",
-    ":computed x = `${a}`"
-  ], /Unsupported string syntax/);
+  compileThrows([":state a = 1", ":computed x = `${a}`"], /Unsupported string syntax/);
 });
 
 test(":computed rejects a free identifier (process) not declared as state", () => {
@@ -90,52 +81,33 @@ test(":computed rejects a free identifier (process) not declared as state", () =
 });
 
 test(":computed rejects a call to a non-state name", () => {
-  compileThrows([
-    ":state a = 1",
-    ":computed x = alert(a)"
-  ], /Function calls are not allowed/);
+  compileThrows([":state a = 1", ":computed x = alert(a)"], /Function calls are not allowed/);
 });
 
 test(":computed rejects a method call on real state (x.valueOf())", () => {
-  compileThrows([
-    ":state x = 1",
-    ":computed y = x.valueOf()"
-  ], /Function calls are not allowed/);
+  compileThrows([":state x = 1", ":computed y = x.valueOf()"], /Function calls are not allowed/);
 });
 
 test(":computed still allows grouping parens around arithmetic", () => {
-  const page = compile([
-    ":state a = 2",
-    ":state b = 3",
-    ":computed grouped = (a + b) * 2"
-  ]);
-  assert.match(page.html, /data-wd-computed-expr="\(S\(&quot;a&quot;\) \+ S\(&quot;b&quot;\)\) \* 2"/);
+  const page = compile([":state a = 2", ":state b = 3", ":computed grouped = (a + b) * 2"]);
+  assert.match(
+    page.html,
+    /data-wd-computed-expr="\(S\(&quot;a&quot;\) \+ S\(&quot;b&quot;\)\) \* 2"/
+  );
   assert.match(page.html, /"grouped":10/);
 });
 
 test(":computed rejects assignment", () => {
-  compileThrows([
-    ":state a = 1",
-    ":computed x = a = 5"
-  ], /Assignment is not allowed/);
+  compileThrows([":state a = 1", ":computed x = a = 5"], /Assignment is not allowed/);
 });
 
 test(":computed rejects __proto__ / prototype / constructor path segments", () => {
-  compileThrows([
-    ":state a = 1",
-    ":computed x = a.__proto__"
-  ], /not allowed in :computed/);
-  compileThrows([
-    ":state a = 1",
-    ":computed x = a.prototype"
-  ], /not allowed in :computed/);
+  compileThrows([":state a = 1", ":computed x = a.__proto__"], /not allowed in :computed/);
+  compileThrows([":state a = 1", ":computed x = a.prototype"], /not allowed in :computed/);
 });
 
 test(":computed rejects stray punctuation / statement separators", () => {
-  compileThrows([
-    ":state a = 1",
-    ":computed x = a; return a"
-  ], /Unsupported syntax/);
+  compileThrows([":state a = 1", ":computed x = a; return a"], /Unsupported syntax/);
 });
 
 test(":computed with no '=' is a malformed-directive error with a Use: hint", () => {
@@ -147,12 +119,16 @@ test(":computed with no '=' is a malformed-directive error with a Use: hint", ()
 test("@loop where compiles every comparison operator to a safe I()/S() expression", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1, price: 5, name: "a" }]));
-  write(root, "site/pages/index.wd", [
-    ":state limit = 100",
-    "@loop /x.json into p where p.price >= 1 and p.price <= limit and p.id != 9 and p.price > 0 and p.price < 999",
-    "- { p.name }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ":state limit = 100",
+      "@loop /x.json into p where p.price >= 1 and p.price <= limit and p.id != 9 and p.price > 0 and p.price < 999",
+      "- { p.name }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   // references :state (limit) → reactive, predicate baked into the data attr.
   assert.equal(page.assets.runtime, true);
@@ -164,14 +140,21 @@ test("@loop where compiles every comparison operator to a safe I()/S() expressio
 test("@loop where 'contains' compiles to the C() helper", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1, name: "Mug" }]));
-  write(root, "site/pages/index.wd", [
-    ':state q = "m"',
-    "@loop /x.json into p where p.name contains q",
-    "- { p.name }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state q = "m"',
+      "@loop /x.json into p where p.name contains q",
+      "- { p.name }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /data-wd-loop-where="\(C\(I\(&quot;name&quot;\), S\(&quot;q&quot;\)\)\)"/);
+  assert.match(
+    page.html,
+    /data-wd-loop-where="\(C\(I\(&quot;name&quot;\), S\(&quot;q&quot;\)\)\)"/
+  );
 });
 
 // --- @loop where predicate — DANGEROUS forms --------------------------------
@@ -179,11 +162,11 @@ test("@loop where 'contains' compiles to the C() helper", () => {
 test("@loop where rejects a bare free identifier as a left operand", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1 }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /x.json into p where evil == 1",
-    "- x",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p where evil == 1", "- x", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /references unknown name "evil"/
@@ -193,11 +176,11 @@ test("@loop where rejects a bare free identifier as a left operand", () => {
 test("@loop where rejects a function call operand", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1, name: "a" }]));
-  write(root, "site/pages/index.wd", [
-    '@loop /x.json into p where p.name == alert(1)',
-    "- x",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p where p.name == alert(1)", "- x", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /Unsupported operand/
@@ -207,11 +190,11 @@ test("@loop where rejects a function call operand", () => {
 test("@loop where rejects prototype path segments on either side", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1 }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /x.json into p where p.__proto__ == 1",
-    "- x",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p where p.__proto__ == 1", "- x", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /not allowed in @loop where/
@@ -234,8 +217,14 @@ test(":button compiles inc/dec/add/append/set actions to their ops", () => {
   assert.match(page.html, /data-wd-action="inc" data-wd-target="count"/);
   assert.match(page.html, /data-wd-action="dec" data-wd-target="count"/);
   assert.match(page.html, /data-wd-action="add" data-wd-target="count" data-wd-value="5"/);
-  assert.match(page.html, /data-wd-action="append" data-wd-target="tags" data-wd-value="&quot;x&quot;"/);
-  assert.match(page.html, /data-wd-action="set" data-wd-target="name" data-wd-value="&quot;Kirby&quot;"/);
+  assert.match(
+    page.html,
+    /data-wd-action="append" data-wd-target="tags" data-wd-value="&quot;x&quot;"/
+  );
+  assert.match(
+    page.html,
+    /data-wd-action="set" data-wd-target="name" data-wd-value="&quot;Kirby&quot;"/
+  );
 });
 
 test(":button set accepts boolean, null, number, and JSON literals", () => {
@@ -251,23 +240,23 @@ test(":button set accepts boolean, null, number, and JSON literals", () => {
   assert.match(page.html, /data-wd-action="set" data-wd-target="flag" data-wd-value="true"/);
   assert.match(page.html, /data-wd-action="set" data-wd-target="flag" data-wd-value="null"/);
   assert.match(page.html, /data-wd-action="set" data-wd-target="n" data-wd-value="42"/);
-  assert.match(page.html, /data-wd-action="set" data-wd-target="obj" data-wd-value="\{&quot;a&quot;:1\}"/);
+  assert.match(
+    page.html,
+    /data-wd-action="set" data-wd-target="obj" data-wd-value="\{&quot;a&quot;:1\}"/
+  );
 });
 
 // --- :button actions — DANGEROUS / malformed forms --------------------------
 
 test(":button with no '->' arrow is a malformed-directive error", () => {
-  compileThrows([
-    ":state count = 0",
-    ':button "Bad" count++'
-  ], /Malformed :button/);
+  compileThrows([":state count = 0", ':button "Bad" count++'], /Malformed :button/);
 });
 
 test(":button += with a non-number value and a non-list target is rejected", () => {
-  compileThrows([
-    ':state name = ""',
-    ':button "Bad" -> name += "x"'
-  ], /requires a list state target/);
+  compileThrows(
+    [':state name = ""', ':button "Bad" -> name += "x"'],
+    /requires a list state target/
+  );
 });
 
 test(":button action targeting unknown state names the corrective :state form", () => {
@@ -275,10 +264,7 @@ test(":button action targeting unknown state names the corrective :state form", 
 });
 
 test(":button rejects an unparseable action literal", () => {
-  compileThrows([
-    ":state n = 0",
-    ':button "Bad" -> n = {not json}'
-  ], /Unsupported action literal/);
+  compileThrows([":state n = 0", ':button "Bad" -> n = {not json}'], /Unsupported action literal/);
 });
 
 // ---------------------------------------------------------------------------
@@ -291,8 +277,8 @@ test(":button rejects an unparseable action literal", () => {
 // handler / initials code — not a copy.
 // ---------------------------------------------------------------------------
 
-import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 
 const runtimeSource = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "runtime.js"),
@@ -308,9 +294,15 @@ class RtEl {
     this._text = "";
     if (this.tagName === "TEMPLATE") this.content = new RtEl("#fragment");
   }
-  setAttribute(name, value) { this.attrs.set(name, String(value)); }
-  getAttribute(name) { return this.attrs.has(name) ? this.attrs.get(name) : null; }
-  hasAttribute(name) { return this.attrs.has(name); }
+  setAttribute(name, value) {
+    this.attrs.set(name, String(value));
+  }
+  getAttribute(name) {
+    return this.attrs.has(name) ? this.attrs.get(name) : null;
+  }
+  hasAttribute(name) {
+    return this.attrs.has(name);
+  }
   appendChild(node) {
     if (node.parent) node.parent.removeChild(node);
     node.parent = this;
@@ -323,7 +315,9 @@ class RtEl {
     node.parent = null;
     return node;
   }
-  remove() { if (this.parent) this.parent.removeChild(this); }
+  remove() {
+    if (this.parent) this.parent.removeChild(this);
+  }
   cloneNode() {
     const copy = new RtEl(this.tagName);
     for (const [k, v] of this.attrs) copy.attrs.set(k, v);
@@ -331,12 +325,25 @@ class RtEl {
     for (const child of this.children) copy.appendChild(child.cloneNode(true));
     return copy;
   }
-  get firstElementChild() { return this.children[0] || null; }
-  get textContent() { return this._text; }
-  set textContent(v) { this._text = v == null ? "" : String(v); this.children = []; }
-  get innerHTML() { return ""; }
-  set innerHTML(v) { if (!v) this.children = []; }
-  matches(selector) { return rtMatch(this, selector); }
+  get firstElementChild() {
+    return this.children[0] || null;
+  }
+  get textContent() {
+    return this._text;
+  }
+  set textContent(v) {
+    this._text = v == null ? "" : String(v);
+    this.children = [];
+  }
+  get innerHTML() {
+    return "";
+  }
+  set innerHTML(v) {
+    if (!v) this.children = [];
+  }
+  matches(selector) {
+    return rtMatch(this, selector);
+  }
   closest(selector) {
     let node = this;
     while (node) {
@@ -345,7 +352,9 @@ class RtEl {
     }
     return null;
   }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
   querySelectorAll(selector) {
     const out = [];
     const walk = (node) => {
@@ -408,7 +417,9 @@ function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {}, fe
     activeElement: null,
     querySelectorAll: (sel) => root.querySelectorAll(sel),
     querySelector: (sel) => root.querySelector(sel),
-    addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); }
+    addEventListener: (type, fn) => {
+      (listeners[type] ||= []).push(fn);
+    }
   };
   const store = new Map(Object.entries(persisted).map(([k, v]) => [k, JSON.stringify(v)]));
   const localStorage = {
@@ -421,35 +432,62 @@ function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {}, fe
   // httpJson core (fetch → text → JSON.parse) runs unchanged.
   /** @type {PendingFetch[]} */
   const calls = [];
-  const fetchStub = (url) => new Promise((res, rej) => {
-    calls.push({
-      url,
-      resolve: (body) => res({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(body)) }),
-      fail: (err) => rej(err instanceof Error ? err : new Error(String(err)))
+  const fetchStub = (url) =>
+    new Promise((res, rej) => {
+      calls.push({
+        url,
+        resolve: (body) =>
+          res({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(body)) }),
+        fail: (err) => rej(err instanceof Error ? err : new Error(String(err)))
+      });
     });
-  });
   // Timer stub: collect callbacks so the harness can flush retries/debounces
   // deterministically (delay ignored). clearTimeout cancels by id.
   const timers = new Map();
   let timerId = 0;
-  const setTimeout = (fn) => { const id = ++timerId; timers.set(id, fn); return id; };
+  const setTimeout = (fn) => {
+    const id = ++timerId;
+    timers.set(id, fn);
+    return id;
+  };
   const clearTimeout = (id) => timers.delete(id);
   const sandbox = {
-    document, localStorage, console, JSON, structuredClone,
-    Object, Array, Number, String, Map, Set, Boolean, Function, Promise,
-    Error, encodeURIComponent, fetch: fetchStub, setTimeout, clearTimeout, queueMicrotask
+    document,
+    localStorage,
+    console,
+    JSON,
+    structuredClone,
+    Object,
+    Array,
+    Number,
+    String,
+    Map,
+    Set,
+    Boolean,
+    Function,
+    Promise,
+    Error,
+    encodeURIComponent,
+    fetch: fetchStub,
+    setTimeout,
+    clearTimeout,
+    queueMicrotask
   };
   // The runtime registers `window.addEventListener("storage", …)` for cross-tab
   // :store sync; the sandbox window is the sandbox itself, so collect listeners
   // here too. `fireStorage(key, newValue)` drives that handler.
-  sandbox.addEventListener = (type, fn) => { (listeners[type] ||= []).push(fn); };
+  sandbox.addEventListener = (type, fn) => {
+    (listeners[type] ||= []).push(fn);
+  };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(runtimeSource, sandbox);
 
   // Pump the microtask queue enough times for the runtime's chained awaits
   // (fetch → text → JSON.parse → render) to fully settle before assertions.
-  const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+  const flush = async () => {
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+  };
 
   return {
     root,
@@ -458,8 +496,14 @@ function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {}, fe
     // Recorded fetch calls (oldest first); each has .url/.resolve/.fail.
     fetchCalls: calls,
     // Settle a recorded fetch by index, then let its .then/.catch chain run.
-    async resolveFetch(i, body) { calls[i].resolve(body); await flush(); },
-    async failFetch(i, err) { calls[i].fail(err); await flush(); },
+    async resolveFetch(i, body) {
+      calls[i].resolve(body);
+      await flush();
+    },
+    async failFetch(i, err) {
+      calls[i].fail(err);
+      await flush();
+    },
     // Run every queued timer callback (retries, debounces), then flush.
     async runTimers() {
       const due = [...timers.values()];
@@ -491,7 +535,9 @@ function rtSandbox({ seeds = {}, persisted = {}, stores = {}, ephemeral = {}, fe
       for (const fn of listeners.click || []) fn({ target: btn, preventDefault() {} });
       btn.remove();
     },
-    render() { sandbox.wd.render(); }
+    render() {
+      sandbox.wd.render();
+    }
   };
 }
 
@@ -520,7 +566,7 @@ test("setPath (via dotted set action) rejects __proto__ / constructor / prototyp
   h.click("set", "__proto__.polluted", "yes");
   h.click("set", "obj.constructor.polluted", "yes");
   h.click("set", "obj.prototype.polluted", "yes");
-  assert.equal(({}).polluted, undefined, "Object.prototype must not be polluted");
+  assert.equal({}.polluted, undefined, "Object.prototype must not be polluted");
   assert.equal(Object.prototype.polluted, undefined);
 });
 

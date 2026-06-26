@@ -12,136 +12,164 @@ const darkmownVersion = JSON.parse(
  */
 export function initProject(root) {
   fs.mkdirSync(root, { recursive: true });
-  writeNew(root, "package.json", JSON.stringify({
-    name: packageNameFromRoot(root),
-    private: true,
-    scripts: {
-      dev: "darkmown dev",
-      build: "darkmown build",
-      preview: "darkmown serve"
-    },
-    devDependencies: {
-      "@zvndev/darkmown": `^${darkmownVersion}`
-    }
-  }, null, 2));
-  writeNew(root, "site/pages/index.wd", [
-    "---",
-    "title: My Darkmown site",
-    "---",
-    "",
-    "@include /nav.wd",
-    "",
-    "<main>",
-    "",
-    "# My Darkmown site",
-    "",
-    "Plain Markdown works. Rename to `.wd` when you want directives.",
-    "",
-    ":state count = 0",
-    "",
-    "Count: { count }",
-    "",
-    ":button \"Increment\" -> count++",
-    "",
-    ":state todos = [\"Write a page\"]",
-    "",
-    "@loop todos into todo",
-    "- { todo }",
-    "@endloop",
-    "",
-    ":button \"Add\" -> todos += \"Add a loop\"",
-    "",
-    "</main>"
-  ].join("\n"));
-  writeNew(root, "site/pages/index.skin", [
-    "tokens",
-    "  ink #172026",
-    "  paper #f7f2e8",
-    "  accent #0f8b8d",
-    "",
-    "page",
-    "  margin 0",
-    "  font ui-sans-serif, system-ui, sans-serif",
-    "  color $ink",
-    "  bg $paper",
-    "",
-    "main",
-    "  max-width 760px",
-    "  margin 0 auto",
-    "  padding 3rem 1.5rem",
-    "",
-    "nav",
-    "  display flex",
-    "  align-items center",
-    "  justify-content space-between",
-    "  gap 1rem",
-    "  max-width 760px",
-    "  margin 0 auto",
-    "  padding 1.25rem 1.5rem",
-    "",
-    "nav strong",
-    "  font-size 1.1rem",
-    "",
-    "nav .links",
-    "  display flex",
-    "  gap 1.25rem",
-    "",
-    "nav a",
-    "  color $ink",
-    "  text-decoration none",
-    "  opacity .8",
-    "",
-    "nav a:hover",
-    "  opacity 1",
-    "  color $accent",
-    "",
-    "button",
-    "  bg $accent",
-    "  color white",
-    "  border 0",
-    "  padding .75rem 1rem",
-    "  radius 8px"
-  ].join("\n"));
-  writeNew(root, "site/_/nav.wd", [
-    "<nav>",
-    "  <strong>My site</strong>",
-    "  <span class=\"links\">",
-    "    <a href=\"/\">Home</a>",
-    "    <a href=\"/about/\">About</a>",
-    "  </span>",
-    "</nav>"
-  ].join("\n"));
-  writeNew(root, "site/pages/about.md", [
-    "---",
-    "title: About",
-    "---",
-    "",
-    "# About",
-    "",
-    "This page is plain Markdown (`.md`) — strict CommonMark, zero framework JavaScript.",
-    "Rename it to `.wd` when you want directives like state, loops, or forms.",
-    "",
-    "[Back home](/)"
-  ].join("\n"));
-  writeNew(root, "README.md", [
-    "# My Darkmown site",
-    "",
-    "Run `npm install` and `npm run dev` to start the live compiler.",
-    "",
-    "## Commands",
-    "",
-    "- `npm run dev` — live compiler on http://localhost:5173 with hot reload.",
-    "- `npm run build` — compile the site to `dist/`.",
-    "- `npm run preview` — serve the built `dist/` locally.",
-    "",
-    "## Layout",
-    "",
-    "- Pages live in `site/pages`.",
-    "- Shared includes live in `site/_`.",
-    "- Hidden route files start with `.` or `-`.",
-    "- Colocated `index.skin` and `index.js` attach automatically.",
-    "- Any other file under `site/pages` (images, fonts, …) copies to `dist/` at its own path."
-  ].join("\n"));
+  writeNew(
+    root,
+    "package.json",
+    JSON.stringify(
+      {
+        name: packageNameFromRoot(root),
+        private: true,
+        scripts: {
+          dev: "darkmown dev",
+          build: "darkmown build",
+          preview: "darkmown serve"
+        },
+        devDependencies: {
+          "@zvndev/darkmown": `^${darkmownVersion}`
+        }
+      },
+      null,
+      2
+    )
+  );
+  writeNew(
+    root,
+    "site/pages/index.wd",
+    [
+      "---",
+      "title: My Darkmown site",
+      "---",
+      "",
+      "@include /nav.wd",
+      "",
+      "<main>",
+      "",
+      "# My Darkmown site",
+      "",
+      "Plain Markdown works. Rename to `.wd` when you want directives.",
+      "",
+      ":state count = 0",
+      "",
+      "Count: { count }",
+      "",
+      ':button "Increment" -> count++',
+      "",
+      ':state todos = ["Write a page"]',
+      "",
+      "@loop todos into todo",
+      "- { todo }",
+      "@endloop",
+      "",
+      ':button "Add" -> todos += "Add a loop"',
+      "",
+      "</main>"
+    ].join("\n")
+  );
+  writeNew(
+    root,
+    "site/pages/index.skin",
+    [
+      "tokens",
+      "  ink #172026",
+      "  paper #f7f2e8",
+      "  accent #0f8b8d",
+      "",
+      "page",
+      "  margin 0",
+      "  font ui-sans-serif, system-ui, sans-serif",
+      "  color $ink",
+      "  bg $paper",
+      "",
+      "main",
+      "  max-width 760px",
+      "  margin 0 auto",
+      "  padding 3rem 1.5rem",
+      "",
+      "nav",
+      "  display flex",
+      "  align-items center",
+      "  justify-content space-between",
+      "  gap 1rem",
+      "  max-width 760px",
+      "  margin 0 auto",
+      "  padding 1.25rem 1.5rem",
+      "",
+      "nav strong",
+      "  font-size 1.1rem",
+      "",
+      "nav .links",
+      "  display flex",
+      "  gap 1.25rem",
+      "",
+      "nav a",
+      "  color $ink",
+      "  text-decoration none",
+      "  opacity .8",
+      "",
+      "nav a:hover",
+      "  opacity 1",
+      "  color $accent",
+      "",
+      "button",
+      "  bg $accent",
+      "  color white",
+      "  border 0",
+      "  padding .75rem 1rem",
+      "  radius 8px"
+    ].join("\n")
+  );
+  writeNew(
+    root,
+    "site/_/nav.wd",
+    [
+      "<nav>",
+      "  <strong>My site</strong>",
+      '  <span class="links">',
+      '    <a href="/">Home</a>',
+      '    <a href="/about/">About</a>',
+      "  </span>",
+      "</nav>"
+    ].join("\n")
+  );
+  writeNew(
+    root,
+    "site/pages/about.md",
+    [
+      "---",
+      "title: About",
+      "---",
+      "",
+      "# About",
+      "",
+      "This page is plain Markdown (`.md`) — strict CommonMark, zero framework JavaScript.",
+      "Rename it to `.wd` when you want directives like state, loops, or forms.",
+      "",
+      "[Back home](/)"
+    ].join("\n")
+  );
+  writeNew(
+    root,
+    "README.md",
+    [
+      "# My Darkmown site",
+      "",
+      "Run `npm install` and `npm run dev` to start the live compiler.",
+      "",
+      "## Commands",
+      "",
+      "- `npm run dev` — live compiler on http://localhost:5173 with hot reload.",
+      "- `npm run build` — compile the site to `dist/`.",
+      "- `npm run preview` — serve the built `dist/` locally.",
+      "",
+      "## Layout",
+      "",
+      "- Pages live in `site/pages`.",
+      "- Shared includes live in `site/_`.",
+      "- Hidden route files start with `.` or `-`.",
+      "- Colocated `index.skin` and `index.js` attach automatically.",
+      "- Any other file under `site/pages` (images, fonts, …) copies to `dist/` at its own path."
+    ].join("\n")
+  );
   return { root };
 }
 
@@ -158,7 +186,6 @@ function writeNew(root, file, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, `${content}\n`);
 }
-
 
 /**
  * Derive a safe default npm package name from the scaffold target directory.

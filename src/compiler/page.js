@@ -8,12 +8,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { imageSize } from "image-size";
+import { compileBody } from "./body.js";
 import { createCompilation, createScope } from "./context.js";
 import { parseFrontmatter, warnLikelyFrontmatter } from "./frontmatter.js";
 import { collectColocatedAssets, scanMarkdownHints } from "./includes.js";
 import { escapeHtml } from "./interpolation.js";
 import { selectMd } from "./markdown.js";
-import { compileBody } from "./body.js";
 
 /**
  * @typedef {import("./context.js").Paths} Paths
@@ -42,7 +42,8 @@ export function compilePage(file, context) {
   if (description) social.push(`<meta name="description" content="${escapeHtml(description)}">`);
   if (description || image) {
     social.push(`<meta property="og:title" content="${escapeHtml(title)}">`);
-    if (description) social.push(`<meta property="og:description" content="${escapeHtml(description)}">`);
+    if (description)
+      social.push(`<meta property="og:description" content="${escapeHtml(description)}">`);
     social.push(`<meta property="og:type" content="website">`);
   }
   if (image) {
@@ -50,13 +51,22 @@ export function compilePage(file, context) {
     social.push(`<meta name="twitter:image" content="${escapeHtml(image)}">`);
   }
   if (description || image) {
-    social.push(`<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`);
+    social.push(
+      `<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`
+    );
   }
   const descriptionTag = social.length ? `\n  ${social.join("\n  ")}` : "";
-  const favicon = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='bold'%20fill='%23f7f3ea'%3ED%3C/text%3E%3C/svg%3E";
-  const cssLinks = [...compiled.assets.skins].map((href) => `<link rel="stylesheet" href="${href}">`).join("\n");
-  const scriptSrcs = compiled.assets.runtime ? ["/__wd/runtime.js", ...compiled.assets.scripts] : [...compiled.assets.scripts];
-  const scripts = scriptSrcs.map((src) => `<script type="module" src="${src}"></script>`).join("\n");
+  const favicon =
+    "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='bold'%20fill='%23f7f3ea'%3ED%3C/text%3E%3C/svg%3E";
+  const cssLinks = [...compiled.assets.skins]
+    .map((href) => `<link rel="stylesheet" href="${href}">`)
+    .join("\n");
+  const scriptSrcs = compiled.assets.runtime
+    ? ["/__wd/runtime.js", ...compiled.assets.scripts]
+    : [...compiled.assets.scripts];
+  const scripts = scriptSrcs
+    .map((src) => `<script type="module" src="${src}"></script>`)
+    .join("\n");
   // Cross-document view transitions: opt in per page with `transitions: true` in
   // frontmatter to emit a CSS-only stylesheet — a smooth same-origin transition
   // on navigation, with zero JavaScript. Ignored by browsers without support
@@ -68,7 +78,8 @@ export function compilePage(file, context) {
   // superimposed at ~50% opacity — headings ghost over headings. We override it
   // with a directional fade+slide (old lifts up and out, new rises up and in) so
   // the pages move past each other instead of stacking. Short + eased = peppy.
-  const wantTransitions = compiled.meta.transitions === true || compiled.meta.transitions === "true";
+  const wantTransitions =
+    compiled.meta.transitions === true || compiled.meta.transitions === "true";
   const transitions = wantTransitions
     ? `\n  <style>
     @view-transition { navigation: auto; }
@@ -224,7 +235,9 @@ export function compileDocument(file, context, stack = [], vars = {}) {
 export function compileFile(file, context, stack, scope, comp, sections, loopItem) {
   const real = fs.realpathSync(file);
   if (stack.includes(real)) {
-    throw new Error(`Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`);
+    throw new Error(
+      `Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`
+    );
   }
 
   const raw = fs.readFileSync(file, "utf8");
@@ -240,6 +253,15 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
   // Expose this file's frontmatter to the body under `meta` so `{ meta.title }`,
   // `{ meta.tags }`, and `@loop meta.tags into tag` resolve as static values.
   /** @type {Ctx} */
-  const ctx = { file, context, stack: [...stack, real], scope: createScope(scope, { meta }), comp, sections, loopItem, md: selectMd(meta) };
+  const ctx = {
+    file,
+    context,
+    stack: [...stack, real],
+    scope: createScope(scope, { meta }),
+    comp,
+    sections,
+    loopItem,
+    md: selectMd(meta)
+  };
   return { meta, html: compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx) };
 }

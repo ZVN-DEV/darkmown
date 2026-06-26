@@ -12,12 +12,16 @@ import { createPaths } from "../src/config.js";
 
 test(":bind emits an input wired to state with its initial value + placeholder", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state query = "shoe"',
-    ':bind query placeholder="Search products"'
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [':state query = "shoe"', ':bind query placeholder="Search products"'].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<input type="text" data-wd-bind-input="query" value="shoe" placeholder="Search products" aria-label="Search products">/);
+  assert.match(
+    page.html,
+    /<input type="text" data-wd-bind-input="query" value="shoe" placeholder="Search products" aria-label="Search products">/
+  );
   assert.equal(page.assets.runtime, true);
 });
 
@@ -30,9 +34,16 @@ test(":bind with an empty-string initial value emits an empty value attribute", 
 
 test(":bind honours type= and boolean flags", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [':state email = ""', ':bind email type=email required autofocus'].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [':state email = ""', ":bind email type=email required autofocus"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<input type="email" data-wd-bind-input="email" value="" required autofocus aria-label="Email">/);
+  assert.match(
+    page.html,
+    /<input type="email" data-wd-bind-input="email" value="" required autofocus aria-label="Email">/
+  );
 });
 
 test(":bind escapes a malicious initial value", () => {
@@ -67,16 +78,24 @@ test(":bind rejects unknown attributes", () => {
 
 test("@loop where over a JSON file with an item-only predicate filters at build time and stays static", () => {
   const root = fixture();
-  write(root, "site/_/products.json", JSON.stringify([
-    { id: 1, name: "Aurora", price: 49, featured: true },
-    { id: 2, name: "Briza", price: 39, featured: false },
-    { id: 3, name: "Cove", price: 89, featured: true }
-  ]));
-  write(root, "site/pages/index.wd", [
-    "@loop /products.json into p where p.featured == true and p.price < 80",
-    "- { p.name }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/_/products.json",
+    JSON.stringify([
+      { id: 1, name: "Aurora", price: 49, featured: true },
+      { id: 2, name: "Briza", price: 39, featured: false },
+      { id: 3, name: "Cove", price: 89, featured: true }
+    ])
+  );
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      "@loop /products.json into p where p.featured == true and p.price < 80",
+      "- { p.name }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, false, "item-only predicate must stay zero-JS");
   assert.match(page.html, /<li>Aurora<\/li>/);
@@ -87,16 +106,24 @@ test("@loop where over a JSON file with an item-only predicate filters at build 
 
 test("@loop where supports contains, numeric ops, and or-joins (static)", () => {
   const root = fixture();
-  write(root, "site/_/items.json", JSON.stringify([
-    { id: 1, name: "Red Mug", price: 10 },
-    { id: 2, name: "Blue Mug", price: 99 },
-    { id: 3, name: "Green Hat", price: 5 }
-  ]));
-  write(root, "site/pages/index.wd", [
-    '@loop /items.json into i where i.name contains "mug" or i.price < 6',
-    "- { i.name }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/_/items.json",
+    JSON.stringify([
+      { id: 1, name: "Red Mug", price: 10 },
+      { id: 2, name: "Blue Mug", price: 99 },
+      { id: 3, name: "Green Hat", price: 5 }
+    ])
+  );
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      '@loop /items.json into i where i.name contains "mug" or i.price < 6',
+      "- { i.name }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /Red Mug/);
   assert.match(page.html, /Blue Mug/);
@@ -110,18 +137,25 @@ test("@loop where supports contains, numeric ops, and or-joins (static)", () => 
 
 test("@loop where over :state with a state-referencing predicate is reactive", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state products = [{"id":1,"name":"Aurora Lamp"},{"id":2,"name":"Briza Fan"}]',
-    ':state q = ""',
-    ":bind q",
-    "@loop products into p where p.name contains q",
-    "- { p.name }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state products = [{"id":1,"name":"Aurora Lamp"},{"id":2,"name":"Briza Fan"}]',
+      ':state q = ""',
+      ":bind q",
+      "@loop products into p where p.name contains q",
+      "- { p.name }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
   assert.match(page.html, /data-wd-loop="products"/);
-  assert.match(page.html, /data-wd-loop-where="\(C\(I\(&quot;name&quot;\), S\(&quot;q&quot;\)\)\)"/);
+  assert.match(
+    page.html,
+    /data-wd-loop-where="\(C\(I\(&quot;name&quot;\), S\(&quot;q&quot;\)\)\)"/
+  );
   // q is "" so contains matches all → both rendered initially
   assert.match(page.html, /Aurora Lamp/);
   assert.match(page.html, /Briza Fan/);
@@ -129,17 +163,25 @@ test("@loop where over :state with a state-referencing predicate is reactive", (
 
 test("@loop where over a JSON file but referencing :state bakes the rows and goes reactive", () => {
   const root = fixture();
-  write(root, "site/_/products.json", JSON.stringify([
-    { id: 1, name: "Aurora", price: 49 },
-    { id: 2, name: "Briza", price: 39 },
-    { id: 3, name: "Cove", price: 89 }
-  ]));
-  write(root, "site/pages/index.wd", [
-    ":state budget = 50",
-    "@loop /products.json into p where p.price <= budget",
-    "- { p.name }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/_/products.json",
+    JSON.stringify([
+      { id: 1, name: "Aurora", price: 49 },
+      { id: 2, name: "Briza", price: 39 },
+      { id: 3, name: "Cove", price: 89 }
+    ])
+  );
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ":state budget = 50",
+      "@loop /products.json into p where p.price <= budget",
+      "- { p.name }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true, "state-referencing predicate must go reactive");
   assert.match(page.html, /data-wd-loop=""/); // no state key — baked source
@@ -157,11 +199,11 @@ test("@loop where over a JSON file but referencing :state bakes the rows and goe
 test("@loop where rejects prototype-pollution path segments", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1 }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /x.json into p where p.constructor == 1",
-    "- x",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p where p.constructor == 1", "- x", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /not allowed in @loop where/
@@ -171,11 +213,11 @@ test("@loop where rejects prototype-pollution path segments", () => {
 test("@loop where rejects an unknown bare identifier (no eval of arbitrary names)", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1, name: "a" }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /x.json into p where p.name == somethingUndeclared",
-    "- x",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p where p.name == somethingUndeclared", "- x", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /references unknown name "somethingUndeclared"/
@@ -185,11 +227,11 @@ test("@loop where rejects an unknown bare identifier (no eval of arbitrary names
 test("@loop where rejects an operand that is not a path/number/string", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1, name: "a" }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /x.json into p where p.name == 1+1",
-    "- x",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p where p.name == 1+1", "- x", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /Unsupported operand/
@@ -199,11 +241,11 @@ test("@loop where rejects an operand that is not a path/number/string", () => {
 test("@loop where with a malformed condition throws a corrective error", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1 }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /x.json into p where p.name",
-    "- x",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p where p.name", "- x", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /Malformed where-condition/
@@ -212,8 +254,19 @@ test("@loop where with a malformed condition throws a corrective error", () => {
 
 test("@loop without where still works (no regression)", () => {
   const root = fixture();
-  write(root, "site/_/x.json", JSON.stringify([{ id: 1, name: "a" }, { id: 2, name: "b" }]));
-  write(root, "site/pages/index.wd", ["@loop /x.json into p", "- { p.name }", "@endloop"].join("\n"));
+  write(
+    root,
+    "site/_/x.json",
+    JSON.stringify([
+      { id: 1, name: "a" },
+      { id: 2, name: "b" }
+    ])
+  );
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p", "- { p.name }", "@endloop"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /<li>a<\/li>/);
   assert.match(page.html, /<li>b<\/li>/);
@@ -226,12 +279,16 @@ test("@loop without where still works (no regression)", () => {
 
 test("@loop emits sort/reverse/offset/limit clause attributes (reactive over :state)", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state people = [{"id":1,"name":"Cy","age":30},{"id":2,"name":"Al","age":20}]',
-    "@loop people into p where p.age > 0 sort by p.age desc reverse offset 1 limit 2",
-    "- { p.name }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state people = [{"id":1,"name":"Cy","age":30},{"id":2,"name":"Al","age":20}]',
+      "@loop people into p where p.age > 0 sort by p.age desc reverse offset 1 limit 2",
+      "- { p.name }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
   assert.match(page.html, /data-wd-loop="people"/);
@@ -244,12 +301,11 @@ test("@loop emits sort/reverse/offset/limit clause attributes (reactive over :st
 
 test("@loop sort defaults to asc and sort key can be the bare item", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state nums = [3, 1, 2]',
-    "@loop nums into n sort by n",
-    "- { n }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [":state nums = [3, 1, 2]", "@loop nums into n sort by n", "- { n }", "@endloop"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /data-wd-loop-sort=""/);
   assert.match(page.html, /data-wd-loop-sort-dir="asc"/);
@@ -257,13 +313,17 @@ test("@loop sort defaults to asc and sort key can be the bare item", () => {
 
 test("@loop limit/offset accept a :state key for reactive paging (key:<name>)", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state rows = [{"id":1},{"id":2},{"id":3}]',
-    ":state pageSize = 2",
-    "@loop rows into r limit pageSize",
-    "- { r.id }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state rows = [{"id":1},{"id":2},{"id":3}]',
+      ":state pageSize = 2",
+      "@loop rows into r limit pageSize",
+      "- { r.id }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
   assert.match(page.html, /data-wd-loop-limit="key:pageSize"/);
@@ -271,12 +331,11 @@ test("@loop limit/offset accept a :state key for reactive paging (key:<name>)", 
 
 test("@loop wrong clause order throws a corrective error", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state xs = [1, 2, 3]',
-    "@loop xs into x limit 2 sort by x",
-    "- { x }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [":state xs = [1, 2, 3]", "@loop xs into x limit 2 sort by x", "- { x }", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /Use: @loop src into item \[where …\] \[sort by …\] \[reverse\] \[offset N\] \[limit N\]/
@@ -285,12 +344,11 @@ test("@loop wrong clause order throws a corrective error", () => {
 
 test("@loop rejects a negative limit and a non-integer offset", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state xs = [1, 2, 3]',
-    "@loop xs into x limit -1",
-    "- { x }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [":state xs = [1, 2, 3]", "@loop xs into x limit -1", "- { x }", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /Use: @loop src into item/
@@ -300,11 +358,11 @@ test("@loop rejects a negative limit and a non-integer offset", () => {
 test("@loop sort key rejects prototype-pollution segments", () => {
   const root = fixture();
   write(root, "site/_/x.json", JSON.stringify([{ id: 1 }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /x.json into p sort by p.__proto__",
-    "- x",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /x.json into p sort by p.__proto__", "- x", "@endloop"].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /not allowed/
@@ -317,16 +375,20 @@ test("@loop sort key rejects prototype-pollution segments", () => {
 
 test("static @loop with sort/limit resolves at build time and stays runtime:false", () => {
   const root = fixture();
-  write(root, "site/_/data.json", JSON.stringify([
-    { n: 3, label: "three" },
-    { n: 1, label: "one" },
-    { n: 2, label: "two" }
-  ]));
-  write(root, "site/pages/index.wd", [
-    "@loop /data.json into x sort by x.n limit 2",
-    "- { x.label }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/_/data.json",
+    JSON.stringify([
+      { n: 3, label: "three" },
+      { n: 1, label: "one" },
+      { n: 2, label: "two" }
+    ])
+  );
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /data.json into x sort by x.n limit 2", "- { x.label }", "@endloop"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, false, "static source + static clauses must stay zero-JS");
   assert.doesNotMatch(page.html, /data-wd-loop/);
@@ -340,11 +402,11 @@ test("static @loop with sort/limit resolves at build time and stays runtime:fals
 test("static @loop reverse + offset resolves at build time", () => {
   const root = fixture();
   write(root, "site/_/d.json", JSON.stringify([{ v: "a" }, { v: "b" }, { v: "c" }, { v: "d" }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /d.json into x reverse offset 1 limit 2",
-    "- { x.v }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /d.json into x reverse offset 1 limit 2", "- { x.v }", "@endloop"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, false);
   // reverse → d c b a ; offset 1 → c b a ; limit 2 → c b
@@ -356,12 +418,16 @@ test("static @loop reverse + offset resolves at build time", () => {
 
 test("static @loop sort desc with localeCompare for strings", () => {
   const root = fixture();
-  write(root, "site/_/words.json", JSON.stringify([{ w: "banana" }, { w: "apple" }, { w: "cherry" }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /words.json into x sort by x.w desc",
-    "- { x.w }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/_/words.json",
+    JSON.stringify([{ w: "banana" }, { w: "apple" }, { w: "cherry" }])
+  );
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /words.json into x sort by x.w desc", "- { x.w }", "@endloop"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, false);
   const cherry = page.html.indexOf("cherry");
@@ -373,14 +439,17 @@ test("static @loop sort desc with localeCompare for strings", () => {
 test("@loop with a :state limit key becomes reactive even over a static JSON source", () => {
   const root = fixture();
   write(root, "site/_/d.json", JSON.stringify([{ v: 1 }, { v: 2 }, { v: 3 }]));
-  write(root, "site/pages/index.wd", [
-    ":state take = 2",
-    "@loop /d.json into x limit take",
-    "- { x.v }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [":state take = 2", "@loop /d.json into x limit take", "- { x.v }", "@endloop"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.equal(page.assets.runtime, true, "a state clause arg over a static source must go reactive");
+  assert.equal(
+    page.assets.runtime,
+    true,
+    "a state clause arg over a static source must go reactive"
+  );
   assert.match(page.html, /data-wd-loop-data=/); // rows baked for the runtime
   assert.match(page.html, /data-wd-loop-limit="key:take"/);
 });
@@ -392,11 +461,11 @@ test("@loop with a :state limit key becomes reactive even over a static JSON sou
 test("static @loop computes per-row meta vars in interpolation", () => {
   const root = fixture();
   write(root, "site/_/m.json", JSON.stringify([{ t: "a" }, { t: "b" }, { t: "c" }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /m.json into x",
-    "- { $number }. { x.t } (of { $count })",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /m.json into x", "- { $number }. { x.t } (of { $count })", "@endloop"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, false);
   assert.match(page.html, /1\. a \(of 3\)/);
@@ -407,15 +476,19 @@ test("static @loop computes per-row meta vars in interpolation", () => {
 test("static @loop resolves :if $first and :if $last per row", () => {
   const root = fixture();
   write(root, "site/_/m.json", JSON.stringify([{ t: "a" }, { t: "b" }, { t: "c" }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /m.json into x",
-    ":if $first",
-    "FIRST { x.t }",
-    ":else",
-    "ROW { x.t }",
-    ":endif",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      "@loop /m.json into x",
+      ":if $first",
+      "FIRST { x.t }",
+      ":else",
+      "ROW { x.t }",
+      ":endif",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /FIRST a/);
   assert.match(page.html, /ROW b/);
@@ -425,12 +498,16 @@ test("static @loop resolves :if $first and :if $last per row", () => {
 
 test("reactive @loop emits meta markers filled per row", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state rows = [{"id":1,"t":"a"},{"id":2,"t":"b"}]',
-    "@loop rows into x",
-    "- { $index }: { x.t }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state rows = [{"id":1,"t":"a"},{"id":2,"t":"b"}]',
+      "@loop rows into x",
+      "- { $index }: { x.t }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
   // template carries a meta marker for $index
@@ -451,11 +528,7 @@ test("$ meta vars used outside a loop throw a compile error", () => {
 
 test(":if $first outside a loop throws a compile error", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ":if $first",
-    "x",
-    ":endif"
-  ].join("\n"));
+  write(root, "site/pages/index.wd", [":if $first", "x", ":endif"].join("\n"));
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /\$first/
@@ -469,13 +542,17 @@ test(":if $first outside a loop throws a compile error", () => {
 test("static @loop @empty renders the empty branch when the post-pipeline list is empty", () => {
   const root = fixture();
   write(root, "site/_/none.json", JSON.stringify([{ ok: false }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /none.json into x where x.ok == true",
-    "- { x.ok }",
-    "@empty",
-    "Nothing here yet.",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      "@loop /none.json into x where x.ok == true",
+      "- { x.ok }",
+      "@empty",
+      "Nothing here yet.",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, false);
   assert.match(page.html, /Nothing here yet\./);
@@ -484,13 +561,11 @@ test("static @loop @empty renders the empty branch when the post-pipeline list i
 test("static @loop @empty omits the empty branch when rows exist", () => {
   const root = fixture();
   write(root, "site/_/some.json", JSON.stringify([{ t: "a" }]));
-  write(root, "site/pages/index.wd", [
-    "@loop /some.json into x",
-    "- { x.t }",
-    "@empty",
-    "Nothing here yet.",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop /some.json into x", "- { x.t }", "@empty", "Nothing here yet.", "@endloop"].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /<li>a<\/li>/);
   assert.doesNotMatch(page.html, /Nothing here yet\./);
@@ -498,14 +573,18 @@ test("static @loop @empty omits the empty branch when rows exist", () => {
 
 test("reactive @loop @empty emits an [data-wd-loop-empty] template", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ":state items = []",
-    "@loop items into x",
-    "- { x.t }",
-    "@empty",
-    "No items.",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ":state items = []",
+      "@loop items into x",
+      "- { x.t }",
+      "@empty",
+      "No items.",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
   assert.match(page.html, /<template data-wd-loop-empty>/);
@@ -514,13 +593,11 @@ test("reactive @loop @empty emits an [data-wd-loop-empty] template", () => {
 
 test("@loop @empty without @endloop errors", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ":state items = []",
-    "@loop items into x",
-    "- { x.t }",
-    "@empty",
-    "No items."
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [":state items = []", "@loop items into x", "- { x.t }", "@empty", "No items."].join("\n")
+  );
   assert.throws(
     () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
     /Missing @endloop/
@@ -533,12 +610,16 @@ test("@loop @empty without @endloop errors", () => {
 
 test("@loop over a dotted :state path resolves the nested list reactively", () => {
   const root = fixture();
-  write(root, "site/pages/index.wd", [
-    ':state team = {"members": [{"id":1,"name":"Ann"},{"id":2,"name":"Bo"}]}',
-    "@loop team.members into m",
-    "- { m.name }",
-    "@endloop"
-  ].join("\n"));
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state team = {"members": [{"id":1,"name":"Ann"},{"id":2,"name":"Bo"}]}',
+      "@loop team.members into m",
+      "- { m.name }",
+      "@endloop"
+    ].join("\n")
+  );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
   assert.match(page.html, /Ann/);

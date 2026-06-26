@@ -14,7 +14,8 @@ const aliases = new Map([
  * @returns {string}
  */
 function resolveProp(prop, rest) {
-  if (prop === "font" && (/^[\d.]/.test(rest[0] || "") || rest.join(" ").includes("/"))) return "font";
+  if (prop === "font" && (/^[\d.]/.test(rest[0] || "") || rest.join(" ").includes("/")))
+    return "font";
   return aliases.get(prop) || prop;
 }
 

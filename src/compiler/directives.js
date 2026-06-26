@@ -9,11 +9,13 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, createScope } from "./context.js";
+import { compileBody } from "./body.js";
+import { at, createScope, LOOP_META } from "./context.js";
+import { resolveInclude } from "./includes.js";
 import {
   escapeHtml,
+  getPath,
   humanizeName,
-  interpolateLeaf,
   lookupPath,
   lookupVar,
   parseScalar,
@@ -23,12 +25,8 @@ import {
   stripQuotes,
   validatePath
 } from "./interpolation.js";
-import { LOOP_META } from "./context.js";
-import { compileComputedExpr, compileWhen, evalPredicate } from "./predicates.js";
-import { resolveInclude } from "./includes.js";
-import { getPath } from "./interpolation.js";
-import { compileBody } from "./body.js";
 import { compileFile } from "./page.js";
+import { compileComputedExpr, compileWhen, evalPredicate } from "./predicates.js";
 
 /**
  * @typedef {import("./context.js").Ctx} Ctx
@@ -47,7 +45,15 @@ export function handleInclude(line, ctx, index) {
   const target = resolveInclude(match[1], ctx.file, ctx.context);
   const args = parseIncludeArgs(match[2] || "", ctx);
   const scope = createScope(ctx.scope, args);
-  const child = compileFile(target, ctx.context, ctx.stack, scope, ctx.comp, ctx.sections, ctx.loopItem);
+  const child = compileFile(
+    target,
+    ctx.context,
+    ctx.stack,
+    scope,
+    ctx.comp,
+    ctx.sections,
+    ctx.loopItem
+  );
   return child.html;
 }
 
@@ -66,7 +72,9 @@ function parseIncludeArgs(raw, ctx) {
       const expr = value.slice(1, -1).trim();
       const resolved = lookupPath(expr, ctx);
       if (!resolved.found) {
-        throw new Error(`@include argument ${match[1]}={ ${expr} } in ${ctx.file} does not match any value in scope`);
+        throw new Error(
+          `@include argument ${match[1]}={ ${expr} } in ${ctx.file} does not match any value in scope`
+        );
       }
       args[match[1]] = resolved.value;
     } else {
@@ -97,17 +105,26 @@ export function handleContainer(header, bodyLines, ctx, index) {
   // the <section> tag; any other name becomes a <div> and also a class.
   const lead = rest.match(/^([^\s.#]\S*)/);
   let nameToken = "section";
-  if (lead) { nameToken = lead[1]; rest = rest.slice(lead[0].length).trim(); }
-  if (nameToken !== "section") { tag = "div"; extraClass.push(nameToken); }
+  if (lead) {
+    nameToken = lead[1];
+    rest = rest.slice(lead[0].length).trim();
+  }
+  if (nameToken !== "section") {
+    tag = "div";
+    extraClass.push(nameToken);
+  }
   while (rest.length) {
     if (rest.startsWith("#")) {
       const m = rest.match(/^#(\S+)/);
-      id = (m ? m[1] : "");
+      id = m ? m[1] : "";
       rest = rest.slice((m ? m[0] : rest).length).trim();
       continue;
     }
     const cm = rest.match(/^\.([A-Za-z_][\w-]*)/);
-    if (!cm) throw new Error(`Unexpected token "${rest.split(/\s+/)[0]}" in container "::: ${header}" in ${at(ctx.file, index)}`);
+    if (!cm)
+      throw new Error(
+        `Unexpected token "${rest.split(/\s+/)[0]}" in container "::: ${header}" in ${at(ctx.file, index)}`
+      );
     const cls = cm[1];
     rest = rest.slice(cm[0].length).trim();
     // Optional `when <predicate>` makes the class reactive. The predicate runs to
@@ -116,8 +133,9 @@ export function handleContainer(header, bodyLines, ctx, index) {
     if (whenMatch) {
       rest = rest.slice(whenMatch[0].length).trim();
       const compiled = compileWhen(whenMatch[1].trim(), ctx);
-      if (compiled.static) { if (compiled.value) extraClass.push(cls); }
-      else if (compiled.item) eachClasses.push([cls, compiled.body]);
+      if (compiled.static) {
+        if (compiled.value) extraClass.push(cls);
+      } else if (compiled.item) eachClasses.push([cls, compiled.body]);
       else stateClasses.push([cls, compiled.body]);
     } else {
       extraClass.push(cls);
@@ -136,8 +154,14 @@ export function handleContainer(header, bodyLines, ctx, index) {
   const idAttr = explicitId ? ` id="${escapeHtml(id)}"` : "";
   const classAttr = extraClass.length ? ` class="${escapeHtml(extraClass.join(" "))}"` : "";
   let classBind = "";
-  if (eachClasses.length) { ctx.comp.assets.runtime = true; classBind += ` data-wd-each-class="${escapeHtml(JSON.stringify(eachClasses))}"`; }
-  if (stateClasses.length) { ctx.comp.assets.runtime = true; classBind += ` data-wd-class="${escapeHtml(JSON.stringify(stateClasses))}"`; }
+  if (eachClasses.length) {
+    ctx.comp.assets.runtime = true;
+    classBind += ` data-wd-each-class="${escapeHtml(JSON.stringify(eachClasses))}"`;
+  }
+  if (stateClasses.length) {
+    ctx.comp.assets.runtime = true;
+    classBind += ` data-wd-class="${escapeHtml(JSON.stringify(stateClasses))}"`;
+  }
   return `<${tag}${idAttr}${classAttr}${classBind}>\n${inner}\n</${tag}>`;
 }
 
@@ -164,10 +188,15 @@ export function handleState(line, ctx, index) {
  * @returns {string} The fully-qualified state key.
  */
 function declareState(name, value, ctx) {
-  if (ctx.loopItem) throw new Error(`State cannot be declared inside a reactive @loop body (${ctx.file})`);
-  if (ctx.comp.stores.has(name)) throw new Error(`State "${name}" collides with a :store of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`);
+  if (ctx.loopItem)
+    throw new Error(`State cannot be declared inside a reactive @loop body (${ctx.file})`);
+  if (ctx.comp.stores.has(name))
+    throw new Error(
+      `State "${name}" collides with a :store of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`
+    );
   const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${name}` : name;
-  if (ctx.comp.state.has(key)) throw new Error(`State "${name}" is declared twice in the same scope (${ctx.file})`);
+  if (ctx.comp.state.has(key))
+    throw new Error(`State "${name}" is declared twice in the same scope (${ctx.file})`);
   ctx.comp.state.set(key, value);
   ctx.comp.assets.runtime = true;
   return key;
@@ -181,7 +210,10 @@ function declareState(name, value, ctx) {
  */
 export function handleStore(line, ctx, index) {
   const match = line.match(/^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+ephemeral)?$/);
-  if (!match) throw new Error(`Malformed :store in ${at(ctx.file, index)}: ${line}. Use: :store name = value [ephemeral]`);
+  if (!match)
+    throw new Error(
+      `Malformed :store in ${at(ctx.file, index)}: ${line}. Use: :store name = value [ephemeral]`
+    );
   const value = parseStateValue(match[2]);
   const name = declareStore(match[1], value, ctx);
   const ephemeral = match[3] ? " data-wd-store-ephemeral" : "";
@@ -198,8 +230,12 @@ export function handleStore(line, ctx, index) {
  * @returns {string} The store name (also its bare state key).
  */
 function declareStore(name, value, ctx) {
-  if (ctx.comp.stores.has(name)) throw new Error(`Store "${name}" is declared twice in ${ctx.file}. Use: :store name = value`);
-  if (ctx.comp.state.has(name)) throw new Error(`Store "${name}" collides with a :state of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`);
+  if (ctx.comp.stores.has(name))
+    throw new Error(`Store "${name}" is declared twice in ${ctx.file}. Use: :store name = value`);
+  if (ctx.comp.state.has(name))
+    throw new Error(
+      `Store "${name}" collides with a :state of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`
+    );
   ctx.comp.stores.add(name);
   ctx.comp.state.set(name, value);
   ctx.comp.assets.runtime = true;
@@ -240,7 +276,8 @@ export function handleFetch(line, ctx, index) {
   const opts = {};
   for (const part of head[3].trim().split(/\s+/).filter(Boolean)) {
     const kv = part.match(/^([A-Za-z]+)=(.+)$/);
-    if (!kv) throw new Error(`Unknown :fetch option "${part}" in ${at(ctx.file, index)}. ${FETCH_USE}`);
+    if (!kv)
+      throw new Error(`Unknown :fetch option "${part}" in ${at(ctx.file, index)}. ${FETCH_USE}`);
     const optName = kv[1];
     if (!["method", "when", "timeout", "retry", "headers", "body", "refresh"].includes(optName)) {
       throw new Error(`Unknown :fetch option "${optName}" in ${at(ctx.file, index)}. ${FETCH_USE}`);
@@ -248,22 +285,33 @@ export function handleFetch(line, ctx, index) {
     opts[optName] = stripQuotes(kv[2]);
   }
 
-  if (opts.method && !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(opts.method.toUpperCase())) {
-    throw new Error(`:fetch method "${opts.method}" is not allowed in ${at(ctx.file, index)}. ${FETCH_USE}`);
+  if (
+    opts.method &&
+    !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(opts.method.toUpperCase())
+  ) {
+    throw new Error(
+      `:fetch method "${opts.method}" is not allowed in ${at(ctx.file, index)}. ${FETCH_USE}`
+    );
   }
   if (opts.when && !["load", "visible"].includes(opts.when)) {
-    throw new Error(`:fetch when "${opts.when}" is not allowed in ${at(ctx.file, index)}. ${FETCH_USE}`);
+    throw new Error(
+      `:fetch when "${opts.when}" is not allowed in ${at(ctx.file, index)}. ${FETCH_USE}`
+    );
   }
   for (const n of ["timeout", "retry"]) {
     if (opts[n] !== undefined && !/^\d+$/.test(opts[n])) {
-      throw new Error(`:fetch ${n} must be a non-negative integer in ${at(ctx.file, index)}. ${FETCH_USE}`);
+      throw new Error(
+        `:fetch ${n} must be a non-negative integer in ${at(ctx.file, index)}. ${FETCH_USE}`
+      );
     }
   }
   if (opts.refresh !== undefined) {
     // Layer 2: a 401 triggers a token-refresh POST to this URL, then one retry.
     // The new token is written back into the `headers=` state, so it is required.
     if (!opts.headers) {
-      throw new Error(`:fetch refresh= needs headers= (the state key holding the token to renew) in ${at(ctx.file, index)}. ${FETCH_USE}`);
+      throw new Error(
+        `:fetch refresh= needs headers= (the state key holding the token to renew) in ${at(ctx.file, index)}. ${FETCH_USE}`
+      );
     }
     opts.refresh = validateFetchUrl(opts.refresh, ctx, ":fetch refresh");
   }
@@ -283,14 +331,19 @@ export function handleFetch(line, ctx, index) {
   const key = declareState(name, null, ctx);
   /** @type {Record<string, unknown>} */
   const seeds = { [key]: null };
-  for (const [suffix, seed] of [["_error", null], ["_loading", false], ["_empty", false]]) {
+  for (const [suffix, seed] of [
+    ["_error", null],
+    ["_loading", false],
+    ["_empty", false]
+  ]) {
     const k = `${key}${suffix}`;
     if (!ctx.comp.state.has(k)) ctx.comp.state.set(k, seed);
     seeds[k] = seed;
   }
 
   /** @param {string} n @param {string | null | false | undefined} v */
-  const attr = (n, v) => (v != null && v !== false && v !== "" ? ` data-wd-fetch-${n}="${escapeHtml(v)}"` : "");
+  const attr = (n, v) =>
+    v != null && v !== false && v !== "" ? ` data-wd-fetch-${n}="${escapeHtml(v)}"` : "";
   const marker =
     `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"` +
     attr("method", opts.method && opts.method.toUpperCase()) +
@@ -319,16 +372,23 @@ export function handleFetch(line, ctx, index) {
  */
 function validateFetchUrl(url, ctx, what = ":fetch") {
   const value = url.trim();
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejects control characters in URLs/hrefs.
   if (value !== url || value === "" || /[\u0000-\u001F\u007F]/.test(value)) {
-    throw new Error(`Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Use a relative path (/, ./, ../), an http(s):// URL, or a { state } interpolation.`);
+    throw new Error(
+      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Use a relative path (/, ./, ../), an http(s):// URL, or a { state } interpolation.`
+    );
   }
   if (value.startsWith("//")) {
-    throw new Error(`Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http:// or https:// explicitly.`);
+    throw new Error(
+      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http:// or https:// explicitly.`
+    );
   }
   if (value.startsWith("{")) return value; // interpolation-first; the runtime percent-encodes state values
   const scheme = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
   if (scheme && !["http", "https"].includes(scheme[1].toLowerCase())) {
-    throw new Error(`Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. The "${scheme[1]}:" scheme is not allowed; use http://, https://, or a relative path.`);
+    throw new Error(
+      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. The "${scheme[1]}:" scheme is not allowed; use http://, https://, or a relative path.`
+    );
   }
   return value;
 }
@@ -341,7 +401,10 @@ function validateFetchUrl(url, ctx, what = ":fetch") {
  */
 export function handleComputed(line, ctx, index) {
   const match = line.match(/^:computed\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
-  if (!match) throw new Error(`Malformed :computed in ${at(ctx.file, index)}: ${line}. Use: :computed total = items.length * 4`);
+  if (!match)
+    throw new Error(
+      `Malformed :computed in ${at(ctx.file, index)}: ${line}. Use: :computed total = items.length * 4`
+    );
   const expr = compileComputedExpr(match[2].trim(), ctx);
   /** @type {unknown} */
   let initial;
@@ -350,7 +413,9 @@ export function handleComputed(line, ctx, index) {
     const read = (key, path) => getPath(ctx.comp.state.get(key), path ? path.split(".") : []);
     initial = new Function("S", `return (${expr});`)(read);
   } catch {
-    console.warn(`:computed "${match[2].trim()}" in ${ctx.file} could not be evaluated at build time; falling back to null. Check the expression.`);
+    console.warn(
+      `:computed "${match[2].trim()}" in ${ctx.file} could not be evaluated at build time; falling back to null. Check the expression.`
+    );
     initial = null;
   }
   const key = declareState(match[1], initial ?? null, ctx);
@@ -365,7 +430,7 @@ export function handleComputed(line, ctx, index) {
  * @returns {string}
  */
 export function handleForm(line, bodyLines, ctx, index) {
-  let rest = line.slice(":form".length).trim();
+  const rest = line.slice(":form".length).trim();
   const rawAction = rest.match(/action="([^"]+)"/)?.[1];
   const method = rest.match(/method="([^"]+)"/)?.[1] || "post";
   const into = rest.match(/(?:^|\s)into\s+([A-Za-z_$][\w$]*)/)?.[1];
@@ -386,7 +451,9 @@ export function handleForm(line, bodyLines, ctx, index) {
   }
   const key = declareState(into, null, ctx);
   declareErrorState(key, ctx);
-  const actionAttrs = action ? ` action="${escapeHtml(action)}" method="${escapeHtml(method)}"` : "";
+  const actionAttrs = action
+    ? ` action="${escapeHtml(action)}" method="${escapeHtml(method)}"`
+    : "";
   return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: null })}</script><form data-wd-form="${key}"${actionAttrs}>${inner}</form>`;
 }
 
@@ -417,7 +484,19 @@ export function handleInput(line, ctx, index) {
       type = value;
       continue;
     }
-    if (!["placeholder", "value", "min", "max", "step", "pattern", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
+    if (
+      ![
+        "placeholder",
+        "value",
+        "min",
+        "max",
+        "step",
+        "pattern",
+        "autocomplete",
+        "aria-label",
+        "aria-describedby"
+      ].includes(token[1])
+    ) {
       throw new Error(`Unknown :input attribute "${token[1]}" in ${at(ctx.file, index)}`);
     }
     if (token[1] === "placeholder") placeholder = value;
@@ -444,10 +523,15 @@ export function handleInput(line, ctx, index) {
  */
 export function handleBind(line, ctx, index) {
   const match = line.match(/^:bind\s+([A-Za-z_$][\w$]*)\s*(.*)$/);
-  if (!match) throw new Error(`Malformed :bind in ${at(ctx.file, index)}: ${line}. Use: :bind query placeholder="Search"`);
+  if (!match)
+    throw new Error(
+      `Malformed :bind in ${at(ctx.file, index)}: ${line}. Use: :bind query placeholder="Search"`
+    );
   const key = resolveStateKey(match[1], ctx);
   if (!key) {
-    throw new Error(`:bind ${match[1]} in ${ctx.file} has no matching state. Declare it first: :state ${match[1]} = ""`);
+    throw new Error(
+      `:bind ${match[1]} in ${ctx.file} has no matching state. Declare it first: :state ${match[1]} = ""`
+    );
   }
   ctx.comp.assets.runtime = true;
   let type = "text";
@@ -457,12 +541,16 @@ export function handleBind(line, ctx, index) {
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
-      if (!["required", "autofocus"].includes(token[3])) throw new Error(`Unknown :bind flag "${token[3]}" in ${at(ctx.file, index)}`);
+      if (!["required", "autofocus"].includes(token[3]))
+        throw new Error(`Unknown :bind flag "${token[3]}" in ${at(ctx.file, index)}`);
       attrs.push(token[3]);
       continue;
     }
     const value = stripQuotes(token[2]);
-    if (token[1] === "type") { type = value; continue; }
+    if (token[1] === "type") {
+      type = value;
+      continue;
+    }
     if (!["placeholder", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
       throw new Error(`Unknown :bind attribute "${token[1]}" in ${at(ctx.file, index)}`);
     }
@@ -477,7 +565,8 @@ export function handleBind(line, ctx, index) {
     attrs.push(`aria-label="${escapeHtml(placeholder || humanizeName(match[1]))}"`);
   }
   const initial = ctx.comp.state.get(key);
-  const valueAttr = initial === undefined || initial === null ? "" : ` value="${escapeHtml(String(initial))}"`;
+  const valueAttr =
+    initial === undefined || initial === null ? "" : ` value="${escapeHtml(String(initial))}"`;
   return `<input type="${escapeHtml(type)}" data-wd-bind-input="${key}"${valueAttr} ${attrs.join(" ")}>`;
 }
 
@@ -489,7 +578,8 @@ export function handleBind(line, ctx, index) {
  */
 export function handleSubmit(line, ctx, index) {
   const match = line.match(/^:submit\s+"([^"]+)"\s*$/);
-  if (!match) throw new Error(`Malformed :submit in ${at(ctx.file, index)}: ${line}. Use: :submit "Label"`);
+  if (!match)
+    throw new Error(`Malformed :submit in ${at(ctx.file, index)}: ${line}. Use: :submit "Label"`);
   return `<button type="submit">${escapeHtml(match[1])}</button>`;
 }
 
@@ -505,7 +595,10 @@ export function handleSubmit(line, ctx, index) {
  */
 export function handleTextarea(line, ctx, index) {
   const match = line.match(/^:textarea\s+([A-Za-z_][\w-]*)\s*(.*)$/);
-  if (!match) throw new Error(`Malformed :textarea in ${at(ctx.file, index)}: ${line}. Use: :textarea name [placeholder="…"] [rows=N] [required]`);
+  if (!match)
+    throw new Error(
+      `Malformed :textarea in ${at(ctx.file, index)}: ${line}. Use: :textarea name [placeholder="…"] [rows=N] [required]`
+    );
   const attrs = [`name="${escapeHtml(match[1])}"`];
   let placeholder;
   let hasAria = false;
@@ -519,7 +612,18 @@ export function handleTextarea(line, ctx, index) {
       continue;
     }
     const value = stripQuotes(token[2]);
-    if (!["placeholder", "rows", "cols", "minlength", "maxlength", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
+    if (
+      ![
+        "placeholder",
+        "rows",
+        "cols",
+        "minlength",
+        "maxlength",
+        "autocomplete",
+        "aria-label",
+        "aria-describedby"
+      ].includes(token[1])
+    ) {
       throw new Error(`Unknown :textarea attribute "${token[1]}" in ${at(ctx.file, index)}`);
     }
     if (token[1] === "placeholder") placeholder = value;
@@ -544,7 +648,10 @@ export function handleTextarea(line, ctx, index) {
  */
 export function handleSelect(line, optionLines, ctx, index) {
   const match = line.match(/^:select\s+([A-Za-z_][\w-]*)\s*(.*)$/);
-  if (!match) throw new Error(`Malformed :select in ${at(ctx.file, index)}: ${line}. Use: :select name [required] then "- Label" lines`);
+  if (!match)
+    throw new Error(
+      `Malformed :select in ${at(ctx.file, index)}: ${line}. Use: :select name [required] then "- Label" lines`
+    );
   const attrs = [`name="${escapeHtml(match[1])}"`];
   let hasAria = false;
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
@@ -568,9 +675,13 @@ export function handleSelect(line, optionLines, ctx, index) {
   }
   const options = optionLines.map((l) => l.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
   if (!options.length) {
-    throw new Error(`:select "${match[1]}" in ${at(ctx.file, index)} has no options. Add "- Label" lines beneath it.`);
+    throw new Error(
+      `:select "${match[1]}" in ${at(ctx.file, index)} has no options. Add "- Label" lines beneath it.`
+    );
   }
-  const opts = options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
+  const opts = options
+    .map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`)
+    .join("");
   return `<select ${attrs.join(" ")}>${opts}</select>`;
 }
 
@@ -593,8 +704,15 @@ export function handleSelect(line, optionLines, ctx, index) {
  */
 export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
   const directive = `:${kind}`;
-  const match = line.match(kind === "checkbox" ? /^:checkbox\s+([A-Za-z_][\w-]*)\s*(.*)$/ : /^:radio\s+([A-Za-z_][\w-]*)\s*(.*)$/);
-  if (!match) throw new Error(`Malformed ${directive} in ${at(ctx.file, index)}: ${line}. Use: ${directive} name [required] then "- Label" lines`);
+  const match = line.match(
+    kind === "checkbox"
+      ? /^:checkbox\s+([A-Za-z_][\w-]*)\s*(.*)$/
+      : /^:radio\s+([A-Za-z_][\w-]*)\s*(.*)$/
+  );
+  if (!match)
+    throw new Error(
+      `Malformed ${directive} in ${at(ctx.file, index)}: ${line}. Use: ${directive} name [required] then "- Label" lines`
+    );
   const name = match[1];
   const flags = [];
   let ariaLabel = null;
@@ -615,23 +733,30 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
   }
   const options = optionLines.map((l) => l.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
   if (!options.length) {
-    throw new Error(`${directive} "${name}" in ${at(ctx.file, index)} has no options. Add "- Label" lines beneath it.`);
+    throw new Error(
+      `${directive} "${name}" in ${at(ctx.file, index)} has no options. Add "- Label" lines beneath it.`
+    );
   }
   const isCheckbox = kind === "checkbox";
-  const groupAttrs = [`class="wd-${isCheckbox ? "checkboxes" : "radios"}"`, `role="${isCheckbox ? "group" : "radiogroup"}"`];
+  const groupAttrs = [
+    `class="wd-${isCheckbox ? "checkboxes" : "radios"}"`,
+    `role="${isCheckbox ? "group" : "radiogroup"}"`
+  ];
   if (isCheckbox) groupAttrs.push(`data-wd-multi="${escapeHtml(name)}"`);
   groupAttrs.push(`aria-label="${escapeHtml(ariaLabel || humanizeName(name))}"`);
   if (ariaDescribedby) groupAttrs.push(`aria-describedby="${escapeHtml(ariaDescribedby)}"`);
   const disabled = flags.includes("disabled");
   const required = flags.includes("required");
   const autofocus = flags.includes("autofocus");
-  const controls = options.map((opt, idx) => {
-    const a = [`type="${kind}"`, `name="${escapeHtml(name)}"`, `value="${escapeHtml(opt)}"`];
-    if (disabled) a.push("disabled");
-    if (required && !isCheckbox) a.push("required");
-    if (autofocus && idx === 0) a.push("autofocus");
-    return `<label><input ${a.join(" ")}> ${escapeHtml(opt)}</label>`;
-  }).join("");
+  const controls = options
+    .map((opt, idx) => {
+      const a = [`type="${kind}"`, `name="${escapeHtml(name)}"`, `value="${escapeHtml(opt)}"`];
+      if (disabled) a.push("disabled");
+      if (required && !isCheckbox) a.push("required");
+      if (autofocus && idx === 0) a.push("autofocus");
+      return `<label><input ${a.join(" ")}> ${escapeHtml(opt)}</label>`;
+    })
+    .join("");
   return `<div ${groupAttrs.join(" ")}>${controls}</div>`;
 }
 
@@ -649,11 +774,15 @@ export function handleButton(line, ctx, index) {
   if (Array.isArray(action)) {
     return `<button type="button" data-wd-actions="${escapeHtml(JSON.stringify(action))}">${escapeHtml(match[1])}</button>`;
   }
-  const valueAttr = action.value === undefined ? "" : ` data-wd-value="${escapeHtml(JSON.stringify(action.value))}"`;
+  const valueAttr =
+    action.value === undefined
+      ? ""
+      : ` data-wd-value="${escapeHtml(JSON.stringify(action.value))}"`;
   return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${valueAttr}>${escapeHtml(match[1])}</button>`;
 }
 
-const EFFECT_USE = "Use: :effect watchedState -> action[; action…] (actions use the :button vocabulary).";
+const EFFECT_USE =
+  "Use: :effect watchedState -> action[; action…] (actions use the :button vocabulary).";
 
 /**
  * Parse `:effect <watched> -> <actions>` into a zero-output marker the runtime
@@ -667,10 +796,14 @@ const EFFECT_USE = "Use: :effect watchedState -> action[; action…] (actions us
  */
 export function handleEffect(line, ctx, index) {
   const match = line.match(/^:effect\s+([A-Za-z_$][\w$.]*)\s*->\s*(.+)$/);
-  if (!match) throw new Error(`Malformed :effect in ${at(ctx.file, index)}: ${line}. ${EFFECT_USE}`);
+  if (!match)
+    throw new Error(`Malformed :effect in ${at(ctx.file, index)}: ${line}. ${EFFECT_USE}`);
   const segs = validatePath(match[1], ctx, EFFECT_USE);
   const key = resolveStateKey(segs[0], ctx);
-  if (!key) throw new Error(`:effect watches unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`);
+  if (!key)
+    throw new Error(
+      `:effect watches unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`
+    );
   ctx.comp.assets.runtime = true;
   const watch = [key, ...segs.slice(1)].join(".");
   const action = parseAction(match[2], ctx);
@@ -698,7 +831,10 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
 
     // Per-row meta vars in :if — only valid inside a loop.
     if (LOOP_META[head]) {
-      if (!ctx.loopMeta) throw new Error(`":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`);
+      if (!ctx.loopMeta)
+        throw new Error(
+          `":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`
+        );
       if (ctx.loopItem) {
         const truthy = compileBody(truthyLines, ctx).trim();
         const falsy = compileBody(falsyLines, ctx).trim();
@@ -723,7 +859,9 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
 
     const key = resolveStateKey(head, ctx);
     if (!key) {
-      throw new Error(`:if ${match[1]} in ${ctx.file} does not match a :state or in-scope value. Declare it first.`);
+      throw new Error(
+        `:if ${match[1]} in ${ctx.file} does not match a :state or in-scope value. Declare it first.`
+      );
     }
     ctx.comp.assets.runtime = true;
     const truthy = compileBody(truthyLines, ctx).trim();
@@ -739,7 +877,10 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
   // whitelist as `@loop … where` / `.class when` (with `not`), so it folds at
   // build when static, drives a per-row each-if when it reads the loop item, and
   // a global if-region (evaluated each render) when it reads state. No raw eval.
-  if (!condition) throw new Error(`Malformed :if in ${at(ctx.file, index)}: ${line}. Use ":if name" or ":if a <op> b [and|or|not …]".`);
+  if (!condition)
+    throw new Error(
+      `Malformed :if in ${at(ctx.file, index)}: ${line}. Use ":if name" or ":if a <op> b [and|or|not …]".`
+    );
   const compiled = compileWhen(condition, ctx, '":if"');
   if (compiled.static) return compileBody(compiled.value ? truthyLines : falsyLines, ctx);
   ctx.comp.assets.runtime = true;
@@ -770,7 +911,10 @@ export function renderDemoDirective(line, ctx) {
   if (note) return `<aside class="note">${escapeHtml(note[1])}</aside>`;
   const sprint = line.match(/^:sprint\s+min=(\d+)\s+max=(\d+)\s+roles="([^"]+)"$/);
   if (sprint) {
-    const roles = sprint[3].split(",").map((role) => role.trim()).filter(Boolean);
+    const roles = sprint[3]
+      .split(",")
+      .map((role) => role.trim())
+      .filter(Boolean);
     return `<section class="sprint-board" data-min="${sprint[1]}" data-max="${sprint[2]}">${roles.map((role) => `<article><strong>${escapeHtml(role)}</strong><span>active lane</span></article>`).join("")}</section>`;
   }
   return "";
@@ -784,20 +928,32 @@ export function renderDemoDirective(line, ctx) {
  */
 function validateDemoHref(href, ctx) {
   const value = href.trim();
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejects control characters in URLs/hrefs.
   if (value !== href || /[\u0000-\u001F\u007F]/.test(value)) {
-    throw new Error(`Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`);
+    throw new Error(
+      `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`
+    );
   }
   if (value.startsWith("//")) {
-    throw new Error(`Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http: or https: explicitly.`);
+    throw new Error(
+      `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http: or https: explicitly.`
+    );
   }
-  if (value.startsWith("/") || value.startsWith("./") || value.startsWith("../") || value.startsWith("#")) {
+  if (
+    value.startsWith("/") ||
+    value.startsWith("./") ||
+    value.startsWith("../") ||
+    value.startsWith("#")
+  ) {
     return value;
   }
   const scheme = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
   if (scheme && ["http", "https", "mailto"].includes(scheme[1].toLowerCase())) {
     return value;
   }
-  throw new Error(`Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`);
+  throw new Error(
+    `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -815,7 +971,10 @@ const ACTION_USE =
  * @returns {Action | Action[]}
  */
 function parseAction(raw, ctx) {
-  const parts = raw.split(";").map((p) => p.trim()).filter(Boolean);
+  const parts = raw
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean);
   if (parts.length > 1) return parts.map((part) => parseSingleAction(part, raw, ctx));
   return parseSingleAction(raw.trim(), raw, ctx);
 }
@@ -835,7 +994,9 @@ function parseSingleAction(expression, raw, ctx) {
     const segs = validatePath(name, ctx, ACTION_USE);
     const key = resolveStateKey(segs[0], ctx);
     if (!key) {
-      throw new Error(`Button action targets unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`);
+      throw new Error(
+        `Button action targets unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`
+      );
     }
     return [key, ...segs.slice(1)].join(".");
   };
@@ -845,7 +1006,8 @@ function parseSingleAction(expression, raw, ctx) {
   const decrement = expression.match(new RegExp(`^(${PATH})--$`));
   if (decrement) return { op: "dec", target: resolveTarget(decrement[1]) };
   const sub = expression.match(new RegExp(`^(${PATH})\\s*-=\\s*(.+)$`));
-  if (sub) return { op: "sub", target: resolveTarget(sub[1]), value: parseActionLiteral(sub[2], ctx) };
+  if (sub)
+    return { op: "sub", target: resolveTarget(sub[1]), value: parseActionLiteral(sub[2], ctx) };
   // Per-row: carry the current loop item into another list — `cart += product`.
   // Only inside a reactive @loop; the runtime resolves the row from the DOM.
   const add = expression.match(new RegExp(`^(${PATH})\\s*\\+=\\s*(.+)$`));
@@ -854,7 +1016,9 @@ function parseSingleAction(expression, raw, ctx) {
     if (ctx.loopItem && rhs === ctx.loopItem) {
       const target = resolveTarget(add[1]);
       if (!Array.isArray(ctx.comp.state.get(target))) {
-        throw new Error(`Button action "${raw}" needs ${add[1]} to be a :state list (declare it "${add[1]} = []") in ${ctx.file}.`);
+        throw new Error(
+          `Button action "${raw}" needs ${add[1]} to be a :state list (declare it "${add[1]} = []") in ${ctx.file}.`
+        );
       }
       return { op: "append-row", target };
     }
@@ -862,7 +1026,9 @@ function parseSingleAction(expression, raw, ctx) {
     const value = parseActionLiteral(rhs, ctx);
     if (Array.isArray(ctx.comp.state.get(target))) return { op: "append", target, value };
     if (typeof value === "number") return { op: "add", target, value };
-    throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. += with non-number values requires a list state target — declare it "${add[1]} = []".`);
+    throw new Error(
+      `Unsupported button action "${raw}" in ${ctx.file}. += with non-number values requires a list state target — declare it "${add[1]} = []".`
+    );
   }
   // `flag toggle` (no operand) → boolean flip; `list toggle v` → member-toggle.
   const toggle = expression.match(new RegExp(`^(${PATH})\\s+toggle(?:\\s+(.+))?$`));
@@ -887,21 +1053,35 @@ function parseSingleAction(expression, raw, ctx) {
       // its source is a path off the outer row, which the runtime's row-remove
       // can't target. Fail loud with the honest workaround.
       if (!ctx.loopKey) {
-        throw new Error(`Button action "${raw}" can't delete a row of a nested (item-relative) loop in ${ctx.file}. Per-row "remove" needs a top-level :state/:store list; carry the row into one (cart += ${ctx.loopItem}) and remove it there.`);
+        throw new Error(
+          `Button action "${raw}" can't delete a row of a nested (item-relative) loop in ${ctx.file}. Per-row "remove" needs a top-level :state/:store list; carry the row into one (cart += ${ctx.loopItem}) and remove it there.`
+        );
       }
       if (resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
-        throw new Error(`Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`);
+        throw new Error(
+          `Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`
+        );
       }
       return { op: "remove", target: ctx.loopKey };
     }
-    return { op: "remove-value", target: resolveTarget(remove[1]), value: parseActionLiteral(operand, ctx) };
+    return {
+      op: "remove-value",
+      target: resolveTarget(remove[1]),
+      value: parseActionLiteral(operand, ctx)
+    };
   }
   const clear = expression.match(new RegExp(`^(${PATH})\\s+clear$`));
   if (clear) return { op: "clear", target: resolveTarget(clear[1]) };
   const merge = expression.match(new RegExp(`^(${PATH})\\s+merge\\s+(.+)$`));
-  if (merge) return { op: "merge", target: resolveTarget(merge[1]), value: parseMergeOperand(merge[2], ctx) };
+  if (merge)
+    return {
+      op: "merge",
+      target: resolveTarget(merge[1]),
+      value: parseMergeOperand(merge[2], ctx)
+    };
   const del = expression.match(new RegExp(`^(${PATH})\\s+delete\\s+(.+)$`));
-  if (del) return { op: "delete", target: resolveTarget(del[1]), value: parseActionLiteral(del[2], ctx) };
+  if (del)
+    return { op: "delete", target: resolveTarget(del[1]), value: parseActionLiteral(del[2], ctx) };
   const reset = expression.match(new RegExp(`^(${PATH})\\s+reset$`));
   if (reset) return { op: "reset", target: resolveTarget(reset[1]) };
   // `name refetch` re-invokes the matching :fetch node. The target is the fetch
@@ -909,7 +1089,12 @@ function parseSingleAction(expression, raw, ctx) {
   const refetch = expression.match(new RegExp(`^(${PATH})\\s+refetch$`));
   if (refetch) return { op: "refetch", target: resolveTarget(refetch[1]) };
   const assign = expression.match(new RegExp(`^(${PATH})\\s*=\\s*(.+)$`));
-  if (assign) return { op: "set", target: resolveTarget(assign[1]), value: parseActionLiteral(assign[2], ctx) };
+  if (assign)
+    return {
+      op: "set",
+      target: resolveTarget(assign[1]),
+      value: parseActionLiteral(assign[2], ctx)
+    };
   throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. ${ACTION_USE}`);
 }
 
@@ -924,12 +1109,17 @@ function parseMergeOperand(raw, ctx) {
   const value = raw.trim();
   if (/^[A-Za-z_$][\w$]*$/.test(value)) {
     const key = resolveStateKey(value, ctx);
-    if (!key) throw new Error(`Button action merge targets unknown state "${value}" in ${ctx.file}. Declare it first with :state ${value} = ...`);
+    if (!key)
+      throw new Error(
+        `Button action merge targets unknown state "${value}" in ${ctx.file}. Declare it first with :state ${value} = ...`
+      );
     return key;
   }
   const parsed = parseActionLiteral(value, ctx);
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-  throw new Error(`Unsupported merge operand "${raw}" in ${ctx.file}. Use: obj merge other (a state key or an inline {…} object).`);
+  throw new Error(
+    `Unsupported merge operand "${raw}" in ${ctx.file}. Use: obj merge other (a state key or an inline {…} object).`
+  );
 }
 
 /**
@@ -944,12 +1134,16 @@ function parseActionLiteral(raw, ctx) {
   if (value === "false") return false;
   if (value === "null") return null;
   if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
-  if (/^[\[{]/.test(value)) {
+  if (/^[[{]/.test(value)) {
     try {
       return JSON.parse(value);
     } catch {
-      throw new Error(`Unsupported action literal "${raw}" in ${ctx.file}. Use: a quoted string, number, boolean, null, or valid JSON.`);
+      throw new Error(
+        `Unsupported action literal "${raw}" in ${ctx.file}. Use: a quoted string, number, boolean, null, or valid JSON.`
+      );
     }
   }
-  throw new Error(`Unsupported action literal "${raw}" in ${ctx.file}. Use: a quoted string, number, boolean, null, or valid JSON.`);
+  throw new Error(
+    `Unsupported action literal "${raw}" in ${ctx.file}. Use: a quoted string, number, boolean, null, or valid JSON.`
+  );
 }

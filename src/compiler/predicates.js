@@ -27,7 +27,10 @@ export function compilePredicate(raw, itemName, ctx) {
   const pieces = [];
   let refsState = false;
   for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) { pieces.push(parts[i].toLowerCase() === "and" ? "&&" : "||"); continue; }
+    if (i % 2 === 1) {
+      pieces.push(parts[i].toLowerCase() === "and" ? "&&" : "||");
+      continue;
+    }
     const cond = compileCondition(parts[i].trim(), itemName, ctx);
     refsState = refsState || cond.usesState;
     pieces.push(`(${cond.expr})`);
@@ -43,7 +46,10 @@ export function compilePredicate(raw, itemName, ctx) {
  */
 function compileCondition(cond, itemName, ctx) {
   const m = cond.match(/^(.+?)\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
-  if (!m) throw new Error(`Malformed where-condition "${cond}" in ${ctx.file}. Use: ${itemName}.field contains state, or ${itemName}.field <op> value.`);
+  if (!m)
+    throw new Error(
+      `Malformed where-condition "${cond}" in ${ctx.file}. Use: ${itemName}.field contains state, or ${itemName}.field <op> value.`
+    );
   const left = compileOperand(m[1].trim(), itemName, ctx);
   const right = compileOperand(m[3].trim(), itemName, ctx);
   const usesState = left.usesState || right.usesState;
@@ -59,27 +65,39 @@ function compileCondition(cond, itemName, ctx) {
  * @returns {{ code: string, usesState: boolean }}
  */
 function compileOperand(tok, itemName, ctx) {
-  if (/^"[^"]*"$/.test(tok) || /^'[^']*'$/.test(tok)) return { code: JSON.stringify(tok.slice(1, -1)), usesState: false };
+  if (/^"[^"]*"$/.test(tok) || /^'[^']*'$/.test(tok))
+    return { code: JSON.stringify(tok.slice(1, -1)), usesState: false };
   if (/^-?\d+(?:\.\d+)?$/.test(tok)) return { code: tok, usesState: false };
   if (["true", "false", "null"].includes(tok)) return { code: tok, usesState: false };
   if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(tok)) {
-    throw new Error(`Unsupported operand "${tok}" in @loop where (${ctx.file}). Use ${itemName}.field, a :state name, a number, or a "string".`);
+    throw new Error(
+      `Unsupported operand "${tok}" in @loop where (${ctx.file}). Use ${itemName}.field, a :state name, a number, or a "string".`
+    );
   }
   const segs = tok.split(".");
   if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
     throw new Error(`Path "${tok}" is not allowed in @loop where (${ctx.file})`);
   }
-  if (segs[0] === itemName) return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, usesState: false };
+  if (segs[0] === itemName)
+    return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, usesState: false };
   const key = resolveStateKey(segs[0], ctx);
   if (!key) {
-    throw new Error(`@loop where references unknown name "${segs[0]}" in ${ctx.file}. Use the loop item (${itemName}.field) or a declared :state.`);
+    throw new Error(
+      `@loop where references unknown name "${segs[0]}" in ${ctx.file}. Use the loop item (${itemName}.field) or a declared :state.`
+    );
   }
   const rest = segs.slice(1).join(".");
-  return { code: `S(${JSON.stringify(key)}${rest ? `, ${JSON.stringify(rest)}` : ""})`, usesState: true };
+  return {
+    code: `S(${JSON.stringify(key)}${rest ? `, ${JSON.stringify(rest)}` : ""})`,
+    usesState: true
+  };
 }
 
 /** @param {unknown} a @param {unknown} b @returns {boolean} */
-const containsHelper = (a, b) => String(a ?? "").toLowerCase().includes(String(b ?? "").toLowerCase());
+const containsHelper = (a, b) =>
+  String(a ?? "")
+    .toLowerCase()
+    .includes(String(b ?? "").toLowerCase());
 
 /**
  * Evaluate a compiled predicate against a row at build time.
@@ -96,7 +114,9 @@ export function evalPredicate(body, item, ctx) {
     const S = (k, r) => getPath(ctx.comp.state.get(k), r ? r.split(".") : []);
     return Boolean(new Function("I", "S", "C", `return (${body});`)(I, S, containsHelper));
   } catch {
-    console.warn(`@loop where predicate "${body}" in ${ctx.file} could not be evaluated at build time; treating the row as excluded. Check the condition.`);
+    console.warn(
+      `@loop where predicate "${body}" in ${ctx.file} could not be evaluated at build time; treating the row as excluded. Check the condition.`
+    );
     return false;
   }
 }
@@ -113,23 +133,39 @@ export function evalPredicate(body, item, ctx) {
  * @returns {{ code: string, state: boolean, item: boolean }}
  */
 function compileWhenOperand(tok, ctx, what) {
-  if (/^"[^"]*"$/.test(tok) || /^'[^']*'$/.test(tok)) return { code: JSON.stringify(tok.slice(1, -1)), state: false, item: false };
+  if (/^"[^"]*"$/.test(tok) || /^'[^']*'$/.test(tok))
+    return { code: JSON.stringify(tok.slice(1, -1)), state: false, item: false };
   if (/^-?\d+(?:\.\d+)?$/.test(tok)) return { code: tok, state: false, item: false };
   if (["true", "false", "null"].includes(tok)) return { code: tok, state: false, item: false };
   if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(tok)) {
-    throw new Error(`Unsupported operand "${tok}" in ${what} (${ctx.file}). Use item.field, a :state name, a number, or a "string".`);
+    throw new Error(
+      `Unsupported operand "${tok}" in ${what} (${ctx.file}). Use item.field, a :state name, a number, or a "string".`
+    );
   }
   const segs = tok.split(".");
   if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
     throw new Error(`Path "${tok}" is not allowed in ${what} (${ctx.file})`);
   }
   const scoped = lookupVar(ctx.scope, segs[0]);
-  if (scoped.found) return { code: JSON.stringify(getPath(scoped.value, segs.slice(1)) ?? null), state: false, item: false };
-  if (ctx.loopItem && segs[0] === ctx.loopItem) return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, state: false, item: true };
+  if (scoped.found)
+    return {
+      code: JSON.stringify(getPath(scoped.value, segs.slice(1)) ?? null),
+      state: false,
+      item: false
+    };
+  if (ctx.loopItem && segs[0] === ctx.loopItem)
+    return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, state: false, item: true };
   const key = resolveStateKey(segs[0], ctx);
-  if (!key) throw new Error(`${what} references unknown name "${segs[0]}" in ${ctx.file}. Use a loop item field, a declared :state, a number, or a "string".`);
+  if (!key)
+    throw new Error(
+      `${what} references unknown name "${segs[0]}" in ${ctx.file}. Use a loop item field, a declared :state, a number, or a "string".`
+    );
   const rest = segs.slice(1).join(".");
-  return { code: `S(${JSON.stringify(key)}${rest ? `, ${JSON.stringify(rest)}` : ""})`, state: true, item: false };
+  return {
+    code: `S(${JSON.stringify(key)}${rest ? `, ${JSON.stringify(rest)}` : ""})`,
+    state: true,
+    item: false
+  };
 }
 
 /**
@@ -150,11 +186,17 @@ export function compileWhen(raw, ctx, what = '"::: … when"') {
   let usesState = false;
   let usesItem = false;
   for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) { pieces.push(parts[i].toLowerCase() === "and" ? "&&" : "||"); continue; }
+    if (i % 2 === 1) {
+      pieces.push(parts[i].toLowerCase() === "and" ? "&&" : "||");
+      continue;
+    }
     let seg = parts[i].trim();
     // Optional leading `not` negates the whole sub-condition.
     let negate = false;
-    if (/^not\s+/i.test(seg)) { negate = true; seg = seg.replace(/^not\s+/i, "").trim(); }
+    if (/^not\s+/i.test(seg)) {
+      negate = true;
+      seg = seg.replace(/^not\s+/i, "").trim();
+    }
     const opMatch = seg.match(/^(.+?)\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
     let expr;
     if (opMatch) {
@@ -163,7 +205,8 @@ export function compileWhen(raw, ctx, what = '"::: … when"') {
       usesState = usesState || left.state || right.state;
       usesItem = usesItem || left.item || right.item;
       const op = opMatch[2].toLowerCase();
-      expr = op === "contains" ? `C(${left.code}, ${right.code})` : `${left.code} ${op} ${right.code}`;
+      expr =
+        op === "contains" ? `C(${left.code}, ${right.code})` : `${left.code} ${op} ${right.code}`;
     } else {
       const only = compileWhenOperand(seg, ctx, what);
       usesState = usesState || only.state;
@@ -212,18 +255,24 @@ export function compileComputedExpr(raw, ctx) {
   // SECURITY.md guarantee that function calls are compile errors. Runs BEFORE the
   // identifier→S() mapping so it never trips on the emitted helper calls.
   if (/[\w$)]\s*\(/.test(expr)) {
-    throw new Error(`Function calls are not allowed in :computed expressions ("${raw}" in ${ctx.file})`);
+    throw new Error(
+      `Function calls are not allowed in :computed expressions ("${raw}" in ${ctx.file})`
+    );
   }
   expr = expr.replace(/[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/g, (ref) => {
     if (/^__WDSTR\d+__$/.test(ref)) return ref;
     if (["true", "false", "null"].includes(ref)) return ref;
     const segs = ref.split(".");
     if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
-      throw new Error(`Path segment "${ref}" is not allowed in :computed expressions (${ctx.file})`);
+      throw new Error(
+        `Path segment "${ref}" is not allowed in :computed expressions (${ctx.file})`
+      );
     }
     const key = resolveStateKey(segs[0], ctx);
     if (!key) {
-      throw new Error(`:computed references unknown state "${segs[0]}" in ${ctx.file}. Declare it with :state or :fetch first.`);
+      throw new Error(
+        `:computed references unknown state "${segs[0]}" in ${ctx.file}. Declare it with :state or :fetch first.`
+      );
     }
     const rest = segs.slice(1).join(".");
     return `S(${JSON.stringify(key)}${rest ? `,${JSON.stringify(rest)}` : ""})`;

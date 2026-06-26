@@ -7,7 +7,13 @@
 
 import MarkdownIt from "markdown-it";
 import { LOOP_META } from "./context.js";
-import { escapeHtml, getPath, interpolateLeaf, lookupVar, resolveStateKey } from "./interpolation.js";
+import {
+  escapeHtml,
+  getPath,
+  interpolateLeaf,
+  lookupVar,
+  resolveStateKey
+} from "./interpolation.js";
 
 /**
  * @typedef {import("./context.js").Meta} Meta
@@ -46,7 +52,9 @@ export function selectMd(meta) {
  */
 export function renderProse(text, ctx) {
   text = resolveDestinationBindings(text, ctx);
-  return (ctx.md ?? md).render(text, { resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx) });
+  return (ctx.md ?? md).render(text, {
+    resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx)
+  });
 }
 
 /**
@@ -99,7 +107,9 @@ function resolveBindingRaw(expr, ctx) {
 function bindingPlugin(mdInstance) {
   mdInstance.inline.ruler.push("wd_binding", (state, silent) => {
     if (state.src.charCodeAt(state.pos) !== 0x7b /* { */) return false;
-    const match = /^\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/.exec(state.src.slice(state.pos));
+    const match = /^\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/.exec(
+      state.src.slice(state.pos)
+    );
     if (!match) return false;
     const resolve = state.env?.resolveBinding;
     const html = resolve ? resolve(match[1]) : null;
@@ -164,7 +174,10 @@ function attrTarget(children, i) {
     for (let j = i - 1; j >= 0; j--) {
       const t = children[j];
       if (t.type === prev.type) depth++;
-      else if (t.type === openType) { depth--; if (depth === 0) return t; }
+      else if (t.type === openType) {
+        depth--;
+        if (depth === 0) return t;
+      }
     }
   }
   return null;
@@ -183,7 +196,10 @@ function resolveBindingHtml(expr, ctx) {
 
   // Per-row meta vars ($index/$number/$first/$last/$count) — only inside a loop.
   if (LOOP_META[head]) {
-    if (!ctx.loopMeta) throw new Error(`"{ ${expr} }" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Move it into a loop body, or rename your value.`);
+    if (!ctx.loopMeta)
+      throw new Error(
+        `"{ ${expr} }" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Move it into a loop body, or rename your value.`
+      );
     if (ctx.loopItem) return `<span data-wd-each-meta="${LOOP_META[head]}"></span>`; // reactive: filled per row
     // static: the value is in scope (injected by staticUnroll); fall through.
   }

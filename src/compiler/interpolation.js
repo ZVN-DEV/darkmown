@@ -98,7 +98,9 @@ export function interpolateLeaf(value, expr, ctx) {
   if (value === null || value === undefined) return "";
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "object") {
-    throw new Error(`Cannot interpolate the object value "{ ${expr} }" in ${ctx.file}. Interpolate a field instead — e.g. { ${expr}.title } — or iterate it with @loop ${expr} into item.`);
+    throw new Error(
+      `Cannot interpolate the object value "{ ${expr} }" in ${ctx.file}. Interpolate a field instead — e.g. { ${expr}.title } — or iterate it with @loop ${expr} into item.`
+    );
   }
   return String(value);
 }
@@ -166,7 +168,7 @@ export function stripQuotes(value) {
 export function humanizeName(name) {
   const words = name
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2") // split camelCase
-    .replace(/[-_]+/g, " ")                  // hyphens/underscores → spaces
+    .replace(/[-_]+/g, " ") // hyphens/underscores → spaces
     .trim()
     .toLowerCase();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;

@@ -43,7 +43,9 @@ export function discoverRoutes(routesRoot) {
   const seen = new Map();
   for (const route of routes) {
     if (seen.has(route.route)) {
-      throw new Error(`Duplicate route "${route.route}" from ${seen.get(route.route)} and ${route.file}`);
+      throw new Error(
+        `Duplicate route "${route.route}" from ${seen.get(route.route)} and ${route.file}`
+      );
     }
     seen.set(route.route, route.file);
   }

@@ -6,9 +6,10 @@
 // copy change. The runtime-size line says "under 6 KB" (the CI-enforced budget)
 // rather than a precise number, so it can't drift out of date the way the old
 // baked "~4.7 KB" did.
-import { chromium } from "@playwright/test";
+
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { chromium } from "@playwright/test";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = path.join(here, "..", "site", "_", "og.png");
@@ -65,7 +66,10 @@ const html = `<!doctype html>
 </html>`;
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
+const page = await browser.newPage({
+  viewport: { width: 1200, height: 630 },
+  deviceScaleFactor: 1
+});
 await page.setContent(html, { waitUntil: "load" });
 await page.screenshot({ path: out, clip: { x: 0, y: 0, width: 1200, height: 630 } });
 await browser.close();

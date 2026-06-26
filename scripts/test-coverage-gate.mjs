@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // ===========================================================================
 // HONEST coverage gate for Darkmown.
 //
@@ -48,11 +49,11 @@
 //   threshold (first CLI arg, default 90). Passes green on the current tree.
 // ===========================================================================
 
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { spawnSync } from "node:child_process";
 
 const threshold = Number(process.argv[2] ?? 90);
 if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
