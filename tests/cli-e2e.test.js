@@ -97,7 +97,9 @@ test.after(() => {
 
 // --- the journey -----------------------------------------------------------
 
-test("full user journey: init -> build -> serve -> fetch", { timeout: STEP_TIMEOUT * 4 }, async (t) => {
+test("full user journey: init -> build -> serve -> fetch", {
+  timeout: STEP_TIMEOUT * 4
+}, async (t) => {
   const root = freshDir("journey");
 
   // 1. SCAFFOLD — run the real `init` into a fresh empty dir.
@@ -209,7 +211,9 @@ test("full user journey: init -> build -> serve -> fetch", { timeout: STEP_TIMEO
 
 // --- negative paths --------------------------------------------------------
 
-test("build fails on a .wd compile error with an actionable message", { timeout: STEP_TIMEOUT * 2 }, async () => {
+test("build fails on a .wd compile error with an actionable message", {
+  timeout: STEP_TIMEOUT * 2
+}, async () => {
   const root = freshDir("compile-error");
   const init = await runCli(["init", "."], root);
   assert.equal(init.code, 0, `init should exit 0\n${init.stderr}`);
@@ -242,7 +246,11 @@ test("build surfaces the .md-contains-directive hint", { timeout: STEP_TIMEOUT *
   );
 
   const result = await runCli(["build"], root);
-  assert.equal(result.code, 0, `.md hint is non-fatal; build should still exit 0\n${result.stderr}`);
+  assert.equal(
+    result.code,
+    0,
+    `.md hint is non-fatal; build should still exit 0\n${result.stderr}`
+  );
 
   const message = `${result.stderr}\n${result.stdout}`;
   assert.match(message, /hintpage\.md/, "hint names the .md file");

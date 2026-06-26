@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 // Drives the real runtime on /reactive/: filter, per-row add/remove cart,
 // counter increment, and an :if toggle. Selectors prefer text/role/data-attrs

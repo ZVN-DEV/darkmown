@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { gzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import { stripRuntimeComments } from "../src/builder.js";
 
 test("runtime stays under the 6KB gzip budget that the brand promises", () => {

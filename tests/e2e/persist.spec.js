@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 // The #cart section declares `:state items = [] persist`, so its value is
 // mirrored to localStorage under `wd:cart:items`. Change it, reload, and the
@@ -15,9 +15,7 @@ test("persisted cart survives a full page reload", async ({ page }) => {
   await expect(cart).toContainText("holds 2 item(s) worth $8");
 
   // Sanity: it actually wrote to localStorage.
-  const stored = await page.evaluate(() =>
-    localStorage.getItem("wd:cart:items")
-  );
+  const stored = await page.evaluate(() => localStorage.getItem("wd:cart:items"));
   expect(stored).toBeTruthy();
   expect(JSON.parse(stored)).toHaveLength(2);
 

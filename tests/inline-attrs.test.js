@@ -47,5 +47,8 @@ test("a link with no attr block is unchanged", () => {
 
 test("an attr block separated by a space is NOT applied (stays literal)", () => {
   const html = compileWd(["[Go](/u/) {.btn}"]);
-  assert.ok(!/<a [^>]*class="btn"/.test(html), "space breaks the association — no class on the link");
+  assert.ok(
+    !/<a [^>]*class="btn"/.test(html),
+    "space breaks the association — no class on the link"
+  );
 });

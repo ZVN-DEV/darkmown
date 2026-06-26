@@ -29,7 +29,10 @@ test(":textarea renders a named textarea with placeholder and derived aria-label
     ':submit "Go"',
     ":endform"
   ]);
-  assert.match(html, /<textarea name="notes" placeholder="Your notes" aria-label="Your notes"><\/textarea>/);
+  assert.match(
+    html,
+    /<textarea name="notes" placeholder="Your notes" aria-label="Your notes"><\/textarea>/
+  );
 });
 
 test(":textarea supports rows and the required flag", () => {
@@ -140,7 +143,10 @@ test(":checkbox escapes option labels", () => {
     ':submit "Go"',
     ":endform"
   ]);
-  assert.match(html, /<input type="checkbox" name="services" value="Crowns &amp; bridges"> Crowns &amp; bridges<\/label>/);
+  assert.match(
+    html,
+    /<input type="checkbox" name="services" value="Crowns &amp; bridges"> Crowns &amp; bridges<\/label>/
+  );
 });
 
 test(":checkbox with no options is a clear compile error", () => {

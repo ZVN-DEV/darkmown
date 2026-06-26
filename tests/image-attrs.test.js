@@ -72,7 +72,10 @@ test("subsequent images get width/height + loading=lazy + decoding=async", () =>
 });
 
 test("remote images are enhanced for loading but not measured (no disk read, no crash)", () => {
-  const html = project("![Hero](/__wd/media/hero.png)\n\n![Remote](https://cdn.example.com/x.png)", { "hero.png": [640, 360] });
+  const html = project(
+    "![Hero](/__wd/media/hero.png)\n\n![Remote](https://cdn.example.com/x.png)",
+    { "hero.png": [640, 360] }
+  );
   const remote = img(html, 1);
   assert.match(remote, /decoding="async"/);
   assert.match(remote, /loading="lazy"/);
@@ -91,7 +94,9 @@ test("a missing local file degrades gracefully — no dimensions, no throw", () 
 test("author-set sizing/loading is never clobbered", () => {
   // Raw HTML <img> with explicit width + loading; the compiler must respect it:
   // no auto height (would distort the author's width), keep loading as written.
-  const html = project('<img src="/__wd/media/hero.png" width="50" loading="eager">', { "hero.png": [640, 360] });
+  const html = project('<img src="/__wd/media/hero.png" width="50" loading="eager">', {
+    "hero.png": [640, 360]
+  });
   const tag = img(html, 0);
   assert.match(tag, /width="50"/, "keep the author width");
   assert.doesNotMatch(tag, /height=/, "do not add a mismatched height when author sized it");

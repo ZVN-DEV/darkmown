@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 // Drives the real :store machinery on /store/: durable persistence across a
 // reload, cross-tab sync via the `storage` event (two browser contexts on one
@@ -37,7 +37,9 @@ test.describe("/store/ — global :store in a real browser", () => {
     await expect(page.getByText(/Cart: 2/)).toBeVisible();
   });
 
-  test("mutating the store in one tab updates another tab via the storage event", async ({ browser }) => {
+  test("mutating the store in one tab updates another tab via the storage event", async ({
+    browser
+  }) => {
     // Two contexts share the same origin + localStorage-backed BroadcastChannel
     // for `storage` events in Chromium when they live in the same browser.
     const context = await browser.newContext();

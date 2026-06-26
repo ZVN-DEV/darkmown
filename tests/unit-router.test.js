@@ -49,7 +49,10 @@ test("outputPathForRoute maps the home route to dist/index.html", () => {
 
 test("outputPathForRoute maps named routes to nested index.html files", () => {
   assert.equal(outputPathForRoute("/dist", "/about/"), path.join("/dist", "about", "index.html"));
-  assert.equal(outputPathForRoute("/dist", "/blog/post/"), path.join("/dist", "blog", "post", "index.html"));
+  assert.equal(
+    outputPathForRoute("/dist", "/blog/post/"),
+    path.join("/dist", "blog", "post", "index.html")
+  );
 });
 
 // --- discoverRoutes ---------------------------------------------------------
@@ -66,7 +69,10 @@ test("discoverRoutes recurses nested dirs and returns routes sorted by path", ()
   write(root, "site/pages/beta/deep/index.wd", "# B");
 
   const routes = discoverRoutes(path.join(root, "site/pages"));
-  assert.deepEqual(routes.map((r) => r.route), ["/", "/alpha/", "/beta/deep/", "/zeta/"]);
+  assert.deepEqual(
+    routes.map((r) => r.route),
+    ["/", "/alpha/", "/beta/deep/", "/zeta/"]
+  );
   // every entry carries an absolute file path that exists
   for (const r of routes) assert.equal(fs.existsSync(r.file), true);
 });
@@ -86,8 +92,5 @@ test("discoverRoutes throws on a duplicate route across extensions", () => {
   const root = fixture();
   write(root, "site/pages/about.wd", "# A");
   write(root, "site/pages/about.md", "# B");
-  assert.throws(
-    () => discoverRoutes(path.join(root, "site/pages")),
-    /Duplicate route "\/about\/"/
-  );
+  assert.throws(() => discoverRoutes(path.join(root, "site/pages")), /Duplicate route "\/about\/"/);
 });

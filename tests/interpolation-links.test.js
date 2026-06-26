@@ -26,17 +26,21 @@ function compileWithShelf(pageLines, shelf = {}) {
 test("@loop interpolates item values into a markdown link destination", () => {
   const html = compileWithShelf(
     ["@loop /items.json into it", "- [{ it.name }]({ it.url })", "@endloop"],
-    { "items.json": [{ name: "Aurora", url: "/p/aurora/" }, { name: "Briza", url: "/p/briza/" }] }
+    {
+      "items.json": [
+        { name: "Aurora", url: "/p/aurora/" },
+        { name: "Briza", url: "/p/briza/" }
+      ]
+    }
   );
   assert.match(html, /<a href="\/p\/aurora\/">Aurora<\/a>/);
   assert.match(html, /<a href="\/p\/briza\/">Briza<\/a>/);
 });
 
 test("@loop interpolates item values into an image src", () => {
-  const html = compileWithShelf(
-    ["@loop /items.json into it", "![photo]({ it.img })", "@endloop"],
-    { "items.json": [{ img: "/media/a.png" }] }
-  );
+  const html = compileWithShelf(["@loop /items.json into it", "![photo]({ it.img })", "@endloop"], {
+    "items.json": [{ img: "/media/a.png" }]
+  });
   assert.match(html, /<img src="\/media\/a\.png" alt="photo"[^>]*>/);
 });
 
@@ -49,12 +53,7 @@ test("a build-time loop driving link hrefs stays static (no runtime markers)", (
 });
 
 test("interpolation resolves in a link destination from include/frontmatter scope", () => {
-  const html = compileWithShelf([
-    "---",
-    "url: /from/meta/",
-    "---",
-    "[Go]({ meta.url })",
-  ]);
+  const html = compileWithShelf(["---", "url: /from/meta/", "---", "[Go]({ meta.url })"]);
   assert.match(html, /<a href="\/from\/meta\/">Go<\/a>/);
 });
 
@@ -81,12 +80,12 @@ test("a destination interpolation with a title still forms the link", () => {
 // Schemes + obfuscations that must NEVER survive into an href/src.
 const DANGEROUS_LINK_DESTINATIONS = [
   "javascript:alert(1)",
-  "JavaScript:alert(1)",        // case obfuscation
-  " javascript:alert(1)",       // leading-space obfuscation
-  "java\tscript:alert(1)",      // embedded-tab obfuscation
+  "JavaScript:alert(1)", // case obfuscation
+  " javascript:alert(1)", // leading-space obfuscation
+  "java\tscript:alert(1)", // embedded-tab obfuscation
   "vbscript:msgbox(1)",
   "data:text/html,<script>alert(1)</script>",
-  "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+  "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=="
 ];
 
 // Assert nothing in the compiled HTML is an anchor/image pointing at an
@@ -127,20 +126,18 @@ test("plain javascript: link is left as literal text, not an anchor", () => {
 });
 
 test("an INTERPOLATED destination resolving to javascript: is neutralized (href)", () => {
-  const html = compileWithShelf(
-    ["@loop /items.json into it", "- [x]({ it.u })", "@endloop"],
-    { "items.json": [{ u: "javascript:alert(1)" }] }
-  );
+  const html = compileWithShelf(["@loop /items.json into it", "- [x]({ it.u })", "@endloop"], {
+    "items.json": [{ u: "javascript:alert(1)" }]
+  });
   // Build-time value is substituted into the destination, then markdown-it parses
   // it — and rejects the scheme, so no <a href="javascript: is produced.
   assertNoExecutableSink(html, "interpolated link javascript:");
 });
 
 test("an INTERPOLATED image src resolving to javascript: is neutralized (src)", () => {
-  const html = compileWithShelf(
-    ["@loop /items.json into it", "![a]({ it.s })", "@endloop"],
-    { "items.json": [{ s: "javascript:alert(1)" }] }
-  );
+  const html = compileWithShelf(["@loop /items.json into it", "![a]({ it.s })", "@endloop"], {
+    "items.json": [{ s: "javascript:alert(1)" }]
+  });
   assertNoExecutableSink(html, "interpolated image javascript:");
 });
 
@@ -155,9 +152,8 @@ test("an INTERPOLATED destination resolving to data:text/html is neutralized", (
 test("an INTERPOLATED destination resolving to a SAFE url still forms the link (control)", () => {
   // Guards against a future over-broad sanitizer that strips legitimate hrefs:
   // a benign interpolated destination must continue to produce a real anchor.
-  const html = compileWithShelf(
-    ["@loop /items.json into it", "- [x]({ it.u })", "@endloop"],
-    { "items.json": [{ u: "/p/safe/" }] }
-  );
+  const html = compileWithShelf(["@loop /items.json into it", "- [x]({ it.u })", "@endloop"], {
+    "items.json": [{ u: "/p/safe/" }]
+  });
   assert.match(html, /<a href="\/p\/safe\/">x<\/a>/, "safe interpolated destination still links");
 });

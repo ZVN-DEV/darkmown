@@ -1,6 +1,6 @@
 {
   "name": "@zvndev/darkmown",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -10,27 +10,41 @@
   "bin": {
     "darkmown": "./src/cli.js"
   },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
   "types": "./types/index.d.ts",
   "scripts": {
     "build": "node src/cli.js build",
     "runtime:size": "node -e \"const fs=require('fs'),zlib=require('zlib'); const size=zlib.gzipSync(fs.readFileSync('dist/__wd/runtime.js')).length; console.log('shipped runtime gzipped: '+size+' bytes (budget: 6144)'); if (size >= 6144) process.exit(1)\"",
     "dev": "node src/cli.js dev",
     "test": "node --test tests/*.test.js",
-    "test:cov": "node scripts/test-coverage-gate.mjs 90",
+    "test:cov": "node scripts/test-coverage-gate.mjs 100",
     "test:e2e": "playwright test",
     "test:extension": "npm --prefix editors/vscode ci && npm --prefix editors/vscode test",
     "pack:extension": "cd editors/vscode && npx --yes @vscode/vsce package",
     "typecheck": "tsc --noEmit",
     "types": "tsc -p tsconfig.types.json",
     "smoke": "node scripts/smoke-consumer.mjs",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "size:check": "node scripts/size-check.mjs",
+    "prepare": "husky || true",
     "prepublish:check": "npm run typecheck && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
     "prepublishOnly": "npm run prepublish:check",
     "og": "node scripts/og-image.mjs"
+  },
+  "lint-staged": {
+    "*.{js,json}": "biome check --no-errors-on-unmatched --files-ignore-unknown=true"
   },
   "files": [
     "src",
     "types",
     "site",
+    "!site/_/og.png",
     "docs/cli.md",
     "docs/spec-alignment.md",
     "AGENTS.md",
@@ -47,9 +61,12 @@
     "markdown-it": "^14.2.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.1",
     "@playwright/test": "^1.49.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "typescript": "^6.0.3"
   },
   "repository": {

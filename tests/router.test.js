@@ -24,10 +24,7 @@ test("duplicate route candidates fail clearly", () => {
   write(root, "site/pages/index.wd", "# Home");
   write(root, "site/pages/index.md", "# Duplicate");
 
-  assert.throws(
-    () => discoverRoutes(path.join(root, "site/pages")),
-    /Duplicate route "\/"/
-  );
+  assert.throws(() => discoverRoutes(path.join(root, "site/pages")), /Duplicate route "\/"/);
 });
 
 function fixture() {

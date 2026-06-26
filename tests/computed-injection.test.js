@@ -62,37 +62,44 @@ function evalExpr(expr, read = () => "X") {
 }
 
 test("A1: single-quoted literal with embedded double-quote does NOT execute (7*7 stays inert)", () => {
-  const html = compileWd([
-    ":state x = \"X\"",
-    ":computed pwned = x == '\"+(7*7)+\"'"
-  ].join("\n"));
+  const html = compileWd([':state x = "X"', ":computed pwned = x == '\"+(7*7)+\"'"].join("\n"));
   const expr = extractComputedExpr(html);
 
   // The payload must round-trip as the literal STRING `"+(7*7)+"`, never as code.
   // If it were live, `S("x")` ("X") == ... would evaluate the arithmetic; with the
   // fix it is a plain string comparison that is simply false.
-  assert.doesNotMatch(expr, /\bS\("x"\)\s*==\s*""\s*\+\s*\(7\s*\*\s*7\)/,
-    "the literal must not have re-wrapped into live arithmetic");
+  assert.doesNotMatch(
+    expr,
+    /\bS\("x"\)\s*==\s*""\s*\+\s*\(7\s*\*\s*7\)/,
+    "the literal must not have re-wrapped into live arithmetic"
+  );
 
   // Evaluating the whole expr must not yield 49 (or any number) — it's a boolean
   // string compare. And the right-hand operand, isolated, must equal the literal.
   const result = evalExpr(expr, (key) => (key === "x" ? "X" : undefined));
-  assert.equal(typeof result, "boolean", "compiled expr must evaluate to a boolean comparison, not run arithmetic");
-  assert.equal(result, false, "S(\"x\") (\"X\") never equals the literal string");
+  assert.equal(
+    typeof result,
+    "boolean",
+    "compiled expr must evaluate to a boolean comparison, not run arithmetic"
+  );
+  assert.equal(result, false, 'S("x") ("X") never equals the literal string');
 
   // Directly evaluate the right-hand literal in isolation to prove it is the
   // inert string '"+(7*7)+"' and not the number 49.
   const rhs = expr.replace(/^.*==\s*/, "");
   const literalValue = evalExpr(rhs);
-  assert.equal(literalValue, '"+(7*7)+"', "literal must round-trip exactly, with no arithmetic folded");
+  assert.equal(
+    literalValue,
+    '"+(7*7)+"',
+    "literal must round-trip exactly, with no arithmetic folded"
+  );
   assert.notEqual(literalValue, 49, "arithmetic in the payload must never execute");
 });
 
 test("A1: a '\"+globalThis+\"' payload does not reference any global when evaluated", () => {
-  const html = compileWd([
-    ":state x = \"X\"",
-    ":computed pwned = x == '\"+globalThis+\"'"
-  ].join("\n"));
+  const html = compileWd(
+    [':state x = "X"', ":computed pwned = x == '\"+globalThis+\"'"].join("\n")
+  );
   const expr = extractComputedExpr(html);
 
   // The compiled artifact is `S("x") == "\"+globalThis+\""` — `globalThis` lives
@@ -104,7 +111,11 @@ test("A1: a '\"+globalThis+\"' payload does not reference any global when evalua
     throw new Error("the compiled expr must not call S for an inert literal RHS");
   });
   assert.equal(literalValue, '"+globalThis+"', "globalThis payload must stay an inert string");
-  assert.equal(typeof literalValue, "string", "payload must evaluate to a string, never the global");
+  assert.equal(
+    typeof literalValue,
+    "string",
+    "payload must evaluate to a string, never the global"
+  );
 });
 
 test("A1: a backslash-bearing payload is REJECTED (never compiled to live code)", () => {
@@ -114,19 +125,13 @@ test("A1: a backslash-bearing payload is REJECTED (never compiled to live code)"
   // is rejected at compile time rather than re-wrapped into something live. That
   // rejection IS the safe outcome: a backslash must never reach `new Function`.
   assert.throws(
-    () => compileWd([
-      ":state x = \"X\"",
-      ":computed pwned = x == '\\\\\"+1+\"'"
-    ].join("\n")),
+    () => compileWd([':state x = "X"', ":computed pwned = x == '\\\\\"+1+\"'"].join("\n")),
     /Unsupported string syntax in :computed/
   );
 });
 
 test("A1: ordinary double-quoted literals still compile unchanged", () => {
-  const html = compileWd([
-    ":state label = \"hi\"",
-    ":computed shown = label == \"hi\""
-  ].join("\n"));
+  const html = compileWd([':state label = "hi"', ':computed shown = label == "hi"'].join("\n"));
   const expr = extractComputedExpr(html);
   // Matches the pre-existing unit-grammar expectation: S("label") == "hi".
   assert.equal(expr, 'S("label") == "hi"');
@@ -135,10 +140,26 @@ test("A1: ordinary double-quoted literals still compile unchanged", () => {
 });
 
 test("A1: a plain string literal :computed evaluates to that string", () => {
-  const html = compileWd([
-    ":state on = true",
-    ":computed badge = \"sale\""
-  ].join("\n"));
+  const html = compileWd([":state on = true", ':computed badge = "sale"'].join("\n"));
   const expr = extractComputedExpr(html);
   assert.equal(evalExpr(expr), "sale");
+});
+
+test("A2: a method call on state (x.valueOf()) is REJECTED, never compiled to S(...)()", () => {
+  // Before the function-call guard, `x.valueOf()` compiled to `S("x","valueOf")()`
+  // — a live invocation reaching `new Function`. It is inert under the JSON-state
+  // model (S returns data, not functions), but SECURITY.md guarantees function
+  // calls are compile errors. Assert the rejection so the artifact can never carry
+  // a trailing `()`.
+  assert.throws(
+    () => compileWd([":state x = 1", ":computed pwned = x.valueOf()"].join("\n")),
+    /Function calls are not allowed in :computed/
+  );
+});
+
+test("A2: a bare call x() is REJECTED", () => {
+  assert.throws(
+    () => compileWd([":state x = 1", ":computed pwned = x()"].join("\n")),
+    /Function calls are not allowed in :computed/
+  );
 });

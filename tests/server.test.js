@@ -9,7 +9,10 @@ test("public file resolution stays inside dist", () => {
 
   assert.equal(resolvePublicFile(dist, "/"), path.join(dist, "index.html"));
   assert.equal(resolvePublicFile(dist, "/docs/"), path.join(dist, "docs/index.html"));
-  assert.equal(resolvePublicFile(dist, "/__wd/scripts/app.js"), path.join(dist, "__wd/scripts/app.js"));
+  assert.equal(
+    resolvePublicFile(dist, "/__wd/scripts/app.js"),
+    path.join(dist, "__wd/scripts/app.js")
+  );
   assert.equal(resolvePublicFile(dist, "/__wd/../../package.json"), null);
   assert.equal(resolvePublicFile(dist, "/__wd/%2e%2e/%2e%2e/package.json"), null);
 });

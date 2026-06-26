@@ -23,11 +23,22 @@ const runtimeSource = fs.readFileSync(path.join(here, "..", "src", "runtime.js")
 // --- Minimal DOM stub ------------------------------------------------------
 
 class ClassList {
-  constructor() { this._set = new Set(); }
-  add(c) { this._set.add(c); }
-  remove(c) { this._set.delete(c); }
-  contains(c) { return this._set.has(c); }
-  toggle(c, on) { on ? this.add(c) : this.remove(c); return on; }
+  constructor() {
+    this._set = new Set();
+  }
+  add(c) {
+    this._set.add(c);
+  }
+  remove(c) {
+    this._set.delete(c);
+  }
+  contains(c) {
+    return this._set.has(c);
+  }
+  toggle(c, on) {
+    on ? this.add(c) : this.remove(c);
+    return on;
+  }
 }
 
 class El {
@@ -41,10 +52,18 @@ class El {
     // <template> content is a fragment whose firstElementChild is the row proto.
     if (this.tagName === "TEMPLATE") this.content = new Fragment();
   }
-  setAttribute(name, value) { this.attrs.set(name, String(value)); }
-  getAttribute(name) { return this.attrs.has(name) ? this.attrs.get(name) : null; }
-  hasAttribute(name) { return this.attrs.has(name); }
-  removeAttribute(name) { this.attrs.delete(name); }
+  setAttribute(name, value) {
+    this.attrs.set(name, String(value));
+  }
+  getAttribute(name) {
+    return this.attrs.has(name) ? this.attrs.get(name) : null;
+  }
+  hasAttribute(name) {
+    return this.attrs.has(name);
+  }
+  removeAttribute(name) {
+    this.attrs.delete(name);
+  }
   appendChild(node) {
     if (node.parent) node.parent.removeChild(node);
     node.parent = this;
@@ -57,7 +76,9 @@ class El {
     node.parent = null;
     return node;
   }
-  remove() { if (this.parent) this.parent.removeChild(this); }
+  remove() {
+    if (this.parent) this.parent.removeChild(this);
+  }
   cloneNode() {
     const copy = new El(this.tagName);
     for (const [k, v] of this.attrs) copy.attrs.set(k, v);
@@ -65,14 +86,25 @@ class El {
     for (const child of this.children) copy.appendChild(child.cloneNode(true));
     return copy;
   }
-  get firstElementChild() { return this.children[0] || null; }
-  get textContent() { return this._text; }
-  set textContent(v) { this._text = v == null ? "" : String(v); this.children = []; }
+  get firstElementChild() {
+    return this.children[0] || null;
+  }
+  get textContent() {
+    return this._text;
+  }
+  set textContent(v) {
+    this._text = v == null ? "" : String(v);
+    this.children = [];
+  }
   // innerHTML is only ever assigned "" or template.innerHTML in render(); the
   // loop reconcile path under test never relies on HTML parsing, so empty-string
   // clears children and that is all the runtime needs here.
-  get innerHTML() { return ""; }
-  set innerHTML(v) { if (!v) this.children = []; }
+  get innerHTML() {
+    return "";
+  }
+  set innerHTML(v) {
+    if (!v) this.children = [];
+  }
 
   matches(selector) {
     // Support the comma-separated multi-selector the click handler uses
@@ -89,20 +121,30 @@ class El {
     }
     return null;
   }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
   querySelectorAll(selector) {
     const out = [];
-    walk(this, (node) => { if (node !== this && matchSelector(node, selector)) out.push(node); });
+    walk(this, (node) => {
+      if (node !== this && matchSelector(node, selector)) out.push(node);
+    });
     return out;
   }
   // <input>/<textarea>/<select> value, the surface :bind-input reads & writes.
   // Backed by an attribute so cloneNode + setAttribute("value") stay coherent.
-  get value() { return this.attrs.has("value") ? this.attrs.get("value") : ""; }
-  set value(v) { this.attrs.set("value", v == null ? "" : String(v)); }
+  get value() {
+    return this.attrs.has("value") ? this.attrs.get("value") : "";
+  }
+  set value(v) {
+    this.attrs.set("value", v == null ? "" : String(v));
+  }
 }
 
 class Fragment extends El {
-  constructor() { super("#fragment"); }
+  constructor() {
+    super("#fragment");
+  }
 }
 
 function walk(node, fn) {
@@ -149,12 +191,25 @@ function collectFormControls(form) {
 }
 
 class FormDataStub {
-  constructor(form) { this._pairs = form ? collectFormControls(form) : []; }
-  getAll(name) { return this._pairs.filter(([k]) => k === name).map(([, v]) => v); }
-  get(name) { const hit = this._pairs.find(([k]) => k === name); return hit ? hit[1] : null; }
-  append(name, value) { this._pairs.push([name, String(value)]); }
-  *[Symbol.iterator]() { yield* this._pairs; }
-  entries() { return this._pairs[Symbol.iterator](); }
+  constructor(form) {
+    this._pairs = form ? collectFormControls(form) : [];
+  }
+  getAll(name) {
+    return this._pairs.filter(([k]) => k === name).map(([, v]) => v);
+  }
+  get(name) {
+    const hit = this._pairs.find(([k]) => k === name);
+    return hit ? hit[1] : null;
+  }
+  append(name, value) {
+    this._pairs.push([name, String(value)]);
+  }
+  *[Symbol.iterator]() {
+    yield* this._pairs;
+  }
+  entries() {
+    return this._pairs[Symbol.iterator]();
+  }
 }
 
 class URLSearchParamsStub {
@@ -166,7 +221,9 @@ class URLSearchParamsStub {
     }
   }
   toString() {
-    return this._pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+    return this._pairs
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
   }
 }
 
@@ -181,7 +238,9 @@ function makeSandbox(rootBuilder, { withRAF = false, globals = {}, initialStore 
     activeElement: null,
     querySelectorAll: (sel) => root.querySelectorAll(sel),
     querySelector: (sel) => root.querySelector(sel),
-    addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); }
+    addEventListener: (type, fn) => {
+      (listeners[type] ||= []).push(fn);
+    }
   };
 
   // localStorage backing store; pre-seeded so a :persist/:store override can be
@@ -193,7 +252,6 @@ function makeSandbox(rootBuilder, { withRAF = false, globals = {}, initialStore 
     removeItem: (k) => store.delete(k)
   };
 
-  let renderCount = 0;
   const sandbox = {
     document,
     localStorage,
@@ -214,13 +272,18 @@ function makeSandbox(rootBuilder, { withRAF = false, globals = {}, initialStore 
     URLSearchParams: URLSearchParamsStub
   };
   if (withRAF) {
-    sandbox.requestAnimationFrame = (fn) => { sandbox.__rafQueue.push(fn); return sandbox.__rafQueue.length; };
+    sandbox.requestAnimationFrame = (fn) => {
+      sandbox.__rafQueue.push(fn);
+      return sandbox.__rafQueue.length;
+    };
     sandbox.__rafQueue = [];
   }
   // The runtime registers a `window.addEventListener("storage", …)` for cross-tab
   // :store sync; the sandbox window is the sandbox itself, so expose the same
   // listener registry there. `fire(type, target)` drives both document + window.
-  sandbox.addEventListener = (type, fn) => { (listeners[type] ||= []).push(fn); };
+  sandbox.addEventListener = (type, fn) => {
+    (listeners[type] ||= []).push(fn);
+  };
   sandbox.window = sandbox;
   // Extra globals (fetch stub, timers, Promise) for the async :fetch tests.
   Object.assign(sandbox, globals);
@@ -242,10 +305,18 @@ function makeSandbox(rootBuilder, { withRAF = false, globals = {}, initialStore 
     // preventDefault() (the :form submit handler must, to suppress navigation).
     fire(type, target) {
       let defaultPrevented = false;
-      for (const fn of listeners[type] || []) fn({ target, preventDefault() { defaultPrevented = true; } });
+      for (const fn of listeners[type] || [])
+        fn({
+          target,
+          preventDefault() {
+            defaultPrevented = true;
+          }
+        });
       return defaultPrevented;
     },
-    get renderCount() { return sandbox.__renderCount || 0; },
+    get renderCount() {
+      return sandbox.__renderCount || 0;
+    },
     flushRAF() {
       const q = sandbox.__rafQueue || [];
       sandbox.__rafQueue = [];
@@ -289,13 +360,22 @@ function loopRegion(root, El, { key = "items", initial } = {}) {
 test("reconcile reuses keyed nodes when adding an item", () => {
   let out;
   const h = makeSandbox((root, El) => {
-    ({ out } = loopRegion(root, El, { initial: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }] }));
+    ({ out } = loopRegion(root, El, {
+      initial: [
+        { id: "a", name: "Alpha" },
+        { id: "b", name: "Beta" }
+      ]
+    }));
   });
   assert.equal(out.children.length, 2);
   const nodeA = out.children[0];
   const nodeB = out.children[1];
 
-  h.sandbox.wd.state.items = [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }, { id: "c", name: "Gamma" }];
+  h.sandbox.wd.state.items = [
+    { id: "a", name: "Alpha" },
+    { id: "b", name: "Beta" },
+    { id: "c", name: "Gamma" }
+  ];
   h.sandbox.wd.render();
 
   assert.equal(out.children.length, 3);
@@ -308,32 +388,57 @@ test("reconcile reuses keyed nodes when adding an item", () => {
 test("reconcile removes the orphan node when an item is deleted", () => {
   let out;
   const h = makeSandbox((root, El) => {
-    ({ out } = loopRegion(root, El, { initial: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }, { id: "c", name: "Gamma" }] }));
+    ({ out } = loopRegion(root, El, {
+      initial: [
+        { id: "a", name: "Alpha" },
+        { id: "b", name: "Beta" },
+        { id: "c", name: "Gamma" }
+      ]
+    }));
   });
   const nodeA = out.children[0];
   const nodeC = out.children[2];
 
-  h.sandbox.wd.state.items = [{ id: "a", name: "Alpha" }, { id: "c", name: "Gamma" }];
+  h.sandbox.wd.state.items = [
+    { id: "a", name: "Alpha" },
+    { id: "c", name: "Gamma" }
+  ];
   h.sandbox.wd.render();
 
   assert.equal(out.children.length, 2);
   assert.strictEqual(out.children[0], nodeA, "surviving node reused");
   assert.strictEqual(out.children[1], nodeC, "surviving node reused");
-  assert.ok(!out.children.some((c) => c.getAttribute("data-wd-loop-key") === "b"), "orphan b removed");
+  assert.ok(
+    !out.children.some((c) => c.getAttribute("data-wd-loop-key") === "b"),
+    "orphan b removed"
+  );
 });
 
 test("reconcile reuses the same nodes when items are reordered", () => {
   let out;
   const h = makeSandbox((root, El) => {
-    ({ out } = loopRegion(root, El, { initial: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }, { id: "c", name: "Gamma" }] }));
+    ({ out } = loopRegion(root, El, {
+      initial: [
+        { id: "a", name: "Alpha" },
+        { id: "b", name: "Beta" },
+        { id: "c", name: "Gamma" }
+      ]
+    }));
   });
   const before = { a: out.children[0], b: out.children[1], c: out.children[2] };
 
-  h.sandbox.wd.state.items = [{ id: "c", name: "Gamma" }, { id: "a", name: "Alpha" }, { id: "b", name: "Beta" }];
+  h.sandbox.wd.state.items = [
+    { id: "c", name: "Gamma" },
+    { id: "a", name: "Alpha" },
+    { id: "b", name: "Beta" }
+  ];
   h.sandbox.wd.render();
 
   assert.equal(out.children.length, 3);
-  assert.deepEqual(out.children.map((n) => n.getAttribute("data-wd-loop-key")), ["c", "a", "b"]);
+  assert.deepEqual(
+    out.children.map((n) => n.getAttribute("data-wd-loop-key")),
+    ["c", "a", "b"]
+  );
   assert.strictEqual(out.children[0], before.c, "node c reused in new position");
   assert.strictEqual(out.children[1], before.a, "node a reused in new position");
   assert.strictEqual(out.children[2], before.b, "node b reused in new position");
@@ -350,7 +455,11 @@ test("getPath rejects __proto__ / constructor / prototype and does not pollute O
 
   // wd.get reads through state[key]; nest a payload and resolve via the loop's
   // getPath-driven binds. Easiest direct probe: write state then read a poisoned path.
-  h.sandbox.wd.set("evil", { __proto__: { polluted: "yes" }, constructor: { polluted: "yes" }, safe: { deep: "ok" } });
+  h.sandbox.wd.set("evil", {
+    __proto__: { polluted: "yes" },
+    constructor: { polluted: "yes" },
+    safe: { deep: "ok" }
+  });
 
   // Drive getPath through a freshly added bind node reading a dangerous path.
   const root = h.root;
@@ -376,7 +485,7 @@ test("getPath rejects __proto__ / constructor / prototype and does not pollute O
   assert.equal(probe3.textContent, "ok", "safe path still resolves");
 
   // Prototype is not polluted in the sandbox realm.
-  assert.equal(({}).polluted, undefined);
+  assert.equal({}.polluted, undefined);
   // And not in this realm either.
   assert.equal(Object.prototype.polluted, undefined);
 });
@@ -387,9 +496,14 @@ test("getPath rejects __proto__ / constructor / prototype and does not pollute O
 
 test("colliding loop keys get distinct effective keys via the collision counter", () => {
   let out;
-  const h = makeSandbox((root, El) => {
+  makeSandbox((root, El) => {
     // Two items with the SAME id collide on their base key.
-    ({ out } = loopRegion(root, El, { initial: [{ id: "dup", name: "First" }, { id: "dup", name: "Second" }] }));
+    ({ out } = loopRegion(root, El, {
+      initial: [
+        { id: "dup", name: "First" },
+        { id: "dup", name: "Second" }
+      ]
+    }));
   });
 
   assert.equal(out.children.length, 2, "both colliding rows render as separate nodes");
@@ -397,7 +511,10 @@ test("colliding loop keys get distinct effective keys via the collision counter"
   assert.equal(keys[0], "dup");
   assert.equal(keys[1], "dup#1", "second collision gets a #1 suffix");
   assert.notEqual(keys[0], keys[1], "effective keys are distinct");
-  assert.deepEqual(out.children.map((n) => n.textContent), ["First", "Second"]);
+  assert.deepEqual(
+    out.children.map((n) => n.textContent),
+    ["First", "Second"]
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -406,9 +523,12 @@ test("colliding loop keys get distinct effective keys via the collision counter"
 
 test("N rapid mutations coalesce into exactly one batched render", () => {
   let out;
-  const h = makeSandbox((root, El) => {
-    ({ out } = loopRegion(root, El, { initial: [{ id: "a", name: "A" }] }));
-  }, { withRAF: true });
+  const h = makeSandbox(
+    (root, El) => {
+      ({ out } = loopRegion(root, El, { initial: [{ id: "a", name: "A" }] }));
+    },
+    { withRAF: true }
+  );
 
   const base = h.renderCount; // initial synchronous renderNow on load
 
@@ -501,9 +621,12 @@ test("failing computed expressions warn (with expression text) when wd.debug is 
 
 test("wd.render is a synchronous flush for manual / external callers", () => {
   let out;
-  const h = makeSandbox((root, El) => {
-    ({ out } = loopRegion(root, El, { initial: [{ id: "a", name: "A" }] }));
-  }, { withRAF: true });
+  const h = makeSandbox(
+    (root, El) => {
+      ({ out } = loopRegion(root, El, { initial: [{ id: "a", name: "A" }] }));
+    },
+    { withRAF: true }
+  );
 
   const base = h.renderCount;
   h.sandbox.wd.state.items = [{ id: "a", name: "Sync" }];
@@ -518,7 +641,11 @@ test("wd.render is a synchronous flush for manual / external callers", () => {
 
 // Build a loop region with clause attributes. The row proto binds a path (or the
 // whole item when path is null) so we can assert the rendered values + order.
-function clauseLoop(root, El, { key = "items", initial, path = "v", attrs = {}, empty = null } = {}) {
+function clauseLoop(
+  root,
+  El,
+  { key = "items", initial, path = "v", attrs = {}, empty = null } = {}
+) {
   if (initial !== undefined) {
     const script = new El("script");
     script.setAttribute("data-wd-state", "");
@@ -556,36 +683,58 @@ function clauseLoop(root, El, { key = "items", initial, path = "v", attrs = {}, 
 
 test("runtime sorts rows ascending by a path key", () => {
   let out;
-  const h = makeSandbox((root, El) => {
+  makeSandbox((root, El) => {
     ({ out } = clauseLoop(root, El, {
-      initial: [{ id: 1, v: 3 }, { id: 2, v: 1 }, { id: 3, v: 2 }],
+      initial: [
+        { id: 1, v: 3 },
+        { id: 2, v: 1 },
+        { id: 3, v: 2 }
+      ],
       attrs: { "data-wd-loop-sort": "v", "data-wd-loop-sort-dir": "asc" }
     }));
   });
-  assert.deepEqual(out.children.map((n) => n.textContent), ["1", "2", "3"]);
+  assert.deepEqual(
+    out.children.map((n) => n.textContent),
+    ["1", "2", "3"]
+  );
 });
 
 test("runtime sorts rows descending and uses localeCompare for strings", () => {
   let out;
-  const h = makeSandbox((root, El) => {
+  makeSandbox((root, El) => {
     ({ out } = clauseLoop(root, El, {
-      initial: [{ id: 1, v: "banana" }, { id: 2, v: "apple" }, { id: 3, v: "cherry" }],
+      initial: [
+        { id: 1, v: "banana" },
+        { id: 2, v: "apple" },
+        { id: 3, v: "cherry" }
+      ],
       attrs: { "data-wd-loop-sort": "v", "data-wd-loop-sort-dir": "desc" }
     }));
   });
-  assert.deepEqual(out.children.map((n) => n.textContent), ["cherry", "banana", "apple"]);
+  assert.deepEqual(
+    out.children.map((n) => n.textContent),
+    ["cherry", "banana", "apple"]
+  );
 });
 
 test("runtime applies reverse, then offset, then limit (pipeline order)", () => {
   let out;
-  const h = makeSandbox((root, El) => {
+  makeSandbox((root, El) => {
     ({ out } = clauseLoop(root, El, {
-      initial: [{ id: 1, v: "a" }, { id: 2, v: "b" }, { id: 3, v: "c" }, { id: 4, v: "d" }],
+      initial: [
+        { id: 1, v: "a" },
+        { id: 2, v: "b" },
+        { id: 3, v: "c" },
+        { id: 4, v: "d" }
+      ],
       attrs: { "data-wd-loop-reverse": "", "data-wd-loop-offset": "1", "data-wd-loop-limit": "2" }
     }));
   });
   // reverse → d c b a ; offset 1 → c b a ; limit 2 → c b
-  assert.deepEqual(out.children.map((n) => n.textContent), ["c", "b"]);
+  assert.deepEqual(
+    out.children.map((n) => n.textContent),
+    ["c", "b"]
+  );
 });
 
 test("runtime reads a state-key limit for reactive paging", () => {
@@ -596,7 +745,11 @@ test("runtime reads a state-key limit for reactive paging", () => {
     script.textContent = JSON.stringify({ pageSize: 2 });
     root.appendChild(script);
     ({ out } = clauseLoop(root, El, {
-      initial: [{ id: 1, v: "a" }, { id: 2, v: "b" }, { id: 3, v: "c" }],
+      initial: [
+        { id: 1, v: "a" },
+        { id: 2, v: "b" },
+        { id: 3, v: "c" }
+      ],
       attrs: { "data-wd-loop-limit": "key:pageSize" }
     }));
   });
@@ -609,14 +762,24 @@ test("runtime reads a state-key limit for reactive paging", () => {
 
 test("runtime resolves a dotted loop source via getPath", () => {
   let out;
-  const h = makeSandbox((root, El) => {
+  makeSandbox((root, El) => {
     const script = new El("script");
     script.setAttribute("data-wd-state", "");
-    script.textContent = JSON.stringify({ team: { members: [{ id: 1, v: "Ann" }, { id: 2, v: "Bo" }] } });
+    script.textContent = JSON.stringify({
+      team: {
+        members: [
+          { id: 1, v: "Ann" },
+          { id: 2, v: "Bo" }
+        ]
+      }
+    });
     root.appendChild(script);
     ({ out } = clauseLoop(root, El, { key: "team.members" }));
   });
-  assert.deepEqual(out.children.map((n) => n.textContent), ["Ann", "Bo"]);
+  assert.deepEqual(
+    out.children.map((n) => n.textContent),
+    ["Ann", "Bo"]
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -625,17 +788,22 @@ test("runtime resolves a dotted loop source via getPath", () => {
 
 test("runtime fills per-row meta markers ($index/$number/$first/$last/$count)", () => {
   let out;
-  const h = makeSandbox((root, El) => {
+  makeSandbox((root, El) => {
     const region = new El("div");
     region.setAttribute("data-wd-loop", "items");
     const template = new El("template");
     template.setAttribute("data-wd-loop-template", "");
     const proto = new El("li");
     // a row that carries several meta markers
-    const idx = new El("span"); idx.setAttribute("data-wd-each-meta", "index");
-    const num = new El("span"); num.setAttribute("data-wd-each-meta", "number");
-    const cnt = new El("span"); cnt.setAttribute("data-wd-each-meta", "count");
-    proto.appendChild(idx); proto.appendChild(num); proto.appendChild(cnt);
+    const idx = new El("span");
+    idx.setAttribute("data-wd-each-meta", "index");
+    const num = new El("span");
+    num.setAttribute("data-wd-each-meta", "number");
+    const cnt = new El("span");
+    cnt.setAttribute("data-wd-each-meta", "count");
+    proto.appendChild(idx);
+    proto.appendChild(num);
+    proto.appendChild(cnt);
     template.content.appendChild(proto);
     region.appendChild(template);
     const outEl = new El("ul");
@@ -648,15 +816,26 @@ test("runtime fills per-row meta markers ($index/$number/$first/$last/$count)", 
     root.appendChild(region);
     out = outEl;
   });
-  const metas = (row) => row.querySelectorAll("[data-wd-each-meta]").map((s) => [s.getAttribute("data-wd-each-meta"), s.textContent]);
-  assert.deepEqual(metas(out.children[0]), [["index", "0"], ["number", "1"], ["count", "3"]]);
-  assert.deepEqual(metas(out.children[2]), [["index", "2"], ["number", "3"], ["count", "3"]]);
+  const metas = (row) =>
+    row
+      .querySelectorAll("[data-wd-each-meta]")
+      .map((s) => [s.getAttribute("data-wd-each-meta"), s.textContent]);
+  assert.deepEqual(metas(out.children[0]), [
+    ["index", "0"],
+    ["number", "1"],
+    ["count", "3"]
+  ]);
+  assert.deepEqual(metas(out.children[2]), [
+    ["index", "2"],
+    ["number", "3"],
+    ["count", "3"]
+  ]);
 });
 
 test("runtime renders the @empty template when the post-pipeline list is empty", () => {
-  let out, region;
+  let out;
   const h = makeSandbox((root, El) => {
-    ({ out, region } = clauseLoop(root, El, { initial: [], empty: "Nothing here." }));
+    ({ out } = clauseLoop(root, El, { initial: [], empty: "Nothing here." }));
   });
   // No rows + an empty template → the out container shows the empty content.
   assert.equal(out.children.length, 1);
@@ -665,7 +844,10 @@ test("runtime renders the @empty template when the post-pipeline list is empty",
   // Add a row → empty branch is replaced by rendered rows.
   h.sandbox.wd.state.items = [{ id: 1, v: "x" }];
   h.sandbox.wd.render();
-  assert.deepEqual(out.children.map((n) => n.textContent), ["x"]);
+  assert.deepEqual(
+    out.children.map((n) => n.textContent),
+    ["x"]
+  );
 
   // Remove all rows again → empty branch returns.
   h.sandbox.wd.state.items = [];
@@ -725,7 +907,14 @@ test(":fetch renews the token on a 401, writes it back, and retries once", async
     "/auth/refresh": { status: 200, body: { Authorization: "Bearer new" } }
   });
   const h = makeSandbox(
-    (root, El) => fetchRegion(root, El, { key: "feed", url: "/api/feed", headers: "session", refresh: "/auth/refresh", session: { Authorization: "Bearer old" } }),
+    (root, El) =>
+      fetchRegion(root, El, {
+        key: "feed",
+        url: "/api/feed",
+        headers: "session",
+        refresh: "/auth/refresh",
+        session: { Authorization: "Bearer old" }
+      }),
     { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
   );
 
@@ -733,10 +922,18 @@ test(":fetch renews the token on a 401, writes it back, and retries once", async
 
   assert.equal(stub.count("/api/feed"), 2, "original request retried once");
   assert.equal(stub.count("/auth/refresh"), 1, "token refreshed once");
-  assert.deepEqual(h.sandbox.wd.state.session, { Authorization: "Bearer new" }, "renewed token written back to state");
+  assert.deepEqual(
+    h.sandbox.wd.state.session,
+    { Authorization: "Bearer new" },
+    "renewed token written back to state"
+  );
   const feedCalls = stub.calls.filter((c) => c.url === "/api/feed");
   assert.deepEqual(feedCalls[0].headers, { Authorization: "Bearer old" });
-  assert.deepEqual(feedCalls[1].headers, { Authorization: "Bearer new" }, "retry carried the renewed header");
+  assert.deepEqual(
+    feedCalls[1].headers,
+    { Authorization: "Bearer new" },
+    "retry carried the renewed header"
+  );
   assert.deepEqual(h.sandbox.wd.state.feed, [{ id: 1 }]);
   assert.equal(h.sandbox.wd.state.feed_error, null);
 });
@@ -747,7 +944,14 @@ test(":fetch falls through to *_error when the token refresh fails", async () =>
     "/auth/refresh": { status: 500, body: { error: "nope" } }
   });
   const h = makeSandbox(
-    (root, El) => fetchRegion(root, El, { key: "feed", url: "/api/feed", headers: "session", refresh: "/auth/refresh", session: { Authorization: "Bearer old" } }),
+    (root, El) =>
+      fetchRegion(root, El, {
+        key: "feed",
+        url: "/api/feed",
+        headers: "session",
+        refresh: "/auth/refresh",
+        session: { Authorization: "Bearer old" }
+      }),
     { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
   );
 
@@ -766,8 +970,19 @@ test("concurrent 401s share a single token refresh, then each retries", async ()
   });
   const h = makeSandbox(
     (root, El) => {
-      fetchRegion(root, El, { key: "a", url: "/api/a", headers: "session", refresh: "/auth/refresh", session: { Authorization: "Bearer old" } });
-      fetchRegion(root, El, { key: "b", url: "/api/b", headers: "session", refresh: "/auth/refresh" });
+      fetchRegion(root, El, {
+        key: "a",
+        url: "/api/a",
+        headers: "session",
+        refresh: "/auth/refresh",
+        session: { Authorization: "Bearer old" }
+      });
+      fetchRegion(root, El, {
+        key: "b",
+        url: "/api/b",
+        headers: "session",
+        refresh: "/auth/refresh"
+      });
     },
     { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
   );
@@ -809,7 +1024,12 @@ test("loop-row data-wd-each-class reacts to item fields", () => {
   const h = makeSandbox((root, El) => {
     const s = new El("script");
     s.setAttribute("data-wd-state", "");
-    s.textContent = JSON.stringify({ products: [{ id: 1, name: "A", onSale: true }, { id: 2, name: "B", onSale: false }] });
+    s.textContent = JSON.stringify({
+      products: [
+        { id: 1, name: "A", onSale: true },
+        { id: 2, name: "B", onSale: false }
+      ]
+    });
     root.appendChild(s);
     const region = new El("div");
     region.setAttribute("data-wd-loop", "products");
@@ -833,7 +1053,10 @@ test("loop-row data-wd-each-class reacts to item fields", () => {
   assert.equal(out.children[1].classList.contains("sale"), false, "row 1 not onSale → class off");
 
   // Flip item 2 onSale; the reused row's class reacts.
-  h.sandbox.wd.state.products = [{ id: 1, name: "A", onSale: true }, { id: 2, name: "B", onSale: true }];
+  h.sandbox.wd.state.products = [
+    { id: 1, name: "A", onSale: true },
+    { id: 2, name: "B", onSale: true }
+  ];
   h.sandbox.wd.render();
   assert.equal(out.children[1].classList.contains("sale"), true, "row 1 now onSale → class on");
 });
@@ -876,7 +1099,10 @@ test(":effect cascades settle within the pass cap", () => {
     s.setAttribute("data-wd-state", "");
     s.textContent = JSON.stringify({ q: "", r: 0, s: 0 });
     root.appendChild(s);
-    for (const [watch, target] of [["q", "r"], ["r", "s"]]) {
+    for (const [watch, target] of [
+      ["q", "r"],
+      ["r", "s"]
+    ]) {
       const fx = new El("script");
       fx.setAttribute("data-wd-effect", "");
       fx.textContent = JSON.stringify({ watch, actions: [{ op: "inc", target }] });
@@ -906,7 +1132,10 @@ test(":effect that never settles stops at the cap and warns", () => {
 
   h.sandbox.wd.state.n = 1;
   h.sandbox.wd.render();
-  assert.ok(warns.some((w) => /did not settle/.test(w)), "warns when an effect never settles");
+  assert.ok(
+    warns.some((w) => /did not settle/.test(w)),
+    "warns when an effect never settles"
+  );
   assert.ok(h.sandbox.wd.state.n <= 11, "the settle cap bounds the runaway effect");
 });
 
@@ -925,10 +1154,15 @@ test("expression :if toggles its active branch as watched state crosses the pred
     node.setAttribute("data-wd-if", "");
     node.setAttribute("data-wd-if-expr", '(S("n") > 5)');
     node.setAttribute("data-wd-if-active", "false");
-    const tTrue = new El("template"); tTrue.setAttribute("data-wd-true", "");
-    const tFalse = new El("template"); tFalse.setAttribute("data-wd-false", "");
-    const out = new El("div"); out.setAttribute("data-wd-if-out", "");
-    node.appendChild(tTrue); node.appendChild(tFalse); node.appendChild(out);
+    const tTrue = new El("template");
+    tTrue.setAttribute("data-wd-true", "");
+    const tFalse = new El("template");
+    tFalse.setAttribute("data-wd-false", "");
+    const out = new El("div");
+    out.setAttribute("data-wd-if-out", "");
+    node.appendChild(tTrue);
+    node.appendChild(tFalse);
+    node.appendChild(out);
     root.appendChild(node);
   });
 
@@ -952,7 +1186,8 @@ test("expression :if supports == and a negated operand", () => {
     node.setAttribute("data-wd-if", "");
     node.setAttribute("data-wd-if-expr", '(S("plan") == "pro") && (!(S("banned")))');
     node.setAttribute("data-wd-if-active", "false");
-    const out = new El("div"); out.setAttribute("data-wd-if-out", "");
+    const out = new El("div");
+    out.setAttribute("data-wd-if-out", "");
     node.appendChild(out);
     root.appendChild(node);
   });
@@ -1086,7 +1321,11 @@ test(":form :checkbox group collects every checked value as an ARRAY (getAll)", 
         // with <input type=checkbox name=topics value=…> controls.
         const group = new E("div");
         group.setAttribute("data-wd-multi", "topics");
-        for (const [val, checked] of [["news", true], ["sales", false], ["beta", true]]) {
+        for (const [val, checked] of [
+          ["news", true],
+          ["sales", false],
+          ["beta", true]
+        ]) {
           const cb = new E("input");
           cb.setAttribute("type", "checkbox");
           cb.setAttribute("name", "topics");
@@ -1130,7 +1369,11 @@ test(":form action posts and lands a JSON reply into state[key] on success", asy
   await settle();
 
   assert.equal(stub.count("/api/save"), 1, "the form POSTed once");
-  assert.deepEqual(h.sandbox.wd.state.saved, { id: 7, ok: true }, "success reply written to state[key]");
+  assert.deepEqual(
+    h.sandbox.wd.state.saved,
+    { id: 7, ok: true },
+    "success reply written to state[key]"
+  );
   assert.equal(h.sandbox.wd.state.saved_error, null, "no error flag on success");
 });
 
@@ -1162,7 +1405,10 @@ test(":form action writes state[key+'_error'] on a failure response", async () =
 
 // A loop region whose row proto carries a button with the given per-row action.
 function actionLoop(root, El, { srcKey, initial, op, target }) {
-  stateScript(root, El, { [srcKey]: initial, ...(target && target !== srcKey ? { [target]: [] } : {}) });
+  stateScript(root, El, {
+    [srcKey]: initial,
+    ...(target && target !== srcKey ? { [target]: [] } : {})
+  });
   const region = new El("div");
   region.setAttribute("data-wd-loop", srcKey);
   const template = new El("template");
@@ -1190,7 +1436,11 @@ test("per-row :button remove deletes the exact clicked row from the looped sourc
   const h = makeSandbox((root, El) => {
     ({ out } = actionLoop(root, El, {
       srcKey: "lines",
-      initial: [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }, { id: "c", name: "Gamma" }],
+      initial: [
+        { id: "a", name: "Alpha" },
+        { id: "b", name: "Beta" },
+        { id: "c", name: "Gamma" }
+      ],
       op: "remove"
     }));
   });
@@ -1201,7 +1451,11 @@ test("per-row :button remove deletes the exact clicked row from the looped sourc
   h.fire("click", buttonB);
   h.sandbox.wd.render();
 
-  assert.deepEqual(h.sandbox.wd.state.lines.map((x) => x.id), ["a", "c"], "row b removed from source");
+  assert.deepEqual(
+    h.sandbox.wd.state.lines.map((x) => x.id),
+    ["a", "c"],
+    "row b removed from source"
+  );
   assert.equal(out.children.length, 2, "the rendered list dropped a row");
 });
 
@@ -1210,7 +1464,10 @@ test("per-row :button append-row appends a CLONED copy of the row item to the ta
   const h = makeSandbox((root, El) => {
     ({ out } = actionLoop(root, El, {
       srcKey: "menu",
-      initial: [{ id: "a", name: "Espresso" }, { id: "b", name: "Latte" }],
+      initial: [
+        { id: "a", name: "Espresso" },
+        { id: "b", name: "Latte" }
+      ],
       op: "append-row",
       target: "cart"
     }));
@@ -1220,7 +1477,11 @@ test("per-row :button append-row appends a CLONED copy of the row item to the ta
   h.fire("click", buttonA);
 
   assert.equal(h.sandbox.wd.state.cart.length, 1, "one item appended to the target list");
-  assert.deepEqual(h.sandbox.wd.state.cart[0], { id: "a", name: "Espresso" }, "the clicked row item was appended");
+  assert.deepEqual(
+    h.sandbox.wd.state.cart[0],
+    { id: "a", name: "Espresso" },
+    "the clicked row item was appended"
+  );
   assert.notStrictEqual(
     h.sandbox.wd.state.cart[0],
     h.sandbox.wd.state.menu[0],
@@ -1239,7 +1500,11 @@ test(":state persist writes the mutated value to localStorage['wd:cart']", () =>
   // A mutation through the public setter triggers savePersisted().
   h.sandbox.wd.set("cart", ["apple", "pear"]);
 
-  assert.equal(h.store.get("wd:cart"), JSON.stringify(["apple", "pear"]), "mutation persisted under wd:cart");
+  assert.equal(
+    h.store.get("wd:cart"),
+    JSON.stringify(["apple", "pear"]),
+    "mutation persisted under wd:cart"
+  );
 });
 
 test(":state persist — an existing localStorage value overrides the declared seed on init", () => {
@@ -1265,11 +1530,22 @@ test(":state persist — an existing localStorage value overrides the declared s
 function makeIOStub() {
   const instances = [];
   class IntersectionObserver {
-    constructor(cb) { this.cb = cb; this.observed = []; this.disconnected = false; instances.push(this); }
-    observe(node) { this.observed.push(node); }
-    disconnect() { this.disconnected = true; }
+    constructor(cb) {
+      this.cb = cb;
+      this.observed = [];
+      this.disconnected = false;
+      instances.push(this);
+    }
+    observe(node) {
+      this.observed.push(node);
+    }
+    disconnect() {
+      this.disconnected = true;
+    }
     // Drive an intersection for all observed nodes.
-    intersect() { this.cb(this.observed.map((target) => ({ isIntersecting: true, target }))); }
+    intersect() {
+      this.cb(this.observed.map((target) => ({ isIntersecting: true, target })));
+    }
   }
   return { IntersectionObserver, instances };
 }
@@ -1286,7 +1562,15 @@ test(":fetch when=visible does NOT fetch until its IntersectionObserver intersec
       span.setAttribute("data-wd-fetch-when", "visible");
       root.appendChild(span);
     },
-    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise, IntersectionObserver: io.IntersectionObserver } }
+    {
+      globals: {
+        fetch: stub.fetch,
+        setTimeout,
+        clearTimeout,
+        Promise,
+        IntersectionObserver: io.IntersectionObserver
+      }
+    }
   );
 
   await settle();

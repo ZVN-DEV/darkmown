@@ -60,7 +60,9 @@ export function buildSite(cwd = process.cwd()) {
       file: path.relative(cwd, route.file).replaceAll(path.sep, "/"),
       assets: {
         skins: [...page.assets.skins],
-        scripts: page.assets.runtime ? ["/__wd/runtime.js", ...page.assets.scripts] : [...page.assets.scripts],
+        scripts: page.assets.runtime
+          ? ["/__wd/runtime.js", ...page.assets.scripts]
+          : [...page.assets.scripts],
         runtime: page.assets.runtime
       }
     });
@@ -101,13 +103,15 @@ export function buildSite(cwd = process.cwd()) {
  * @returns {string}
  */
 export function stripRuntimeComments(source) {
-  return source
-    // JSDoc blocks — type annotations the browser never needs.
-    .replace(/\/\*\*[\s\S]*?\*\//g, "")
-    // Whole-line `//` comments — developer notes that don't belong in the download.
-    .replace(/^[ \t]*\/\/.*$/gm, "")
-    // Drop the now blank/whitespace-only lines the removals leave behind.
-    .replace(/^[ \t]*\n/gm, "");
+  return (
+    source
+      // JSDoc blocks — type annotations the browser never needs.
+      .replace(/\/\*\*[\s\S]*?\*\//g, "")
+      // Whole-line `//` comments — developer notes that don't belong in the download.
+      .replace(/^[ \t]*\/\/.*$/gm, "")
+      // Drop the now blank/whitespace-only lines the removals leave behind.
+      .replace(/^[ \t]*\n/gm, "")
+  );
 }
 
 /**
@@ -126,10 +130,10 @@ export function stripRuntimeComments(source) {
  * @returns {string}
  */
 export function renderCloudflareHeaders(manifest) {
-  const baseLines = Object.entries(BASE_SECURITY_HEADERS).map(([name, value]) => `  ${name}: ${value}`);
-  const blocks = [
-    ["/*", [...baseLines, `  Content-Security-Policy: ${REACTIVE_CSP}`]]
-  ];
+  const baseLines = Object.entries(BASE_SECURITY_HEADERS).map(
+    ([name, value]) => `  ${name}: ${value}`
+  );
+  const blocks = [["/*", [...baseLines, `  Content-Security-Policy: ${REACTIVE_CSP}`]]];
 
   for (const entry of manifest) {
     if (entry.assets.runtime) continue; // reactive routes keep the catch-all (relaxed) CSP
@@ -169,7 +173,7 @@ function defaultNotFoundHtml() {
     "<body>",
     "<main>",
     "<h1>Page not found</h1>",
-    "<p>That route does not exist. <a href=\"/\">Back to home</a>.</p>",
+    '<p>That route does not exist. <a href="/">Back to home</a>.</p>',
     "</main>",
     "</body>",
     "</html>",
@@ -243,7 +247,9 @@ function emitPageAssets(paths) {
     if (hasHiddenPathSegment(rel) || fs.lstatSync(file).isSymbolicLink()) continue;
     const out = path.join(paths.distRoot, rel);
     if (fs.existsSync(out)) {
-      console.warn(`hint: page asset "${rel}" skipped — a built route already emits /${rel.replaceAll(path.sep, "/")}`);
+      console.warn(
+        `hint: page asset "${rel}" skipped — a built route already emits /${rel.replaceAll(path.sep, "/")}`
+      );
       continue;
     }
     fs.mkdirSync(path.dirname(out), { recursive: true });

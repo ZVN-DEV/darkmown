@@ -8,7 +8,9 @@ export const devEventsPath = "/__wd/dev-events";
  */
 export function injectDevClient(html) {
   const script = `<script type="module" src="${devClientPath}"></script>`;
-  return html.includes("</body>") ? html.replace("</body>", `${script}\n</body>`) : `${html}\n${script}`;
+  return html.includes("</body>")
+    ? html.replace("</body>", `${script}\n</body>`)
+    : `${html}\n${script}`;
 }
 
 /**

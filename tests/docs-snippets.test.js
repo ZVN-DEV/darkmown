@@ -18,7 +18,8 @@ test("documented shell snippets reference real npm scripts and CLI commands", ()
     for (const snippet of fenced(file, "sh")) {
       for (const rawLine of snippet.split("\n")) {
         const line = rawLine.replace(/#.*/, "").trim();
-        if (!line || line.startsWith("cd ") || line === "npm install" || line === "npm link") continue;
+        if (!line || line.startsWith("cd ") || line === "npm install" || line === "npm link")
+          continue;
 
         const npmRun = line.match(/^npm run ([\w:-]+)/);
         if (npmRun) {
@@ -26,11 +27,20 @@ test("documented shell snippets reference real npm scripts and CLI commands", ()
           continue;
         }
 
-        const darkmown = line.match(/(?:^|\s)(?:npx\s+(?:@zvndev\/darkmown|darkmown)\s+|darkmown\s+)([\w:-]+)/);
+        const darkmown = line.match(
+          /(?:^|\s)(?:npx\s+(?:@zvndev\/darkmown|darkmown)\s+|darkmown\s+)([\w:-]+)/
+        );
         if (darkmown) {
           const command = darkmown[1];
-          assert.ok(supportedCliCommands.has(command), `${file} documents unsupported CLI command: ${line}`);
-          assert.match(help, new RegExp(`darkmown ${command}`), `${file} command missing from --help: ${command}`);
+          assert.ok(
+            supportedCliCommands.has(command),
+            `${file} documents unsupported CLI command: ${line}`
+          );
+          assert.match(
+            help,
+            new RegExp(`darkmown ${command}`),
+            `${file} command missing from --help: ${command}`
+          );
         }
       }
     }
@@ -42,15 +52,15 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
     {
       name: "frontmatter arrays",
       body: snippetFrom("README.md", "title: Customers"),
-      assert: (page) => assert.match(page.html, /Customers/),
+      assert: (page) => assert.match(page.html, /Customers/)
     },
     {
       name: "state-driven where filter",
-      body: snippetFrom("README.md", ":bind q placeholder=\"Search\""),
+      body: snippetFrom("README.md", ':bind q placeholder="Search"'),
       assert: (page) => {
         assert.equal(page.assets.runtime, true);
         assert.match(page.html, /data-wd-loop="products"/);
-      },
+      }
     },
     {
       name: "cart row actions",
@@ -58,7 +68,7 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
       assert: (page) => {
         assert.equal(page.assets.runtime, true);
         assert.match(page.html, /data-wd-action/);
-      },
+      }
     },
     {
       name: "fetch and forms",
@@ -67,7 +77,7 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
         assert.equal(page.assets.runtime, true);
         assert.match(page.html, /data-wd-fetch/);
         assert.match(page.html, /data-wd-form/);
-      },
+      }
     },
     {
       name: "comparison conditional",
@@ -77,7 +87,7 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
         // reactive expression region (proves the richer-condition grammar works).
         assert.equal(page.assets.runtime, true);
         assert.match(page.html, /data-wd-if-expr=/);
-      },
+      }
     },
     {
       name: "effect on watched state",
@@ -85,7 +95,7 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
       assert: (page) => {
         assert.equal(page.assets.runtime, true);
         assert.match(page.html, /data-wd-effect/);
-      },
+      }
     },
     {
       name: "authenticated fetch with refresh",
@@ -94,8 +104,8 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
         assert.equal(page.assets.runtime, true);
         assert.match(page.html, /data-wd-fetch-headers="session"/);
         assert.match(page.html, /data-wd-fetch-refresh="\/auth\/refresh"/);
-      },
-    },
+      }
+    }
   ];
 
   for (const item of cases) {
@@ -144,5 +154,8 @@ function fenced(file, lang) {
 }
 
 function slug(name) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }

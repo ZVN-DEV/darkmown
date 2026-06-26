@@ -49,10 +49,15 @@ test("serve binds to loopback by default and reports HOST overrides", async () =
   fs.mkdirSync(path.join(root, "dist"));
   fs.writeFileSync(path.join(root, "dist/index.html"), "<h1>ok</h1>");
 
-  const defaultOutput = await readServerBanner(root, "serve", "Darkmown preview of dist", { PORT: "0" });
+  const defaultOutput = await readServerBanner(root, "serve", "Darkmown preview of dist", {
+    PORT: "0"
+  });
   assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:0/);
 
-  const overrideOutput = await readServerBanner(root, "serve", "Darkmown preview of dist", { PORT: "0", HOST: "localhost" });
+  const overrideOutput = await readServerBanner(root, "serve", "Darkmown preview of dist", {
+    PORT: "0",
+    HOST: "localhost"
+  });
   assert.match(overrideOutput, /http:\/\/localhost:0/);
 });
 
@@ -61,10 +66,15 @@ test("dev binds to loopback by default and reports HOST overrides", async () => 
   fs.mkdirSync(path.join(root, "site/pages"), { recursive: true });
   fs.writeFileSync(path.join(root, "site/pages/index.wd"), "# Dev host test\n");
 
-  const defaultOutput = await readServerBanner(root, "dev", "Darkmown dev server ready", { PORT: "0" });
+  const defaultOutput = await readServerBanner(root, "dev", "Darkmown dev server ready", {
+    PORT: "0"
+  });
   assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:0/);
 
-  const overrideOutput = await readServerBanner(root, "dev", "Darkmown dev server ready", { PORT: "0", HOST: "localhost" });
+  const overrideOutput = await readServerBanner(root, "dev", "Darkmown dev server ready", {
+    PORT: "0",
+    HOST: "localhost"
+  });
   assert.match(overrideOutput, /http:\/\/localhost:0/);
 });
 

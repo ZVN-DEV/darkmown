@@ -43,27 +43,24 @@ test(":input with only a placeholder gets a matching aria-label", () => {
     ':submit "Go"',
     ":endform"
   ]);
-  assert.match(html, /<input type="text" name="quest" placeholder="Your quest" aria-label="Your quest">/);
-  assert.deepEqual(ariaLabels(html), ["Your quest"], "exactly one aria-label, matching the placeholder");
+  assert.match(
+    html,
+    /<input type="text" name="quest" placeholder="Your quest" aria-label="Your quest">/
+  );
+  assert.deepEqual(
+    ariaLabels(html),
+    ["Your quest"],
+    "exactly one aria-label, matching the placeholder"
+  );
 });
 
 test(":input with neither placeholder nor aria gets an aria-label humanized from its name", () => {
-  const html = compileWd([
-    ":form into profile",
-    ":input quest",
-    ':submit "Go"',
-    ":endform"
-  ]);
+  const html = compileWd([":form into profile", ":input quest", ':submit "Go"', ":endform"]);
   assert.match(html, /<input type="text" name="quest" aria-label="Quest">/);
 });
 
 test(":input humanizes hyphenated names into a readable aria-label", () => {
-  const html = compileWd([
-    ":form into profile",
-    ":input user-name",
-    ':submit "Go"',
-    ":endform"
-  ]);
+  const html = compileWd([":form into profile", ":input user-name", ':submit "Go"', ":endform"]);
   assert.match(html, /name="user-name" aria-label="User name"/);
 });
 
@@ -75,7 +72,11 @@ test(":input preserves an explicit aria-label and does not duplicate it", () => 
     ":endform"
   ]);
   assert.match(html, /aria-label="Search the realm"/);
-  assert.deepEqual(ariaLabels(html), ["Search the realm"], "author aria-label wins, placeholder does not override it");
+  assert.deepEqual(
+    ariaLabels(html),
+    ["Search the realm"],
+    "author aria-label wins, placeholder does not override it"
+  );
 });
 
 test(":input with aria-describedby is treated as having an accessible name (no auto aria-label)", () => {
@@ -94,19 +95,13 @@ test(":input with aria-describedby is treated as having an accessible name (no a
 // ---------------------------------------------------------------------------
 
 test(":bind with only a placeholder gets a matching aria-label", () => {
-  const html = compileWd([
-    ':state query = ""',
-    ':bind query placeholder="Search"'
-  ]);
+  const html = compileWd([':state query = ""', ':bind query placeholder="Search"']);
   assert.match(html, /data-wd-bind-input="query"[^>]*placeholder="Search"[^>]*aria-label="Search"/);
   assert.deepEqual(ariaLabels(html), ["Search"]);
 });
 
 test(":bind with neither placeholder nor aria gets an aria-label from its state key", () => {
-  const html = compileWd([
-    ':state query = ""',
-    ":bind query"
-  ]);
+  const html = compileWd([':state query = ""', ":bind query"]);
   assert.match(html, /data-wd-bind-input="query"[^>]*aria-label="Query"/);
 });
 
