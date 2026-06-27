@@ -98,12 +98,16 @@ export function compileBody(lines, ctx) {
     }
     if (/^:state\s/.test(line)) {
       flush();
-      out.push(handleState(line, ctx, i));
+      const v = joinValueDirective(lines, i);
+      out.push(handleState(v.line, ctx, i));
+      i = v.end;
       continue;
     }
     if (/^:store\s/.test(line)) {
       flush();
-      out.push(handleStore(line, ctx, i));
+      const v = joinValueDirective(lines, i);
+      out.push(handleStore(v.line, ctx, i));
+      i = v.end;
       continue;
     }
     if (/^:fetch\s/.test(line)) {
@@ -128,7 +132,9 @@ export function compileBody(lines, ctx) {
     }
     if (/^:theme(?:\s|$)/.test(line)) {
       flush();
-      out.push(handleTheme(line, ctx, i));
+      const v = joinValueDirective(lines, i);
+      out.push(handleTheme(v.line, ctx, i));
+      i = v.end;
       continue;
     }
     const media = line.match(/^:(video|audio)\s/);
@@ -259,6 +265,61 @@ function warnUnknownDirective(line, ctx) {
       `${ctx.file}: "${m[1]}" looks like a directive but matches none — it will render as literal text. Check the spelling (e.g. @loop, @include, :state, :if).`
     );
   }
+}
+
+/**
+ * Net bracket depth of a string, ignoring brackets inside JSON string literals.
+ * Positive means more openers (`[`/`{`) than closers — the value is unbalanced.
+ * @param {string} s
+ * @returns {number}
+ */
+function bracketDepth(s) {
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (const ch of s) {
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "[" || ch === "{") depth++;
+    else if (ch === "]" || ch === "}") depth--;
+  }
+  return depth;
+}
+
+/**
+ * `:state`/`:store`/`:theme` take a single-line value, but a JSON array/object
+ * seed reads far better across several lines. When the value after `=` opens an
+ * unbalanced `[`/`{` on the directive line, gather the contiguous continuation
+ * lines (stopping at a blank line, which delimits the literal) until the brackets
+ * balance, then collapse them into one physical line the existing single-line
+ * handler parses unchanged — JSON ignores the inter-token whitespace. A literal
+ * that never balances falls through as-is, so `parseStateValue` reports it.
+ * @param {string[]} lines
+ * @param {number} start Index of the directive line.
+ * @returns {{ line: string, end: number }} `end` = last consumed line index.
+ */
+function joinValueDirective(lines, start) {
+  const opener = lines[start];
+  const eq = opener.indexOf("=");
+  if (eq === -1) return { line: opener, end: start };
+  const value = opener.slice(eq + 1);
+  // Only a JSON array/object literal can span lines; bare scalars/strings cannot.
+  if (!/^\s*[[{]/.test(value)) return { line: opener, end: start };
+  let depth = bracketDepth(value);
+  if (depth <= 0) return { line: opener, end: start }; // already balanced on one line
+  const parts = [opener];
+  let i = start;
+  while (depth > 0 && i + 1 < lines.length && lines[i + 1].trim() !== "") {
+    i++;
+    parts.push(lines[i]);
+    depth += bracketDepth(lines[i]);
+  }
+  return { line: parts.join(" "), end: i };
 }
 
 /**

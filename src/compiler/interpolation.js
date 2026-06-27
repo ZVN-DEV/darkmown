@@ -119,10 +119,12 @@ export function safeScriptJson(value) {
 }
 
 /**
- * Parse a single-line `:state`/`:store`/`:theme` value: quoted string, boolean,
- * null, number, or JSON literal — falling back to the bare string. A value that
- * opens a JSON array/object but won't parse throws (almost always a multi-line
- * literal, which these single-line directives can't express).
+ * Parse a `:state`/`:store`/`:theme` value: quoted string, boolean, null, number,
+ * or JSON literal — falling back to the bare string. Multi-line array/object
+ * literals are joined into one line before reaching here (see `joinValueDirective`
+ * in body.js), so a value that opens a `[`/`{` but won't parse is genuinely
+ * unbalanced (a missing `]`/`}`) and throws, rather than being stored verbatim as
+ * the partial string `"["` — the silent-corruption footgun this guard replaces.
  * @param {string} raw
  * @param {string} [where] `file:line` for the error message.
  * @returns {unknown}
@@ -137,18 +139,17 @@ export function parseStateValue(raw, where) {
   try {
     return JSON.parse(value);
   } catch {
-    // A value that opens a JSON array/object but won't parse is almost always a
-    // multi-line literal — :state/:store/:theme take a single-line value, so the
-    // unterminated "[" used to get stored verbatim as the string "[" and silently
-    // break the page. Fail loudly with the fix instead. Quote it to keep literal
-    // brackets (e.g. `= "[draft]"`).
-    if (/^[[{]/.test(value))
+    if (/^[[{]/.test(value)) {
+      const open = value[0];
+      const close = open === "[" ? "]" : "}";
+      const shown = value.length > 60 ? `${value.slice(0, 57)}…` : value;
       throw new Error(
-        `Invalid value ${value}${where ? ` in ${where}` : ""}: this looks like the start of a ` +
-          `multi-line array/object, but :state/:store values must fit on one line. ` +
-          `Put the whole literal on one line, or quote it for literal text. ` +
-          `Use: name = [{"id":1,"label":"…"}]`
+        `Unbalanced JSON value "${shown}"${where ? ` in ${where}` : ""}: this opens "${open}" but ` +
+          `never closes it. :state/:store/:theme accept a multi-line array/object, but the literal ` +
+          `must balance (a "${close}" is missing) with no blank lines inside it. ` +
+          `Quote it for literal bracket text (e.g. = "[draft]").`
       );
+    }
     return value;
   }
 }

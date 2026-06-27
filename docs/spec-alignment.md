@@ -93,6 +93,13 @@ The post-8/10-review sprint: one reactive-loop capability, a deploy-hardening la
 - **Dark-mode theming — `tokens dark`:** a `.skin` file may add a `tokens dark` block alongside its base `tokens`; the dark tokens compile to `@media (prefers-color-scheme: dark) :root { … }`, overriding the matching base tokens under the visitor's OS dark preference. Rules keep referencing the same `$name` tokens, so dark mode is a palette swap with **zero JavaScript** — consistent with the existing zero-JS `.skin` output. A skin with no `tokens dark` block is unchanged.
 - **Test backfill + compile-error line numbers:** the sprint backfilled runtime/compiler tests for the new surface, and compile errors now carry the offending **line number** alongside the file path and corrective suggestion. **Honest caveat:** this entry documents the intended sprint scope; the exact assertion count and the precise error-message format are owned by the test/compiler tracks and were not verified from this docs track.
 
+## Stage 17 additions (2026-06-27, v1.1.0)
+
+Follow-up hardening of the two rough edges flagged at the 1.0 release. No runtime change.
+
+- **Multi-line `:state`/`:store`/`:theme` JSON values:** an array/object seed may span lines. `body.js` detects an unbalanced `[`/`{` after `=` on the directive line and gathers contiguous continuation lines (stopping at a blank line, which delimits the literal) until the brackets balance — string- and escape-aware so a `]`/`}` or `\"` inside a JSON string is not miscounted — then collapses them to one line the existing single-line handler parses. 1.0 turned the silent `"["` corruption into a compile error; 1.1 makes the readable multi-line form work. An unterminated literal stays a clear compile error; quote literal bracket text. **Honest caveat:** no blank lines inside the literal (a blank line ends the scan), and the opening bracket must be on the directive line.
+- **Single source of truth for the runtime-size budget (internal):** the gzip ceiling lives only in `.size-snapshot.json` (`runtime.budget`); `scripts/size-check.mjs` reads it and `package.json` + `ci.yml` delegate to that script. A `tests/size.test.js` drift guard fails if any config reintroduces a hardcoded budget or inline gate — closing the class of bug that failed the 1.0 PR (a stale `6144` left in `ci.yml`).
+
 ## Stage 16 additions (2026-06-27, v1.0.0)
 
 The 1.0 release: a value layer, a time primitive, an explicit theme toggle, reactive table sort, media, and a first-class escape hatch — the gaps an audit flagged as "drop to raw HTML/JS." All compile-time or shared-runtime; the runtime moved from ~5.8 KB to ~7.4 KB gzipped and the CI budget was raised 6 KB → **8 KB** to match (still un-minified). No source-level breaking changes.

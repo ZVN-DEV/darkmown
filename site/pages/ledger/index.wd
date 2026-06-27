@@ -13,7 +13,16 @@ transitions: true
 ::: section #ledger
 
 :theme
-:store expenses = [{"id":1,"date":"2026-06-22","merchant":"Aurora Studio","category":"Software","amount":149},{"id":2,"date":"2026-06-20","merchant":"Briza Coffee","category":"Meals","amount":18.4},{"id":3,"date":"2026-06-19","merchant":"Cobalt Cloud","category":"Hosting","amount":312.5},{"id":4,"date":"2026-06-18","merchant":"Dune Print Co","category":"Office","amount":64},{"id":5,"date":"2026-06-16","merchant":"Aurora Studio","category":"Software","amount":29},{"id":6,"date":"2026-06-15","merchant":"Ember Transit","category":"Travel","amount":212.75},{"id":7,"date":"2026-06-13","merchant":"Briza Coffee","category":"Meals","amount":11.2},{"id":8,"date":"2026-06-11","merchant":"Cobalt Cloud","category":"Hosting","amount":312.5}]
+:store expenses = [
+  {"id":1,"date":"2026-06-22","merchant":"Aurora Studio","category":"Software","amount":149},
+  {"id":2,"date":"2026-06-20","merchant":"Briza Coffee","category":"Meals","amount":18.4},
+  {"id":3,"date":"2026-06-19","merchant":"Cobalt Cloud","category":"Hosting","amount":312.5},
+  {"id":4,"date":"2026-06-18","merchant":"Dune Print Co","category":"Office","amount":64},
+  {"id":5,"date":"2026-06-16","merchant":"Aurora Studio","category":"Software","amount":29},
+  {"id":6,"date":"2026-06-15","merchant":"Ember Transit","category":"Travel","amount":212.75},
+  {"id":7,"date":"2026-06-13","merchant":"Briza Coffee","category":"Meals","amount":11.2},
+  {"id":8,"date":"2026-06-11","merchant":"Cobalt Cloud","category":"Hosting","amount":312.5}
+]
 :state q = ""
 :state sortKey = "amount"
 :state sortDir = "desc"

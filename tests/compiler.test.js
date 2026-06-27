@@ -1171,18 +1171,53 @@ test(":store rejects an invalid name with a Use: suggestion", () => {
   compileWdThrows([":store 9bad = []"], /Use: :store name = value/);
 });
 
-test(":store rejects an unterminated multi-line array with a single-line suggestion", () => {
-  // The exact footgun: an array opened on the :store line and continued below
-  // used to be stored verbatim as the string "[" and silently break the page.
+test(":store accepts a multi-line JSON array value", () => {
+  // The readable form that used to silently corrupt the store now just works:
+  // body.js joins the balanced literal into one line before the handler parses it.
+  const page = compileWd([
+    ":store rows = [",
+    '  {"id": 1, "label": "One"},',
+    '  {"id": 2, "label": "Two"}',
+    "]",
+    "{ rows.length } rows"
+  ]);
+  assert.match(page.html, /data-wd-store="rows"/);
+  assert.match(page.html, /"id":1[\s\S]*"label":"Two"/); // both rows survived
+});
+
+test(":state accepts a multi-line JSON object value", () => {
+  const page = compileWd([":state cfg = {", '  "open": true,', '  "max": 5', "}", "{ cfg.max }"]);
+  assert.match(page.html, /data-wd-state/);
+  assert.match(page.html, /"open":true/);
+  assert.match(page.html, /"max":5/);
+});
+
+test(":store multi-line value counts brackets string-aware (escaped quotes + brackets in strings)", () => {
+  // The ] and { live INSIDE JSON strings, and the quotes are escaped — a naive
+  // bracket count would balance early or never. The scanner must ignore both.
+  const page = compileWd([
+    ":store notes = [",
+    '  {"text": "has a \\"quote\\" and a ] bracket"},',
+    '  {"text": "plain"}',
+    "]",
+    "{ notes.length }"
+  ]);
+  assert.match(page.html, /data-wd-store="notes"/);
+  assert.match(page.html, /has a/);
+  assert.match(page.html, /"text":"plain"/);
+});
+
+test(":store rejects a literal that never balances (missing close) with a corrective error", () => {
+  // A blank line delimits the literal; with no closing ] it is genuinely
+  // unbalanced — a clear compile error, not the old silent `"["` corruption.
   compileWdThrows(
-    [":store rows = [", '  {"id": 1},', "]"],
-    /multi-line array\/object[\s\S]*must fit on one line/
+    [":store rows = [", '  {"id": 1},', "", "rest of page"],
+    /Unbalanced JSON value[\s\S]*never closes/
   );
 });
 
-test(":state rejects an unterminated object literal but keeps bracketed strings quotable", () => {
-  compileWdThrows([":state cfg = {"], /multi-line array\/object[\s\S]*one line/);
-  // Quoting escapes the guard for genuinely literal bracket text.
+test(":state keeps bracketed strings quotable", () => {
+  // Quoting opts out of JSON parsing for genuinely literal bracket text.
   const page = compileWd([':state label = "[draft]"', "{ label }"]);
   assert.match(page.html, /\[draft\]/);
 });
