@@ -1171,6 +1171,22 @@ test(":store rejects an invalid name with a Use: suggestion", () => {
   compileWdThrows([":store 9bad = []"], /Use: :store name = value/);
 });
 
+test(":store rejects an unterminated multi-line array with a single-line suggestion", () => {
+  // The exact footgun: an array opened on the :store line and continued below
+  // used to be stored verbatim as the string "[" and silently break the page.
+  compileWdThrows(
+    [":store rows = [", '  {"id": 1},', "]"],
+    /multi-line array\/object[\s\S]*must fit on one line/
+  );
+});
+
+test(":state rejects an unterminated object literal but keeps bracketed strings quotable", () => {
+  compileWdThrows([":state cfg = {"], /multi-line array\/object[\s\S]*one line/);
+  // Quoting escapes the guard for genuinely literal bracket text.
+  const page = compileWd([':state label = "[draft]"', "{ label }"]);
+  assert.match(page.html, /\[draft\]/);
+});
+
 test(":if over loop items renders per-item branches at compile time", () => {
   const root = fixture();
   write(

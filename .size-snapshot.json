@@ -1,7 +1,7 @@
 {
   "runtime": {
     "file": "dist/__wd/runtime.js",
-    "gzip": 5910,
-    "budget": 6144
+    "gzip": 7440,
+    "budget": 8192
   }
 }

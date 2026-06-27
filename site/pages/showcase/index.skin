@@ -64,6 +64,9 @@ main.showcase
 .sc-compass::before
   background #e0894a
 
+.sc-ledger::before
+  background #c79a3a
+
 .sc-emoji
   font-size 2rem
   line-height 1

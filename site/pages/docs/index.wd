@@ -157,6 +157,12 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 - The page's frontmatter is in scope as `meta` — `{ meta.title }` prints a field.
 - Otherwise the text is left exactly as written — braces in prose never break a page or pull in the runtime.
 
+### Format pipes — `{ value | name:arg }`
+
+Shape a value for display with a pipe: `{ price | money }`, `{ joinedAt | date:"medium" }`, `{ ratio | percent }`. Pipes chain (`{ name | trim | capitalize }`) and take literal arguments (`{ total | money:"EUR" }`, `{ bio | truncate:80 }`). The same syntax works on static values (folded at build time, zero-JS) and live bindings (re-applied on render).
+
+The whitelist: `money`, `number`, `percent`, `round`, `date` / `time` / `datetime` (Intl-backed; `short` / `medium` / `long`), `upper` / `lower` / `capitalize`, `truncate:n` / `trim`, `pluralize:"item"`, and `default:"—"`. The five aggregates double as list pipes — `{ cart | count }`, `{ cart | sum:"price" | money }`, plus `avg` / `min` / `max`. No custom functions, nothing `eval`'d; an unknown pipe is a compile error. There is deliberately no relative "time ago" formatter, so builds stay reproducible.
+
 ## Frontmatter
 
 Frontmatter sits between `---` fences. Values are strings, plus inline arrays:
@@ -184,7 +190,7 @@ You don't size images by hand. Every `<img>` the compiler emits gets its intrins
 
 ## Reactive directives
 
-Reactive pages opt into `/__wd/runtime.js` (~5.7 KB gzipped, under a CI-enforced 6 KB budget). Static pages do not.
+Reactive pages opt into `/__wd/runtime.js` (~7.4 KB gzipped, under a CI-enforced 8 KB budget). Static pages do not.
 
 ```wd
 :state count = 0
@@ -209,6 +215,32 @@ Count is still zero.
 ```
 
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in a colocated `.js` file.
+
+### Computed values and aggregates
+
+`:computed name = expr` derives state from state — arithmetic, comparisons, and the five list aggregates `sum` / `avg` / `min` / `max` / `count`. It recomputes when an input changes and reads like any binding, so it pairs with format pipes:
+
+```wd
+:store cart = [{"price": 89}, {"price": 12}]
+:computed subtotal = sum(cart, price)
+:computed total = subtotal * 1.08
+
+Total: { total | money }
+```
+
+The aggregate's field is a bare row key (`price`, not `item.price`).
+
+### Timers — `:every`
+
+`:every <duration> -> <actions>` runs a `:button`-style action on an interval (`ms` / `s` / `m`). Intervals pause while the tab is hidden and resume on return.
+
+```wd
+:fetch board from "/status.json"
+:every 10s -> board refetch
+
+:state secs = 0
+:every 1s -> secs++
+```
 
 ### Multi-branch conditionals
 
@@ -325,9 +357,34 @@ You have { cart } items.
 - `:input field placeholder="…" required` and `:submit "Label"` build the form body.
 - `:state cart = [] persist` survives reloads via localStorage on a single page; use `:store` for state shared across pages and tabs.
 - `:if item.path` works inside reactive loops for per-row branches, and conditionals nest — an inner `:if` resolves after the outer branch, staying reactive.
-- Reactive pages expose `window.wd` (`get`, `set`, `state`, `render`) so colocated `.js` can do anything directives can't. Section state is addressed as `sectionId:name`.
+- Reactive pages expose `window.wd` (`get`, `set`, `subscribe`, `state`, `render`) so colocated `.js` can do anything directives can't. Section state is addressed as `sectionId:name`.
 
 See it all live on the [Data & Forms page](/data/).
+
+## Theme toggle — `:theme`
+
+For an explicit light/dark switch alongside the OS preference, declare `:theme` once and drive it with buttons. It registers a durable `theme` store and reflects onto `<html data-theme>`:
+
+```wd
+:theme
+:button "Auto"  -> theme = "auto"
+:button "Light" -> theme = "light"
+:button "Dark"  -> theme = "dark"
+```
+
+A single `tokens dark` block in your `.skin` already powers both the OS `prefers-color-scheme` query and this toggle — no extra block needed. `"auto"` clears the attribute and follows the OS again. See it on the [Ledger demo](/ledger/).
+
+## Media — `:video`, `:audio`, `:embed`
+
+Three compile-time-only directives (they emit no `data-wd-*`, so a media page stays zero-JS):
+
+```wd
+:video /clip.mp4 poster=/clip.jpg controls
+:audio /track.mp3 controls
+:embed https://youtu.be/aqz-KE-bpKQ title="Big Buck Bunny"
+```
+
+`:video`/`:audio` emit a hardened HTML5 player — `preload="metadata"` and `controls` by default, whitelisted flags (`autoplay` implies `muted`), and the `:fetch` URL scheme guard. `:embed` rewrites a YouTube/Vimeo link to its no-cookie/player form in a lazy, responsive `16/9` iframe. See the zero-JS [Media demo](/media/).
 
 ## Trust boundary
 
@@ -342,7 +399,7 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in 
 ## Colocation
 
 - A matching `.skin` file attaches CSS to the page (indentation-based, compiles to real CSS).
-- A matching `.js` file attaches page behavior.
+- A matching `.js` file attaches page behavior. It loads **after** the runtime, so `window.wd` is ready: `wd.get(key)`, `wd.set(key, value)`, and `wd.subscribe(key, cb)` (runs now and on every settled change) bridge declarative state to imperative widgets — the gestures the framework leaves out (keyboard, drag/touch, canvas). The [Swiper demo](/carousel/) is a draggable carousel built this way.
 - Both work for included fragments too, by basename.
 - Any other file under `site/pages/` (an image, font, PDF — anything that isn't a `.md`/`.wd` route or a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type. So `site/pages/logo.svg` is served at `/logo.svg`. Assets below hidden path segments (`.`, `-`, or `_`) and symlinked page assets are skipped, matching the routing privacy rule. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
 

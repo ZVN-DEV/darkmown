@@ -9,8 +9,16 @@
 import fs from "node:fs";
 import { compileBody } from "./body.js";
 import { createScope } from "./context.js";
+import { applyPipeline, stagesFromAttr } from "./format.js";
 import { resolveInclude } from "./includes.js";
-import { escapeHtml, getPath, lookupPath, resolveStateKey, stripQuotes } from "./interpolation.js";
+import {
+  escapeHtml,
+  getPath,
+  lookupPath,
+  resolveStateKey,
+  stripQuotes,
+  unescapeHtml
+} from "./interpolation.js";
 import { compilePredicate, evalPredicate } from "./predicates.js";
 
 /**
@@ -29,7 +37,7 @@ const LOOP_USAGE = "Use: @loop src into item [where …] [sort by …] [reverse]
  * @param {string} tail Everything after `@loop src into item`.
  * @param {string} itemName
  * @param {Ctx} ctx
- * @returns {{ where: string|null, sort: {key:string,dir:string}|null, reverse: boolean, offset: NumArg|null, limit: NumArg|null, refsState: boolean }}
+ * @returns {{ where: string|null, sort: import("./context.js").LoopOpts["sort"], reverse: boolean, offset: NumArg|null, limit: NumArg|null, refsState: boolean }}
  */
 function parseLoopClauses(tail, itemName, ctx) {
   // Peel clauses off the END in reverse fixed-order (limit, offset, reverse,
@@ -38,7 +46,7 @@ function parseLoopClauses(tail, itemName, ctx) {
   // remains must be `where …` (or empty); a clause keyword surviving in the
   // remainder means the author wrote the clauses out of order.
   let s = tail.trim();
-  /** @type {{key:string,dir:string}|null} */ let sort = null;
+  /** @type {import("./context.js").LoopOpts["sort"]} */ let sort = null;
   let reverse = false;
   /** @type {NumArg|null} */ let offset = null;
   /** @type {NumArg|null} */ let limit = null;
@@ -68,18 +76,14 @@ function parseLoopClauses(tail, itemName, ctx) {
     s = s.slice(0, s.length - m[0].length + m[1].length).trim();
   }
 
-  m = s.match(/(^|\s)sort\s+by\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\s+(asc|desc))?$/);
+  // The field and direction may each be a literal (`post.date` / `asc|desc`) or a
+  // `{ state }` reference, which makes the sort reactive (clickable-header tables).
+  m = s.match(
+    /(^|\s)sort\s+by\s+(\{\s*[A-Za-z_$][\w$]*\s*\}|[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\s+(\{\s*[A-Za-z_$][\w$]*\s*\}|asc|desc))?$/
+  );
   if (m) {
-    const segs = m[2].split(".");
-    if (segs[0] !== itemName)
-      throw new Error(
-        `@loop sort key "${m[2]}" must start with the loop item "${itemName}" in ${ctx.file}. ${LOOP_USAGE}`
-      );
-    const rest = segs.slice(1);
-    if (rest.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
-      throw new Error(`Sort key "${m[2]}" is not allowed in @loop (${ctx.file})`);
-    }
-    sort = { key: rest.join("."), dir: m[3] || "asc" };
+    sort = parseSortClause(m[2], m[3], itemName, ctx);
+    if (sort.keyKind === "key" || sort.dirKind === "key") refsState = true;
     s = s.slice(0, s.length - m[0].length + m[1].length).trim();
   }
 
@@ -93,6 +97,63 @@ function parseLoopClauses(tail, itemName, ctx) {
     if (/(^|\s)(sort\s+by\s|reverse(\s|$))/.test(where)) bad();
   }
   return { where, sort, reverse, offset, limit, refsState };
+}
+
+/**
+ * Parse the `sort by` field + optional direction. Each is a literal (an
+ * item-relative field path / `asc|desc`) or a `{ state }` reference; a reference
+ * resolves to a declared `:state`/`:store` key and makes the sort reactive.
+ * @param {string} fieldTok
+ * @param {string | undefined} dirTok
+ * @param {string} itemName
+ * @param {Ctx} ctx
+ * @returns {{ key: string, keyKind: "literal" | "key", dir: string, dirKind: "literal" | "key" }}
+ */
+function parseSortClause(fieldTok, dirTok, itemName, ctx) {
+  /** @param {string} tok */
+  const stateRef = (tok) => tok.match(/^\{\s*([A-Za-z_$][\w$]*)\s*\}$/);
+
+  /** @type {string} */ let key;
+  /** @type {"literal" | "key"} */ let keyKind;
+  const fieldState = stateRef(fieldTok);
+  if (fieldState) {
+    const resolved = resolveStateKey(fieldState[1], ctx);
+    if (!resolved)
+      throw new Error(
+        `@loop sort by { ${fieldState[1]} } references unknown :state/:store in ${ctx.file}. ${LOOP_USAGE}`
+      );
+    key = resolved;
+    keyKind = "key";
+  } else {
+    const segs = fieldTok.split(".");
+    if (segs[0] !== itemName)
+      throw new Error(
+        `@loop sort key "${fieldTok}" must start with the loop item "${itemName}" in ${ctx.file}. ${LOOP_USAGE}`
+      );
+    const rest = segs.slice(1);
+    if (rest.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg)))
+      throw new Error(`Sort key "${fieldTok}" is not allowed in @loop (${ctx.file})`);
+    key = rest.join(".");
+    keyKind = "literal";
+  }
+
+  /** @type {string} */ let dir = "asc";
+  /** @type {"literal" | "key"} */ let dirKind = "literal";
+  if (dirTok) {
+    const dirState = stateRef(dirTok);
+    if (dirState) {
+      const resolved = resolveStateKey(dirState[1], ctx);
+      if (!resolved)
+        throw new Error(
+          `@loop sort direction { ${dirState[1]} } references unknown :state/:store in ${ctx.file}. ${LOOP_USAGE}`
+        );
+      dir = resolved;
+      dirKind = "key";
+    } else {
+      dir = dirTok;
+    }
+  }
+  return { key, keyKind, dir, dirKind };
 }
 
 /**
@@ -406,7 +467,7 @@ function loopClauseAttrs(c) {
   return (
     (c.where ? ` data-wd-loop-where="${escapeHtml(c.where.body)}"` : "") +
     (c.sort
-      ? ` data-wd-loop-sort="${escapeHtml(c.sort.key)}" data-wd-loop-sort-dir="${c.sort.dir}"`
+      ? ` data-wd-loop-sort="${escapeHtml(c.sort.keyKind === "key" ? `key:${c.sort.key}` : c.sort.key)}" data-wd-loop-sort-dir="${escapeHtml(c.sort.dirKind === "key" ? `key:${c.sort.dir}` : c.sort.dir)}"`
       : "") +
     (c.reverse ? ` data-wd-loop-reverse` : "") +
     (c.offset ? ` data-wd-loop-offset="${numArgAttr(c.offset)}"` : "") +
@@ -520,10 +581,15 @@ function fillTemplateString(template, item, meta = {}) {
  * @returns {string}
  */
 function fillEachMeta(str, meta) {
-  return str.replace(/<span data-wd-each-meta="([a-z]+)"><\/span>/g, (_, name) => {
-    const value = name in meta ? meta[name] : "";
-    return `<span data-wd-each-meta="${name}">${escapeHtml(value ?? "")}</span>`;
-  });
+  return str.replace(
+    /<span data-wd-each-meta="([a-z]+)"(?: data-wd-fmt="([^"]*)")?><\/span>/g,
+    (_, name, fmt) => {
+      let value = name in meta ? meta[name] : "";
+      if (fmt) value = applyPipeline(value, stagesFromAttr(unescapeHtml(fmt)));
+      const fmtAttr = fmt ? ` data-wd-fmt="${fmt}"` : "";
+      return `<span data-wd-each-meta="${name}"${fmtAttr}>${escapeHtml(value ?? "")}</span>`;
+    }
+  );
 }
 
 // Walk the string resolving only the OUTERMOST data-wd-each-if regions; each
@@ -580,11 +646,16 @@ function fillOneEachIf(region, item, meta) {
  * @returns {string}
  */
 function fillEachText(str, item) {
-  return str.replace(/<span data-wd-each(?: data-wd-path="([^"]*)")?><\/span>/g, (_, p) => {
-    const value = p ? getPath(item, p.split(".")) : item;
-    const pathAttr = p ? ` data-wd-path="${p}"` : "";
-    return `<span data-wd-each${pathAttr}>${escapeHtml(value ?? "")}</span>`;
-  });
+  return str.replace(
+    /<span data-wd-each(?: data-wd-path="([^"]*)")?(?: data-wd-fmt="([^"]*)")?><\/span>/g,
+    (_, p, fmt) => {
+      let value = p ? getPath(item, p.split(".")) : item;
+      if (fmt) value = applyPipeline(value, stagesFromAttr(unescapeHtml(fmt)));
+      const pathAttr = p ? ` data-wd-path="${p}"` : "";
+      const fmtAttr = fmt ? ` data-wd-fmt="${fmt}"` : "";
+      return `<span data-wd-each${pathAttr}${fmtAttr}>${escapeHtml(value ?? "")}</span>`;
+    }
+  );
 }
 
 // Return the index just past the balanced close of the element of `tag` that

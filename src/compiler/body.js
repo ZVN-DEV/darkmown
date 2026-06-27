@@ -15,16 +15,20 @@ import {
   handleComputed,
   handleContainer,
   handleEffect,
+  handleEmbed,
+  handleEvery,
   handleFetch,
   handleForm,
   handleIf,
   handleInclude,
   handleInput,
+  handleMedia,
   handleSelect,
   handleState,
   handleStore,
   handleSubmit,
   handleTextarea,
+  handleTheme,
   renderDemoDirective
 } from "./directives.js";
 import { handleLoop } from "./loops.js";
@@ -115,6 +119,27 @@ export function compileBody(lines, ctx) {
     if (/^:effect\s/.test(line)) {
       flush();
       out.push(handleEffect(line, ctx, i));
+      continue;
+    }
+    if (/^:every\s/.test(line)) {
+      flush();
+      out.push(handleEvery(line, ctx, i));
+      continue;
+    }
+    if (/^:theme(?:\s|$)/.test(line)) {
+      flush();
+      out.push(handleTheme(line, ctx, i));
+      continue;
+    }
+    const media = line.match(/^:(video|audio)\s/);
+    if (media) {
+      flush();
+      out.push(handleMedia(line, /** @type {"video" | "audio"} */ (media[1]), ctx, i));
+      continue;
+    }
+    if (/^:embed\s/.test(line)) {
+      flush();
+      out.push(handleEmbed(line, ctx, i));
       continue;
     }
     if (/^:form\s/.test(line)) {
@@ -217,7 +242,7 @@ export function compileBody(lines, ctx) {
 // narrow (lowercase token + boundary; emoji shortcodes, times, and `@user`
 // followed by punctuation do not match).
 const KNOWN_DIRECTIVE =
-  /^(?:@(?:include|loop|empty|endloop)|:(?:state|store|fetch|computed|effect|form|endform|input|textarea|select|checkbox|radio|bind|submit|button|if|endif|else|try|note|sprint))(?:\s|$)/;
+  /^(?:@(?:include|loop|empty|endloop)|:(?:state|store|fetch|computed|effect|every|theme|video|audio|embed|form|endform|input|textarea|select|checkbox|radio|bind|submit|button|if|endif|else|try|note|sprint))(?:\s|$)/;
 /**
  * @param {string} line
  * @param {Ctx} ctx

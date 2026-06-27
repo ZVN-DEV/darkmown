@@ -1,6 +1,6 @@
 ---
 title: Showcase — real apps built in Markdown
-description: Four complete, beautiful apps — a storefront, a live dashboard, a pricing configurator, and a product-finder quiz — each one a readable Markdown file. See the app, then view its source.
+description: Five complete, beautiful apps — a storefront, a live dashboard, a pricing configurator, a product-finder quiz, and a sortable expense ledger — each one a readable Markdown file. See the app, then view its source.
 image: https://darkmown.com/__wd/media/og-showcase.png
 transitions: true
 ---
@@ -73,21 +73,33 @@ A guided quiz that asks a few questions, scores your answers, and recommends a m
 [Open Compass →](/compass/){.sc-open}
 :::
 
+::: card .sc-app .sc-ledger
+<span class="sc-emoji">📒</span>
+
+### Ledger — sortable expense table
+
+A spreadsheet-grade data table: click a header to re-sort live, filter by merchant, watch running totals recompute, flip light/dark — formatted with `| money` and `| date`, totalled with `sum()`.
+
+<span class="tag">format pipes</span> <span class="tag">aggregates</span> <span class="tag">reactive sort</span> <span class="tag">:theme</span>
+
+[Open Ledger →](/ledger/){.sc-open}
+:::
+
 </section>
 
 <section class="sc-weight">
 
 ## What it costs
 
-Darkmown's whole pitch is weight. A static page ships **zero** framework JavaScript — not "a little," none. The runtime loads only when a page actually declares reactivity, and it's one shared file, CI-enforced under 6 KB gzipped.
+Darkmown's whole pitch is weight. A static page ships **zero** framework JavaScript — not "a little," none. The runtime loads only when a page actually declares reactivity, and it's one shared file, CI-enforced under 8 KB gzipped.
 
 ::: card .sc-scale
 - **Static Darkmown page** — `0 KB` framework JS. Forever.
-- **Reactive Darkmown page** — one shared `~5.8 KB` gzipped runtime, no per-component bundles.
+- **Reactive Darkmown page** — one shared `~7.4 KB` gzipped runtime, no per-component bundles.
 - **A typical SPA** — ships a framework runtime in the **~15–60 KB** gzipped range *before* your app code, on every page (Alpine ~15 KB, Vue ~18 KB runtime, React 19 ~59 KB).
 :::
 
-The two Darkmown numbers above are measured on every commit; the runtime budget fails CI if it crosses 6 KB. The comparison figures are representative min+gzip runtime sizes (June 2026) — the point isn't "smallest" (Preact is smaller), it's **nothing at all until you ask for it.**
+The two Darkmown numbers above are measured on every commit; the runtime budget fails CI if it crosses 8 KB. The comparison figures are representative min+gzip runtime sizes (June 2026) — the point isn't "smallest" (Preact is smaller), it's **nothing at all until you ask for it.**
 
 </section>
 
@@ -121,6 +133,18 @@ Prefer to see each feature in isolation? These pages tour the building blocks th
 **Theme** — zero-JS OS dark mode from a skin.
 
 [Open →](/theme/)
+:::
+
+::: card .sc-mini
+**Swiper** — a draggable carousel via the escape hatch.
+
+[Open →](/carousel/)
+:::
+
+::: card .sc-mini
+**Media** — `:video`, `:audio`, `:embed`, zero JS.
+
+[Open →](/media/)
 :::
 
 ::: card .sc-mini

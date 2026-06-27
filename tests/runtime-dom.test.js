@@ -236,6 +236,8 @@ function makeSandbox(rootBuilder, { withRAF = false, globals = {}, initialStore 
   const listeners = {};
   const document = {
     activeElement: null,
+    // <html> root, the surface :theme reflects onto via document.documentElement.
+    documentElement: new El("html"),
     querySelectorAll: (sel) => root.querySelectorAll(sel),
     querySelector: (sel) => root.querySelector(sel),
     addEventListener: (type, fn) => {
@@ -1584,4 +1586,245 @@ test(":fetch when=visible does NOT fetch until its IntersectionObserver intersec
   assert.equal(stub.count("/api/lazy"), 1, "fetch ran exactly once after intersection");
   assert.ok(io.instances[0].disconnected, "observer disconnected after firing (one-shot)");
   assert.deepEqual(h.sandbox.wd.state.lazy, { loaded: true }, "lazy fetch result landed in state");
+});
+
+// ---------------------------------------------------------------------------
+// 1.0 — Value layer: format pipes reformat reactive binds, loop rows, and
+// computed aggregates in the real runtime (Intl/Math passed into the sandbox).
+// ---------------------------------------------------------------------------
+
+const fmtGlobals = { globals: { Intl, Math } };
+
+function fmtStateScript(El, root, value) {
+  const s = new El("script");
+  s.setAttribute("data-wd-state", "");
+  s.textContent = JSON.stringify(value);
+  root.appendChild(s);
+}
+
+test("format pipe: a reactive money bind reformats on state change", () => {
+  let span;
+  const h = makeSandbox((root, El) => {
+    fmtStateScript(El, root, { price: 49 });
+    span = new El("span");
+    span.setAttribute("data-wd-bind", "price");
+    span.setAttribute("data-wd-fmt", '[["money",[]]]');
+    root.appendChild(span);
+  }, fmtGlobals);
+  assert.equal(span.textContent, "$49.00", "initial paint formats");
+  h.sandbox.wd.state.price = 99.5;
+  h.sandbox.wd.render();
+  assert.equal(span.textContent, "$99.50", "reformats after change");
+});
+
+test("format pipe: an aggregate sum + money bind tracks the list", () => {
+  let span;
+  const h = makeSandbox((root, El) => {
+    fmtStateScript(El, root, { cart: [{ price: 49 }, { price: 99 }] });
+    span = new El("span");
+    span.setAttribute("data-wd-bind", "cart");
+    span.setAttribute("data-wd-fmt", '[["sum",["price"]],["money",[]]]');
+    root.appendChild(span);
+  }, fmtGlobals);
+  assert.equal(span.textContent, "$148.00");
+  h.sandbox.wd.state.cart = [{ price: 10 }, { price: 5 }, { price: 2.5 }];
+  h.sandbox.wd.render();
+  assert.equal(span.textContent, "$17.50");
+});
+
+test(":computed aggregate recomputes through the A() helper", () => {
+  const h = makeSandbox((root, El) => {
+    fmtStateScript(El, root, { cart: [{ price: 2 }, { price: 3 }], total: 0 });
+    const c = new El("span");
+    c.setAttribute("data-wd-computed", "");
+    c.setAttribute("data-wd-computed-key", "total");
+    c.setAttribute("data-wd-computed-expr", 'A("sum",S("cart"),"price")');
+    root.appendChild(c);
+  }, fmtGlobals);
+  assert.equal(h.sandbox.wd.state.total, 5, "initial aggregate");
+  h.sandbox.wd.state.cart = [{ price: 10 }, { price: 20 }];
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.total, 30, "recomputed");
+});
+
+test("format pipe: loop rows format their per-row value", () => {
+  let out;
+  makeSandbox((root, El) => {
+    fmtStateScript(El, root, {
+      items: [
+        { id: 1, price: 49 },
+        { id: 2, price: 12.5 }
+      ]
+    });
+    const region = new El("div");
+    region.setAttribute("data-wd-loop", "items");
+    const tpl = new El("template");
+    tpl.setAttribute("data-wd-loop-template", "");
+    const proto = new El("li");
+    proto.setAttribute("data-wd-each", "");
+    proto.setAttribute("data-wd-path", "price");
+    proto.setAttribute("data-wd-fmt", '[["money",[]]]');
+    tpl.content.appendChild(proto);
+    region.appendChild(tpl);
+    out = new El("ul");
+    out.setAttribute("data-wd-loop-out", "");
+    region.appendChild(out);
+    root.appendChild(region);
+  }, fmtGlobals);
+  assert.equal(out.children.length, 2);
+  assert.equal(out.children[0].textContent, "$49.00");
+  assert.equal(out.children[1].textContent, "$12.50");
+});
+
+// ---------------------------------------------------------------------------
+// 1.0 — Time layer: :every runs actions on a timer and pauses while hidden.
+// ---------------------------------------------------------------------------
+
+test(":every ticks its actions, renders, and pauses when the tab is hidden", () => {
+  const intervals = [];
+  let nextId = 1;
+  const setIntervalStub = (fn, ms) => {
+    const id = nextId++;
+    intervals.push({ id, fn, ms, cleared: false });
+    return id;
+  };
+  const clearIntervalStub = (id) => {
+    const it = intervals.find((x) => x.id === id);
+    if (it) it.cleared = true;
+  };
+  let span;
+  const h = makeSandbox(
+    (root, El) => {
+      fmtStateScript(El, root, { n: 0 });
+      const ev = new El("script");
+      ev.setAttribute("data-wd-every", "");
+      ev.textContent = JSON.stringify({ ms: 1000, actions: [{ op: "inc", target: "n" }] });
+      root.appendChild(ev);
+      // A malformed marker (no ms) is skipped defensively, not started.
+      const bad = new El("script");
+      bad.setAttribute("data-wd-every", "");
+      bad.textContent = JSON.stringify({ actions: [{ op: "inc", target: "n" }] });
+      root.appendChild(bad);
+      span = new El("span");
+      span.setAttribute("data-wd-bind", "n");
+      root.appendChild(span);
+    },
+    { withRAF: true, globals: { setInterval: setIntervalStub, clearInterval: clearIntervalStub } }
+  );
+
+  assert.equal(intervals.length, 1, "one interval registered on load");
+  assert.equal(intervals[0].ms, 1000);
+
+  intervals[0].fn();
+  h.flushRAF();
+  intervals[0].fn();
+  h.flushRAF();
+  assert.equal(h.sandbox.wd.state.n, 2, "two ticks ran the action twice");
+  assert.equal(span.textContent, "2", "the bind re-rendered");
+
+  // Hiding the tab clears the interval; showing it restarts.
+  h.document.hidden = true;
+  h.fire("visibilitychange", h.document);
+  assert.ok(intervals[0].cleared, "interval cleared while hidden");
+
+  h.document.hidden = false;
+  h.fire("visibilitychange", h.document);
+  assert.equal(intervals.length, 2, "interval re-registered when visible again");
+});
+
+// ---------------------------------------------------------------------------
+// 1.0 — Manual theme: :theme reflects its store onto <html data-theme>.
+// ---------------------------------------------------------------------------
+
+test(":theme reflects its store onto <html data-theme>, clearing on auto", () => {
+  const h = makeSandbox((root, El) => {
+    fmtStateScript(El, root, { theme: "dark" });
+    const marker = new El("span");
+    marker.setAttribute("data-wd-theme", "theme");
+    root.appendChild(marker);
+  });
+  const html = h.document.documentElement;
+  assert.equal(html.getAttribute("data-theme"), "dark", "forced dark on load");
+
+  h.sandbox.wd.state.theme = "light";
+  h.sandbox.wd.render();
+  assert.equal(html.getAttribute("data-theme"), "light", "switches to light");
+
+  h.sandbox.wd.state.theme = "auto";
+  h.sandbox.wd.render();
+  assert.equal(html.getAttribute("data-theme"), null, "auto clears the attribute (follow OS)");
+});
+
+// ---------------------------------------------------------------------------
+// 1.0 — Reactive sort: a loop re-sorts live as a state column/direction changes.
+// ---------------------------------------------------------------------------
+
+test("reactive sort re-orders rows as the sort column and direction change", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    fmtStateScript(El, root, { sortKey: "", sortDir: "asc" });
+    const built = loopRegion(root, El, {
+      initial: [
+        { id: "b", name: "Beta" },
+        { id: "a", name: "Alpha" },
+        { id: "c", name: "Gamma" }
+      ]
+    });
+    built.region.setAttribute("data-wd-loop-sort", "key:sortKey");
+    built.region.setAttribute("data-wd-loop-sort-dir", "key:sortDir");
+    out = built.out;
+  });
+  const names = () => out.children.map((c) => c.textContent);
+
+  // No column chosen yet → original order preserved.
+  assert.deepEqual(names(), ["Beta", "Alpha", "Gamma"]);
+
+  h.sandbox.wd.state.sortKey = "name";
+  h.sandbox.wd.render();
+  assert.deepEqual(names(), ["Alpha", "Beta", "Gamma"], "ascending by name");
+
+  h.sandbox.wd.state.sortDir = "desc";
+  h.sandbox.wd.render();
+  assert.deepEqual(names(), ["Gamma", "Beta", "Alpha"], "descending by name");
+});
+
+// ---------------------------------------------------------------------------
+// 1.0 — Escape hatch: wd.subscribe(key, cb) bridges colocated .js "behaviors".
+// ---------------------------------------------------------------------------
+
+test("wd.subscribe primes the callback, fires on settled changes, and unsubscribes", () => {
+  const h = makeSandbox((root, El) => {
+    fmtStateScript(El, root, { n: 0 });
+  });
+  const seen = [];
+  const off = h.sandbox.wd.subscribe("n", (v) => seen.push(v));
+  assert.deepEqual(seen, [0], "primed with the current value");
+
+  h.sandbox.wd.state.n = 5;
+  h.sandbox.wd.render();
+  assert.deepEqual(seen, [0, 5], "fired on change");
+
+  h.sandbox.wd.render(); // no change → no extra notification
+  assert.deepEqual(seen, [0, 5]);
+
+  off();
+  h.sandbox.wd.state.n = 9;
+  h.sandbox.wd.render();
+  assert.deepEqual(seen, [0, 5], "silent after unsubscribe");
+});
+
+test("a throwing subscriber is caught (prime and on change), never fatal", () => {
+  const h = makeSandbox((root, El) => {
+    fmtStateScript(El, root, { n: 0 });
+  });
+  h.sandbox.wd.debug = true;
+  assert.doesNotThrow(() =>
+    h.sandbox.wd.subscribe("n", () => {
+      throw new Error("boom");
+    })
+  );
+  assert.doesNotThrow(() => {
+    h.sandbox.wd.state.n = 1;
+    h.sandbox.wd.render();
+  });
 });

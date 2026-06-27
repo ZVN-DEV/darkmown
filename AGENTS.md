@@ -7,7 +7,7 @@ Darkmown is a Markdown-native web framework. You build sites by writing `.md` an
 - `.md` files are plain CommonMark. Directives stay inert text.
 - `.wd` files are the same Markdown **plus directives** (state, loops, conditionals, includes, forms).
 - To make a `.md` page interactive, **rename it to `.wd`**. ⚠️ Renaming means the old `.md` is **gone** — never leave both `index.md` and `index.wd`, that is a fatal `Duplicate route` build error. Upgrade = delete the `.md`, create the `.wd`.
-- Static pages ship **zero** JavaScript; a page loads the ~5.7 KB gzipped runtime (CI-enforced under 6 KB) only if it declares reactive behavior.
+- Static pages ship **zero** JavaScript; a page loads the ~7.4 KB gzipped runtime (CI-enforced under 8 KB) only if it declares reactive behavior.
 
 ## Project layout & routing
 

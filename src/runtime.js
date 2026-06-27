@@ -119,6 +119,75 @@ function isEmpty(v) {
   return v == null || (typeof v === "object" && (Array.isArray(v) ? v.length : Object.keys(v).length) === 0);
 }
 
+// --- Format pipes -----------------------------------------------------------
+// A compact mirror of src/compiler/format.js: the same formatter math, so a
+// reactive `{ value | money }` re-formats in the browser exactly as the static
+// fold did at build time. tests/format-parity.test.js guards the two against
+// drift. Pure functions of (value, args) — no clock, no DOM — Intl does the work.
+
+/** @param {any} v @returns {number} */
+const fmtNum = (v) => { const n = typeof v === "number" ? v : Number.parseFloat(v); return Number.isFinite(n) ? n : 0; };
+/** @param {any} v @returns {any[]} */
+const fmtList = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]);
+/** @param {any} row @param {string} [f] */
+const fmtPick = (row, f) => (f != null && f !== "" ? (row == null ? undefined : row[f]) : row);
+/** @param {any[]} list @param {string} [f] */
+const fmtNums = (list, f) => list.map((r) => fmtNum(fmtPick(r, f)));
+/** @param {any} v @returns {Date} */
+const fmtToDate = (v) => {
+  if (v instanceof Date) return v;
+  if (typeof v === "number") return new Date(v);
+  const s = String(v).trim();
+  return /^-?\d+$/.test(s) ? new Date(Number(s)) : new Date(s);
+};
+/** @param {Date} d @param {any} opts @param {any} fb */
+const fmtDate = (d, opts, fb) => (Number.isNaN(d.getTime()) ? String(fb) : new Intl.DateTimeFormat(undefined, opts).format(d));
+
+/** @type {Record<string, (value: any, args: any[]) => any>} */
+const FMT = {
+  money: (v, [c = "USD", l]) => new Intl.NumberFormat(l || undefined, { style: "currency", currency: String(c || "USD") }).format(fmtNum(v)),
+  number: (v, [d]) => new Intl.NumberFormat(undefined, d == null ? {} : { minimumFractionDigits: +d, maximumFractionDigits: +d }).format(fmtNum(v)),
+  percent: (v, [d = 0]) => new Intl.NumberFormat(undefined, { style: "percent", minimumFractionDigits: +d, maximumFractionDigits: +d }).format(fmtNum(v)),
+  round: (v, [d = 0]) => { const p = 10 ** +d; return Math.round(fmtNum(v) * p) / p; },
+  date: (v, [s = "medium"]) => fmtDate(fmtToDate(v), { dateStyle: s }, v),
+  time: (v, [s = "short"]) => fmtDate(fmtToDate(v), { timeStyle: s }, v),
+  datetime: (v, [ds = "medium", ts = "short"]) => fmtDate(fmtToDate(v), { dateStyle: ds, timeStyle: ts }, v),
+  upper: (v) => String(v ?? "").toUpperCase(),
+  lower: (v) => String(v ?? "").toLowerCase(),
+  capitalize: (v) => { const s = String(v ?? ""); return s ? s[0].toUpperCase() + s.slice(1) : s; },
+  truncate: (v, [n = 50, suf = "…"]) => { const s = String(v ?? ""); return s.length > +n ? s.slice(0, +n).trimEnd() + String(suf) : s; },
+  trim: (v) => String(v ?? "").trim(),
+  pluralize: (v, [sg = "", pl]) => { const n = fmtNum(v); return `${new Intl.NumberFormat().format(n)} ${Math.abs(n) === 1 ? String(sg) : pl != null ? String(pl) : `${sg}s`}`; },
+  default: (v, [fb = ""]) => (v == null || v === "" || (Array.isArray(v) && !v.length) ? String(fb) : v),
+  sum: (v, [f]) => fmtNums(fmtList(v), f).reduce((a, n) => a + n, 0),
+  avg: (v, [f]) => { const l = fmtList(v); return l.length ? FMT.sum(l, [f]) / l.length : 0; },
+  min: (v, [f]) => { const l = fmtList(v); return l.length ? Math.min(...fmtNums(l, f)) : 0; },
+  max: (v, [f]) => { const l = fmtList(v); return l.length ? Math.max(...fmtNums(l, f)) : 0; },
+  count: (v) => fmtList(v).length,
+  join: (v, [sep = ", ", f]) => fmtList(v).map((r) => fmtPick(r, f)).join(String(sep))
+};
+
+/**
+ * Run a node's `data-wd-fmt` pipe chain over a resolved value; identity when the
+ * node carries no chain. Shared by text binds, loop-row binds, and meta markers.
+ * @param {Element} node
+ * @param {any} value
+ * @returns {any}
+ */
+function applyFmt(node, value) {
+  const raw = node.getAttribute("data-wd-fmt");
+  if (!raw) return value;
+  let stages;
+  try { stages = JSON.parse(raw); } catch { return value; }
+  let out = value;
+  for (const [name, args] of stages) { if (FMT[name]) out = FMT[name](out, args || []); }
+  return out;
+}
+
+/** Aggregate helper exposed to `:computed` as `A("sum", list, "field")`. */
+const AGG = (/** @type {string} */ name, /** @type {any} */ list, /** @type {string} */ field) =>
+  FMT[name] ? FMT[name](list, field == null ? [] : [field]) : undefined;
+
 /**
  * Shared HTTP→JSON core for `:fetch` and the round-trip `:form`. Sends the
  * request, throws on non-2xx, and parses the body as JSON (falling back to a
@@ -142,7 +211,7 @@ async function httpJson(url, init) {
 const computedDefs = [...document.querySelectorAll("[data-wd-computed]")].map((node) => ({
   key: node.getAttribute("data-wd-computed-key") || "",
   expr: node.getAttribute("data-wd-computed-expr") || "",
-  evaluate: new Function("S", `return (${node.getAttribute("data-wd-computed-expr")});`)
+  evaluate: new Function("S", "A", `return (${node.getAttribute("data-wd-computed-expr")});`)
 }));
 
 /**
@@ -165,7 +234,7 @@ function recompute() {
   const read = (key, path) => getPath(state[key], path ?? null);
   for (const def of computedDefs) {
     try {
-      state[def.key] = def.evaluate(read);
+      state[def.key] = def.evaluate(read, AGG);
     } catch (error) {
       state[def.key] = undefined;
       warn(def.expr, error);
@@ -269,11 +338,11 @@ function fillItem(node, item, meta = {}) {
     : [...node.querySelectorAll("[data-wd-each]")];
   for (const target of targets) {
     if (skip(target)) continue;
-    target.textContent = getPath(item, target.getAttribute("data-wd-path")) ?? "";
+    target.textContent = applyFmt(target, getPath(item, target.getAttribute("data-wd-path"))) ?? "";
   }
   for (const marker of node.querySelectorAll("[data-wd-each-meta]")) {
     if (skip(marker)) continue;
-    marker.textContent = meta[marker.getAttribute("data-wd-each-meta") || ""] ?? "";
+    marker.textContent = applyFmt(marker, meta[marker.getAttribute("data-wd-each-meta") || ""]) ?? "";
   }
   const classNodes = node.matches("[data-wd-each-class]") ? [node, ...node.querySelectorAll("[data-wd-each-class]")] : [...node.querySelectorAll("[data-wd-each-class]")];
   for (const el of classNodes) { if (!skip(el)) classToggle(el, el.getAttribute("data-wd-each-class"), item); }
@@ -302,15 +371,24 @@ function loopNum(region, name) {
  * @returns {any[]}
  */
 function pipeline(list, region) {
-  const sort = region.getAttribute("data-wd-loop-sort");
-  if (sort != null) {
-    const dir = region.getAttribute("data-wd-loop-sort-dir") === "desc" ? -1 : 1;
-    list = list.map((value, index) => ({ value, index })).sort((a, b) => {
-      const av = getPath(a.value, sort || null);
-      const bv = getPath(b.value, sort || null);
-      const c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
-      return (c || a.index - b.index) * dir;
-    }).map((w) => w.value);
+  const sortAttr = region.getAttribute("data-wd-loop-sort");
+  if (sortAttr != null) {
+    // `key:<name>` reads the sort field / direction from state (reactive,
+    // clickable-header sort); a plain value is the literal `sort by` clause.
+    const reactive = sortAttr.startsWith("key:");
+    const sort = reactive ? String(state[sortAttr.slice(4)] ?? "") : sortAttr;
+    // A reactive sort with no column chosen yet (state is "") leaves the order.
+    if (!reactive || sort) {
+      let dirAttr = region.getAttribute("data-wd-loop-sort-dir") || "asc";
+      if (dirAttr.startsWith("key:")) dirAttr = String(state[dirAttr.slice(4)] ?? "asc");
+      const dir = dirAttr === "desc" ? -1 : 1;
+      list = list.map((value, index) => ({ value, index })).sort((a, b) => {
+        const av = getPath(a.value, sort || null);
+        const bv = getPath(b.value, sort || null);
+        const c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+        return (c || a.index - b.index) * dir;
+      }).map((w) => w.value);
+    }
   }
   if (region.hasAttribute("data-wd-loop-reverse")) list.reverse();
   const off = loopNum(region, "data-wd-loop-offset");
@@ -438,14 +516,29 @@ function renderNow() {
   }
 
   for (const node of document.querySelectorAll("[data-wd-bind]")) {
-    node.textContent = getPath(state[node.getAttribute("data-wd-bind") || ""], node.getAttribute("data-wd-path")) ?? "";
+    node.textContent = applyFmt(node, getPath(state[node.getAttribute("data-wd-bind") || ""], node.getAttribute("data-wd-path"))) ?? "";
   }
 
   for (const input of document.querySelectorAll("[data-wd-bind-input]")) {
     if (document.activeElement !== input) /** @type {HTMLInputElement} */ (input).value = state[input.getAttribute("data-wd-bind-input") || ""] ?? "";
   }
 
+  if (themeNodes.length) reflectThemes();
   runEffects(); // side effects run last, against fully settled state
+  if (subscribers.size) notifySubscribers();
+}
+
+/** :theme — reflect a store value onto <html data-theme> so a manual light/dark
+ * switch layers over the OS preference: `auto`/empty clears the attribute (follow
+ * the system via the skin's `tokens dark` media query), anything else forces it. */
+const themeNodes = [...document.querySelectorAll("[data-wd-theme]")];
+function reflectThemes() {
+  for (const node of themeNodes) {
+    const value = state[node.getAttribute("data-wd-theme") || ""];
+    const root = document.documentElement;
+    if (value == null || value === "" || value === "auto") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", String(value));
+  }
 }
 
 /** @typedef {{ watch: string, actions: { op: string, target?: string, value?: any }[], last: string }} Effect */
@@ -755,6 +848,52 @@ for (const node of fetchNodes) {
   }
 }
 
+// :every — run actions on a timer, paused while the tab is hidden so background
+// tabs don't poll or animate. Each tick runs the action sequence (no clicked row,
+// like :effect), then saves + renders + checks refetch deps, exactly like a click.
+/** @typedef {{ ms: number, actions: { op: string, target?: string, value?: any }[] }} EveryDef */
+/** @type {EveryDef[]} */
+const everyDefs = [...document.querySelectorAll("script[data-wd-every]")].map((node) => JSON.parse(node.textContent || "{}"));
+/** @type {any[]} */
+let everyTimers = [];
+function startEvery() {
+  if (everyTimers.length || document.hidden) return;
+  for (const def of everyDefs) {
+    if (!def.ms || !def.actions) continue;
+    everyTimers.push(setInterval(() => {
+      for (const a of def.actions) applyAction(null, a.op, a.target || "", a.value);
+      savePersisted();
+      render();
+      checkRefetch();
+    }, def.ms));
+  }
+}
+function stopEvery() {
+  for (const timer of everyTimers) clearInterval(timer);
+  everyTimers = [];
+}
+if (everyDefs.length) {
+  document.addEventListener("visibilitychange", () => (document.hidden ? stopEvery() : startEvery()));
+  startEvery();
+}
+
+// Escape-hatch subscriptions: colocated `.js` "behaviors" (carousels, drag-and-
+// drop, charts, maps) react to state with `wd.subscribe(key, cb)`. Each subscribe
+// primes the callback with the current value, then fires on every settled change.
+/** @typedef {{ cbs: Set<(value: any) => void>, last: string }} SubEntry */
+/** @type {Map<string, SubEntry>} */
+const subscribers = new Map();
+function notifySubscribers() {
+  for (const [key, entry] of subscribers) {
+    const now = JSON.stringify(state[key] ?? null);
+    if (now === entry.last) continue;
+    entry.last = now;
+    for (const cb of entry.cbs) {
+      try { cb(state[key]); } catch (error) { warn(`subscribe ${key}`, error); }
+    }
+  }
+}
+
 /**
  * Public escape hatch on `window.wd`. Set `window.wd.debug = true` to log failing
  * computed/where expressions to the console.
@@ -769,6 +908,21 @@ for (const node of fetchNodes) {
     state[key] = value;
     savePersisted();
     render();
+  },
+  /**
+   * Run `cb(value)` now and on every future change to `state[key]`. Returns an
+   * unsubscribe function. The bridge for colocated `.js` behaviors.
+   * @param {string} key @param {(value: any) => void} cb
+   */
+  subscribe: (key, cb) => {
+    let entry = subscribers.get(key);
+    if (!entry) {
+      entry = { cbs: new Set(), last: JSON.stringify(state[key] ?? null) };
+      subscribers.set(key, entry);
+    }
+    entry.cbs.add(cb);
+    try { cb(state[key]); } catch (error) { warn(`subscribe ${key}`, error); }
+    return () => entry.cbs.delete(cb);
   },
   render: renderNow
 };

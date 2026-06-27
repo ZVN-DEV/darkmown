@@ -24,6 +24,7 @@ transitions: true
 </style>
 
 :fetch board from "/__wd/data/metrics.json"
+:every 10s -> board refetch
 
 :computed totalServices = board.services.length
 
@@ -148,6 +149,7 @@ Until this page fetched
 
 ```wd
 :fetch board from "/__wd/data/metrics.json"
+:every 10s -> board refetch
 
 :computed totalServices = board.services.length
 

@@ -36,7 +36,7 @@ const brand = `<!doctype html><html><head><meta charset="utf-8"><style>
 </style></head><body>
   <div class="top"><div class="badge">D</div><div class="domain">darkmown.com</div></div>
   <div class="headline">Markdown that <span class="accent">runs</span>.<br>Not Markdown that needs React.</div>
-  <div class="footer">.md stays plain <span class="dot">·</span> .wd adds loops, state &amp; fetch <span class="dot">·</span> under 6 KB runtime</div>
+  <div class="footer">.md stays plain <span class="dot">·</span> .wd adds loops, state &amp; fetch <span class="dot">·</span> under 8 KB runtime</div>
 </body></html>`;
 
 // Per-app cards share one layout, parameterized by identity accent + copy.

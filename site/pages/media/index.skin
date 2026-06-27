@@ -1,0 +1,82 @@
+/* ── Media demo — layers on /base.wd. Pure presentation; the page itself ships
+   no framework JS, so nothing here is reactive. Reuses base tokens. ───────── */
+
+.app-media
+  max-width 52rem
+  margin 0 auto
+  padding 2.5rem 1.25rem 4rem
+
+.app-media .media-head
+  margin-bottom 2rem
+
+.app-media .media-head .eyebrow
+  color $accent
+
+.app-media h1
+  margin .5rem 0 0
+  font-size 2.5rem
+  letter-spacing -.02em
+  color $ink
+
+.app-media .media-head p
+  margin 1rem 0 0
+  max-width 42rem
+  color $ink-soft
+  font-size 1.02rem
+  line-height 1.6
+
+.app-media .media-head code, .app-media .media-label code, .app-media .media-note code
+  bg $code-bg
+  color $code-ink
+  padding .08rem .35rem
+  radius 6px
+  font-size .85em
+
+/* Each player sits in its own labelled card */
+.app-media .media-panel
+  padding 1.25rem 1.25rem 1.1rem
+  margin 1.25rem 0
+  border 1px solid $line-soft
+  radius 16px
+  bg $panel
+
+.app-media .media-label
+  font-size .8rem
+  font-weight 600
+  letter-spacing .02em
+  color $muted
+  margin-bottom .85rem
+
+.app-media .media-label p
+  margin 0
+
+/* The compiled <video>/<audio>/<iframe> wrapper */
+.app-media video
+  width 100%
+  height auto
+  display block
+  border 1px solid $line-soft
+  radius 12px
+  background $sunk
+
+.app-media audio
+  width 100%
+  display block
+
+.app-media .wd-embed
+  border 1px solid $line-soft
+  radius 12px
+  overflow hidden
+  background $sunk
+
+.app-media .media-note
+  margin .9rem 0 0
+  font-size .88rem
+  line-height 1.55
+  color $muted
+
+.app-media .media-note p
+  margin 0
+
+.app-media .source-reveal
+  margin-top 2rem

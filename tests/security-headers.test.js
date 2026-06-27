@@ -25,6 +25,20 @@ test("reactive CSP allows unsafe-eval (new Function) and unsafe-inline", () => {
   assert.match(REACTIVE_CSP, /frame-ancestors 'self'/);
 });
 
+test("CSP pre-authorizes exactly the media/embed targets the framework emits", () => {
+  // :video/:audio allow relative or http(s) sources; :embed only ever rewrites to
+  // the YouTube no-cookie and Vimeo player origins. Both CSP variants share these.
+  for (const csp of [REACTIVE_CSP, STATIC_CSP]) {
+    assert.match(csp, /media-src 'self' https:/);
+    assert.match(
+      csp,
+      /frame-src https:\/\/www\.youtube-nocookie\.com https:\/\/player\.vimeo\.com/
+    );
+    // Scoped to named hosts — never a wildcard frame-src.
+    assert.doesNotMatch(csp, /frame-src[^;]*\*/);
+  }
+});
+
 test("static CSP drops unsafe-eval but keeps inline script/style for speculationrules and view-transition styles", () => {
   assert.match(STATIC_CSP, /script-src 'self' 'unsafe-inline'(?!.*unsafe-eval)/);
   assert.doesNotMatch(STATIC_CSP, /unsafe-eval/);

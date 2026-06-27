@@ -1,0 +1,84 @@
+---
+title: Media — video, audio, and embeds in Markdown
+description: Three one-line directives — :video, :audio, :embed — compile to hardened, accessible, privacy-friendly players. No framework JavaScript ships: a media page stays zero-JS, just like static Markdown.
+image: https://darkmown.com/__wd/media/og-showcase.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide app-media">
+
+<header class="media-head">
+<span class="eyebrow">New in 1.0</span>
+
+# *Media*, the Markdown way
+
+Video, audio, and third-party embeds used to be the one place a Markdown page fell
+back to raw HTML — `<video>` tags, `<iframe>` soup, privacy footguns, and
+copy-pasted attributes. Darkmown gives you three one-line directives instead.
+Each compiles to a **hardened, accessible, lazy** player, and — because they emit
+no `data-wd-*` — *this entire page ships zero framework JavaScript.*
+
+</header>
+
+::: card .media-panel
+::: media-label
+`:video` — a hardened HTML5 player
+:::
+
+:video /media/clip.mp4 poster=/media/clip-poster.jpg controls
+
+::: media-note
+`preload="metadata"` and `controls` are added for you; an `autoplay` clip silently
+implies `muted`, because browsers block sound-on autoplay. The source URL runs
+through the same scheme guard as `:fetch` — only relative paths and `http(s)` get
+through.
+:::
+:::
+
+::: card .media-panel
+::: media-label
+`:audio` — same guarantees, for sound
+:::
+
+:audio /media/tone.mp3 controls
+
+::: media-note
+A 440 Hz reference tone. `:audio` shares the `:video` defaults and validation; flags
+you don't set never appear in the markup, so there are no surprise behaviors.
+:::
+:::
+
+::: card .media-panel
+::: media-label
+`:embed` — privacy-friendly, responsive iframes
+:::
+
+:embed https://youtu.be/aqz-KE-bpKQ title="Big Buck Bunny (open movie)"
+
+::: media-note
+A YouTube or Vimeo URL is rewritten to its **no-cookie / player** form, wrapped in a
+`16/9` box, and marked `loading="lazy"` with a locked-down `referrerpolicy`. Paste a
+share link; get a responsive, tracking-light embed.
+:::
+:::
+
+<details class="source-reveal">
+<summary>View source — three lines</summary>
+
+```wd
+:video /media/clip.mp4 poster=/media/clip-poster.jpg controls
+:audio /media/tone.mp3 controls
+:embed https://youtu.be/aqz-KE-bpKQ title="Big Buck Bunny (open movie)"
+```
+
+That's the whole page's interactivity. No `<script>`, no runtime — open DevTools and
+watch the Network tab stay empty of framework JS.
+
+</details>
+
+</main>
+
+@include /footer.wd

@@ -115,11 +115,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: shipped runtime must stay under 6KB gzipped
+      - name: shipped runtime must stay under 8KB gzipped
         run: |
           size=$(gzip -c dist/__wd/runtime.js | wc -c)
-          echo "shipped runtime gzipped: ${size} bytes (budget: 6144)"
-          test "$size" -lt 6144
+          echo "shipped runtime gzipped: ${size} bytes (budget: 8192)"
+          test "$size" -lt 8192
       - name: size delta vs snapshot
         run: npm run size:check
 

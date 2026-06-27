@@ -15,6 +15,9 @@ transitions: true
 
 :store cart = []
 :computed count = cart.length
+:computed subtotal = sum(cart, price)
+:computed tax = subtotal * 0.08
+:computed total = subtotal * 1.08
 
 ::: shop-head
 ::: shop-mark
@@ -54,7 +57,7 @@ The same basket you filled on the shelf — it carried over on its own. Review i
 :::
 :::
 ::: line-price
-${ item.price }
+{ item.price | money }
 :::
 :button "Remove" -> cart remove item
 :::
@@ -69,8 +72,28 @@ Nothing here yet — the shelf is just a click away.
 @endloop
 
 :if count > 0
-::: cart-actions
-{ count } item(s) ready to check out.
+::: card .order-summary
+### Order summary
+
+::: sum-row
+Subtotal ({ count | pluralize:"item" })
+::: sum-val
+{ subtotal | money }
+:::
+:::
+::: sum-row
+Tax (8%)
+::: sum-val
+{ tax | money }
+:::
+:::
+::: sum-row .sum-total
+**Total**
+::: sum-val
+**{ total | money }**
+:::
+:::
+
 :button "Clear basket" -> cart clear
 :::
 :endif
@@ -132,15 +155,20 @@ This basket is the **same `:store`** declared on the catalog — one name, one s
 ```wd
 :store cart = []
 :computed count = cart.length
+:computed subtotal = sum(cart, price)
+:computed total = subtotal * 1.08
 
 @loop cart into item
 ::: card .line
-{ item.emoji } **{ item.name }** — ${ item.price }
+{ item.emoji } **{ item.name }** — { item.price | money }
 :button "Remove" -> cart remove item
 :::
 @empty
 Your basket is empty.
 @endloop
+
+Subtotal ({ count | pluralize:"item" }) — **{ subtotal | money }**
+Total with tax — **{ total | money }**
 
 :button "Clear basket" -> cart clear
 

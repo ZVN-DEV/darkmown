@@ -7,13 +7,18 @@ const routes = [
   { path: "/reactive/", runtime: true },
   { path: "/data/", runtime: true },
   { path: "/app/", runtime: true },
-  // Showcase hub (static) + the four flagship apps (reactive).
+  // Showcase hub (static) + the five flagship apps (reactive).
   { path: "/showcase/", runtime: false },
   { path: "/folio/", runtime: true },
   { path: "/folio/cart/", runtime: true },
   { path: "/pulse/", runtime: true },
   { path: "/forge/", runtime: true },
-  { path: "/compass/", runtime: true }
+  { path: "/compass/", runtime: true },
+  { path: "/ledger/", runtime: true },
+  // The escape-hatch carousel is reactive; the media page is the 1.0 proof that
+  // :video/:audio/:embed stay zero framework JS.
+  { path: "/carousel/", runtime: true },
+  { path: "/media/", runtime: false }
 ];
 
 test.describe("demo routes — launch smoke", () => {

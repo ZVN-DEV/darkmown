@@ -251,3 +251,59 @@
   background $warm-soft
   color $ink-soft
   font-size .9rem
+
+/* ── Order summary — live subtotal/tax/total via :computed sum() + | money ── */
+.app-folio .order-summary
+  margin-top 1.25rem
+  padding 1.1rem 1.2rem
+  border 1px solid $line-soft
+  radius 14px
+  bg $panel
+
+.app-folio .order-summary h3
+  margin 0 0 .75rem
+  font-size .78rem
+  font-weight 700
+  letter-spacing .08em
+  text-transform uppercase
+  color $muted
+
+.app-folio .sum-row
+  display flex
+  align-items baseline
+  justify-content space-between
+  gap 1rem
+  font-size .92rem
+  color $ink-soft
+  padding .3rem 0
+
+.app-folio .sum-row p
+  margin 0
+
+.app-folio .sum-val
+  font-variant-numeric tabular-nums
+  color $ink
+
+.app-folio .sum-total
+  margin-top .35rem
+  padding-top .7rem
+  border-top 1px solid $line-soft
+  font-size 1.05rem
+  color $ink
+
+.app-folio .order-summary button[data-wd-action]
+  margin-top 1rem
+  width 100%
+  border 1px solid $line
+  font-size .82rem
+  font-weight 600
+  padding .6rem 1rem
+  radius 999px
+  bg transparent
+  color $ink-soft
+  cursor pointer
+  transition color .14s ease, border-color .14s ease
+
+.app-folio .order-summary button[data-wd-action]:hover
+  color $ink
+  border-color $ink-soft
