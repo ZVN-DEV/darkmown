@@ -139,7 +139,15 @@ export function compileSkin(source) {
     if (vars.length) css.unshift(`${selector} {\n${vars.join("\n")}\n}`);
   }
   if (darkVars.length) {
-    css.unshift(`@media (prefers-color-scheme: dark) {\n:root {\n${darkVars.join("\n")}\n}\n}`);
+    const body = darkVars.join("\n");
+    // One `tokens dark` block powers BOTH OS-auto and a manual :theme toggle.
+    // Forced `[data-theme="dark"]` is always dark; the OS-dark media query applies
+    // unless the visitor forced light. Both rules reference the same tokens, so a
+    // user override wins without duplicating the palette.
+    css.unshift(`:root[data-theme="dark"] {\n${body}\n}`);
+    css.unshift(
+      `@media (prefers-color-scheme: dark) {\n:root:not([data-theme="light"]) {\n${body}\n}\n}`
+    );
   }
   if (rootVars.length) css.unshift(`:root {\n${rootVars.join("\n")}\n}`);
   return css.join("\n");

@@ -1,0 +1,174 @@
+---
+title: Ledger — a sortable expense table in Markdown
+description: A real data table written as one Markdown file — clickable-header sorting, a live filter, running totals, and a light/dark toggle. Format pipes (| money, | date), aggregates (sum, avg, max), reactive sort, and :theme — all declarative, no hand-written JavaScript.
+image: https://darkmown.com/__wd/media/og-showcase.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide app-ledger">
+
+::: section #ledger
+
+:theme
+:store expenses = [{"id":1,"date":"2026-06-22","merchant":"Aurora Studio","category":"Software","amount":149},{"id":2,"date":"2026-06-20","merchant":"Briza Coffee","category":"Meals","amount":18.4},{"id":3,"date":"2026-06-19","merchant":"Cobalt Cloud","category":"Hosting","amount":312.5},{"id":4,"date":"2026-06-18","merchant":"Dune Print Co","category":"Office","amount":64},{"id":5,"date":"2026-06-16","merchant":"Aurora Studio","category":"Software","amount":29},{"id":6,"date":"2026-06-15","merchant":"Ember Transit","category":"Travel","amount":212.75},{"id":7,"date":"2026-06-13","merchant":"Briza Coffee","category":"Meals","amount":11.2},{"id":8,"date":"2026-06-11","merchant":"Cobalt Cloud","category":"Hosting","amount":312.5}]
+:state q = ""
+:state sortKey = "amount"
+:state sortDir = "desc"
+:state secs = 0
+:every 1s -> secs++
+
+:computed total = sum(expenses, amount)
+:computed average = avg(expenses, amount)
+:computed largest = max(expenses, amount)
+
+::: ledger-head
+::: ledger-mark
+::: eyebrow .ledger-eyebrow
+A real data table
+:::
+
+# *Ledger*
+
+::: ledger-tagline
+Clickable-header sorting, a live filter, and running totals — a spreadsheet-grade table written as one Markdown file. The numbers below are `{ … | money }`; the dates are `{ … | date }`; the totals are `sum()` / `avg()` / `max()`.
+:::
+:::
+
+::: theme-switch
+Theme
+:button "Auto" -> theme = "auto"
+:button "Light" -> theme = "light"
+:button "Dark" -> theme = "dark"
+:::
+:::
+
+::: stat-grid
+::: card .stat
+::: stat-label
+Total spend
+:::
+::: stat-num
+{ total | money }
+:::
+:::
+::: card .stat
+::: stat-label
+Average
+:::
+::: stat-num
+{ average | money }
+:::
+:::
+::: card .stat
+::: stat-label
+Largest
+:::
+::: stat-num
+{ largest | money }
+:::
+:::
+::: card .stat
+::: stat-label
+Entries
+:::
+::: stat-num
+{ expenses | count }
+:::
+:::
+:::
+
+::: ledger-controls
+:bind q placeholder="Filter by merchant…"
+::: synced
+↻ live · { secs | pluralize:"second" } on this page
+:::
+:::
+
+::: card .ledger-table
+
+::: thead
+::: th .active when sortKey == "date"
+:button "Date" -> sortKey = "date" ; sortDir = "asc"
+:::
+::: th .active when sortKey == "merchant"
+:button "Merchant" -> sortKey = "merchant" ; sortDir = "asc"
+:::
+::: th .active when sortKey == "category"
+:button "Category" -> sortKey = "category" ; sortDir = "asc"
+:::
+::: th .num .active when sortKey == "amount"
+:button "Amount" -> sortKey = "amount" ; sortDir = "desc"
+:::
+::: th .dir
+:button "▲" -> sortDir = "asc"
+:button "▼" -> sortDir = "desc"
+:::
+:::
+
+@loop expenses into e where e.merchant contains q sort by { sortKey } { sortDir }
+::: trow
+::: td .muted
+{ e.date | date:"medium" }
+:::
+::: td .strong
+{ e.merchant }
+:::
+::: td
+::: pill
+{ e.category }
+:::
+:::
+::: td .num
+{ e.amount | money }
+:::
+::: td .dir
+:button "✕" -> expenses remove e
+:::
+:::
+@empty
+::: trow .blank
+No expenses match "**{ q }**".
+:::
+@endloop
+
+:::
+
+::: ledger-foot
+{ expenses | count } entries · totalling **{ total | money }** · sorted by **{ sortKey }** ({ sortDir })
+:::
+
+<details class="source-reveal">
+<summary>View source — it's Markdown</summary>
+
+```wd
+:store expenses = [ … ]
+:state sortKey = "amount"
+:state sortDir = "desc"
+:state q = ""
+
+:computed total = sum(expenses, amount)
+
+# clickable headers set the sort column + direction
+:button "Amount" -> sortKey = "amount" ; sortDir = "desc"
+:button "▲" -> sortDir = "asc"
+
+:bind q placeholder="Filter by merchant…"
+
+@loop expenses into e where e.merchant contains q sort by { sortKey } { sortDir }
+| { e.date | date:"medium" } | { e.merchant } | { e.amount | money } |
+:button "✕" -> expenses remove e
+@endloop
+
+Total: { total | money }
+```
+
+</details>
+
+:::
+
+</main>
+
+@include /footer.wd

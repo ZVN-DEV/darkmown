@@ -1,0 +1,109 @@
+---
+title: Swiper — a draggable carousel wired to wd.subscribe
+description: An image carousel with arrow-key nav, pointer drag / swipe, and a sliding transition — the things a deliberately tiny framework leaves to you. Darkmown owns the reactive slide state, the dots, and the readout declaratively; a colocated index.js adds the gestures through window.wd.subscribe and window.wd.set.
+image: https://darkmown.com/__wd/media/og-showcase.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide app-swiper">
+
+<!-- No ::: section wrapper: `slide` stays a top-level state key, so the
+     declarative dots/readout and the colocated index.js share one `slide`. -->
+:state slide = 0
+:computed human = slide + 1
+
+::: swiper-head
+::: eyebrow .swiper-eyebrow
+The escape hatch
+:::
+
+# A *swiper*, wired to `wd.subscribe`
+
+::: swiper-tagline
+Darkmown owns the reactive `slide` state, the indicator dots, and the live readout —
+declaratively, with no hand-written JavaScript. The things a framework this small
+deliberately *doesn't* ship — arrow-key navigation, pointer **drag / swipe**, and the
+sliding transition — live in a colocated `index.js` that talks to the very same state
+through `window.wd.subscribe` and `window.wd.set`.
+:::
+:::
+
+::: swiper-stage
+
+<div class="swiper-viewport" data-swiper tabindex="0" role="group" aria-roledescription="carousel" aria-label="Project gallery — drag, or use the arrow keys">
+<div class="swiper-track" data-swiper-track>
+<figure class="swipe-slide"><img src="/carousel/slide-1.jpg" alt="Warm ember-to-charcoal gradient" width="1200" height="675"><figcaption><strong>Ember</strong><span>Warm dusk · #b8462e</span></figcaption></figure>
+<figure class="swipe-slide"><img src="/carousel/slide-2.jpg" alt="Teal-to-ink gradient" width="1200" height="675"><figcaption><strong>Pulse</strong><span>Signal teal · #18b89a</span></figcaption></figure>
+<figure class="swipe-slide"><img src="/carousel/slide-3.jpg" alt="Violet-to-midnight gradient" width="1200" height="675"><figcaption><strong>Forge</strong><span>Electric violet · #6d5ae6</span></figcaption></figure>
+<figure class="swipe-slide"><img src="/carousel/slide-4.jpg" alt="Amber-to-umber gradient" width="1200" height="675"><figcaption><strong>Compass</strong><span>Trail amber · #e0894a</span></figcaption></figure>
+<figure class="swipe-slide"><img src="/carousel/slide-5.jpg" alt="Gold-to-olive gradient" width="1200" height="675"><figcaption><strong>Ledger</strong><span>Ledger gold · #c79a3a</span></figcaption></figure>
+</div>
+</div>
+
+::: swiper-controls
+<button class="swiper-arrow" data-swiper-prev type="button" aria-label="Previous slide">‹</button>
+
+::: swiper-dots
+::: dot .active when slide == 0
+:button "1" -> slide = 0
+:::
+::: dot .active when slide == 1
+:button "2" -> slide = 1
+:::
+::: dot .active when slide == 2
+:button "3" -> slide = 2
+:::
+::: dot .active when slide == 3
+:button "4" -> slide = 3
+:::
+::: dot .active when slide == 4
+:button "5" -> slide = 4
+:::
+:::
+
+<button class="swiper-arrow" data-swiper-next type="button" aria-label="Next slide">›</button>
+:::
+
+::: swiper-readout
+Slide **{ human }** of 5 — drag it, press <kbd>←</kbd> / <kbd>→</kbd>, or tap a dot.
+:::
+
+:::
+
+<details class="source-reveal">
+<summary>View source — declarative core + a colocated behavior</summary>
+
+```wd
+:state slide = 0
+:computed human = slide + 1
+
+# the dots are declarative — Darkmown reconciles `.active` for you
+::: dot .active when slide == 0
+:button "1" -> slide = 0
+:::
+
+# … the readout, too
+Slide { human } of 5
+```
+
+```js
+// index.js, colocated next to the page. Loads after the runtime, so window.wd
+// is ready. Drag / keyboard / transition — the gestural layer the framework
+// deliberately leaves to you — all driven through the same `slide` state.
+window.wd.subscribe("slide", (i) => {
+  track.style.transform = `translateX(${-i * 100}%)`;
+});
+prevButton.onclick = () => window.wd.set("slide", current - 1);
+```
+
+The framework reconciles state, classes, and text; the escape hatch owns the
+gestures. They meet at one shared `slide` value.
+
+</details>
+
+</main>
+
+@include /footer.wd

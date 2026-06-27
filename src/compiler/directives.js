@@ -11,6 +11,7 @@
 
 import { compileBody } from "./body.js";
 import { at, createScope, LOOP_META } from "./context.js";
+import { FORMATTERS } from "./format.js";
 import { resolveInclude } from "./includes.js";
 import {
   escapeHtml,
@@ -174,7 +175,7 @@ export function handleContainer(header, bodyLines, ctx, index) {
 export function handleState(line, ctx, index) {
   const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+persist)?$/);
   if (!match) throw new Error(`Malformed :state in ${at(ctx.file, index)}: ${line}`);
-  const value = parseStateValue(match[2]);
+  const value = parseStateValue(match[2], at(ctx.file, index));
   const key = declareState(match[1], value, ctx);
   const persistAttr = match[3] ? ` data-wd-persist="${key}"` : "";
   return `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
@@ -214,7 +215,7 @@ export function handleStore(line, ctx, index) {
     throw new Error(
       `Malformed :store in ${at(ctx.file, index)}: ${line}. Use: :store name = value [ephemeral]`
     );
-  const value = parseStateValue(match[2]);
+  const value = parseStateValue(match[2], at(ctx.file, index));
   const name = declareStore(match[1], value, ctx);
   const ephemeral = match[3] ? " data-wd-store-ephemeral" : "";
   return `<script type="application/json" data-wd-store="${name}"${ephemeral}>${safeScriptJson(value)}</script>`;
@@ -411,7 +412,14 @@ export function handleComputed(line, ctx, index) {
   try {
     /** @param {string} key @param {string} [path] */
     const read = (key, path) => getPath(ctx.comp.state.get(key), path ? path.split(".") : []);
-    initial = new Function("S", `return (${expr});`)(read);
+    // Build-time mirror of the runtime's AGG helper, so a `:computed total = sum(...)`
+    // has the same initial value the runtime will recompute to.
+    const agg = (
+      /** @type {string} */ name,
+      /** @type {any} */ list,
+      /** @type {string} */ field
+    ) => (FORMATTERS[name] ? FORMATTERS[name](list, field == null ? [] : [field]) : undefined);
+    initial = new Function("S", "A", `return (${expr});`)(read, agg);
   } catch {
     console.warn(
       `:computed "${match[2].trim()}" in ${ctx.file} could not be evaluated at build time; falling back to null. Check the expression.`
@@ -809,6 +817,194 @@ export function handleEffect(line, ctx, index) {
   const action = parseAction(match[2], ctx);
   const actions = Array.isArray(action) ? action : [action];
   return `<script type="application/json" data-wd-effect>${safeScriptJson({ watch, actions })}</script>`;
+}
+
+const EVERY_USE =
+  "Use: :every <duration> -> action[; action…] — duration like 5s, 500ms, or 2m (actions use the :button vocabulary).";
+
+/**
+ * Parse a duration token into milliseconds: `<int>[ms|s|m]`, defaulting to ms.
+ * @param {string} raw
+ * @returns {number | null}
+ */
+function parseDuration(raw) {
+  const match = raw.trim().match(/^(\d+)(ms|s|m)?$/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return match[2] === "s" ? n * 1000 : match[2] === "m" ? n * 60000 : n;
+}
+
+/**
+ * Parse `:every <duration> -> <actions>` into a marker the runtime drives on a
+ * timer: every `<duration>` it runs `<actions>` (the same `:button` vocabulary,
+ * `;`-chained), and the interval auto-pauses while the tab is hidden. The one time
+ * primitive — behind live polling (`:every 5s -> board refetch`), clocks and
+ * countdowns (`:every 1s -> seconds++`), and slideshow autoplay (`:every 4s -> slide++`).
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @returns {string}
+ */
+export function handleEvery(line, ctx, index) {
+  const match = line.match(/^:every\s+(\S+)\s*->\s*(.+)$/);
+  if (!match) throw new Error(`Malformed :every in ${at(ctx.file, index)}: ${line}. ${EVERY_USE}`);
+  const ms = parseDuration(match[1]);
+  if (ms == null || ms <= 0) {
+    throw new Error(
+      `:every duration "${match[1]}" is not valid in ${at(ctx.file, index)}. ${EVERY_USE}`
+    );
+  }
+  ctx.comp.assets.runtime = true;
+  const action = parseAction(match[2], ctx);
+  const actions = Array.isArray(action) ? action : [action];
+  return `<script type="application/json" data-wd-every>${safeScriptJson({ ms, actions })}</script>`;
+}
+
+/**
+ * `:theme [name] [= "auto"]` declares a durable `:store` (default name `theme`,
+ * seed `"auto"`) and reflects its value onto `<html data-theme>`. This layers a
+ * manual light/dark switch over the OS preference: `"auto"` follows the skin's
+ * `tokens dark` media query, while `"light"`/`"dark"` force the matching
+ * `:root[data-theme]` scope. Wire a switch with ordinary store actions —
+ * `:button "Dark" -> theme = "dark"`. Durable, so the choice survives reloads.
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @returns {string}
+ */
+export function handleTheme(line, ctx, index) {
+  const match = line.match(/^:theme(?:\s+([A-Za-z_$][\w$]*))?(?:\s*=\s*(.+))?$/);
+  if (!match) {
+    throw new Error(
+      `Malformed :theme in ${at(ctx.file, index)}: ${line}. Use: :theme  (or  :theme name = "auto")`
+    );
+  }
+  const name = match[1] || "theme";
+  const seed = match[2] != null ? parseStateValue(match[2], at(ctx.file, index)) : "auto";
+  const storeName = declareStore(name, seed, ctx);
+  return `<script type="application/json" data-wd-store="${storeName}">${safeScriptJson(seed)}</script><span data-wd-theme="${storeName}" hidden></span>`;
+}
+
+// ---------------------------------------------------------------------------
+// Media — :video / :audio / :embed. Compile-time only (zero runtime): hardened
+// HTML5 media and privacy-friendly, lazy iframe embeds. The extension stays the
+// feature gate; these emit no `data-wd-*`, so a media-only page ships zero JS.
+// ---------------------------------------------------------------------------
+
+/** @type {Record<"video" | "audio", { flags: string[], attrs: string[] }>} */
+const MEDIA_SPEC = {
+  video: {
+    flags: ["controls", "autoplay", "loop", "muted", "playsinline"],
+    attrs: ["poster", "width", "height", "preload"]
+  },
+  audio: { flags: ["controls", "autoplay", "loop", "muted"], attrs: ["preload"] }
+};
+
+/**
+ * `:video /clip.mp4 [poster=…] [width=…] [height=…] [preload=…] [controls] [autoplay]
+ * [loop] [muted] [playsinline]` and `:audio /track.mp3 [preload=…] [controls] …` →
+ * a hardened `<video>`/`<audio>`. Defaults: `preload="metadata"`, and `controls`
+ * unless the clip is an `autoplay` background (autoplay also implies `muted`, which
+ * browsers require). Author flags/attrs always win. URLs use the `:fetch` scheme
+ * guard (relative or http(s)).
+ * @param {string} line
+ * @param {"video" | "audio"} kind
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @returns {string}
+ */
+export function handleMedia(line, kind, ctx, index) {
+  const match = line.match(new RegExp(`^:${kind}\\s+(\\S+)\\s*(.*)$`));
+  if (!match) {
+    throw new Error(
+      `Malformed :${kind} in ${at(ctx.file, index)}: ${line}. Use: :${kind} /clip [controls] [autoplay] [loop] [muted]`
+    );
+  }
+  const src = validateFetchUrl(stripQuotes(match[1]), ctx, `:${kind}`);
+  const spec = MEDIA_SPEC[kind];
+  /** @type {Set<string>} */
+  const flags = new Set();
+  /** @type {Map<string, string>} */
+  const attrs = new Map();
+  const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
+  for (const token of (match[2] || "").matchAll(re)) {
+    if (token[3]) {
+      if (!spec.flags.includes(token[3]))
+        throw new Error(`Unknown :${kind} flag "${token[3]}" in ${at(ctx.file, index)}`);
+      flags.add(token[3]);
+    } else {
+      if (!spec.attrs.includes(token[1]))
+        throw new Error(`Unknown :${kind} attribute "${token[1]}" in ${at(ctx.file, index)}`);
+      attrs.set(token[1], stripQuotes(token[2]));
+    }
+  }
+  // Sensible defaults; author input always wins.
+  if (flags.has("autoplay")) flags.add("muted"); // browsers block unmuted autoplay
+  if (kind === "audio" || !flags.has("autoplay")) flags.add("controls");
+  const parts = [`src="${escapeHtml(src)}"`];
+  if (attrs.has("poster"))
+    parts.push(
+      `poster="${escapeHtml(validateFetchUrl(/** @type {string} */ (attrs.get("poster")), ctx, `:${kind} poster`))}"`
+    );
+  for (const name of ["width", "height"]) {
+    if (attrs.has(name))
+      parts.push(`${name}="${escapeHtml(/** @type {string} */ (attrs.get(name)))}"`);
+  }
+  parts.push(`preload="${escapeHtml(attrs.get("preload") || "metadata")}"`);
+  for (const flag of spec.flags) if (flags.has(flag)) parts.push(flag);
+  return `<${kind} ${parts.join(" ")}></${kind}>`;
+}
+
+/**
+ * `:embed <url> [title="…"]` → a lazy, privacy-friendly responsive iframe. A
+ * YouTube or Vimeo URL is rewritten to its no-cookie / player embed; any other
+ * http(s) URL becomes a generic 16:9 iframe. Inline styles keep the wrapper
+ * self-contained (no framework CSS), so an embed-only page stays zero-JS/zero-CSS.
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @returns {string}
+ */
+export function handleEmbed(line, ctx, index) {
+  const match = line.match(/^:embed\s+(\S+)\s*(.*)$/);
+  if (!match) {
+    throw new Error(
+      `Malformed :embed in ${at(ctx.file, index)}: ${line}. Use: :embed https://youtu.be/ID [title="…"]`
+    );
+  }
+  const raw = stripQuotes(match[1]);
+  let title = "";
+  const re = /([A-Za-z-]+)=("[^"]*"|\S+)/g;
+  for (const token of (match[2] || "").matchAll(re)) {
+    if (token[1] !== "title")
+      throw new Error(`Unknown :embed attribute "${token[1]}" in ${at(ctx.file, index)}`);
+    title = stripQuotes(token[2]);
+  }
+  const { url, label } = resolveEmbed(raw, ctx);
+  const iframe =
+    `<iframe src="${escapeHtml(url)}" title="${escapeHtml(title || label)}" loading="lazy" ` +
+    `referrerpolicy="strict-origin-when-cross-origin" ` +
+    `allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" ` +
+    `allowfullscreen style="width:100%;height:100%;border:0"></iframe>`;
+  return `<div class="wd-embed" style="aspect-ratio:16/9">${iframe}</div>`;
+}
+
+/**
+ * Map a watch/share URL to its embeddable form. YouTube → no-cookie embed, Vimeo →
+ * player; anything else is validated as a generic http(s) iframe source.
+ * @param {string} raw
+ * @param {Ctx} ctx
+ * @returns {{ url: string, label: string }}
+ */
+function resolveEmbed(raw, ctx) {
+  const youtube = raw.match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,})/
+  );
+  if (youtube)
+    return { url: `https://www.youtube-nocookie.com/embed/${youtube[1]}`, label: "YouTube video" };
+  const vimeo = raw.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  if (vimeo) return { url: `https://player.vimeo.com/video/${vimeo[1]}`, label: "Vimeo video" };
+  return { url: validateFetchUrl(raw, ctx, ":embed"), label: "Embedded content" };
 }
 
 /**

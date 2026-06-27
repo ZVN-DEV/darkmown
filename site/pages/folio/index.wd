@@ -68,7 +68,7 @@ Type to filter the shelf — it narrows as you go, no page reload.
 
 ::: foot
 ::: price
-${ p.price }
+{ p.price | money }
 :::
 :button "Add" -> cart += p
 :::
@@ -141,7 +141,7 @@ Every product card, the live search, and the running count are written as plain 
 :::
 ::: foot
 ::: price
-${ p.price }
+{ p.price | money }
 :::
 :button "Add" -> cart += p
 :::

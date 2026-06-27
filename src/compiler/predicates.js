@@ -236,6 +236,37 @@ export function compileComputedExpr(raw, ctx) {
     strings.push(JSON.stringify(literal.slice(1, -1)));
     return `__WDSTR${strings.length - 1}__`;
   });
+  // Aggregate calls — sum/avg/min/max over a list state, count of a list — are the
+  // one allowed "function call". Each `name(listPath[, field])` is compiled to the
+  // whitelisted `A("name", S(listKey…), "field")` helper and masked before the
+  // generic function-call rejection below runs, so no arbitrary call survives.
+  /** @type {string[]} */
+  const aggs = [];
+  expr = expr.replace(
+    /\b(sum|avg|min|max|count)\s*\(\s*([A-Za-z_$][\w$.]*)\s*(?:,\s*([A-Za-z_$][\w$]*)\s*)?\)/g,
+    (_whole, name, listPath, field) => {
+      const segs = listPath.split(".");
+      if (
+        segs.some((/** @type {string} */ s) =>
+          ["constructor", "prototype", "__proto__"].includes(s)
+        )
+      ) {
+        throw new Error(`Path "${listPath}" is not allowed in :computed ${name}() (${ctx.file})`);
+      }
+      const key = resolveStateKey(segs[0], ctx);
+      if (!key) {
+        throw new Error(
+          `:computed ${name}() references unknown state "${segs[0]}" in ${ctx.file}. Declare it with :state or :fetch first.`
+        );
+      }
+      const rest = segs.slice(1).join(".");
+      const listCode = `S(${JSON.stringify(key)}${rest ? `,${JSON.stringify(rest)}` : ""})`;
+      aggs.push(
+        `A(${JSON.stringify(name)},${listCode}${field ? `,${JSON.stringify(field)}` : ""})`
+      );
+      return `__WDAGG${aggs.length - 1}__`;
+    }
+  );
   if (/["'\\`]/.test(expr)) {
     throw new Error(`Unsupported string syntax in :computed expression "${raw}" (${ctx.file})`);
   }
@@ -260,7 +291,7 @@ export function compileComputedExpr(raw, ctx) {
     );
   }
   expr = expr.replace(/[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/g, (ref) => {
-    if (/^__WDSTR\d+__$/.test(ref)) return ref;
+    if (/^__WDSTR\d+__$/.test(ref) || /^__WDAGG\d+__$/.test(ref)) return ref;
     if (["true", "false", "null"].includes(ref)) return ref;
     const segs = ref.split(".");
     if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
@@ -277,5 +308,7 @@ export function compileComputedExpr(raw, ctx) {
     const rest = segs.slice(1).join(".");
     return `S(${JSON.stringify(key)}${rest ? `,${JSON.stringify(rest)}` : ""})`;
   });
-  return expr.replace(/__WDSTR(\d+)__/g, (_, index) => strings[Number(index)]);
+  return expr
+    .replace(/__WDAGG(\d+)__/g, (_, index) => aggs[Number(index)])
+    .replace(/__WDSTR(\d+)__/g, (_, index) => strings[Number(index)]);
 }

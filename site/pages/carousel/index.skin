@@ -1,0 +1,185 @@
+/* ── Swiper demo — layers on /base.wd. The viewport clips; the track is a flex
+   row the colocated index.js slides with a transform. Reuses base tokens. ──── */
+
+.app-swiper
+  max-width 56rem
+  margin 0 auto
+  padding 2.5rem 1.25rem 4rem
+
+.app-swiper .swiper-head
+  margin-bottom 1.75rem
+
+.app-swiper .swiper-eyebrow
+  font-size .72rem
+  font-weight 700
+  letter-spacing .14em
+  text-transform uppercase
+  color $accent
+
+.app-swiper h1
+  margin .4rem 0 0
+  font-size 2.4rem
+  letter-spacing -.02em
+  color $ink
+
+.app-swiper .swiper-tagline
+  margin .7rem 0 0
+  max-width 42rem
+  color $ink-soft
+  font-size 1rem
+  line-height 1.6
+
+.app-swiper .swiper-head code, .app-swiper .swiper-tagline code, .app-swiper .swiper-readout code
+  bg $code-bg
+  color $code-ink
+  padding .06rem .32rem
+  radius 6px
+  font-size .85em
+
+/* Stage */
+.app-swiper .swiper-stage
+  margin 0
+
+.app-swiper .swiper-viewport
+  overflow hidden
+  border 1px solid $line-soft
+  radius 18px
+  background $sunk
+  cursor grab
+  touch-action pan-y
+  outline none
+
+.app-swiper .swiper-viewport:focus-visible
+  box-shadow 0 0 0 3px $ring
+
+.app-swiper .swiper-viewport:active
+  cursor grabbing
+
+.app-swiper .swiper-track
+  display flex
+  /* transition is set by index.js so the very first paint doesn't animate */
+  will-change transform
+
+.app-swiper .swipe-slide
+  position relative
+  flex 0 0 100%
+  margin 0
+
+.app-swiper .swipe-slide img
+  display block
+  width 100%
+  height auto
+  aspect-ratio 16/9
+  object-fit cover
+  user-select none
+  -webkit-user-drag none
+  pointer-events none
+
+.app-swiper .swipe-slide figcaption
+  position absolute
+  left 0
+  right 0
+  bottom 0
+  display flex
+  flex-direction column
+  gap .15rem
+  padding 1.5rem 1.25rem 1rem
+  color #fff
+  background linear-gradient(to top, rgba(10,8,6,.72), rgba(10,8,6,0))
+
+.app-swiper .swipe-slide figcaption strong
+  color #fff
+  font-size 1.15rem
+  letter-spacing -.01em
+
+.app-swiper .swipe-slide figcaption span
+  font-size .82rem
+  opacity .85
+  font-variant-numeric tabular-nums
+
+/* Controls row: arrows flank the dots */
+.app-swiper .swiper-controls
+  display flex
+  align-items center
+  justify-content center
+  gap 1rem
+  margin 1.1rem 0 .25rem
+
+.app-swiper .swiper-arrow
+  flex 0 0 auto
+  width 2.6rem
+  height 2.6rem
+  display inline-flex
+  align-items center
+  justify-content center
+  border 1px solid $line
+  background $panel
+  color $ink-soft
+  font-size 1.4rem
+  line-height 1
+  radius 999px
+  cursor pointer
+  transition color .14s ease, border-color .14s ease, transform .14s ease
+
+.app-swiper .swiper-arrow:hover
+  color $ink
+  border-color $accent
+
+.app-swiper .swiper-arrow:active
+  transform scale(.94)
+
+/* Dots — each is a declarative container whose .active is reconciled by the
+   framework from `.active when slide == N`. */
+.app-swiper .swiper-dots
+  display inline-flex
+  align-items center
+  gap .4rem
+
+.app-swiper .dot button[data-wd-action]
+  width 1.6rem
+  height 1.6rem
+  display inline-flex
+  align-items center
+  justify-content center
+  border 0
+  background transparent
+  /* collapse the visible digit — it stays the button's accessible name */
+  font-size 0
+  border-radius 999px
+  cursor pointer
+  position relative
+
+.app-swiper .dot button[data-wd-action]::after
+  content ""
+  position absolute
+  width .5rem
+  height .5rem
+  border-radius 999px
+  background $line
+  transition background .18s ease, transform .18s ease
+
+.app-swiper .dot.active button[data-wd-action]::after
+  background $accent
+  transform scale(1.5)
+
+.app-swiper .dot button[data-wd-action]:hover::after
+  background $accent-deep
+
+.app-swiper .swiper-readout
+  margin 1rem 0 0
+  text-align center
+  font-size .9rem
+  color $muted
+
+.app-swiper .swiper-readout strong
+  color $ink
+
+.app-swiper .swiper-readout kbd
+  font-size .8em
+
+.app-swiper .source-reveal
+  margin-top 2rem
+
+@media (prefers-reduced-motion: reduce)
+  .app-swiper .swiper-track
+    transition none !important

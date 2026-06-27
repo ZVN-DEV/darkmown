@@ -97,7 +97,7 @@
  * Loop clause configuration shared by the static and reactive paths.
  * @typedef {object} LoopOpts
  * @property {Predicate | null} where
- * @property {{ key: string, dir: string } | null} sort
+ * @property {{ key: string, keyKind: "literal" | "key", dir: string, dirKind: "literal" | "key" } | null} sort A literal item field + asc/desc, or a `:state`/`:store` key for either (reactive, clickable-header sort).
  * @property {boolean} reverse
  * @property {NumArg | null} offset
  * @property {NumArg | null} limit

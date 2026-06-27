@@ -85,7 +85,7 @@ test("font passes through as the CSS shorthand when it leads with a size", () =>
   assert.match(css, /body \{ font-family: ui-sans-serif, system-ui; \}/);
 });
 
-test("tokens dark compiles to a prefers-color-scheme override of :root", () => {
+test("tokens dark powers both OS-auto and a manual :theme toggle from one block", () => {
   const css = compileSkin(
     [
       "tokens",
@@ -102,10 +102,16 @@ test("tokens dark compiles to a prefers-color-scheme override of :root", () => {
 
   // Light defaults stay on :root, unchanged.
   assert.match(css, /:root \{\n {2}--ink: #1a1a1a;\n {2}--paper: #ffffff;\n\}/);
-  // Dark variant wraps :root in a prefers-color-scheme media query.
+  // OS-dark applies unless the visitor forced light (so a manual toggle can win).
   assert.match(
     css,
-    /@media \(prefers-color-scheme: dark\) \{\n:root \{\n {2}--ink: #f0f0f0;\n {2}--paper: #14140f;\n\}\n\}/
+    /@media \(prefers-color-scheme: dark\) \{\n:root:not\(\[data-theme="light"\]\) \{\n {2}--ink: #f0f0f0;\n {2}--paper: #14140f;\n\}\n\}/
+  );
+  // The same tokens are also exposed under a forced [data-theme="dark"] — one
+  // block, no palette duplication — so `:theme` can override the OS preference.
+  assert.match(
+    css,
+    /:root\[data-theme="dark"\] \{\n {2}--ink: #f0f0f0;\n {2}--paper: #14140f;\n\}/
   );
   // $var references resolve the same way for both themes.
   assert.match(css, /body \{ color: var\(--ink\); \}/);

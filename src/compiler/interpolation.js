@@ -119,10 +119,15 @@ export function safeScriptJson(value) {
 }
 
 /**
+ * Parse a single-line `:state`/`:store`/`:theme` value: quoted string, boolean,
+ * null, number, or JSON literal — falling back to the bare string. A value that
+ * opens a JSON array/object but won't parse throws (almost always a multi-line
+ * literal, which these single-line directives can't express).
  * @param {string} raw
+ * @param {string} [where] `file:line` for the error message.
  * @returns {unknown}
  */
-export function parseStateValue(raw) {
+export function parseStateValue(raw, where) {
   const value = raw.trim();
   if (/^["'].*["']$/.test(value)) return stripQuotes(value);
   if (value === "true") return true;
@@ -132,6 +137,18 @@ export function parseStateValue(raw) {
   try {
     return JSON.parse(value);
   } catch {
+    // A value that opens a JSON array/object but won't parse is almost always a
+    // multi-line literal — :state/:store/:theme take a single-line value, so the
+    // unterminated "[" used to get stored verbatim as the string "[" and silently
+    // break the page. Fail loudly with the fix instead. Quote it to keep literal
+    // brackets (e.g. `= "[draft]"`).
+    if (/^[[{]/.test(value))
+      throw new Error(
+        `Invalid value ${value}${where ? ` in ${where}` : ""}: this looks like the start of a ` +
+          `multi-line array/object, but :state/:store values must fit on one line. ` +
+          `Put the whole literal on one line, or quote it for literal text. ` +
+          `Use: name = [{"id":1,"label":"…"}]`
+      );
     return value;
   }
 }
@@ -186,4 +203,21 @@ export function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+/**
+ * Reverse {@link escapeHtml}. Used by the loop initial-paint fill to read a
+ * `data-wd-fmt` attribute (HTML-escaped JSON) back into pipe stages at build
+ * time — the browser does the same decode for the runtime via getAttribute.
+ * `&amp;` is decoded last so `&amp;lt;` round-trips to `&lt;`, not `<`.
+ * @param {string} value
+ * @returns {string}
+ */
+export function unescapeHtml(value) {
+  return String(value)
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&amp;", "&");
 }

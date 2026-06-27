@@ -19,6 +19,9 @@
  *     so reactive pages additionally need `script-src 'unsafe-eval'`.
  *   - Inline `<style>` for view transitions — `style-src 'unsafe-inline'`.
  *   - `data:` favicon and remote images — `img-src 'self' data: https:`.
+ *   - `:video`/`:audio` allow relative or `http(s)` sources — `media-src 'self' https:`.
+ *   - `:embed` rewrites to exactly the YouTube no-cookie and Vimeo player origins,
+ *     so `frame-src` pre-authorizes those two hosts (and nothing else).
  *
  * Static pages (zero framework JS) still emit inline `<style>` and an inline
  * `<script type="speculationrules">`, so they keep `'unsafe-inline'`, but they
@@ -42,6 +45,8 @@ const COMMON_CSP_DIRECTIVES = [
   "default-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
+  "media-src 'self' https:",
+  "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
   "font-src 'self'",
   CONNECT_SRC,
   "object-src 'none'",

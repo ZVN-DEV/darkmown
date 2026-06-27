@@ -7,16 +7,19 @@
 
 **[darkmown.com](https://darkmown.com)** · Markdown that runs.
 
-Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~5.8 KB gzipped, CI-enforced under 6 KB.
+Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~7.4 KB gzipped, CI-enforced under 8 KB.
 
 ## Showcase
 
-Four complete apps, each a readable `.wd` file — see them at **[darkmown.com/showcase](https://darkmown.com/showcase/)**:
+Five complete apps, each a readable `.wd` file — see them at **[darkmown.com/showcase](https://darkmown.com/showcase/)**:
 
 - **[Folio](https://darkmown.com/folio/)** — a boutique storefront whose cart persists across pages, reloads, and browser tabs (`:store`), with live search and a checkout form.
-- **[Pulse](https://darkmown.com/pulse/)** — a service dashboard driven by `:fetch`: loading / error / empty states, live refresh, and status badges, with no hand-written JavaScript.
+- **[Pulse](https://darkmown.com/pulse/)** — a service dashboard driven by `:fetch`: loading / error / empty states, live refresh (`:every`), and status badges, with no hand-written JavaScript.
 - **[Forge](https://darkmown.com/forge/)** — a plan configurator where `:computed` recomputes the price as you toggle features and seats, with conditional upsell hints.
 - **[Compass](https://darkmown.com/compass/)** — a product-finder quiz: a branching state machine expressed entirely as `:if` steps over scored answers.
+- **[Ledger](https://darkmown.com/ledger/)** — a spreadsheet-grade expense table: clickable-header reactive sort, a live filter, running totals via `sum`/`avg`/`max`, `| money`/`| date` format pipes, and a `:theme` toggle.
+
+Plus focused feature demos: a draggable, keyboard-navigable **[Swiper](https://darkmown.com/carousel/)** (the `wd.subscribe` escape hatch) and a zero-JS **[Media](https://darkmown.com/media/)** page (`:video` / `:audio` / `:embed`).
 
 ## Quick start
 
@@ -61,7 +64,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~5.8 KB gzipped, CI-enforced under 6 KB).
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~7.4 KB gzipped, CI-enforced under 8 KB).
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Interpolation
@@ -73,6 +76,24 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 - The page's own frontmatter is in scope as `meta` — `{ meta.title }` prints a field.
 - Anything else stays literal text — braces in prose never break a page or pull in the runtime.
 - Build-time values also resolve **inside a link or image destination** — `[{ item.label }]({ item.url })` or `![{ p.alt }]({ p.src })` — so an `@loop` can drive an `href`/`src` and the page stays static. (Reactive `:state` cannot live in a destination.)
+
+### Format pipes — `{ value | name:arg }`
+
+Shape a value for display with a pipe, Liquid/Angular style: `{ price | money }`, `{ joinedAt | date:"medium" }`, `{ ratio | percent }`. Pipes **chain** left to right (`{ name | trim | capitalize }`) and take literal arguments (`{ total | money:"EUR" }`, `{ bio | truncate:80 }`). They work in static prose (folded at build time, zero-JS) and on live `:state`/`:store` bindings (re-applied on every render) — identical syntax either way. The pipe list is a fixed whitelist compiled to safe calls; there is no custom-function hook and nothing is `eval`'d.
+
+| Pipe | Example | Result |
+|---|---|---|
+| `money[:currency[:locale]]` | `{ 89 \| money }` | `$89.00` |
+| `number[:decimals]` | `{ 1234.5 \| number }` | `1,234.5` |
+| `percent[:decimals]` | `{ 0.082 \| percent }` | `8%` |
+| `round[:decimals]` | `{ 3.14159 \| round:2 }` | `3.14` |
+| `date` / `time` / `datetime` `[:style]` | `{ "2026-06-22" \| date:"medium" }` | `Jun 22, 2026` |
+| `upper` / `lower` / `capitalize` | `{ "draft" \| capitalize }` | `Draft` |
+| `truncate:n` / `trim` | `{ bio \| truncate:80 }` | `…the first 80 chars…` |
+| `pluralize:"item"[:"plural"]` | `{ 3 \| pluralize:"item" }` | `3 items` |
+| `default:"—"` | `{ missing \| default:"—" }` | `—` |
+
+The five **aggregates** double as pipes over a list — `{ cart \| count }`, `{ cart \| sum:"price" \| money }`, plus `avg` / `min` / `max` — and `join:", ":"name"` flattens a list of rows to a string. `date`/`time`/`datetime` are `Intl`-backed (`short` / `medium` / `long`); there is deliberately **no relative "time ago"** formatter, so builds stay byte-for-byte reproducible. An unknown pipe name is a compile error with the valid list.
 
 ## Frontmatter
 
@@ -175,6 +196,7 @@ Shape a loop without writing JavaScript. Clauses come in a fixed order after `in
 ```
 
 - `sort by <key> [asc|desc]` — `<key>` must start with the loop item (`post.date`, not `date`). Numbers sort numerically; everything else sorts as text. `asc` is the default.
+- **Reactive sort** — the field *and* the direction can each be a `{ state }` reference, so a clickable column header re-sorts the table live without any JavaScript: `sort by { sortKey } { sortDir }`. Drive them with `:state sortKey = "amount"` / `:state sortDir = "desc"` and `:button "Amount" -> sortKey = "amount" ; sortDir = "desc"`. The bare `{ sortKey }` resolves to a field on the loop item at render time.
 - `reverse` — reverse the (already sorted) order.
 - `offset <N>` / `limit <N>` — `<N>` is a non-negative integer **or** a `:state`/`:store` key, which makes pagination reactive:
 
@@ -378,6 +400,35 @@ Values are literals: a `"string"`, number, `true`/`false`/`null`, or inline JSON
 
 > **Pitfall:** `list toggle v` and `list remove v` match members by value (`===`). That is exact for strings, numbers, and booleans, but not reliable for object members — two equal-looking objects are different values. To remove a row object, loop the list and use the per-row `remove` action below.
 
+### Computed values — `:computed`
+
+`:computed name = <expression>` derives state from other state with a compile-time-checked expression — names, numbers, arithmetic (`+ - * /`), comparisons, and the five **aggregates** over a list: `sum(list, field)`, `avg(list, field)`, `min(list, field)`, `max(list, field)`, and `count(list)`. It recomputes whenever an input changes and reads like any other binding (so it pairs naturally with [format pipes](#format-pipes--value--namearg)):
+
+```wd
+:store cart = [{"price": 89}, {"price": 12}]
+:computed subtotal = sum(cart, price)
+:computed tax      = subtotal * 0.08
+:computed total    = subtotal + tax
+
+Subtotal: { subtotal | money } · Tax: { tax | money } · **{ total | money }**
+```
+
+The aggregate's field argument is a bare key on each row (`price`, not `item.price`). There are no function calls beyond the five aggregates and no property access beyond dotted state paths — anything richer belongs in a colocated `.js` behavior.
+
+### Timers — `:every`
+
+`:every <duration> -> <actions>` runs a `:button`-style action on an interval — the one piece of time the framework owns. Durations are `<n>ms` / `<n>s` / `<n>m`, and the actions are the same `;`-chained vocabulary as `:button`/`:effect` (including `name refetch` to re-run a `:fetch`):
+
+```wd
+:fetch board from "/status.json"
+:every 10s -> board refetch        # live-refresh a dashboard
+
+:state secs = 0
+:every 1s -> secs++                # a ticking counter
+```
+
+Intervals **pause while the tab is hidden** (via `visibilitychange`) and resume on return, so a backgrounded dashboard stops firing requests and draining battery.
+
 ### Effects — `:effect`
 
 `:effect <watched> -> <actions>` runs actions whenever a watched state path changes. The actions are the same `:button` vocabulary (`;`-chained) — this is the escape hatch for side effects beyond `:computed` (which derives state) and `:fetch` deps (which auto-refetch):
@@ -551,7 +602,7 @@ Fetched data and a form live happily on the same page:
 - `:form action="/url" into reply` does both: with JS the submit posts urlencoded via fetch and the JSON reply lands in state `reply` (`reply_error` on failure); without JS it is the same native POST. Darkmown adapts to any backend — it does not own one.
 - Field directives: `:input`, `:textarea name [rows=N]`, `:select name`, `:checkbox name`, and `:radio name` (the last three take `- Label` option lines) all capture into `:form into` state the same way. A `:checkbox` group captures **every checked value as an array**; a `:radio` group captures a single value. Each derives a non-visual `aria-label` from its placeholder, else a humanized field name, unless you supply `aria-label`/`aria-describedby`.
 - `:state x = [] persist` keeps a single page's state in localStorage across reloads. (For state that is shared across pages and tabs, reach for [`:store`](#global-state--store) instead.)
-- `:computed total = items.length * 4` derives state from state with a compile-time-checked expression (names, numbers, arithmetic, comparisons — nothing else).
+- `:computed total = items.length * 4` derives state from state with a compile-time-checked expression — names, numbers, arithmetic, comparisons, and list aggregates (`sum`/`avg`/`min`/`max`/`count`). See [Computed values](#computed-values--computed).
 - `:if item.path` works inside reactive loops for per-row branches, and nests — an inner `:if` resolves after the outer branch and stays reactive.
 
 ## Inline attributes
@@ -564,6 +615,21 @@ A trailing `{.class .class #id}` attaches classes / an id to the inline element 
 ```
 
 The block must follow the element with no space, and works on links, images, emphasis, and inline code. It never collides with `{ name }` interpolation — an interpolation always starts with a name, never a `.` or `#`.
+
+## Media — `:video`, `:audio`, `:embed`
+
+*New in 1.0.* Three one-line directives replace hand-written `<video>` / `<iframe>` markup. They are **compile-time only** — they emit no `data-wd-*`, so a media-only page still ships **zero** framework JavaScript.
+
+```wd
+:video /clip.mp4 poster=/clip.jpg controls
+:audio /track.mp3 controls
+:embed https://youtu.be/aqz-KE-bpKQ title="Big Buck Bunny"
+```
+
+- **`:video` / `:audio`** compile to a hardened HTML5 player. `preload="metadata"` and `controls` are added by default; flags (`controls`, `autoplay`, `loop`, `muted`, `playsinline`) and attributes (`poster`, `width`, `height`, `preload`) are validated against a per-element whitelist, and `autoplay` silently implies `muted` (browsers block sound-on autoplay). The `src`/`poster` URLs run through the same scheme guard as `:fetch` — relative or `http(s)` only.
+- **`:embed`** rewrites a YouTube or Vimeo URL to its **no-cookie / player** form, wraps it in a responsive `16/9` box, and marks the iframe `loading="lazy"` with a locked-down `referrerpolicy`. Any other `http(s)` URL becomes a generic lazy iframe. Add `title="…"` for the accessible name.
+
+Darkmown's shipped CSP pre-authorizes exactly the two embed origins (`youtube-nocookie.com`, `player.vimeo.com`) and `media-src 'self' https:`, so embeds and remote media work out of the box on the bundled server, Cloudflare `_headers`, and Vercel.
 
 ## Dark mode — `tokens dark`
 
@@ -583,11 +649,46 @@ page
   color $ink
 ```
 
-The `tokens dark` values override the matching base tokens only when the OS reports a dark preference; the rules below keep referencing the same `$paper` / `$ink`. The base `tokens` block stays the light default, so a skin with no `tokens dark` block is unchanged.
+A single `tokens dark` block powers **both** theming paths: it compiles to `:root[data-theme="dark"] { … }` (the manual toggle below) **and** `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { … } }` (the OS preference, unless a visitor has explicitly forced light). The base `tokens` block stays the light default, so a skin with no `tokens dark` block is unchanged.
+
+### Manual toggle — `:theme`
+
+*New in 1.0.* For an explicit light/dark switch alongside (or instead of) the OS preference, declare `:theme` once and drive it with ordinary buttons. It registers a durable `theme` store and reflects its value onto `<html data-theme="…">`:
+
+```wd
+:theme
+:button "Auto"  -> theme = "auto"
+:button "Light" -> theme = "light"
+:button "Dark"  -> theme = "dark"
+```
+
+Because `tokens dark` already emits the `[data-theme="dark"]` rule, **no extra skin block is needed** — the same palette drives the toggle. `"light"` forces the light palette even under OS dark; `"auto"` clears the attribute and follows the OS again; `theme` persists across reloads and tabs like any `:store`. (`:theme name = "light"` renames the store and seeds a different default. The older `tokens [data-theme=dark]` block — a manual-only override — still works for bespoke setups.)
 
 ## The escape hatch
 
-Reactive pages expose `window.wd` — `wd.get(key)`, `wd.set(key, value)`, `wd.state`, `wd.render()` — so colocated `.js` can do anything the directives can't. Section-scoped keys are addressed as `sectionId:name`.
+Reactive pages expose `window.wd` so a colocated `.js` file can do anything the directives deliberately don't — keyboard, drag/touch, canvas, charts, maps:
+
+| Method | Purpose |
+|---|---|
+| `wd.get(key)` | read a state value |
+| `wd.set(key, value)` | write it and re-render |
+| `wd.subscribe(key, cb)` | run `cb(value)` now and on every settled change; returns an unsubscribe |
+| `wd.state` | the live state object |
+| `wd.render()` | force a render |
+
+Section-scoped keys are addressed as `sectionId:name`. The bridge for "behaviors" is `subscribe` — it primes the callback immediately, then fires whenever the value settles, so an imperative widget stays in lockstep with declarative state:
+
+```js
+// index.js, colocated beside the page. Loads after the runtime, so wd is ready.
+const track = document.querySelector("[data-track]");
+wd.subscribe("slide", (i) => {            // framework state → imperative view
+  track.style.transform = `translateX(${-i * 100}%)`;
+});
+document.querySelector("[data-next]")
+  .addEventListener("click", () => wd.set("slide", wd.get("slide") + 1));
+```
+
+That is the whole contract: the framework reconciles state, text, classes, and loops; your behavior owns the gestures; they meet at one shared key. (See the [Swiper demo](https://darkmown.com/carousel/) — a draggable, keyboard-navigable carousel built exactly this way.)
 
 Set `window.wd.debug = true` (it defaults to `false`) to log any `:computed` or `@loop … where` expression that fails to evaluate to the console — useful while authoring reactive pages.
 

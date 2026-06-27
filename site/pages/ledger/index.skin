@@ -1,0 +1,257 @@
+/* ── Ledger — a sortable expense table. Reuses base tokens ($ink/$paper/…), so
+   the :theme toggle re-themes it through base.skin's `tokens dark` (now wired to
+   [data-theme] as well as the OS media query). ───────────────────────────── */
+
+.app-ledger
+  max-width 60rem
+  margin 0 auto
+  padding 2.5rem 1.25rem 4rem
+
+/* Header: title + theme switch */
+.app-ledger .ledger-head
+  display flex
+  align-items flex-end
+  justify-content space-between
+  flex-wrap wrap
+  gap 1.25rem
+  margin-bottom 1.75rem
+
+.app-ledger .ledger-eyebrow
+  font-size .72rem
+  font-weight 700
+  letter-spacing .14em
+  text-transform uppercase
+  color $accent
+
+.app-ledger h1
+  margin .35rem 0 0
+  font-size 2.4rem
+  letter-spacing -.02em
+  color $ink
+
+.app-ledger .ledger-tagline
+  margin .6rem 0 0
+  max-width 34rem
+  color $muted
+  font-size .95rem
+  line-height 1.5
+
+.app-ledger .ledger-tagline code
+  bg $code-bg
+  color $code-ink
+  padding .05rem .3rem
+  radius 5px
+  font-size .85em
+
+/* Theme switch */
+.app-ledger .theme-switch
+  display inline-flex
+  align-items center
+  gap .4rem
+  font-size .75rem
+  font-weight 600
+  letter-spacing .04em
+  text-transform uppercase
+  color $muted
+
+.app-ledger .theme-switch button[data-wd-action]
+  border 1px solid $line
+  bg $panel
+  color $ink-soft
+  font-size .8rem
+  font-weight 600
+  padding .4rem .8rem
+  radius 999px
+  cursor pointer
+  transition color .14s ease, border-color .14s ease, background .14s ease
+
+.app-ledger .theme-switch button[data-wd-action]:hover
+  color $ink
+  border-color $accent
+
+/* Stat cards */
+.app-ledger .stat-grid
+  display grid
+  grid-template-columns repeat(4, 1fr)
+  gap .85rem
+  margin-bottom 1.5rem
+
+.app-ledger .stat
+  padding 1rem 1.15rem
+  border 1px solid $line-soft
+  radius 14px
+  bg $panel
+
+.app-ledger .stat-label
+  font-size .72rem
+  font-weight 600
+  letter-spacing .06em
+  text-transform uppercase
+  color $muted
+
+.app-ledger .stat-num
+  margin-top .3rem
+  font-size 1.5rem
+  font-weight 700
+  letter-spacing -.01em
+  color $ink
+  font-variant-numeric tabular-nums
+
+.app-ledger .stat p, .app-ledger .stat-num p, .app-ledger .stat-label p
+  margin 0
+
+/* Controls: filter + live ticker */
+.app-ledger .ledger-controls
+  display flex
+  align-items center
+  justify-content space-between
+  flex-wrap wrap
+  gap 1rem
+  margin-bottom 1rem
+
+.app-ledger .ledger-controls input[data-wd-bind-input]
+  flex 1 1 16rem
+  border 1px solid $line
+  bg $paper-2
+  color $ink
+  font-size .95rem
+  padding .6rem .9rem
+  radius 10px
+
+.app-ledger .synced
+  font-size .8rem
+  color $muted
+  white-space nowrap
+
+.app-ledger .synced p
+  margin 0
+
+/* The table (CSS grid rows so it stays one readable Markdown file) */
+.app-ledger .ledger-table
+  padding 0
+  border 1px solid $line-soft
+  radius 16px
+  overflow hidden
+  bg $panel
+
+.app-ledger .thead, .app-ledger .trow
+  display grid
+  grid-template-columns 9rem 1fr 9rem 7rem 4.5rem
+  align-items center
+
+.app-ledger .thead
+  border-bottom 1px solid $line-soft
+  bg $paper-2
+
+.app-ledger .th
+  padding 0
+
+.app-ledger .th button[data-wd-action]
+  width 100%
+  text-align left
+  border 0
+  bg transparent
+  color $muted
+  font-size .72rem
+  font-weight 700
+  letter-spacing .06em
+  text-transform uppercase
+  padding .8rem .9rem
+  cursor pointer
+  transition color .14s ease
+
+.app-ledger .th button[data-wd-action]:hover
+  color $ink
+
+.app-ledger .th.active button[data-wd-action]
+  color $accent
+
+.app-ledger .th.num button[data-wd-action]
+  text-align right
+
+.app-ledger .th.dir
+  display flex
+  gap .15rem
+  justify-content center
+
+.app-ledger .th.dir button[data-wd-action]
+  width auto
+  padding .8rem .35rem
+  font-size .7rem
+
+.app-ledger .trow
+  border-top 1px solid $line-soft
+  font-size .92rem
+
+.app-ledger .trow:first-of-type
+  border-top 0
+
+.app-ledger .td
+  padding .7rem .9rem
+  color $ink-soft
+
+.app-ledger .td p
+  margin 0
+
+.app-ledger .td.muted
+  color $muted
+  font-variant-numeric tabular-nums
+
+.app-ledger .td.strong
+  color $ink
+  font-weight 600
+
+.app-ledger .td.num
+  text-align right
+  font-weight 600
+  color $ink
+  font-variant-numeric tabular-nums
+
+.app-ledger .pill
+  display inline-block
+  font-size .72rem
+  font-weight 600
+  padding .15rem .55rem
+  radius 999px
+  bg $accent-soft
+  color $accent-deep
+
+.app-ledger .td.dir
+  text-align center
+
+.app-ledger .td.dir button[data-wd-action]
+  border 1px solid transparent
+  bg transparent
+  color $muted
+  font-size .8rem
+  padding .25rem .5rem
+  radius 8px
+  cursor pointer
+  transition color .14s ease, border-color .14s ease
+
+.app-ledger .td.dir button[data-wd-action]:hover
+  color $warm
+  border-color $line
+
+.app-ledger .trow.blank
+  display block
+  padding 1.4rem .9rem
+  color $muted
+  text-align center
+
+.app-ledger .ledger-foot
+  margin-top 1.1rem
+  font-size .85rem
+  color $muted
+  text-align center
+
+.app-ledger .ledger-foot strong
+  color $ink-soft
+
+@media (max-width: 640px)
+  .app-ledger .stat-grid
+    grid-template-columns repeat(2, 1fr)
+  .app-ledger .thead, .app-ledger .trow
+    grid-template-columns 1fr 5.5rem 3.5rem
+  .app-ledger .th.cat, .app-ledger .td.cat
+    display none

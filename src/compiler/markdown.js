@@ -7,6 +7,7 @@
 
 import MarkdownIt from "markdown-it";
 import { LOOP_META } from "./context.js";
+import { applyPipeline, fmtAttr, validatePipes } from "./format.js";
 import {
   escapeHtml,
   getPath,
@@ -107,12 +108,15 @@ function resolveBindingRaw(expr, ctx) {
 function bindingPlugin(mdInstance) {
   mdInstance.inline.ruler.push("wd_binding", (state, silent) => {
     if (state.src.charCodeAt(state.pos) !== 0x7b /* { */) return false;
-    const match = /^\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/.exec(
+    // Capture the path plus an optional `| formatter:arg | …` pipe chain. Pipe
+    // arguments may not contain `}` (they may be quoted), so the chain runs to
+    // the first closing brace.
+    const match = /^\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*(?:\|[^}]*)?)\}/.exec(
       state.src.slice(state.pos)
     );
     if (!match) return false;
     const resolve = state.env?.resolveBinding;
-    const html = resolve ? resolve(match[1]) : null;
+    const html = resolve ? resolve(match[1].trim()) : null;
     if (typeof html !== "string") return false;
     if (!silent) {
       const token = state.push("html_inline", "", 0);
@@ -196,8 +200,13 @@ export function attrTarget(children, i) {
  * @returns {string | null}
  */
 function resolveBindingHtml(expr, ctx) {
-  const segs = expr.split(".");
+  const { path, stages } = validatePipes(expr, ctx);
+  const segs = path.split(".");
   const head = segs[0];
+  // Reactive nodes carry the pipe chain in data-wd-fmt; static values fold now.
+  const fmt = stages.length ? ` data-wd-fmt="${escapeHtml(fmtAttr(stages))}"` : "";
+  /** @param {unknown} v */
+  const fold = (v) => (stages.length ? applyPipeline(v, stages) : v);
 
   // Per-row meta vars ($index/$number/$first/$last/$count) — only inside a loop.
   if (LOOP_META[head]) {
@@ -205,19 +214,19 @@ function resolveBindingHtml(expr, ctx) {
       throw new Error(
         `"{ ${expr} }" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Move it into a loop body, or rename your value.`
       );
-    if (ctx.loopItem) return `<span data-wd-each-meta="${LOOP_META[head]}"></span>`; // reactive: filled per row
+    if (ctx.loopItem) return `<span data-wd-each-meta="${LOOP_META[head]}"${fmt}></span>`; // reactive: filled per row
     // static: the value is in scope (injected by staticUnroll); fall through.
   }
 
   if (ctx.loopItem && head === ctx.loopItem) {
     const rest = segs.slice(1).join(".");
-    return `<span data-wd-each${rest ? ` data-wd-path="${escapeHtml(rest)}"` : ""}></span>`;
+    return `<span data-wd-each${rest ? ` data-wd-path="${escapeHtml(rest)}"` : ""}${fmt}></span>`;
   }
 
   const staticValue = lookupVar(ctx.scope, head);
   if (staticValue.found) {
     const resolved = getPath(staticValue.value, segs.slice(1));
-    return escapeHtml(interpolateLeaf(resolved, expr, ctx));
+    return escapeHtml(interpolateLeaf(fold(resolved), expr, ctx));
   }
 
   const key = resolveStateKey(head, ctx);
@@ -226,7 +235,7 @@ function resolveBindingHtml(expr, ctx) {
     const initial = getPath(ctx.comp.state.get(key), segs.slice(1));
     const rest = segs.slice(1).join(".");
     const pathAttr = rest ? ` data-wd-path="${escapeHtml(rest)}"` : "";
-    return `<span data-wd-bind="${key}"${pathAttr}>${escapeHtml(interpolateLeaf(initial, expr, ctx))}</span>`;
+    return `<span data-wd-bind="${key}"${pathAttr}${fmt}>${escapeHtml(interpolateLeaf(fold(initial), expr, ctx))}</span>`;
   }
 
   return null;

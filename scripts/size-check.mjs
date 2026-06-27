@@ -2,7 +2,7 @@
 // Size-trend guard for the shipped reactive runtime. Gzips
 // `dist/__wd/runtime.js`, compares it against the committed
 // `.size-snapshot.json` baseline, and prints the byte delta so a PR surfaces
-// any growth. The hard budget gate (< 6144 B gzipped) still applies: this exits
+// any growth. The hard budget gate (< 8192 B gzipped) still applies: this exits
 // non-zero if the runtime reaches it. Run `npm run build` first (CI does).
 
 import fs from "node:fs";
@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
 
-const BUDGET = 6144; // bytes, gzipped — the CI-enforced ceiling (< 6 KB)
+const BUDGET = 8192; // bytes, gzipped — the CI-enforced ceiling (< 8 KB, raised from 6 KB in 1.0 for the value + time layer; still un-minified)
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const runtimePath = path.join(repoRoot, "dist", "__wd", "runtime.js");
 const snapshotPath = path.join(repoRoot, ".size-snapshot.json");

@@ -24,7 +24,7 @@ The left file is Markdown. It is also a running app — a live search filter, ad
 
 <ul class="hero-stats">
   <li><strong>0 KB</strong><span>framework JS on static pages</span></li>
-  <li><strong>~5.8 KB</strong><span>one runtime, CI-enforced &lt; 6 KB</span></li>
+  <li><strong>~7.4 KB</strong><span>one runtime, CI-enforced &lt; 8 KB</span></li>
   <li><strong>1</strong><span>loop and one binding to learn</span></li>
   <li><strong>MIT</strong><span>zero runtime dependencies</span></li>
 </ul>
@@ -108,14 +108,14 @@ Markdoc.renderers.react(content, React, {
 
 </section>
 
-:note "Static pages ship zero JavaScript. The moment a page asks for reactivity — like this very homepage — one ~5.7 KB gzipped runtime loads (CI-enforced under 6 KB), never before. JS optional, CSS optional, always."
+:note "Static pages ship zero JavaScript. The moment a page asks for reactivity — like this very homepage — one ~7.4 KB gzipped runtime loads (CI-enforced under 8 KB), never before. JS optional, CSS optional, always."
 
 <section class="props">
 
 ## Three rules, no escape hatch
 
 - **Zero-JS static.** A page with no state ships no framework JavaScript. `/markdown/` and `/docs/` prove it — open them and check the network tab.
-- **One runtime.** Every reactive page shares the same ~5.7 KB gzipped runtime, CI-enforced under 6 KB. No per-component bundles, no hydration tax that scales with your UI.
+- **One runtime.** Every reactive page shares the same ~7.4 KB gzipped runtime, CI-enforced under 8 KB. No per-component bundles, no hydration tax that scales with your UI.
 - **One loop, one binding.** `@loop … into …` is the only loop; `{ name }` is the only interpolation. Nothing else to learn, nothing else to misuse.
 
 </section>
