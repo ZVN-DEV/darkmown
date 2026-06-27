@@ -115,13 +115,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: shipped runtime must stay under 8KB gzipped
-        run: |
-          size=$(gzip -c dist/__wd/runtime.js | wc -c)
-          echo "shipped runtime gzipped: ${size} bytes (budget: 8192)"
-          test "$size" -lt 8192
-      - name: size delta vs snapshot
-        run: npm run size:check
+      # Delegates to scripts/size-check.mjs, which reads the budget from
+      # .size-snapshot.json (the single source of truth) — no hardcoded number
+      # here to drift out of sync. It reports the gzip size + delta and fails at
+      # the budget.
+      - name: runtime size budget + delta
+        run: npm run runtime:size
 
   audit:
     name: Dependency audit

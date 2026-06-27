@@ -2,6 +2,22 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 1.1.0 — 2026-06-27
+
+Follow-up to 1.0: turn the two rough edges flagged at release into real fixes. No runtime change (still ~7.4 KB gzipped).
+
+- **Multi-line `:state` / `:store` / `:theme` values.** An array or object seed may now span several lines for readability — open the `[`/`{` on the directive line and let it run until it balances:
+
+  ```wd
+  :store rows = [
+    {"id": 1, "label": "One"},
+    {"id": 2, "label": "Two"}
+  ]
+  ```
+
+  1.0 made the old silent-corruption case (the literal stored verbatim as the string `"["`) a compile error; 1.1 makes the readable multi-line form actually *work*. The compiler joins the balanced literal (string- and escape-aware bracket counting) into one line before parsing. The literal must balance with no blank line inside it; an unterminated literal stays a clear compile error. Quote genuinely literal bracket text (`:state tag = "[draft]"`). The Ledger demo's seed data is now written this way.
+- **Single source of truth for the runtime-size budget (internal).** The gzip budget had drifted into four hardcoded copies (`package.json`, `scripts/size-check.mjs`, `.github/workflows/ci.yml`, `tests/size.test.js`) — a mismatch in `ci.yml` failed the 1.0 PR. The budget now lives only in `.size-snapshot.json` (`runtime.budget`); `scripts/size-check.mjs` reads it and everything else delegates to that script. A `tests/size.test.js` drift guard fails if any config reintroduces a hardcoded budget or an inline size gate.
+
 ## 1.0.0 — 2026-06-27
 
 The 1.0 release. The directive surface is now stable, and this version closes the biggest "I'd have to drop to raw HTML/JS for that" gaps an audit found — display formatting, time, an explicit theme toggle, live table sort, media, and a real escape hatch — while holding the zero-JS-by-default promise. Six additions, all either compile-time or sharing the one runtime, which moves from ~5.8 KB to **~7.4 KB gzipped**; the CI budget is raised 6 KB → **8 KB** to match (still un-minified, fully commented). No source-level breaking changes: existing `.wd` pages compile and behave identically.

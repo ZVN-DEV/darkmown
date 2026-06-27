@@ -349,6 +349,7 @@ You have { cart } items.
 - Saved to localStorage under `wd:store:<name>` and reloaded on the next visit; changes sync live to other open tabs.
 - The declared value is a **seed**, used only the first time — afterward the persisted value wins.
 - Same value grammar and the same button actions as `:state`.
+- An array/object seed may span **multiple lines** for readability — open the `[`/`{` on the directive line and let it run until it closes (no blank line inside; an unterminated literal is a compile error). Quote literal bracket text: `:state tag = "[draft]"`.
 - Add `ephemeral` for an in-memory store that resets on reload: `:store sidebarOpen = false ephemeral`.
 
 ## Forms and persistence

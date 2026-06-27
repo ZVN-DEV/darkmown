@@ -556,6 +556,16 @@ You have { cart } items.
 - **Shared across tabs.** Change a store in one tab and every other tab on the same site updates live.
 - **Global by name.** A bare `{ cart }` reads the same store everywhere — stores are never section-scoped.
 - **Same value grammar as `:state`** — string, number, boolean, `null`, array, or object — and the **same** button actions (`cart += …`, `count++`, `theme = "dark"`, and so on).
+- **Multi-line seeds.** An array or object literal may span several lines for readability — open the `[`/`{` on the `:store`/`:state` line and let it run until it closes:
+
+  ```wd
+  :store rows = [
+    {"id": 1, "label": "One"},
+    {"id": 2, "label": "Two"}
+  ]
+  ```
+
+  The literal must balance with no blank line inside it (a blank line ends the value); an unterminated literal is a compile error. Quote genuinely literal bracket text — `:state tag = "[draft]"`.
 
 The declared value is a **seed**: it is used only the first time, when the store is absent from storage. After that the persisted value wins, so visitors keep their data.
 
