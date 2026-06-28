@@ -6,8 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleApiRequest } from "./api-runner.js";
 import { buildSite } from "./builder.js";
+import { createPaths } from "./config.js";
 import { DEPLOY_TARGETS, deploy } from "./deploy.js";
 import { devClientPath, devClientScript, devEventsPath, injectDevClient } from "./dev.js";
+import { discoverRoutes, isDraft, outputPathForRoute } from "./router.js";
 import { availableTemplates, initProject } from "./scaffold.js";
 import { contentType, resolvePublicFile, serve } from "./statics.js";
 
@@ -64,8 +66,11 @@ export async function run(argv, env = {}) {
   }
   if (command === "build") {
     const target = flagValue(argv, "--target");
-    const result = buildSite(cwd, { target });
-    log(`Built ${result.routes.length} routes into ${path.relative(cwd, result.distRoot)}`);
+    // `--drafts` includes `draft: true` pages in the build + feeds (staging);
+    // the default production build excludes them at route discovery.
+    const includeDrafts = argv.includes("--drafts");
+    const result = buildSite(cwd, { target, includeDrafts });
+    log(buildSummary(result, path.relative(cwd, result.distRoot)));
     if (target === "cloudflare")
       log("Emitted dist/_worker.js for Cloudflare Pages api/* functions");
     return { command: "build" };
@@ -131,8 +136,10 @@ function startDevServer({ cwd, log, warn, error }) {
   // A broken initial build must NOT crash the process before the HTTP server —
   // and thus the error overlay — comes up. Record the error so new SSE clients
   // see it on connect; the next successful rebuild clears it via `reload`.
+  // Dev builds + serves `draft: true` pages (they're work-in-progress you want
+  // to preview); the dev client stamps a visible banner so a draft is obvious.
   try {
-    buildSite(cwd);
+    buildSite(cwd, { includeDrafts: true });
   } catch (err) {
     lastBuildError = (err instanceof Error ? err.message : String(err)).trim();
     error(lastBuildError);
@@ -144,7 +151,7 @@ function startDevServer({ cwd, log, warn, error }) {
     clearTimeout(timer);
     timer = setTimeout(() => {
       const started = performance.now();
-      execFile(process.execPath, [cliPath, "build"], { cwd }, (err, stdout, stderr) => {
+      execFile(process.execPath, [cliPath, "build", "--drafts"], { cwd }, (err, stdout, stderr) => {
         if (err) {
           const message = (stderr || stdout || String(err)).trim();
           lastBuildError = message;
@@ -204,7 +211,7 @@ function startDevServer({ cwd, log, warn, error }) {
     // throw on either path (e.g. a stat/read error) becomes a clean 500.
     handleApiRequest({ apiDir, req, res })
       .then((handled) => {
-        if (!handled) serveDev(distRoot, url, res);
+        if (!handled) serveDev(distRoot, url, res, draftRoutes(cwd));
       })
       .catch((err) => {
         res.writeHead(500, { "content-type": "text/plain" });
@@ -262,9 +269,11 @@ function startPreviewServer({ cwd, log, error }) {
  * @param {string} distRoot
  * @param {string} url
  * @param {import("node:http").ServerResponse} res
+ * @param {Set<string>} draftFiles Absolute dist HTML paths of draft pages — each
+ *   gets the dev-only draft banner injected (never written to disk).
  * @returns {void}
  */
-function serveDev(distRoot, url, res) {
+function serveDev(distRoot, url, res, draftFiles) {
   const file = resolvePublicFile(distRoot, url);
   if (!file || !fs.existsSync(file)) {
     serve(distRoot, url, res);
@@ -274,13 +283,31 @@ function serveDev(distRoot, url, res) {
     // Read BEFORE writing headers: if the read throws (e.g. the path is a
     // directory), the handler's catch can still send a clean 500 instead of
     // failing to overwrite an already-sent 200.
-    const html = injectDevClient(fs.readFileSync(file, "utf8"));
+    const html = injectDevClient(fs.readFileSync(file, "utf8"), { draft: draftFiles.has(file) });
     res.writeHead(200, { "content-type": "text/html" });
     res.end(html);
     return;
   }
   res.writeHead(200, { "content-type": contentType(file) });
   fs.createReadStream(file).pipe(res);
+}
+
+/**
+ * The set of absolute dist HTML paths that correspond to `draft: true` source
+ * pages, so the dev server can banner exactly those. Recomputed per HTML request
+ * (cheap, and stays correct as a page gains/loses `draft:` during a dev session).
+ * Returns an empty set when the project has no `site/pages` yet.
+ * @param {string} cwd Project working directory.
+ * @returns {Set<string>}
+ */
+function draftRoutes(cwd) {
+  const paths = createPaths(cwd);
+  /** @type {Set<string>} */
+  const drafts = new Set();
+  for (const route of discoverRoutes(paths.routesRoot, { includeDrafts: true })) {
+    if (isDraft(route.meta)) drafts.add(outputPathForRoute(paths.distRoot, route.route));
+  }
+  return drafts;
 }
 
 /**
@@ -303,6 +330,7 @@ Usage:
   darkmown init [dir] [--template <name>]   Scaffold a new project from a template
   darkmown dev                              Start the live compiler dev server
   darkmown build [--target cloudflare]      Compile site/pages into dist
+            [--drafts]                      Include draft: true pages (staging)
   darkmown deploy <${DEPLOY_TARGETS.join("|")}> [--prod]    Build + deploy to a platform
   darkmown serve                            Preview the built dist locally
   darkmown version                          Print the installed Darkmown version
@@ -318,6 +346,22 @@ Authoring:
   *.skin              Colocated indentation-based CSS
   *.js                Colocated page behavior
 `;
+}
+
+/**
+ * The one-line `build` summary: route count plus, when the feeds were emitted
+ * (home `site_url` set), the sitemap URL and RSS post counts — e.g.
+ * `Built 14 routes, sitemap (14 urls), rss (6 posts) into dist`. When no
+ * `site_url` is set the feed clauses are omitted (a hint was already warned).
+ * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null } }} result
+ * @param {string} relativeRoot `dist` relative to cwd, for the message tail.
+ * @returns {string}
+ */
+export function buildSummary(result, relativeRoot) {
+  const parts = [`Built ${result.routes.length} routes`];
+  if (result.feeds.sitemap !== null) parts.push(`sitemap (${result.feeds.sitemap} urls)`);
+  if (result.feeds.rss !== null) parts.push(`rss (${result.feeds.rss} posts)`);
+  return `${parts.join(", ")} into ${relativeRoot}`;
 }
 
 /**

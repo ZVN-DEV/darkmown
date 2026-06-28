@@ -30,9 +30,12 @@ import { selectMd } from "./markdown.js";
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
+ * @param {{ feed?: { href: string, title: string } }} [options] When a site-wide
+ *   RSS feed is emitted (the home page set `site_url` and the site has dated
+ *   posts), `feed` carries its absolute href + title so every page links it.
  * @returns {CompiledPage}
  */
-export function compilePage(file, context) {
+export function compilePage(file, context, options = {}) {
   const compiled = compileDocument(file, context);
   const title = compiled.meta.title || "Darkmown";
   const description = compiled.meta.description || "";
@@ -68,6 +71,12 @@ export function compilePage(file, context) {
   const cssLinks = [...highlightLink, ...compiled.assets.skins]
     .map((href) => `<link rel="stylesheet" href="${href}">`)
     .join("\n");
+  // RSS feed discovery: when the site emits an `rss.xml` (home `site_url` set +
+  // at least one dated post), every page advertises it so readers/aggregators
+  // can autodiscover the feed. Build-time only — no client JS.
+  const feedLink = options.feed
+    ? `\n  <link rel="alternate" type="application/rss+xml" title="${escapeHtml(options.feed.title)}" href="${escapeHtml(options.feed.href)}">`
+    : "";
   // Pay-for-what-you-use behavior modules (slider is compile-time and never here;
   // sortable/carousel each emit one) load after the runtime — sortable depends on
   // `window.wd` — and before any colocated page script.
@@ -133,7 +142,7 @@ export function compilePage(file, context) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>${descriptionTag}
-  <link rel="icon" href="${favicon}">
+  <link rel="icon" href="${favicon}">${feedLink}
   ${cssLinks}${transitions}${speculation}
 </head>
 <body>

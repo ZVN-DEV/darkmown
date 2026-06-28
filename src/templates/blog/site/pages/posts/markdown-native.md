@@ -1,6 +1,8 @@
 ---
 title: Markdown-native, by default
 description: Every post is a .md file; the index is one .wd loop.
+date: 2026-02-02
+excerpt: Every post is a plain .md file; the index is one .wd loop. The date in each post's frontmatter is what lands it in rss.xml.
 transitions: true
 ---
 

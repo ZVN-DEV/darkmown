@@ -2,7 +2,13 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { devClientPath, devClientScript, devEventsPath, injectDevClient } from "../src/dev.js";
+import {
+  devClientPath,
+  devClientScript,
+  devEventsPath,
+  draftBannerScript,
+  injectDevClient
+} from "../src/dev.js";
 
 test("devClientScript wires the EventSource live-reload + error overlay", () => {
   const script = devClientScript();
@@ -32,4 +38,28 @@ test("injectDevClient appends the script when there is no </body>", () => {
     out,
     /<h1>No body tag<\/h1>\n<script type="module" src="\/__wd\/dev-client\.js"><\/script>/
   );
+});
+
+test("injectDevClient adds the draft banner only when draft: true", () => {
+  const html = "<html><body><h1>Hi</h1></body></html>";
+  // No banner for a normal page.
+  assert.doesNotMatch(injectDevClient(html), /__wd-draft-banner/);
+  // Banner injected (before </body>) for a draft page.
+  const draft = injectDevClient(html, { draft: true });
+  assert.match(draft, /__wd-draft-banner/);
+  assert.match(
+    draft,
+    /<script type="module" src="\/__wd\/dev-client\.js"><\/script>\n<script>[\s\S]*<\/script>\n<\/body>/
+  );
+});
+
+test("draftBannerScript builds an inert, marked DRAFT banner element", () => {
+  const script = draftBannerScript();
+  assert.match(script, /__wd-draft-banner/);
+  assert.match(script, /DRAFT — excluded from production build/);
+  // inert so it never blocks page interaction
+  assert.match(script, /pointer-events:none/);
+  // prepended on DOMContentLoaded
+  assert.match(script, /DOMContentLoaded/);
+  assert.match(script, /body\.prepend/);
 });

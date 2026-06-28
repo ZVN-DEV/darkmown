@@ -1,6 +1,8 @@
 ---
 title: Hello, Darkmown
 description: Why I rewrote my blog as plain Markdown files.
+date: 2026-01-15
+excerpt: I rewrote my blog as plain Markdown files — no React, no build ceremony, and it ships zero JavaScript.
 transitions: true
 ---
 

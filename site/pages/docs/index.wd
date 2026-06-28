@@ -176,6 +176,24 @@ tags: [sales, revenue, "q1, q2"]
 
 `{ meta.title }` prints a scalar and `{ meta.tags }` joins an array with `, `. You can loop a frontmatter array at build time — `@loop meta.tags into tag` — and the page stays static. Arrays are inline flow only (`[a, b]`); quoted items keep their commas.
 
+## SEO & feeds
+
+`darkmown build` writes `sitemap.xml`, `rss.xml`, and `robots.txt` — all build-time, zero client JS. There's no config file: the **home page** frontmatter carries the site's identity. Add `site_url` (absolute origin, no trailing slash) and the sitemap and feed switch on, prefixed with that origin and titled with the home `title`/`description`.
+
+```wd
+---
+title: My Blog
+description: Notes
+site_url: https://example.com
+---
+```
+
+A page becomes an **RSS post** by carrying a `date:`; `excerpt:` is its feed summary (else `description:`, else — for a plain `.md` — its first paragraph). The sitemap's `<lastmod>` is the `date:` if set, else the file's git/last-modified date. `robots.txt` is always written; the `Sitemap:` line only appears with a `site_url`. Without `site_url`, robots still emits and the build prints a hint — it never breaks.
+
+## Drafts
+
+Mark a page `draft: true` and it stays out of production: `darkmown build` leaves it out of `dist`, `routes.json`, the sitemap, and the feed — even if it has a `date:`. `darkmown dev` still builds and serves it (with a "DRAFT" banner you only see in dev), and `darkmown build --drafts` includes drafts for a staging deploy. This is separate from the permanent `.`/`-`/`_` filename hiding — a hidden name is private forever; `draft:` is a switch you flip when the page is ready.
+
 ## Instant navigation
 
 Add `transitions: true` to a page's frontmatter for **instant, flash-free navigation** — zero JavaScript. It emits a directional fade+slide view transition for the page swap and a `<script type="speculationrules">` prerender hint, so the browser renders the next same-origin page on hover/pointerdown and the click activates an already-painted page (no white render-gap). It honors `prefers-reduced-motion`, and only same-origin pages that both opt in transition. Off by default; opt out with `transitions: false`, or exclude a single link from prerendering with `{.no-prefetch}`. (Chrome turns prerendering off while DevTools is open — test the built site with DevTools closed.)
