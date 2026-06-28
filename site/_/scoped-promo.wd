@@ -1,0 +1,10 @@
+<!-- Scoped component A. Its colocated scoped-promo.skin opts into scoping, so the
+     `.card` here gets its OWN look — a warm, accent-bordered promo — without
+     clashing with the identically-named `.card` in scoped-stat.wd. handleInclude
+     stamps just this returned subtree with the component's scope id. -->
+<article class="card">
+  <span class="badge">Promo</span>
+  <h3 class="title">Same class name, zero collision</h3>
+  <p class="body">This <code>.card</code> is a warm promo panel. The component beside it also calls its root <code>.card</code> — and they do not fight, because each scoped skin only matches inside its own stamped subtree.</p>
+  <a class="cta" href="/docs/">How scoping works →</a>
+</article>

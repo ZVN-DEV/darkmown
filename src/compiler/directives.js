@@ -12,7 +12,7 @@
 import { compileBody } from "./body.js";
 import { at, createScope, LOOP_META } from "./context.js";
 import { FORMATTERS } from "./format.js";
-import { resolveInclude } from "./includes.js";
+import { resolveInclude, scopedSkinFor } from "./includes.js";
 import {
   escapeHtml,
   getPath,
@@ -26,7 +26,7 @@ import {
   stripQuotes,
   validatePath
 } from "./interpolation.js";
-import { compileFile } from "./page.js";
+import { compileFile, stampScope } from "./page.js";
 import { compileComputedExpr, compileWhen, evalPredicate } from "./predicates.js";
 
 /**
@@ -45,17 +45,23 @@ export function handleInclude(line, ctx, index) {
   if (!match) throw new Error(`Malformed @include in ${at(ctx.file, index)}: ${line}`);
   const target = resolveInclude(match[1], ctx.file, ctx.context);
   const args = parseIncludeArgs(match[2] || "", ctx);
-  const scope = createScope(ctx.scope, args);
+  const childScope = createScope(ctx.scope, args);
   const child = compileFile(
     target,
     ctx.context,
     ctx.stack,
-    scope,
+    childScope,
     ctx.comp,
     ctx.sections,
     ctx.loopItem
   );
-  return child.html;
+  // An include with its OWN scoped colocated skin stamps just its returned
+  // subtree — so a scoped `.card` in the include can't collide with a `.card`
+  // anywhere else on the page, and the scope never leaks to the include's
+  // siblings (only this child HTML is stamped). The CSS rewrite (builder) uses
+  // the same path-derived id, so attribute and stylesheet line up.
+  const scopedSkin = scopedSkinFor(target, ctx.context);
+  return scopedSkin && scopedSkin.scoped ? stampScope(child.html, scopedSkin.scopeId) : child.html;
 }
 
 /**

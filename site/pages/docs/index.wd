@@ -414,6 +414,29 @@ For an explicit light/dark switch alongside the OS preference, declare `:theme` 
 
 A single `tokens dark` block in your `.skin` already powers both the OS `prefers-color-scheme` query and this toggle — no extra block needed. `"auto"` clears the attribute and follows the OS again. See it on the [Ledger demo](/ledger/).
 
+## Scoped styles — `scoped`
+
+A colocated `.skin` is **global** by default. Make its **first line** `scoped` and its selectors only ever match the component it ships with — so two components can both use `.card` without colliding. It's pure compile time: a path-derived id (e.g. `wd-7c21`) is stamped onto the HTML and appended to each selector.
+
+```skin
+scoped
+
+.card
+  padding 1.5rem
+  bg $panel
+```
+
+compiles to `.card[data-wd-scope="wd-7c21"] { … }`, and the component's markup is stamped `data-wd-scope="wd-7c21"`. You still write `class="card"` — no renaming, no runtime, **zero JS** on a static page. A page skin scopes the page body; an **include** skin scopes just that include's subtree wherever it's used.
+
+| In a `scoped` skin | Result |
+|---|---|
+| A selector rule | Scoped — attribute on the subject, before any `:hover`/`::before` |
+| `tokens` / `tokens dark` | **Global** on `:root` — `$vars` and dark mode keep working site-wide |
+| `:global(.toast)` (whole selector) | Opts back out — plain unscoped `.toast { … }` |
+| `page` / `*` / `html` / `body` / `::selection` | Compile error — page-level styles belong in a global skin |
+
+Honest limits this release: only **whole-selector** `:global()` (no `.card :global(.x)` yet), and an **unused** scoped selector **warns but is not removed** (a colocated `.js` may add the class). See the side-by-side [Scoped demo](/scoped/).
+
 ## Media — `:video`, `:audio`, `:embed`
 
 Three compile-time-only directives (they emit no `data-wd-*`, so a media page stays zero-JS):

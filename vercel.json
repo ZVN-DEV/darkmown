@@ -19,7 +19,7 @@
       ]
     },
     {
-      "source": "/(docs|markdown|theme|404|showcase|media|blog)",
+      "source": "/(docs|markdown|theme|404|showcase|media|blog|scoped)",
       "headers": [
         {
           "key": "Content-Security-Policy",

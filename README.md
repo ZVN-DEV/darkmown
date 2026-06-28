@@ -809,6 +809,50 @@ A single `tokens dark` block powers **both** theming paths: it compiles to `:roo
 
 Because `tokens dark` already emits the `[data-theme="dark"]` rule, **no extra skin block is needed** — the same palette drives the toggle. `"light"` forces the light palette even under OS dark; `"auto"` clears the attribute and follows the OS again; `theme` persists across reloads and tabs like any `:store`. (`:theme name = "light"` renames the store and seeds a different default. The older `tokens [data-theme=dark]` block — a manual-only override — still works for bespoke setups.)
 
+## Scoped styles — `scoped`
+
+*New in 1.4.0.* By default a colocated `.skin` is **global** — its selectors match the whole page, exactly like a stylesheet. That's the right default for a design system. But when two components both want a class called `.card`, global CSS makes them fight. Opt a skin into **scoping** so its selectors only ever match the component it ships with: make the **first line** of the `.skin` file the word `scoped`.
+
+```skin
+scoped
+
+.card
+  padding 1.5rem
+  bg $panel
+  radius $radius
+```
+
+Scoping is **pure compile time** — a short, path-derived id (e.g. `wd-7c21`) is stamped onto the component's HTML (`data-wd-scope="wd-7c21"`) and appended to each of the skin's selectors:
+
+```css
+.card[data-wd-scope="wd-7c21"] { padding: 1.5rem; }
+.card[data-wd-scope="wd-7c21"] { background: var(--panel); }
+```
+
+A second component's `.card` gets a **different** id, so the two never collide. There is **no runtime cost and no class renaming in your markup** — you still write `class="card"`; the framework adds the attribute during the build. A static page with a scoped skin stays **zero-JS**.
+
+**What scopes, what stays global:**
+
+| In a `scoped` skin | Result |
+|---|---|
+| A selector rule (`.card`, `.card:hover`, `.card .title`, `h2, h3`) | Scoped — the attribute lands on the **subject** (rightmost) selector, before any `:hover`/`::before` so it stays valid CSS |
+| A descendant selector (`.card .title`) | Only `.title` (the subject) is scoped; `.card` matches inside the subtree |
+| `tokens` / `tokens dark` / `tokens [data-theme=…]` | **Global** — design tokens always emit on `:root`, so `$accent` and dark mode keep working site-wide |
+| `:global(.toast)` (whole selector) | **Opts back out** — emits a plain, unscoped `.toast { … }` |
+| `@media` / `@supports` wrappers | Untouched; only the inner rule's selector is scoped |
+| `page` / `*` / `html` / `body` / `::selection` | **Compile error** — page-level styles belong in a global skin, not a scoped one |
+
+Where the scope applies depends on **where the skin lives**:
+
+- A skin colocated with a **page** (`about.skin` next to `about.wd`) scopes that page's body.
+- A skin colocated with an **include** (`card.skin` next to `card.wd`) scopes just that include's subtree wherever it's `@include`d — so the same scoped component can appear many times on a page without leaking into its neighbours.
+
+**Caveats (honest limits this release):**
+
+- **Whole-selector `:global()` only.** A descendant `:global` (`.card :global(.x)`) is **not** supported yet — use a whole-selector `:global(.x)`.
+- **Unused selectors warn, they aren't removed.** If a scoped selector's class/element/id never appears in the stamped subtree, the build prints `hint: scoped selector ".badge" in card.skin matches no element` — but the rule is **kept** (a colocated `.js` may add the class at runtime). It's a typo nudge, not a dead-code remover.
+- **Scoping is opt-in.** Every existing `.skin` (no `scoped` marker) is byte-for-byte unchanged.
+
 ## The escape hatch
 
 Reactive pages expose `window.wd` so a colocated `.js` file can do anything the directives deliberately don't — keyboard, drag/touch, canvas, charts, maps:

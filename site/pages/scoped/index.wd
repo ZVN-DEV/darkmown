@@ -1,0 +1,47 @@
+---
+title: Scoped styles — same class name, zero collision
+description: Two components reuse the class name .card and never clash. Compile-time scoped styles stamp each component's subtree with a path-derived id and rewrite its skin's selectors to match only there. Zero runtime JS — a static page stays static.
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main>
+
+<section class="intro">
+  <span class="eyebrow">Darkmown 1.4</span>
+
+# Scoped styles
+
+Two components on this page both call their root element `.card`. In plain CSS the second skin would overwrite the first. Here they coexist: a `.skin` whose first line is `scoped` only ever styles the subtree it ships with. It's pure compile time — a path-derived id stamped onto the HTML and appended to the skin's selectors. No runtime, no class hashing in your markup, no collision.
+
+</section>
+
+<section class="duo">
+
+<div class="grid cols-2">
+
+@include /scoped-promo.wd
+@include /scoped-stat.wd
+
+</div>
+
+</section>
+
+<section class="how">
+
+## What actually shipped
+
+- The `.card` in the warm promo and the `.card` in the dark stat tile are **different rules**, scoped to different ids.
+- This page also uses a **global** skin (`base.skin`, via `/base.wd`) — `.btn`, `.eyebrow`, `.grid` still work everywhere, unscoped.
+- Design **tokens stay global**: every scoped skin still reads `$accent`, `$warm`, `$radius` from `:root`, so dark mode keeps working for free.
+- A `:global(.x)` selector inside a scoped skin opts a single rule back out.
+
+<a class="btn primary" href="/docs/">Read the docs</a>
+
+</section>
+
+</main>
+
+@include /footer.wd

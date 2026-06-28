@@ -253,6 +253,8 @@ input:focus-visible
 ```
 Always include: a tokens block, a real type scale, generous spacing, a `max-width` centered `main`, styled `button`/`input` with `:hover`/`:focus-visible` states, and a responsive `@media` rule (`.skin` supports `@media` — its indented rules are wrapped automatically). The `font` property is the CSS shorthand when it leads with a size (`font 16px/1.6 system-ui`) and `font-family` otherwise. Prefer `.skin`; a plain `<style>` block in a `.wd` also works.
 
+**Scoped styles — opt in with `scoped`.** A `.skin` is **global** by default (style site-wide; the right default for your design system). To stop a reusable component's classes from clashing with the rest of the page, make the **first line** of its `.skin` the word `scoped` — its selectors then only match the component it's colocated with (a page skin scopes that page; an include skin scopes just that include's subtree). You still write `class="card"`; the build stamps a `data-wd-scope` attribute and rewrites the selectors — zero runtime, a static page stays static. **Tokens stay global** (a `tokens`/`tokens dark` block still emits `:root` vars, so `$accent` and dark mode keep working). Escape a single rule with `:global(.x)` (whole-selector only). `page`/`*`/`html`/`body`/`::selection` are a compile error in a scoped skin — those belong in a global skin.
+
 **Layout gotcha — CTAs and link rows.** Markdown wraps adjacent links/buttons on consecutive lines into a single `<p>`, so putting `display:flex` on their container won't space them. To lay out a row of buttons or nav links, wrap them in explicit raw HTML and style that:
 ```wd
 <div class="actions">

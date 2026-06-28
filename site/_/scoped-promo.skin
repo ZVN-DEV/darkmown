@@ -1,0 +1,43 @@
+scoped
+
+/* Component A — a warm promo card. Same class names as scoped-stat.skin
+   (.card / .title / .body), but scoped, so neither leaks. Tokens stay global,
+   so $accent / $warm / $radius still resolve from base.skin's :root. */
+
+.card
+  display grid
+  gap .6rem
+  padding 1.5rem
+  bg $warm-soft
+  border 1px solid $warm
+  border-left 4px solid $warm
+  radius $radius
+
+.badge
+  justify-self start
+  font-size .7rem
+  font-weight 700
+  text-transform uppercase
+  letter-spacing .08em
+  color #fff
+  bg $warm
+  padding .2rem .55rem
+  radius 999px
+
+.title
+  margin 0
+  font-size 1.25rem
+  color $ink
+
+.body
+  margin 0
+  color $ink-soft
+  max-width none
+
+.cta
+  justify-self start
+  font-weight 600
+  color $warm
+
+.cta:hover
+  color $ink

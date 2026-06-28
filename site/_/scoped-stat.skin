@@ -1,0 +1,32 @@
+scoped
+
+/* Component B — a dark stat tile. Identical class names to scoped-promo.skin,
+   but a completely different look. Scoping keeps them apart; tokens are global
+   so $accent-deep / $accent / $radius-lg come straight from base.skin's :root. */
+
+.card
+  display grid
+  gap .35rem
+  justify-items center
+  text-align center
+  padding 2rem 1.5rem
+  bg $accent-deep
+  border 1px solid $accent-deep
+  radius $radius-lg
+
+.title
+  font-size 3rem
+  font-weight 700
+  line-height 1
+  color #fff
+
+.body
+  margin 0
+  max-width none
+  color $accent-soft
+
+.badge
+  font-size .68rem
+  text-transform uppercase
+  letter-spacing .1em
+  color $accent

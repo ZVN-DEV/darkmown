@@ -12,7 +12,7 @@ import { htmlHasHighlight } from "../highlight.js";
 import { compileBody } from "./body.js";
 import { createCompilation, createScope } from "./context.js";
 import { parseFrontmatter, warnLikelyFrontmatter } from "./frontmatter.js";
-import { collectColocatedAssets, scanMarkdownHints } from "./includes.js";
+import { collectColocatedAssets, scanMarkdownHints, scopedSkinFor } from "./includes.js";
 import { escapeHtml } from "./interpolation.js";
 import { selectMd } from "./markdown.js";
 
@@ -132,7 +132,14 @@ export function compilePage(file, context, options = {}) {
     ? `\n  <script type="speculationrules">{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"selector_matches":".no-prefetch"}},{"not":{"selector_matches":"[rel~=nofollow]"}}]},"eagerness":"moderate"}]}</script>`
     : "";
 
-  const body = enhanceImages(compiled.html, context);
+  // A route whose OWN colocated skin opted into scoping stamps the whole page
+  // body so its scoped selectors match. Pure compile-time string post-pass (like
+  // enhanceImages) — no runtime, no `data-wd-*` marker, so a static page stays
+  // static. Include-scoped skins are stamped earlier, in handleInclude.
+  const scopedSkin = scopedSkinFor(file, context);
+  const stamped =
+    scopedSkin && scopedSkin.scoped ? stampScope(compiled.html, scopedSkin.scopeId) : compiled.html;
+  const body = enhanceImages(stamped, context);
 
   return {
     meta: compiled.meta,
@@ -190,6 +197,30 @@ export function enhanceImages(html, paths) {
     if (!add.length) return tag;
     return `${tag.replace(/\s*\/?>\s*$/, "")} ${add.join(" ")}>`;
   });
+}
+
+/**
+ * Stamp `data-wd-scope="<id>"` onto every opening tag of a subtree — the HTML
+ * half of compile-time scoped styles, mirroring {@link enhanceImages}: a regex
+ * post-pass over assembled HTML, zero runtime JS. Every element start tag that
+ * doesn't already carry a scope attribute gets one, so the scoped stylesheet
+ * (whose selectors end in `[data-wd-scope="<id>"]`) matches inside this subtree
+ * and nowhere else. Void/self-closing tags are stamped too (the attribute is
+ * valid on any element). Closing tags, comments, doctype, and the `<!`/`<?`
+ * families are left alone. A tag that ALREADY has a `data-wd-scope` (e.g. a
+ * nested include with its own scope) keeps its own — first stamp wins.
+ * @param {string} html Subtree HTML to scope.
+ * @param {string} scopeId Scope id (from {@link import("../skin.js").scopeIdFor}).
+ * @returns {string}
+ */
+export function stampScope(html, scopeId) {
+  return html.replace(
+    /<([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g,
+    (tag, name, attrs, slash) => {
+      if (/\bdata-wd-scope\s*=/.test(attrs)) return tag;
+      return `<${name}${attrs} data-wd-scope="${scopeId}"${slash ? " /" : ""}>`;
+    }
+  );
 }
 
 /**

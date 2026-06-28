@@ -22,5 +22,6 @@ export {
   enhanceImages,
   escapeHtml,
   loopKeyOf,
-  parseFrontmatter
+  parseFrontmatter,
+  stampScope
 } from "./compiler/index.js";
