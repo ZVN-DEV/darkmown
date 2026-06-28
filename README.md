@@ -692,6 +692,39 @@ The block must follow the element with no space, and works on links, images, emp
 
 Darkmown's shipped CSP pre-authorizes exactly the two embed origins (`youtube-nocookie.com`, `player.vimeo.com`) and `media-src 'self' https:`, so embeds and remote media work out of the box on the bundled server, Cloudflare `_headers`, and Vercel.
 
+## Syntax highlighting
+
+*New in 1.3.* Fenced code blocks with a language are highlighted at **build time** — HTML and CSS only, no client JavaScript. Tag the fence with a language and it just works:
+
+````md
+```js
+const greeting = "Darkmown"; // highlighted at build time
+```
+````
+
+The highlighter is [highlight.js](https://highlightjs.org/) and is not configurable (one closed default, like the rest of the framework). Its token classes map onto your skin's `$code-*` tokens, so highlighted code **dark-modes for free** through the same [`tokens dark` / `:theme`](#dark-mode--tokens-dark) system below — no extra wiring. Tune the palette (or rely on the built-in default set) in your `.skin`:
+
+```skin
+tokens
+  code-bg #1b2420
+  code-fg #e9efe7
+  code-keyword #d9a8e0
+  code-string #97d892
+  code-comment #859289
+  code-function #88c4ee
+  code-number #ecae78
+  code-punctuation #c1ccc6
+tokens dark
+  code-bg #100d0a
+  code-keyword #e2b9e8
+```
+
+- **Pay-for-what-you-use.** The stylesheet (`/__wd/highlight.css`) is emitted and linked **only** on pages that actually contain a highlighted block — a page with no code ships nothing extra.
+- **Zero runtime.** Highlighting is build-time output, so a page of prose plus code stays `runtime: false` (no `/__wd/runtime.js`). It never pulls in the reactive runtime.
+- **Graceful degradation.** A fence with an unknown or absent language renders as plain escaped `<code>` (no highlighting, no error). Inline `` `code` `` is never highlighted, and there are deliberately **no line numbers** (they break copy-paste).
+
+See it recolor live on the [Syntax highlighting demo](https://darkmown.com/highlight/) — flip the theme toggle and every block recolors at once.
+
 ## Dark mode — `tokens dark`
 
 *New in 0.19.0.* A colocated `.skin` file already declares its palette in a `tokens` block (`name value` pairs referenced elsewhere as `$name`). Add a second `tokens dark` block to override any of those tokens under the visitor's OS dark preference — it compiles to a `@media (prefers-color-scheme: dark) :root { … }` rule, so the page follows the system theme with **zero JavaScript**.

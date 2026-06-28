@@ -57,6 +57,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "highlight.js": "^11.11.1",
     "image-size": "^1.2.1",
     "markdown-it": "^14.2.0"
   },

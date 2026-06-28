@@ -408,6 +408,35 @@ Three compile-time-only directives (they emit no `data-wd-*`, so a media page st
 
 `:video`/`:audio` emit a hardened HTML5 player — `preload="metadata"` and `controls` by default, whitelisted flags (`autoplay` implies `muted`), and the `:fetch` URL scheme guard. `:embed` rewrites a YouTube/Vimeo link to its no-cookie/player form in a lazy, responsive `16/9` iframe. See the zero-JS [Media demo](/media/).
 
+## Syntax highlighting
+
+Fenced code blocks with a language are highlighted at **build time** — HTML and CSS only, no client JavaScript. Tag the fence with a language:
+
+````md
+```js
+const greeting = "Darkmown"; // highlighted at build time
+```
+````
+
+The highlighter is [highlight.js](https://highlightjs.org/) and isn't configurable (one closed default, like everything else). It maps onto your skin's `$code-*` tokens, so highlighted code **dark-modes for free** through the same `tokens dark` / `:theme` system — no extra wiring. Define the palette once:
+
+```
+tokens
+  code-bg #1b2420
+  code-fg #e9efe7
+  code-keyword #d9a8e0
+  code-string #97d892
+  code-comment #859289
+  code-function #88c4ee
+  code-number #ecae78
+  code-punctuation #c1ccc6
+tokens dark
+  code-bg #100d0a
+  code-keyword #e2b9e8
+```
+
+The framework ships a small default `$code-*` set, so highlighting looks right out of the box. The stylesheet is **pay-for-what-you-use**: it's emitted and linked only on pages that actually contain a highlighted block — a page with no code ships nothing extra. A fence with an unknown or absent language renders as plain escaped `<code>` (no highlighting, no error); inline `` `code` `` is never highlighted, and there are deliberately no line numbers (they break copy-paste). See the live [Syntax highlighting demo](/highlight/).
+
 ## Trust boundary
 
 Darkmown is a trusted-author site generator: you compile content you wrote, the way you trust your own source. Three things define that boundary.

@@ -5,6 +5,7 @@ import { discoverApiRoutes } from "./api-runner.js";
 import { compilePage } from "./compiler.js";
 import { createPaths } from "./config.js";
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
+import { HIGHLIGHT_CSS } from "./highlight.js";
 import { discoverRoutes, outputPathForRoute } from "./router.js";
 import { compileSkin } from "./skin.js";
 
@@ -66,6 +67,7 @@ export function buildSite(cwd = process.cwd(), options = {}) {
     emitAssets(page.assets, paths);
     if (page.assets.runtime) emitRuntime(paths);
     emitBehaviors(page.assets, paths);
+    if (page.assets.hasCode) emitHighlight(paths);
     const behaviorSrcs = [...page.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
     manifest.push({
       route: route.route,
@@ -385,6 +387,22 @@ function emitBehaviors(assets, paths) {
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, stripRuntimeComments(source));
   }
+}
+
+/**
+ * Emit the framework syntax-highlighting stylesheet `/__wd/highlight.css`, called
+ * only for a page that has a build-time-highlighted code block (`assets.hasCode`).
+ * It is CSS only — highlighting is build-time HTML + this stylesheet, with zero
+ * runtime JS — and maps highlight.js token classes onto the `$code-*` skin tokens,
+ * so code dark-modes for free through `tokens dark` / `:theme`. Idempotent: writing
+ * the same content per code-bearing page is harmless and keeps the call site simple.
+ * @param {Paths} paths
+ * @returns {void}
+ */
+function emitHighlight(paths) {
+  const out = path.join(paths.distRoot, "__wd/highlight.css");
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, HIGHLIGHT_CSS);
 }
 
 /**

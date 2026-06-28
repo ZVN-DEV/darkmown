@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { imageSize } from "image-size";
+import { htmlHasHighlight } from "../highlight.js";
 import { compileBody } from "./body.js";
 import { createCompilation, createScope } from "./context.js";
 import { parseFrontmatter, warnLikelyFrontmatter } from "./frontmatter.js";
@@ -58,7 +59,13 @@ export function compilePage(file, context) {
   const descriptionTag = social.length ? `\n  ${social.join("\n  ")}` : "";
   const favicon =
     "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='bold'%20fill='%23f7f3ea'%3ED%3C/text%3E%3C/svg%3E";
-  const cssLinks = [...compiled.assets.skins]
+  // The framework highlight stylesheet rides ahead of page skins so a project's
+  // own `$code-*` tokens / overrides still cascade over it. Pay-for-what-you-use:
+  // linked only on pages with a highlighted code block (`hasCode`).
+  const highlightLink = compiled.assets.hasCode
+    ? [`<link rel="stylesheet" href="/__wd/highlight.css">`]
+    : [];
+  const cssLinks = [...highlightLink, ...compiled.assets.skins]
     .map((href) => `<link rel="stylesheet" href="${href}">`)
     .join("\n");
   // Pay-for-what-you-use behavior modules (slider is compile-time and never here;
@@ -253,7 +260,9 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
 
   if (path.extname(file) === ".md") {
     scanMarkdownHints(body, file, comp);
-    return { meta, html: selectMd(meta).render(body, {}) };
+    const html = selectMd(meta).render(body, {});
+    if (htmlHasHighlight(html)) comp.assets.hasCode = true;
+    return { meta, html };
   }
 
   // Expose this file's frontmatter to the body under `meta` so `{ meta.title }`,
@@ -269,5 +278,7 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
     loopItem,
     md: selectMd(meta)
   };
-  return { meta, html: compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx) };
+  const html = compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx);
+  if (htmlHasHighlight(html)) comp.assets.hasCode = true;
+  return { meta, html };
 }

@@ -32,6 +32,9 @@
  * @property {Set<string>} behaviors Names of framework behavior modules this page
  *   needs (`slider` is compile-time only and never appears here; `sortable`,
  *   `carousel` each emit a pay-for-what-you-use `/__wd/behaviors/<name>.js`).
+ * @property {boolean} hasCode Whether the page has a build-time-highlighted code
+ *   block, so the framework highlight stylesheet (`/__wd/highlight.css`) is
+ *   emitted and linked — pay-for-what-you-use, zero JS.
  */
 
 /**
@@ -140,7 +143,8 @@ export function createCompilation() {
       scripts: new Set(),
       files: new Map(),
       runtime: false,
-      behaviors: new Set()
+      behaviors: new Set(),
+      hasCode: false
     },
     state: new Map(),
     stores: new Set(),

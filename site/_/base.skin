@@ -26,6 +26,13 @@ tokens
   code-bg #1b2420
   code-ink #e9efe7
   code-line #2c3b34
+  code-fg #e9efe7
+  code-keyword #d9a8e0
+  code-string #97d892
+  code-comment #859289
+  code-function #88c4ee
+  code-number #ecae78
+  code-punctuation #c1ccc6
   ring #0f6b5e
   radius 12px
   radius-sm 8px
@@ -51,6 +58,13 @@ tokens dark
   code-bg #100d0a
   code-ink #e4ebe2
   code-line #2a231b
+  code-fg #e4ebe2
+  code-keyword #e2b9e8
+  code-string #a6e0a1
+  code-comment #7c8983
+  code-function #9bd0f4
+  code-number #f2bb8a
+  code-punctuation #b6c2bc
   ring #5ccab4
 
 /* ── Reset & base ───────────────────────────────────────────────── */
