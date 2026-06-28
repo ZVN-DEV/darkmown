@@ -2,6 +2,15 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 1.3.0 — 2026-06-28
+
+The "table-stakes batteries" release — the build-time, zero-JS features a markdown site is expected to ship. The runtime is unchanged (still 7459 B gzipped, well under the 8 KB budget); everything here is compile-time HTML/CSS or build output.
+
+- **Syntax highlighting.** Fenced code blocks with a known language are highlighted at compile time (via `highlight.js` through markdown-it) — HTML plus a small stylesheet, **zero client JS**. Colors are driven by a new `$code-*` skin-token set (`code-bg`, `code-fg`, `code-keyword`, `code-string`, `code-comment`, `code-function`, `code-number`, `code-punctuation`), so code **dark-modes for free** through the existing `tokens dark` / `:theme` system — override any token in your own `.skin`. The stylesheet (`/__wd/highlight.css`) ships **only on pages that contain a highlighted block** (pay-for-what-you-use). Unknown/absent languages degrade to plain escaped `<code>`; inline code and line numbers are intentionally excluded; a prose+code page stays `runtime: false`.
+- **RSS + sitemap.xml + robots.txt.** `darkmown build` now emits `sitemap.xml`, `rss.xml`, and `robots.txt` at build time. Site identity lives in **one reserved home-page frontmatter field, `site_url`** (absolute origin) — which reuses the home `title`/`description` as the RSS channel and acts as the trigger; no config file is introduced. The sitemap lists every published route with a `<lastmod>` (frontmatter `date` → git last-commit date → file mtime). Any page with a `date:` becomes an RSS item (newest-first, capped; description from `excerpt:` → `description:` → first paragraph of a `.md`); an `<link rel="alternate" type="application/rss+xml">` is injected into every page `<head>`. With no `site_url`, `robots.txt` still emits (without the `Sitemap:` line) and the feeds are skipped with a build hint — never a crash.
+- **Drafts.** `draft: true` frontmatter excludes a page from a production build — gone from `dist`, `routes.json`, the sitemap, and the feed (even if it has a `date:`). `darkmown dev` still builds and serves drafts with a dev-only banner; `darkmown build --drafts` includes them (for staging). Drafts are filtered at route discovery, so a feed can never leak one. This is distinct from the permanent `.`/`-`/`_` filename-prefix hiding: use a prefix to hide a file forever, `draft: true` to hide a page you intend to publish later.
+- **New public frontmatter:** `site_url` (home page), `draft`, `date`, `excerpt`. New build flag: `--drafts`. The `blog` starter template now ships working feeds out of the box.
+
 ## 1.2.1 — 2026-06-27
 
 Repository hygiene and documentation polish from a gold-standard audit (50/50 — every dimension at React-tier). No runtime, API, or behavior change; the shipped package is byte-identical except for one source comment.
