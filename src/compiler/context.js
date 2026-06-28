@@ -35,6 +35,10 @@
  * @property {boolean} hasCode Whether the page has a build-time-highlighted code
  *   block, so the framework highlight stylesheet (`/__wd/highlight.css`) is
  *   emitted and linked — pay-for-what-you-use, zero JS.
+ * @property {Set<string>} scopedSkins Source paths of colocated `.skin` files
+ *   that opted into scoping (`scoped` first line). The builder emits these with
+ *   the scope attribute and runs the unused-selector warning against the stamped
+ *   subtree; the HTML stamp uses them to scope the matching page/include subtree.
  */
 
 /**
@@ -144,7 +148,8 @@ export function createCompilation() {
       files: new Map(),
       runtime: false,
       behaviors: new Set(),
-      hasCode: false
+      hasCode: false,
+      scopedSkins: new Set()
     },
     state: new Map(),
     stores: new Set(),

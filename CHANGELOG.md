@@ -2,6 +2,15 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 1.4.0 — 2026-06-28
+
+Scoped styles — the long-standing "`.skin` selectors are global" gap, closed. Opt-in, compile-time, and **zero runtime** (the shared runtime is still 7459 B gzipped; nothing new ships to the client but one HTML attribute and one attribute selector).
+
+- **`scoped` skins.** Put `scoped` as the first line of a `.skin` file and its selectors apply only to the page or include it ships with — so two components can reuse the same class name (`.card`) without colliding. The compiler appends a per-file `[data-wd-scope="wd-xxxx"]` attribute to each selector's subject and stamps the matching subtree's HTML; the scope id is a stable hash of the skin's path. Selectors compose as you'd expect: descendant selectors scope only the subject, comma lists scope each branch, `@media`/`@supports` wrappers pass through, and `&`-nesting/pseudo-classes resolve before the attribute is attached.
+- **Tokens stay global.** A `tokens` / `tokens dark` block in a `scoped` skin still emits global `:root` custom properties, so `var(--…)`, dark mode, `:theme`, and the `$code-*` highlight tokens keep working across the whole site — only your component's selector rules are scoped.
+- **`:global(...)` escape hatch** for a whole selector that must stay global (e.g. a class you portal elsewhere). Page-level selectors (`page`, `*`, `html`, `body`, `::selection`) are rejected in a scoped skin with a corrective hint — those belong in a global design-system skin.
+- **Fully backward compatible.** A `.skin` without the `scoped` marker is unchanged, byte-for-byte (covered by a golden test). Existing global skins — `base.skin`, `nav.skin`, every scaffolded project — keep styling the whole site exactly as before. Unused scoped selectors produce a build *warning* (never silently removed, since a colocated `.js` behavior may add the class at runtime).
+
 ## 1.3.0 — 2026-06-28
 
 The "table-stakes batteries" release — the build-time, zero-JS features a markdown site is expected to ship. The runtime is unchanged (still 7459 B gzipped, well under the 8 KB budget); everything here is compile-time HTML/CSS or build output.

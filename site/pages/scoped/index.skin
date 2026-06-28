@@ -1,0 +1,23 @@
+scoped
+
+/* Page-scoped skin for this route. The whole page body is stamped, so these
+   selectors style only this page's own markup — proving page-level scoping
+   alongside the two include-scoped components. A :global() escape hatch shows a
+   single rule opting back out to a plain, unscoped selector. */
+
+.intro
+  margin 2rem 0 3rem
+
+.duo
+  margin 3rem 0
+
+.how
+  margin 4rem 0 2rem
+
+.how ul
+  color $ink-soft
+
+/* :global escape — this selector ships UNSCOPED, matching site-wide. */
+:global(.scoped-note)
+  font-size .85rem
+  color $muted

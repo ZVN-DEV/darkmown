@@ -20,4 +20,4 @@
 export { parseFrontmatter } from "./frontmatter.js";
 export { escapeHtml } from "./interpolation.js";
 export { loopKeyOf } from "./loops.js";
-export { compileDocument, compilePage, enhanceImages } from "./page.js";
+export { compileDocument, compilePage, enhanceImages, stampScope } from "./page.js";

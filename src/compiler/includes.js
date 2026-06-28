@@ -6,6 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { scopeIdFor } from "../skin.js";
 import { pageIncludeExtensions } from "./context.js";
 import { stripQuotes } from "./interpolation.js";
 
@@ -14,6 +15,47 @@ import { stripQuotes } from "./interpolation.js";
  * @typedef {import("./context.js").Assets} Assets
  * @typedef {import("./context.js").Compilation} Compilation
  */
+
+/**
+ * Read a `.skin` file's first meaningful line (skipping `//` line comments,
+ * `/* … *\/` block comments, blanks, and decorative dividers — the same skip
+ * rules `compileSkin` applies) to decide whether it opts into scoping. A skin
+ * scopes its selectors ONLY when that first line is exactly `scoped`; otherwise
+ * it is global and untouched. This is the single source for "is this skin
+ * scoped + what is its id", so the CSS rewrite (builder) and the HTML stamp
+ * (page/include) always agree on both.
+ * @param {string} skinPath Absolute path to the colocated `.skin` file.
+ * @param {string} cwd Project root, for the path-based scope id.
+ * @returns {{ scoped: boolean, scopeId: string }}
+ */
+export function scopeInfoForSkin(skinPath, cwd) {
+  const rel = path.relative(cwd, skinPath).replaceAll(path.sep, "/");
+  const scopeId = scopeIdFor(rel);
+  const src = fs.readFileSync(skinPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const raw of src.split("\n")) {
+    const t = raw.trim();
+    if (!t || t.startsWith("//") || !/[A-Za-z0-9]/.test(t)) continue;
+    return { scoped: t === "scoped", scopeId };
+  }
+  return { scoped: false, scopeId };
+}
+
+/**
+ * The scope info for a page/include's OWN colocated `.skin` sibling, or null
+ * when there is no sibling skin. Used by the HTML stamp sites: a route's own
+ * scoped skin → stamp the page body; an include's scoped skin → stamp the
+ * returned subtree. Resolution mirrors `collectColocatedAssets` (same stem,
+ * `.skin` extension).
+ * @param {string} file Absolute path to the page/include source file.
+ * @param {Paths} context
+ * @returns {{ scoped: boolean, scopeId: string } | null}
+ */
+export function scopedSkinFor(file, context) {
+  const ext = path.extname(file);
+  const candidate = `${file.slice(0, -ext.length)}.skin`;
+  if (!fs.existsSync(candidate)) return null;
+  return scopeInfoForSkin(candidate, context.cwd);
+}
 
 /**
  * Register a page's colocated `.skin`/`.js` siblings as emitted assets.
@@ -35,7 +77,12 @@ export function collectColocatedAssets(file, context, assets) {
     const outputExt = assetExt === ".skin" ? ".css" : ".js";
     const publicPath = `/__wd/${folder}/${rel.slice(0, -assetExt.length).replace(/[/.]/g, "_")}${outputExt}`;
     assets.files.set(candidate, publicPath);
-    if (assetExt === ".skin") assets.skins.add(publicPath);
+    if (assetExt === ".skin") {
+      assets.skins.add(publicPath);
+      // Surface "this skin is scoped" so the warning pass (builder) and the HTML
+      // stamp can find the scoped skins among all colocated ones by source path.
+      if (scopeInfoForSkin(candidate, context.cwd).scoped) assets.scopedSkins.add(candidate);
+    }
     if (assetExt === ".js") assets.scripts.add(publicPath);
   }
 }

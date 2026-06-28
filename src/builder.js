@@ -17,7 +17,7 @@ import {
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
 import { HIGHLIGHT_CSS } from "./highlight.js";
 import { discoverRoutes, outputPathForRoute } from "./router.js";
-import { compileSkin } from "./skin.js";
+import { compileSkin, scopeIdFor } from "./skin.js";
 
 /**
  * @typedef {import("./config.js").Paths} Paths
@@ -91,7 +91,7 @@ export function buildSite(cwd = process.cwd(), options = {}) {
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, page.html);
     if (route.route === "/404/") notFoundHtml = page.html;
-    emitAssets(page.assets, paths);
+    emitAssets(page.assets, paths, page.html, warned);
     if (page.assets.runtime) emitRuntime(paths);
     emitBehaviors(page.assets, paths);
     if (page.assets.hasCode) emitHighlight(paths);
@@ -544,20 +544,93 @@ function emitHighlight(paths) {
 }
 
 /**
+ * Emit a page's colocated assets. `.skin` files compile through {@link compileSkin}
+ * (other files copy verbatim). A skin that opted into scoping (`assets.scopedSkins`)
+ * compiles in scoped mode: the scope id is derived here from its PROJECT-RELATIVE
+ * PATH — the single coordination point with the HTML stamp, which derives the same
+ * id from the same path — and threaded into `compileSkin({ scope })`. The compiler
+ * also reports the scoped subject selectors, which we check against the stamped page
+ * HTML to warn (never remove) on a scoped selector that matches no element.
  * @param {Assets} assets
  * @param {Paths} paths
+ * @param {string} pageHtml Assembled page HTML (carries the `data-wd-scope` stamps).
+ * @param {Set<string>} warned Cross-route dedupe set for emitted hints.
  * @returns {void}
  */
-function emitAssets(assets, paths) {
+function emitAssets(assets, paths, pageHtml, warned) {
   for (const [source, href] of assets.files) {
     const out = path.join(paths.distRoot, href);
     fs.mkdirSync(path.dirname(out), { recursive: true });
     if (source.endsWith(".skin")) {
-      fs.writeFileSync(out, compileSkin(fs.readFileSync(source, "utf8")));
+      const src = fs.readFileSync(source, "utf8");
+      if (assets.scopedSkins.has(source)) {
+        const rel = path.relative(paths.cwd, source).replaceAll(path.sep, "/");
+        const scope = scopeIdFor(rel);
+        /** @type {Set<string>} */
+        const subjects = new Set();
+        fs.writeFileSync(out, compileSkin(src, { scope, subjects }));
+        warnUnusedScoped(subjects, scope, pageHtml, path.basename(source), warned);
+      } else {
+        fs.writeFileSync(out, compileSkin(src));
+      }
     } else {
       fs.copyFileSync(source, out);
     }
   }
+}
+
+/**
+ * Warn (do NOT remove) when a scoped selector's subject never appears in its
+ * stamped subtree — a likely typo or stale rule. We only have a class/element/id
+ * to look for, so we scan the elements actually stamped with THIS scope id in the
+ * assembled page and check each subject against them. A colocated `.js` may add
+ * classes at runtime, so this stays advisory: the rule is always emitted. An empty
+ * subject token (a bare attribute-selector subject) is unknowable here and skipped.
+ * @param {Set<string>} subjects Scoped subject tokens (`.card`, `h2`, `#id`).
+ * @param {string} scope Scope id.
+ * @param {string} pageHtml Assembled page HTML.
+ * @param {string} skinName Skin filename for the message.
+ * @param {Set<string>} warned Cross-route dedupe set.
+ * @returns {void}
+ */
+function warnUnusedScoped(subjects, scope, pageHtml, skinName, warned) {
+  // The opening tags carrying this scope id — the only elements the scoped
+  // stylesheet can match. One scan, reused for every subject.
+  const stamped = pageHtml.match(
+    new RegExp(`<[a-zA-Z][\\w-]*[^>]*\\bdata-wd-scope="${scope}"[^>]*>`, "g")
+  );
+  const tags = stamped ?? [];
+  for (const subject of subjects) {
+    if (!subject) continue;
+    const present = tags.some((tag) => subjectMatchesTag(subject, tag));
+    if (present) continue;
+    const warning = `scoped selector "${subject}" in ${skinName} matches no element`;
+    if (warned.has(warning)) continue;
+    warned.add(warning);
+    console.warn(`hint: ${warning}`);
+  }
+}
+
+/**
+ * Whether a scoped subject token (`.card` / `#id` / a bare tag like `h2`) could
+ * match a single stamped opening tag. Class subjects look in the tag's `class`
+ * attribute; id subjects in `id`; a bare tag compares the element name.
+ * @param {string} subject
+ * @param {string} tag A single opening tag string.
+ * @returns {boolean}
+ */
+function subjectMatchesTag(subject, tag) {
+  if (subject.startsWith(".")) {
+    const cls = subject.slice(1);
+    const m = tag.match(/\bclass\s*=\s*"([^"]*)"/);
+    return m ? m[1].split(/\s+/).includes(cls) : false;
+  }
+  if (subject.startsWith("#")) {
+    const m = tag.match(/\bid\s*=\s*"([^"]*)"/);
+    return m ? m[1] === subject.slice(1) : false;
+  }
+  const name = tag.match(/^<([a-zA-Z][\w-]*)/);
+  return name ? name[1].toLowerCase() === subject.toLowerCase() : false;
 }
 
 /**

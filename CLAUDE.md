@@ -21,12 +21,15 @@ Flow: `compilePage` → `compileDocument` → `compileFile` → `compileBody` �
 
 Runtime render order matters: computed → if-regions (skip when branch unchanged) → keyed loop reconcile → text binds.
 
+Styling: `src/skin.js`'s `compileSkin` turns an indentation-structural `.skin` into CSS (pure string→string; it knows nothing of paths). **Scoped styles** are opt-in and pure compile-time: a `.skin` whose first line is `scoped` compiles with `compileSkin(src, { scope })`, which appends `[data-wd-scope="<id>"]` to each selector's *subject* (after `&`-nesting, before any pseudo) while leaving `tokens`/`:root` GLOBAL; the matching id is stamped onto the subtree's HTML by `stampScope` (page body for a page skin, the include's subtree in `handleInclude` for an include skin). The id is a hash of the skin's project-relative path, computed in `builder.js` (the coordination point) and re-derived identically by the stamp. No runtime, no `data-wd-*` marker — a scoped static page stays static.
+
 ## Invariants — do not break
 
 - `.md` never gets directive behavior. The extension is the feature gate.
 - One loop (`@loop … into … @endloop`), one interpolation syntax (`{ name }`). Never add alternates.
 - Directive actions and `:computed`/`@loop … where` expressions are compile-time-validated whitelists. No eval of raw user content, but validated expressions compile to a whitelisted grammar and run via `new Function` (`src/runtime.js`). `constructor`/`prototype`/`__proto__` path segments are rejected in compiler AND runtime (`getPath`).
 - Includes resolve only inside `site/pages` and `site/_` (traversal + cycle checks in `resolveInclude`/`compileFile`).
+- Scoping is opt-in via the `scoped` first line and pure compile-time. Never scope the token/`:root` path; never touch `src/runtime.js` for it. A non-`scoped` `.skin` must stay byte-identical (golden-tested against `base.skin`).
 - Static pages must emit `runtime: false` in `dist/routes.json`. Adding a feature that flips static pages reactive is a regression.
 - Compile errors include file path + corrective suggestion ("Use: @loop …").
 

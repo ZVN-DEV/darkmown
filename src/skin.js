@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 const aliases = new Map([
   ["radius", "border-radius"],
   ["shadow", "box-shadow"],
@@ -20,6 +22,29 @@ function resolveProp(prop, rest) {
 }
 
 /**
+ * Derive a short, deterministic scope id from a skin's PROJECT-RELATIVE PATH.
+ * Path-based (stable across content edits, unique per component file) and short
+ * enough to read in the emitted CSS (`wd-7c21`). The same path always yields the
+ * same id, so the CSS rewrite (builder) and the HTML stamp (page/include) agree
+ * without sharing state — they just hash the same relative path. The path is
+ * normalized to POSIX separators first so a build is identical on Windows.
+ * @param {string} relPath Skin path relative to the project root (cwd).
+ * @returns {string} The scope id, e.g. `wd-7c21`.
+ */
+export function scopeIdFor(relPath) {
+  const posix = relPath.replaceAll("\\", "/");
+  const hash = crypto.createHash("sha256").update(posix).digest("hex");
+  return `wd-${hash.slice(0, 4)}`;
+}
+
+// Selectors that style the whole page, not a component subtree. In a `scoped`
+// skin they are a mistake: scoping appends an attribute to the *subject* element,
+// so `page`/`body`/`html`/`*`/`::selection` would either become a no-op (no
+// element in the subtree carries the attribute on <body>/<html>) or silently
+// fail to do what the author means. We error and point them at a global skin.
+const PAGE_LEVEL_SELECTORS = new Set(["page", "*", "html", "body", "::selection"]);
+
+/**
  * A nesting frame in the indentation stack.
  * @typedef {object} SkinFrame
  * @property {number} indent
@@ -29,10 +54,25 @@ function resolveProp(prop, rest) {
 
 /**
  * Compile indentation-based `.skin` source into CSS.
+ *
+ * Scoping (opt-in): when `opts.scope` is set the skin is compiled in scoped
+ * mode — every selector RULE gets `[data-wd-scope="<id>"]` appended to the
+ * subject of each compound selector, so the stylesheet only ever matches inside
+ * the stamped subtree. Design tokens (`tokens` / `tokens dark` / `tokens [attr]`)
+ * stay GLOBAL on `:root` regardless, so `var(--x)` and dark mode keep working
+ * site-wide. A whole-selector `:global(.x)` escapes scoping. Page-level selectors
+ * (`page`/`*`/`html`/`body`/`::selection`) are a compile error in scoped mode.
+ * Without `opts.scope`, output is byte-identical to before this feature existed.
  * @param {string} source
+ * @param {{ scope?: string, subjects?: Set<string> }} [opts] `scope`: the scope
+ *   id enabling scoped mode. `subjects`: an optional set the compiler fills with
+ *   every scoped subject token (`.card`, `h2`, `#id`) for the unused-selector
+ *   warning, so the caller need not re-parse the source.
  * @returns {string}
  */
-export function compileSkin(source) {
+export function compileSkin(source, opts = {}) {
+  const scope = opts.scope;
+  const subjects = opts.subjects;
   const lines = source
     .replace(/\r\n?/g, "\n")
     .replace(/\/\*[\s\S]*?\*\//g, "") // strip /* … */ block comments (any span)
@@ -46,6 +86,19 @@ export function compileSkin(source) {
       return /[A-Za-z0-9]/.test(t);
     })
     .map((raw) => ({ indent: (raw.match(/^\s*/)?.[0] ?? "").length, text: raw.trim() }));
+
+  // The opt-in marker: `scoped` must be the FIRST meaningful line (the filter
+  // above has already dropped comments, blanks, and dividers). Anywhere else it
+  // is an error — a `scoped` mid-file means the author misread the contract.
+  let start = 0;
+  if (scope && lines.length && lines[0].text === "scoped" && lines[0].indent === 0) {
+    start = 1;
+  }
+  for (let i = start; i < lines.length; i++) {
+    if (lines[i].text === "scoped" && lines[i].indent === 0) {
+      throw new Error('"scoped" must be the first line of a .skin file');
+    }
+  }
 
   /** @type {SkinFrame[]} */
   const stack = [];
@@ -65,7 +118,7 @@ export function compileSkin(source) {
   /** @type {Map<string, string[]>} */
   const attrVars = new Map();
 
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = start; i < lines.length; i++) {
     const { indent, text } = lines[i];
     // Structure decides meaning: a line opens a block (selector) exactly when
     // the next line is indented deeper. Everything else is a declaration.
@@ -119,17 +172,28 @@ export function compileSkin(source) {
       if (text.startsWith("@")) {
         stack.push({ indent, selector: parent ?? null, media: text });
       } else {
+        if (scope) guardPageLevel(text, parent);
         stack.push({ indent, selector: normalizeSelector(text, parent) });
       }
       continue;
     }
 
     const current = stack.at(-1)?.selector || ":root";
+    // A leaf with no enclosing selector lands on `:root` — a page-level write. In
+    // a scoped skin that is the same mistake `guardPageLevel` rejects (and the
+    // place a filtered bare `*`/`page` reset would otherwise leak through to), so
+    // it errors with the same hint instead of emitting a never-matching rule.
+    if (scope && current === ":root") {
+      throw new Error(
+        `page-level declaration "${text}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`
+      );
+    }
     const media = stack.find((frame) => frame.media)?.media;
     const [prop, ...rest] = text.split(/\s+/);
     const cssProp = resolveProp(prop, rest);
     const value = rest.join(" ").replace(/\$([a-zA-Z0-9_-]+)/g, "var(--$1)");
-    const rule = `${current} { ${cssProp}: ${value}; }`;
+    const subject = scope ? scopeSelector(current, scope, subjects) : current;
+    const rule = `${subject} { ${cssProp}: ${value}; }`;
     css.push(media ? `${media} { ${rule} }` : rule);
   }
 
@@ -151,6 +215,86 @@ export function compileSkin(source) {
   }
   if (rootVars.length) css.unshift(`:root {\n${rootVars.join("\n")}\n}`);
   return css.join("\n");
+}
+
+/**
+ * Reject page-level selectors in a scoped skin. Checks the AUTHORED selector
+ * text (before `page`→`body` rewrite) so `page` is caught by name. Each
+ * comma-separated part is inspected; a bare top-level selector (no parent) that
+ * is one of the page-level set, or a top-level `::selection`, errors with a hint
+ * pointing the author at a global skin.
+ * @param {string} text Raw selector line.
+ * @param {string | null | undefined} parent Enclosing selector, if nested.
+ * @returns {void}
+ */
+function guardPageLevel(text, parent) {
+  // Only TOP-LEVEL selectors are page-level mistakes — `.card *` (a descendant
+  // wildcard inside a component) is fine, so the check applies when there is no
+  // parent selector chain (`:root` is the implicit root, treated as none).
+  if (parent && parent !== ":root") return;
+  for (const part of text.split(",")) {
+    const clean = part.trim();
+    if (PAGE_LEVEL_SELECTORS.has(clean)) {
+      throw new Error(
+        `page-level selector "${clean}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`
+      );
+    }
+  }
+}
+
+/**
+ * Append the scope attribute to a resolved selector list (post `&`-nesting).
+ * Each comma-separated compound selector gets `[data-wd-scope="<id>"]` on its
+ * SUBJECT (rightmost simple selector), inserted BEFORE any trailing
+ * pseudo-class/element so the result stays valid CSS (`.card[…]:hover`, never
+ * `.card:hover[…]`). A whole-selector `:global(.x)` unwraps to a plain `.x` with
+ * NO attribute — the documented escape hatch (whole-selector only this release).
+ * @param {string} selectorList Resolved selector list (may contain commas).
+ * @param {string} scope Scope id.
+ * @param {Set<string>} [subjects] Optional sink for subject tokens (warning).
+ * @returns {string}
+ */
+function scopeSelector(selectorList, scope, subjects) {
+  return selectorList
+    .split(",")
+    .map((part) => {
+      const clean = part.trim();
+      // Whole-selector `:global(.toast)` → `.toast`, unscoped. Descendant
+      // `:global` (`.card :global(.x)`) is intentionally NOT supported yet.
+      const global = clean.match(/^:global\(\s*(.+?)\s*\)$/);
+      if (global) return global[1];
+      // The subject is the last whitespace-delimited compound. Combinators
+      // (`>`, `+`, `~`) stand as their own tokens, so the subject is whatever
+      // follows the final combinator/descendant gap.
+      const tokens = clean.split(/\s+/);
+      const subjectIndex = tokens.length - 1;
+      const lead = tokens.slice(0, subjectIndex);
+      const subject = tokens[subjectIndex];
+      // Split the subject into its base (tag/class/id, plus attribute selectors)
+      // and any trailing pseudo `:hover` / `::before`. The attribute slots in at
+      // the base/pseudo seam: `.card::before` → `.card[scope]::before`.
+      const seam = subject.search(/::?[a-zA-Z-]/);
+      const base = seam === -1 ? subject : subject.slice(0, seam);
+      const pseudo = seam === -1 ? "" : subject.slice(seam);
+      if (subjects) subjects.add(subjectBase(base));
+      const scoped = `${base}[data-wd-scope="${scope}"]${pseudo}`;
+      return [...lead, scoped].join(" ");
+    })
+    .join(", ");
+}
+
+/**
+ * Reduce a scoped subject base to the single token the unused-selector warning
+ * checks against the stamped subtree: the leading `.class`, `#id`, or bare tag,
+ * dropping any chained attribute selectors (`a[href]` → `a`). Returns `""` for a
+ * subject that has no checkable token (a bare attribute selector), which the
+ * caller treats as "always present" (never warns).
+ * @param {string} base
+ * @returns {string}
+ */
+function subjectBase(base) {
+  const m = base.match(/^([.#]?[A-Za-z_][\w-]*)/);
+  return m ? m[1] : "";
 }
 
 /**
