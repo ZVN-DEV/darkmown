@@ -6,6 +6,7 @@
 //   frontmatter.js    `---` block → meta + body, inline scalar/array parsing
 //   includes.js       @include / @loop-data resolution, colocated assets, .md hints
 //   predicates.js     where / when / :if / :computed expression compilers
+//   format.js         { value | pipe } format pipes + list aggregates (value layer)
 //   markdown.js       markdown-it instances + plugins + prose interpolation
 //   loops.js          @loop pipeline + row-template initial-paint fill
 //   directives.js     the handle* family + :button action parser + demo directives

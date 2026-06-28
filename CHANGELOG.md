@@ -2,6 +2,14 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 1.2.1 — 2026-06-27
+
+Repository hygiene and documentation polish from a gold-standard audit (50/50 — every dimension at React-tier). No runtime, API, or behavior change; the shipped package is byte-identical except for one source comment.
+
+- **Architecture docs name the value layer.** `src/compiler/format.js` (format pipes + list aggregates) is now listed in the compiler module map in both `CLAUDE.md` and `src/compiler/index.js` — previously the only module in the compile path absent from the architecture doc.
+- **Honest CI labels.** The coverage-gate job was labeled "src-only line ≥ 90%" but `npm run test:cov` has always enforced **100%** (`scripts/test-coverage-gate.mjs 100`). The job name and its comment now state the real bar.
+- **Tighter ignore rules.** `.env` / `.env.*` are now gitignored (the build's hidden-segment asset guard already kept them out of `dist`; this stops one from ever reaching git), and a stale internal design spec that predated the `docs/superpowers/` ignore rule is no longer tracked.
+
 ## 1.2.0 — 2026-06-27
 
 Backends, deploy, and rich interactions — all additive. The core runtime is unchanged (still well under the 8 KB budget); the new behavior modules are budgeted separately so static pages stay zero-JS.

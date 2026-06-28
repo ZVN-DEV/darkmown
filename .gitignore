@@ -8,6 +8,11 @@ dist/
 /*.png
 screenshots/
 
+# Local environment / secrets (the dist asset-guard also excludes these,
+# but never let a project .env reach git in the first place).
+.env
+.env.*
+
 # Playwright e2e artifacts (browser binaries live in node_modules / OS cache)
 test-results/
 playwright-report/
