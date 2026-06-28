@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import MarkdownIt from "markdown-it";
+import { highlightCode } from "../highlight.js";
 import { LOOP_META } from "./context.js";
 import { applyPipeline, fmtAttr, validatePipes } from "./format.js";
 import {
@@ -21,7 +22,11 @@ import {
  * @typedef {import("./context.js").Ctx} Ctx
  */
 
-const md = new MarkdownIt({ html: true });
+// Build-time syntax highlighting: highlight.js runs over every fenced code block
+// with a known language. The callback returns escaped token HTML or `""` to let
+// markdown-it render a plain escaped `<code>` (graceful degradation). Both
+// instances share it so `html: false` pages highlight too.
+const md = new MarkdownIt({ html: true, highlight: highlightCode });
 md.use(bindingPlugin);
 md.use(attrsPlugin);
 
@@ -39,7 +44,7 @@ export function selectMd(meta) {
   // Frontmatter scalars stay strings (no coercion), so accept both forms.
   if (meta?.html !== false && meta?.html !== "false") return md;
   if (!mdNoHtml) {
-    mdNoHtml = new MarkdownIt({ html: false });
+    mdNoHtml = new MarkdownIt({ html: false, highlight: highlightCode });
     mdNoHtml.use(bindingPlugin);
     mdNoHtml.use(attrsPlugin);
   }

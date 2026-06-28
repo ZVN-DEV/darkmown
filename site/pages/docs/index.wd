@@ -176,6 +176,24 @@ tags: [sales, revenue, "q1, q2"]
 
 `{ meta.title }` prints a scalar and `{ meta.tags }` joins an array with `, `. You can loop a frontmatter array at build time — `@loop meta.tags into tag` — and the page stays static. Arrays are inline flow only (`[a, b]`); quoted items keep their commas.
 
+## SEO & feeds
+
+`darkmown build` writes `sitemap.xml`, `rss.xml`, and `robots.txt` — all build-time, zero client JS. There's no config file: the **home page** frontmatter carries the site's identity. Add `site_url` (absolute origin, no trailing slash) and the sitemap and feed switch on, prefixed with that origin and titled with the home `title`/`description`.
+
+```wd
+---
+title: My Blog
+description: Notes
+site_url: https://example.com
+---
+```
+
+A page becomes an **RSS post** by carrying a `date:`; `excerpt:` is its feed summary (else `description:`, else — for a plain `.md` — its first paragraph). The sitemap's `<lastmod>` is the `date:` if set, else the file's git/last-modified date. `robots.txt` is always written; the `Sitemap:` line only appears with a `site_url`. Without `site_url`, robots still emits and the build prints a hint — it never breaks.
+
+## Drafts
+
+Mark a page `draft: true` and it stays out of production: `darkmown build` leaves it out of `dist`, `routes.json`, the sitemap, and the feed — even if it has a `date:`. `darkmown dev` still builds and serves it (with a "DRAFT" banner you only see in dev), and `darkmown build --drafts` includes drafts for a staging deploy. This is separate from the permanent `.`/`-`/`_` filename hiding — a hidden name is private forever; `draft:` is a switch you flip when the page is ready.
+
 ## Instant navigation
 
 Add `transitions: true` to a page's frontmatter for **instant, flash-free navigation** — zero JavaScript. It emits a directional fade+slide view transition for the page swap and a `<script type="speculationrules">` prerender hint, so the browser renders the next same-origin page on hover/pointerdown and the click activates an already-painted page (no white render-gap). It honors `prefers-reduced-motion`, and only same-origin pages that both opt in transition. Off by default; opt out with `transitions: false`, or exclude a single link from prerendering with `{.no-prefetch}`. (Chrome turns prerendering off while DevTools is open — test the built site with DevTools closed.)
@@ -407,6 +425,35 @@ Three compile-time-only directives (they emit no `data-wd-*`, so a media page st
 ```
 
 `:video`/`:audio` emit a hardened HTML5 player — `preload="metadata"` and `controls` by default, whitelisted flags (`autoplay` implies `muted`), and the `:fetch` URL scheme guard. `:embed` rewrites a YouTube/Vimeo link to its no-cookie/player form in a lazy, responsive `16/9` iframe. See the zero-JS [Media demo](/media/).
+
+## Syntax highlighting
+
+Fenced code blocks with a language are highlighted at **build time** — HTML and CSS only, no client JavaScript. Tag the fence with a language:
+
+````md
+```js
+const greeting = "Darkmown"; // highlighted at build time
+```
+````
+
+The highlighter is [highlight.js](https://highlightjs.org/) and isn't configurable (one closed default, like everything else). It maps onto your skin's `$code-*` tokens, so highlighted code **dark-modes for free** through the same `tokens dark` / `:theme` system — no extra wiring. Define the palette once:
+
+```
+tokens
+  code-bg #1b2420
+  code-fg #e9efe7
+  code-keyword #d9a8e0
+  code-string #97d892
+  code-comment #859289
+  code-function #88c4ee
+  code-number #ecae78
+  code-punctuation #c1ccc6
+tokens dark
+  code-bg #100d0a
+  code-keyword #e2b9e8
+```
+
+The framework ships a small default `$code-*` set, so highlighting looks right out of the box. The stylesheet is **pay-for-what-you-use**: it's emitted and linked only on pages that actually contain a highlighted block — a page with no code ships nothing extra. A fence with an unknown or absent language renders as plain escaped `<code>` (no highlighting, no error); inline `` `code` `` is never highlighted, and there are deliberately no line numbers (they break copy-paste). See the live [Syntax highlighting demo](/highlight/).
 
 ## Trust boundary
 

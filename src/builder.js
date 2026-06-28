@@ -2,15 +2,28 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverApiRoutes } from "./api-runner.js";
-import { compilePage } from "./compiler.js";
+import { compilePage, parseFrontmatter } from "./compiler.js";
 import { createPaths } from "./config.js";
+import {
+  absoluteUrl,
+  buildRobots,
+  buildRss,
+  buildSitemap,
+  lastmodFor,
+  RSS_ITEM_LIMIT,
+  rfc822,
+  rssDescription
+} from "./feeds.js";
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
+import { HIGHLIGHT_CSS } from "./highlight.js";
 import { discoverRoutes, outputPathForRoute } from "./router.js";
 import { compileSkin } from "./skin.js";
 
 /**
  * @typedef {import("./config.js").Paths} Paths
  * @typedef {import("./compiler.js").Assets} Assets
+ * @typedef {import("./compiler.js").Meta} Meta
+ * @typedef {import("./router.js").Route} Route
  */
 
 /**
@@ -34,15 +47,30 @@ const moduleDir = path.dirname(fileURLToPath(import.meta.url));
  * `/api/*` to those same functions and serves everything else as a static asset.
  *
  * @param {string} [cwd] Project working directory (defaults to `process.cwd()`).
- * @param {{ target?: string }} [options] `target: "cloudflare"` emits the Pages worker.
- * @returns {{ routes: RouteManifestEntry[], distRoot: string }}
+ * @param {{ target?: string, includeDrafts?: boolean }} [options] `target:
+ *   "cloudflare"` emits the Pages worker. `includeDrafts: true` keeps `draft:
+ *   true` pages in the build + feeds (dev / `build --drafts`); default excludes
+ *   them at route discovery so feeds never see a draft.
+ * @returns {{ routes: RouteManifestEntry[], distRoot: string, feeds: { sitemap: number | null, rss: number | null } }}
  */
 export function buildSite(cwd = process.cwd(), options = {}) {
   const paths = createPaths(cwd);
   fs.rmSync(paths.distRoot, { recursive: true, force: true });
   fs.mkdirSync(paths.distRoot, { recursive: true });
   emitShelfAssets(paths);
-  const routes = discoverRoutes(paths.routesRoot);
+  const routes = discoverRoutes(paths.routesRoot, { includeDrafts: options.includeDrafts });
+  // Site identity lives in the HOME page frontmatter (no config loader): the
+  // `site_url` origin triggers + prefixes the feeds, reusing `title`/`description`
+  // as the RSS channel fields. Resolved once, up front, so every page can link
+  // the feed during the loop.
+  const identity = siteIdentity(routes);
+  // Advertise the feed in every page's <head> only when rss.xml will actually be
+  // emitted: the home set `site_url` AND there is at least one dated post. A
+  // stale `<link>` to a missing feed would 404 for aggregators.
+  const feedLink =
+    identity.siteUrl && hasDatedPost(routes)
+      ? { href: absoluteUrl(identity.siteUrl, "/rss.xml"), title: identity.title }
+      : undefined;
   /** @type {RouteManifestEntry[]} */
   const manifest = [];
 
@@ -53,7 +81,7 @@ export function buildSite(cwd = process.cwd(), options = {}) {
   let notFoundHtml;
 
   for (const route of routes) {
-    const page = compilePage(route.file, paths);
+    const page = compilePage(route.file, paths, { feed: feedLink });
     for (const warning of page.warnings || []) {
       if (warned.has(warning)) continue;
       warned.add(warning);
@@ -66,6 +94,7 @@ export function buildSite(cwd = process.cwd(), options = {}) {
     emitAssets(page.assets, paths);
     if (page.assets.runtime) emitRuntime(paths);
     emitBehaviors(page.assets, paths);
+    if (page.assets.hasCode) emitHighlight(paths);
     const behaviorSrcs = [...page.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
     manifest.push({
       route: route.route,
@@ -95,6 +124,11 @@ export function buildSite(cwd = process.cwd(), options = {}) {
   // one. A catch-all keeps assets and any future path covered.
   fs.writeFileSync(path.join(paths.distRoot, "_headers"), renderCloudflareHeaders(manifest));
 
+  // Crawler files + feeds. robots.txt is ALWAYS emitted; sitemap.xml + rss.xml
+  // need the home `site_url` (else a loud, actionable build hint). Drafts are
+  // already filtered out of `routes`, so neither feed can ever see one.
+  const feeds = emitFeeds(routes, identity, paths);
+
   // Page-colocated static assets (images, SVG, fonts, …) copy last, so the guard
   // sees every emitted route/framework file already on disk.
   emitPageAssets(paths);
@@ -109,7 +143,113 @@ export function buildSite(cwd = process.cwd(), options = {}) {
     emitCloudflareWorker(paths, apiDir, apiRoutes);
   }
 
-  return { routes: manifest, distRoot: paths.distRoot };
+  return { routes: manifest, distRoot: paths.distRoot, feeds };
+}
+
+/**
+ * Resolve the site's identity from the HOME route's frontmatter — the single
+ * place site-wide metadata lives this cycle (no config loader). `site_url` is
+ * the absolute origin (no trailing slash) that triggers and prefixes the feeds;
+ * `title`/`description` double as the RSS channel fields. A site with no `/`
+ * route, or a home page without `site_url`, yields an empty `siteUrl` and the
+ * feeds are skipped (robots still emits).
+ * @param {Route[]} routes
+ * @returns {{ siteUrl: string, title: string, description: string }}
+ */
+function siteIdentity(routes) {
+  const home = routes.find((route) => route.route === "/");
+  const meta = home ? home.meta : {};
+  const read = (/** @type {string} */ key) =>
+    typeof meta[key] === "string" ? String(meta[key]).trim() : "";
+  return {
+    siteUrl: read("site_url").replace(/\/$/, ""),
+    title: read("title") || "Darkmown",
+    description: read("description")
+  };
+}
+
+/**
+ * Whether any emitted route is a "post" — has a frontmatter `date:`. That's the
+ * RSS inclusion signal, and (collectively) the trigger for emitting rss.xml at
+ * all alongside the home `site_url`.
+ * @param {Route[]} routes
+ * @returns {boolean}
+ */
+function hasDatedPost(routes) {
+  return routes.some((route) => typeof route.meta.date === "string" && route.meta.date.trim());
+}
+
+/**
+ * Emit robots.txt (always) and, when the home page set `site_url`, sitemap.xml
+ * (every non-404 route) and rss.xml (dated posts only). Returns the URL/item
+ * counts (`null` when a feed was skipped) for the CLI build summary.
+ *
+ * The sitemap `<lastmod>` for each route is the frontmatter `date:` if present,
+ * else `lastmodFor(file)` (git last-commit date → file mtime). RSS items are the
+ * routes with a `date:`, newest first, capped at {@link RSS_ITEM_LIMIT}.
+ * @param {Route[]} routes Emitted (post-draft-filter) routes.
+ * @param {{ siteUrl: string, title: string, description: string }} identity
+ * @param {Paths} paths
+ * @returns {{ sitemap: number | null, rss: number | null }}
+ */
+function emitFeeds(routes, identity, paths) {
+  fs.writeFileSync(path.join(paths.distRoot, "robots.txt"), buildRobots(identity.siteUrl));
+
+  if (!identity.siteUrl) {
+    console.warn(
+      "hint: set site_url in site/pages/index frontmatter to emit sitemap.xml + rss.xml " +
+        "(e.g. `site_url: https://example.com`). robots.txt was still written."
+    );
+    return { sitemap: null, rss: null };
+  }
+
+  // The `/404/` route is never a feed entry — it's not an indexable page and
+  // not a post. Filter it out once; both feeds work off the result.
+  const feedable = routes.filter((route) => route.route !== "/404/");
+
+  // Sitemap: one <url> per emitted route (404 excluded above).
+  const sitemapEntries = feedable.map((route) => ({
+    loc: absoluteUrl(identity.siteUrl, route.route),
+    lastmod:
+      typeof route.meta.date === "string" && route.meta.date.trim()
+        ? String(route.meta.date).trim().slice(0, 10)
+        : lastmodFor(route.file)
+  }));
+  fs.writeFileSync(path.join(paths.distRoot, "sitemap.xml"), buildSitemap(sitemapEntries));
+
+  // RSS: dated posts only, newest first, capped. The `date:` is the "this is a
+  // post" signal. With no dated post there is nothing to syndicate, so rss.xml
+  // is skipped entirely (and the per-page `<link rel=alternate>` is too) — an
+  // empty feed file would just 404-by-content for aggregators.
+  const posts = feedable
+    .filter((route) => typeof route.meta.date === "string" && route.meta.date.trim())
+    .sort((a, b) => String(b.meta.date).localeCompare(String(a.meta.date)))
+    .slice(0, RSS_ITEM_LIMIT);
+  if (posts.length === 0) return { sitemap: sitemapEntries.length, rss: null };
+
+  const items = posts.map((route) => {
+    const { body } = parseFrontmatter(fs.readFileSync(route.file, "utf8"), route.file);
+    return {
+      title: typeof route.meta.title === "string" ? route.meta.title : "Untitled",
+      link: absoluteUrl(identity.siteUrl, route.route),
+      pubDate: rfc822(String(route.meta.date)),
+      description: rssDescription(route.meta, route.file, body)
+    };
+  });
+  fs.writeFileSync(
+    path.join(paths.distRoot, "rss.xml"),
+    buildRss(
+      {
+        title: identity.title,
+        description: identity.description,
+        siteUrl: identity.siteUrl,
+        feedUrl: absoluteUrl(identity.siteUrl, "/rss.xml")
+      },
+      items
+    )
+  );
+
+  return { sitemap: sitemapEntries.length, rss: items.length };
 }
 
 /**
@@ -385,6 +525,22 @@ function emitBehaviors(assets, paths) {
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, stripRuntimeComments(source));
   }
+}
+
+/**
+ * Emit the framework syntax-highlighting stylesheet `/__wd/highlight.css`, called
+ * only for a page that has a build-time-highlighted code block (`assets.hasCode`).
+ * It is CSS only — highlighting is build-time HTML + this stylesheet, with zero
+ * runtime JS — and maps highlight.js token classes onto the `$code-*` skin tokens,
+ * so code dark-modes for free through `tokens dark` / `:theme`. Idempotent: writing
+ * the same content per code-bearing page is harmless and keeps the call site simple.
+ * @param {Paths} paths
+ * @returns {void}
+ */
+function emitHighlight(paths) {
+  const out = path.join(paths.distRoot, "__wd/highlight.css");
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, HIGHLIGHT_CSS);
 }
 
 /**

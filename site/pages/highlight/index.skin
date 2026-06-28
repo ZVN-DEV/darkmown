@@ -1,0 +1,78 @@
+main.app-highlight
+  max-width 1000px
+  margin 0 auto
+  padding 2.5rem 1.5rem
+
+.hl-eyebrow
+  text-transform uppercase
+  letter-spacing .08em
+  font-size .8rem
+  opacity .7
+
+.hl-tagline
+  font-size 1.05rem
+  opacity .85
+  margin-top .5rem
+  max-width 60ch
+
+/* Theme toggle — reuse the ledger's pill-button switch so flipping the theme
+   recolors every highlighted block at once. */
+.app-highlight .theme-switch
+  display inline-flex
+  align-items center
+  gap .4rem
+  font-size .75rem
+  font-weight 600
+  letter-spacing .04em
+  text-transform uppercase
+  color $muted
+  margin 1.5rem 0 .5rem
+
+.app-highlight .theme-switch button[data-wd-action]
+  border 1px solid $line
+  bg $panel
+  color $ink-soft
+  font-size .8rem
+  font-weight 600
+  padding .4rem .8rem
+  radius 999px
+  cursor pointer
+  transition color .14s ease, border-color .14s ease, background .14s ease
+
+.app-highlight .theme-switch button[data-wd-action]:hover
+  color $ink
+  border-color $accent
+
+.hl-grid
+  margin 1rem 0 1.5rem
+
+.hl-panel
+  padding 1.4rem 1.5rem
+
+.hl-panel h3
+  margin-top 0
+  margin-bottom .6rem
+  font-size 1rem
+  color $muted
+  text-transform uppercase
+  letter-spacing .04em
+
+.hl-panel pre
+  margin 0
+
+.hl-note
+  margin-top 1.5rem
+  padding 1rem 1.25rem
+  border 1px solid $line
+  border-left 3px solid $accent
+  bg $panel
+  radius $radius-sm
+  color $ink-soft
+  font-size .95rem
+
+.hl-degrade
+  border-left-color $muted
+
+@media (max-width: 760px)
+  .hl-grid
+    grid-template-columns 1fr

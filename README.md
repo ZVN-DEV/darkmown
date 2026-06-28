@@ -52,7 +52,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 
 - `darkmown init [dir] [--template <name>]` scaffolds a new site from a template (`starter`, `blog`, `store`, `dashboard`, `landing`).
 - `darkmown dev` starts the live compiler with browser reload, an in-browser error overlay, and a local runner for `api/*` functions.
-- `darkmown build [--target cloudflare]` writes static output to `dist`.
+- `darkmown build [--target cloudflare] [--drafts]` writes static output to `dist` (plus `sitemap.xml`/`rss.xml`/`robots.txt`); `--drafts` includes `draft: true` pages for staging.
 - `darkmown deploy <vercel|cloudflare> [--prod]` builds and deploys via the platform CLI.
 - `darkmown serve` previews the built `dist` locally.
 - `darkmown version` prints the installed package version.
@@ -113,6 +113,8 @@ tags: [sales, revenue, "q1, q2"]
 
 Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card).
 
+A few reserved keys drive **drafts and feeds** (see [SEO & feeds](#seo--feeds-sitemap-rss-robots) below): `draft: true` excludes a page from production builds; `site_url` on the home page turns on `sitemap.xml` + `rss.xml`; `date:` marks a page as a blog post (it lands in `rss.xml` and sets the page's `<lastmod>`); `excerpt:` is the RSS summary.
+
 `transitions: true` opts a page into **instant, flash-free navigation** — zero JavaScript, all declarative. It emits a directional fade+slide **view transition** for the page swap (old lifts up and out, new rises up and in — replacing the default cross-fade, which left both pages ghosted at ~50 % opacity mid-navigation), plus a **`<script type="speculationrules">` prerender** hint that renders the next same-origin page on hover/pointerdown so the click activates an already-painted page (no white render-gap flash). It honors `prefers-reduced-motion`. Only same-origin pages that both opt in transition; browsers without support — or with page-preloading disabled — navigate normally. Off by default; opt out with `transitions: false`. Mark a link `{.no-prefetch}` to exclude it from prerendering. (Chrome disables prerendering while DevTools is open, so test the built site with DevTools closed.)
 
 ## Static assets
@@ -134,6 +136,55 @@ Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`
 Hidden/private page paths stay private: any `site/pages` asset below a path segment starting with `.`, `-`, or `_` is skipped, and symlinked page assets are never copied. Keep drafts, private notes, and local secrets out of public output by naming them like routes: `.env`, `_private/secret.txt`, or `-draft/notes.txt`.
 
 Use the shelf for assets shared across many pages; colocate the ones that belong to a single page or section. Both ship untouched with the correct content-type.
+
+## SEO & feeds (sitemap, RSS, robots)
+
+`darkmown build` emits the crawler files a site needs — all build-time, zero client JS — driven by a little frontmatter. There is no config file: the **home page** (`site/pages/index.md` or `.wd`) carries the site's identity.
+
+```wd
+---
+title: My Blog
+description: Notes on shipping Markdown that runs.
+site_url: https://example.com
+---
+```
+
+- **`site_url`** (absolute origin, **no trailing slash**) turns on `sitemap.xml` and `rss.xml` and is the absolute prefix for every URL in them. The home `title`/`description` become the RSS channel title/description.
+- **`robots.txt`** is *always* emitted (`User-agent: * / Allow: /`); the `Sitemap:` line is added only when `site_url` is set.
+- **`sitemap.xml`** lists every built page (reactive pages included — they're indexable HTML). Each `<lastmod>` is the page's frontmatter `date:` if set, else its git last-commit date, else the file's mtime. No `<priority>`/`<changefreq>`.
+- **`rss.xml`** syndicates your **posts** — any page with a `date:` in its frontmatter. Newest first, capped at the 20 most recent. Each item's `<description>` is the page's `excerpt:`, else its `description:`, else (for a plain `.md` post) its first paragraph. Every page links the feed with `<link rel="alternate" type="application/rss+xml">` so readers can autodiscover it.
+
+```md
+---
+title: Hello, Darkmown
+date: 2026-01-15
+excerpt: Why I rewrote my blog as plain Markdown files.
+---
+
+# Hello, Darkmown
+…
+```
+
+Without `site_url`, `robots.txt` still emits and the build prints a one-line hint telling you which field to set; it never crashes.
+
+### Drafts
+
+Mark any page `draft: true` to keep it out of production:
+
+```md
+---
+title: Work in progress
+draft: true
+---
+```
+
+- **`darkmown build`** excludes drafts everywhere — no HTML in `dist`, no entry in `routes.json`, `sitemap.xml`, or `rss.xml` (even a draft that *also* has a `date:` never reaches a feed).
+- **`darkmown dev`** builds and serves drafts so you can preview them, with a visible "DRAFT" banner that exists only in the dev server — never in any shipped HTML.
+- **`darkmown build --drafts`** includes drafts everywhere — for a staging deploy.
+
+Drafts are filtered at one point — route discovery — so nothing downstream ever sees them. This is **separate from** the permanent `.`/`-`/`_` filename hiding: a hidden name (`-notes.wd`) is private forever; `draft:` is a toggle you flip when the page is ready to ship.
+
+The `build` summary reports what it emitted: `Built 14 routes, sitemap (14 urls), rss (6 posts) into dist`.
 
 ## Loops
 
@@ -691,6 +742,39 @@ The block must follow the element with no space, and works on links, images, emp
 - **`:embed`** rewrites a YouTube or Vimeo URL to its **no-cookie / player** form, wraps it in a responsive `16/9` box, and marks the iframe `loading="lazy"` with a locked-down `referrerpolicy`. Any other `http(s)` URL becomes a generic lazy iframe. Add `title="…"` for the accessible name.
 
 Darkmown's shipped CSP pre-authorizes exactly the two embed origins (`youtube-nocookie.com`, `player.vimeo.com`) and `media-src 'self' https:`, so embeds and remote media work out of the box on the bundled server, Cloudflare `_headers`, and Vercel.
+
+## Syntax highlighting
+
+*New in 1.3.* Fenced code blocks with a language are highlighted at **build time** — HTML and CSS only, no client JavaScript. Tag the fence with a language and it just works:
+
+````md
+```js
+const greeting = "Darkmown"; // highlighted at build time
+```
+````
+
+The highlighter is [highlight.js](https://highlightjs.org/) and is not configurable (one closed default, like the rest of the framework). Its token classes map onto your skin's `$code-*` tokens, so highlighted code **dark-modes for free** through the same [`tokens dark` / `:theme`](#dark-mode--tokens-dark) system below — no extra wiring. Tune the palette (or rely on the built-in default set) in your `.skin`:
+
+```skin
+tokens
+  code-bg #1b2420
+  code-fg #e9efe7
+  code-keyword #d9a8e0
+  code-string #97d892
+  code-comment #859289
+  code-function #88c4ee
+  code-number #ecae78
+  code-punctuation #c1ccc6
+tokens dark
+  code-bg #100d0a
+  code-keyword #e2b9e8
+```
+
+- **Pay-for-what-you-use.** The stylesheet (`/__wd/highlight.css`) is emitted and linked **only** on pages that actually contain a highlighted block — a page with no code ships nothing extra.
+- **Zero runtime.** Highlighting is build-time output, so a page of prose plus code stays `runtime: false` (no `/__wd/runtime.js`). It never pulls in the reactive runtime.
+- **Graceful degradation.** A fence with an unknown or absent language renders as plain escaped `<code>` (no highlighting, no error). Inline `` `code` `` is never highlighted, and there are deliberately **no line numbers** (they break copy-paste).
+
+See it recolor live on the [Syntax highlighting demo](https://darkmown.com/highlight/) — flip the theme toggle and every block recolors at once.
 
 ## Dark mode — `tokens dark`
 

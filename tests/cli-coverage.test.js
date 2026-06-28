@@ -18,7 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { CliError, helpText, isEntryPoint, nextStep, run } from "../src/cli.js";
+import { buildSummary, CliError, helpText, isEntryPoint, nextStep, run } from "../src/cli.js";
 
 const cliPath = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
@@ -195,6 +195,45 @@ test("run('build') throws on a compile error (the failClean path)", async () => 
   await assert.rejects(() => run(["build"], capture(root).env), /Missing @endloop/);
 });
 
+test("buildSummary appends feed counts only when feeds were emitted", () => {
+  assert.equal(
+    buildSummary({ routes: new Array(14), feeds: { sitemap: 14, rss: 6 } }, "dist"),
+    "Built 14 routes, sitemap (14 urls), rss (6 posts) into dist"
+  );
+  // No site_url → both feed counts null → just the route count.
+  assert.equal(
+    buildSummary({ routes: new Array(3), feeds: { sitemap: null, rss: null } }, "out"),
+    "Built 3 routes into out"
+  );
+});
+
+test("run('build') on a site with site_url reports the feed counts in the summary", async () => {
+  const root = freshDir("build-feeds");
+  await run(["init", ".", "--template", "blog"], capture(root).env);
+  const c = capture(root);
+  await run(["build"], c.env);
+  // The blog template sets site_url + dated posts, so the summary carries feeds.
+  assert.match(c.stdout(), /Built \d+ routes, sitemap \(\d+ urls\), rss \(\d+ posts\) into dist/);
+  assert.ok(fs.existsSync(path.join(root, "dist/sitemap.xml")));
+  assert.ok(fs.existsSync(path.join(root, "dist/rss.xml")));
+  assert.ok(fs.existsSync(path.join(root, "dist/robots.txt")));
+});
+
+test("run('build --drafts') includes draft pages in the build", async () => {
+  const root = freshDir("build-drafts");
+  await run(["init", "."], capture(root).env);
+  fs.writeFileSync(
+    path.join(root, "site/pages/wip.md"),
+    "---\ntitle: WIP\ndraft: true\n---\n\nDraft body.\n"
+  );
+  // Production build excludes it…
+  await run(["build"], capture(root).env);
+  assert.equal(fs.existsSync(path.join(root, "dist/wip/index.html")), false);
+  // …`--drafts` includes it.
+  await run(["build", "--drafts"], capture(root).env);
+  assert.equal(fs.existsSync(path.join(root, "dist/wip/index.html")), true);
+});
+
 // --- unknown command -------------------------------------------------------
 
 test("run('bogus') reports the unknown command, prints help, and throws a silent CliError", async () => {
@@ -311,6 +350,39 @@ test("run('dev') serves dist with the dev client injected, SSE + api, then close
     const sse = await readSse(origin, "/__wd/dev-events", { timeout: 300 });
     assert.equal(sse.status, 200);
     assert.match(sse.headers["content-type"], /text\/event-stream/);
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
+
+test("run('dev') builds + serves draft pages, bannering only the draft", async () => {
+  const root = freshDir("dev-drafts");
+  await run(["init", "."], capture(root).env);
+  fs.writeFileSync(
+    path.join(root, "site/pages/wip.md"),
+    "---\ntitle: WIP\ndraft: true\n---\n\n# Draft body\n"
+  );
+
+  const c = capture(root);
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["dev"], c.env);
+    const origin = originOf(handle.server);
+
+    // The draft IS served in dev (production would 404 it) — with the banner.
+    const draft = await httpGet(origin, "/wip/");
+    assert.equal(draft.status, 200, "dev builds + serves the draft");
+    assert.match(draft.body, /__wd-draft-banner/, "draft page gets the dev banner");
+    assert.match(draft.body, /DRAFT — excluded from production build/);
+
+    // A normal (non-draft) page is served WITHOUT the banner.
+    const home = await httpGet(origin, "/");
+    assert.equal(home.status, 200);
+    assert.doesNotMatch(home.body, /__wd-draft-banner/, "non-draft page has no banner");
   } finally {
     if (prevPort === undefined) delete process.env.PORT;
     else process.env.PORT = prevPort;

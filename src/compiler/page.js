@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { imageSize } from "image-size";
+import { htmlHasHighlight } from "../highlight.js";
 import { compileBody } from "./body.js";
 import { createCompilation, createScope } from "./context.js";
 import { parseFrontmatter, warnLikelyFrontmatter } from "./frontmatter.js";
@@ -29,9 +30,12 @@ import { selectMd } from "./markdown.js";
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
+ * @param {{ feed?: { href: string, title: string } }} [options] When a site-wide
+ *   RSS feed is emitted (the home page set `site_url` and the site has dated
+ *   posts), `feed` carries its absolute href + title so every page links it.
  * @returns {CompiledPage}
  */
-export function compilePage(file, context) {
+export function compilePage(file, context, options = {}) {
   const compiled = compileDocument(file, context);
   const title = compiled.meta.title || "Darkmown";
   const description = compiled.meta.description || "";
@@ -58,9 +62,21 @@ export function compilePage(file, context) {
   const descriptionTag = social.length ? `\n  ${social.join("\n  ")}` : "";
   const favicon =
     "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='bold'%20fill='%23f7f3ea'%3ED%3C/text%3E%3C/svg%3E";
-  const cssLinks = [...compiled.assets.skins]
+  // The framework highlight stylesheet rides ahead of page skins so a project's
+  // own `$code-*` tokens / overrides still cascade over it. Pay-for-what-you-use:
+  // linked only on pages with a highlighted code block (`hasCode`).
+  const highlightLink = compiled.assets.hasCode
+    ? [`<link rel="stylesheet" href="/__wd/highlight.css">`]
+    : [];
+  const cssLinks = [...highlightLink, ...compiled.assets.skins]
     .map((href) => `<link rel="stylesheet" href="${href}">`)
     .join("\n");
+  // RSS feed discovery: when the site emits an `rss.xml` (home `site_url` set +
+  // at least one dated post), every page advertises it so readers/aggregators
+  // can autodiscover the feed. Build-time only — no client JS.
+  const feedLink = options.feed
+    ? `\n  <link rel="alternate" type="application/rss+xml" title="${escapeHtml(options.feed.title)}" href="${escapeHtml(options.feed.href)}">`
+    : "";
   // Pay-for-what-you-use behavior modules (slider is compile-time and never here;
   // sortable/carousel each emit one) load after the runtime — sortable depends on
   // `window.wd` — and before any colocated page script.
@@ -126,7 +142,7 @@ export function compilePage(file, context) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>${descriptionTag}
-  <link rel="icon" href="${favicon}">
+  <link rel="icon" href="${favicon}">${feedLink}
   ${cssLinks}${transitions}${speculation}
 </head>
 <body>
@@ -253,7 +269,9 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
 
   if (path.extname(file) === ".md") {
     scanMarkdownHints(body, file, comp);
-    return { meta, html: selectMd(meta).render(body, {}) };
+    const html = selectMd(meta).render(body, {});
+    if (htmlHasHighlight(html)) comp.assets.hasCode = true;
+    return { meta, html };
   }
 
   // Expose this file's frontmatter to the body under `meta` so `{ meta.title }`,
@@ -269,5 +287,7 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
     loopItem,
     md: selectMd(meta)
   };
-  return { meta, html: compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx) };
+  const html = compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx);
+  if (htmlHasHighlight(html)) comp.assets.hasCode = true;
+  return { meta, html };
 }

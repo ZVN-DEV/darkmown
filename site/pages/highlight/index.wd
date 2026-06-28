@@ -1,0 +1,142 @@
+---
+title: Syntax highlighting — code that dark-modes for free
+description: Build-time syntax highlighting in plain Markdown. Fenced code blocks highlight at compile time (zero client JS) and recolor with your theme through the same tokens dark / :theme system — flip the toggle and watch every language recolor at once.
+image: https://darkmown.com/__wd/media/og-showcase.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide app-highlight">
+
+::: section #highlight
+
+:theme
+
+::: hl-head
+::: eyebrow .hl-eyebrow
+Build-time syntax highlighting
+:::
+
+# *Highlighted code*
+
+::: hl-tagline
+Fenced code blocks highlight at **build time** — HTML and CSS only, no client
+JavaScript. Colors come from your skin's `$code-*` tokens, so highlighting
+recolors with the theme through the same `tokens dark` / `:theme` system that
+drives the rest of the page. Flip the toggle and watch every block below recolor
+at once — no toggle script for the code, no flash.
+:::
+:::
+
+::: theme-switch
+Theme
+:button "Auto" -> theme = "auto"
+:button "Light" -> theme = "light"
+:button "Dark" -> theme = "dark"
+:::
+
+::: grid .cols-2 .hl-grid
+
+::: card .hl-panel
+### JavaScript
+
+```js
+// A tiny reactive island, declared in Markdown.
+const cart = wd.state("cart");
+function total(items) {
+  return items.reduce((sum, it) => sum + it.price, 0);
+}
+wd.subscribe("cart", (items) => {
+  document.title = `Cart (${items.length})`;
+});
+```
+:::
+
+::: card .hl-panel
+### Python
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Expense:
+    merchant: str
+    amount: float  # in dollars
+
+def total(rows: list[Expense]) -> float:
+    return sum(r.amount for r in rows)
+```
+:::
+
+::: card .hl-panel
+### CSS
+
+```css
+.card {
+  background: var(--panel, #fff);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.4rem;
+}
+```
+:::
+
+::: card .hl-panel
+### JSON
+
+```json
+{
+  "name": "@zvndev/darkmown",
+  "type": "module",
+  "zeroJsOnStaticPages": true,
+  "runtimeBudgetKb": 8
+}
+```
+:::
+
+::: card .hl-panel
+### Bash
+
+```bash
+npx @zvndev/darkmown init --template blog
+cd blog && npx darkmown dev   # live reload on :5173
+```
+:::
+
+::: card .hl-panel
+### HTML
+
+```html
+<main class="wide">
+  <a class="btn primary" href="/docs/">Read the docs</a>
+</main>
+```
+:::
+
+:::
+
+::: hl-note
+**How it works.** The highlighter is [highlight.js](https://highlightjs.org/),
+wired into Markdown's fenced-code path and mapped onto `$code-*` skin tokens.
+The stylesheet is **pay-for-what-you-use** — emitted and linked only on pages
+with a highlighted block. The highlighting itself ships zero JavaScript; the only
+reactive thing on this page is the theme toggle above (so you can demo the
+recolor without changing your OS setting). A fence with an unknown or absent
+language renders as plain escaped `<code>`, and inline `` `code` `` is never
+highlighted.
+:::
+
+::: hl-note .hl-degrade
+**Graceful degradation.** A bare fence (no language) or an unknown one stays
+plain — no highlighting, no error:
+
+```
+just a plain block — no language, so no highlighting
+```
+:::
+
+:::
+
+</main>

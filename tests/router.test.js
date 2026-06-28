@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { discoverRoutes } from "../src/router.js";
+import { discoverRoutes, isDraft } from "../src/router.js";
 
 test("discovers md and wd routes while hiding dot/minus/underscore names and skipping mdx", () => {
   const root = fixture();
@@ -25,6 +25,37 @@ test("duplicate route candidates fail clearly", () => {
   write(root, "site/pages/index.md", "# Duplicate");
 
   assert.throws(() => discoverRoutes(path.join(root, "site/pages")), /Duplicate route "\/"/);
+});
+
+test("discoverRoutes attaches parsed frontmatter as route.meta", () => {
+  const root = fixture();
+  write(root, "site/pages/post.md", "---\ntitle: Post\ndate: 2026-06-01\n---\n\nBody");
+  const [route] = discoverRoutes(path.join(root, "site/pages"));
+  assert.equal(route.meta.title, "Post");
+  assert.equal(route.meta.date, "2026-06-01");
+});
+
+test("draft: true pages are excluded by default but kept with includeDrafts", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "# Home");
+  write(root, "site/pages/live.md", "---\ntitle: Live\n---\n\nShipped");
+  write(root, "site/pages/wip.md", "---\ntitle: WIP\ndraft: true\n---\n\nDraft");
+
+  const production = discoverRoutes(path.join(root, "site/pages")).map((r) => r.route);
+  assert.deepEqual(production, ["/", "/live/"]);
+
+  const staging = discoverRoutes(path.join(root, "site/pages"), { includeDrafts: true }).map(
+    (r) => r.route
+  );
+  assert.deepEqual(staging, ["/", "/live/", "/wip/"]);
+});
+
+test('isDraft recognizes boolean true and the string "true" only', () => {
+  assert.equal(isDraft({ draft: true }), true);
+  assert.equal(isDraft({ draft: "true" }), true);
+  assert.equal(isDraft({ draft: false }), false);
+  assert.equal(isDraft({ draft: "false" }), false);
+  assert.equal(isDraft({}), false);
 });
 
 function fixture() {

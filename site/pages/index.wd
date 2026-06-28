@@ -2,6 +2,7 @@
 title: Darkmown — Markdown that runs, not Markdown that needs React
 description: A live store widget — search filter, add-to-cart, running total — written as one Markdown file that runs. The same outcome in Markdoc needs a React component, hydration, and a build step. Compare them side by side.
 image: https://darkmown.com/__wd/media/og.png
+site_url: https://darkmown.com
 transitions: true
 ---
 
