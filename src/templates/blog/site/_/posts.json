@@ -1,0 +1,16 @@
+[
+  {
+    "slug": "hello-darkmown",
+    "url": "/posts/hello-darkmown/",
+    "title": "Hello, Darkmown",
+    "date": "2026-06-15",
+    "excerpt": "Why I rewrote my blog as plain Markdown files — and shipped zero framework JavaScript."
+  },
+  {
+    "slug": "markdown-native",
+    "url": "/posts/markdown-native/",
+    "title": "Markdown-native, by default",
+    "date": "2026-06-01",
+    "excerpt": "Every post is a .md file. The index is one .wd loop over this manifest. That's the whole site."
+  }
+]

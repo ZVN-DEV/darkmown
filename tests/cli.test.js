@@ -111,7 +111,7 @@ test("build prints a clean compile error without a Node stack trace", () => {
 test("init in the current directory prints a direct next step", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "darkmown-init-current-"));
   const output = execFileSync("node", [cli, "init", "."], { cwd: root, encoding: "utf8" });
-  assert.match(output, /Created Darkmown project at \./);
+  assert.match(output, /Created Darkmown project \(starter\) at \./);
   assert.match(output, /Next: npm install && npm run dev/);
   assert.doesNotMatch(output, /cd \. &&/);
 });

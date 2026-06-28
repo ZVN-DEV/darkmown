@@ -1,0 +1,7 @@
+<nav>
+  <strong>My site</strong>
+  <span class="links">
+    <a href="/">Home</a>
+    <a href="/about/">About</a>
+  </span>
+</nav>

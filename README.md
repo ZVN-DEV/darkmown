@@ -50,9 +50,10 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 
 ## Commands
 
-- `darkmown init [dir]` scaffolds a new site.
-- `darkmown dev` starts the live compiler with browser reload and an in-browser error overlay when a build fails.
-- `darkmown build` writes static output to `dist`.
+- `darkmown init [dir] [--template <name>]` scaffolds a new site from a template (`starter`, `blog`, `store`, `dashboard`, `landing`).
+- `darkmown dev` starts the live compiler with browser reload, an in-browser error overlay, and a local runner for `api/*` functions.
+- `darkmown build [--target cloudflare]` writes static output to `dist`.
+- `darkmown deploy <vercel|cloudflare> [--prod]` builds and deploys via the platform CLI.
 - `darkmown serve` previews the built `dist` locally.
 - `darkmown version` prints the installed package version.
 - `darkmown help` prints CLI usage.
@@ -614,6 +615,56 @@ Fetched data and a form live happily on the same page:
 - `:state x = [] persist` keeps a single page's state in localStorage across reloads. (For state that is shared across pages and tabs, reach for [`:store`](#global-state--store) instead.)
 - `:computed total = items.length * 4` derives state from state with a compile-time-checked expression — names, numbers, arithmetic, comparisons, and list aggregates (`sum`/`avg`/`min`/`max`/`count`). See [Computed values](#computed-values--computed).
 - `:if item.path` works inside reactive loops for per-row branches, and nests — an inner `:if` resolves after the outer branch and stays reactive.
+
+## Backends & deploy
+
+Darkmown builds **100% static, CDN-cacheable HTML** — never per-request server rendering. Reactive pages hydrate from data-attributes client-side; dynamic data arrives via `:fetch`. When you need a backend, you don't learn a new syntax — you write a plain serverless function, and *it just comes with wherever you deploy*.
+
+A backend endpoint is a plain-JS Web-standard handler in a top-level `api/` directory:
+
+```js
+// api/subscribe.js  →  /api/subscribe
+export const config = { runtime: "edge" }; // Vercel runs api/ as Edge Functions
+
+export default async function (request, context) {
+  const { email } = await request.json();      // context.params for /api/users/[id]
+  return Response.json({ ok: true, email });
+}
+```
+
+- **One shape, every host.** `export default (request) => Response` is exactly what Vercel Edge, Cloudflare Pages, and Netlify Edge run. `api/users/[id].js` → `/api/users/:id`.
+- **Local parity.** `darkmown dev` runs a local runner, so `:fetch /api/subscribe` and `:form action="/api/subscribe"` behave the same as production before you ever deploy.
+- **Deploy in one command.** `darkmown deploy vercel` (functions run natively) or `darkmown deploy cloudflare` (the build emits a `dist/_worker.js` that routes `/api/*` and serves the rest from `env.ASSETS`). It prints your URL, or the login to run if the platform CLI isn't signed in.
+- **Custom server / remote backend.** Point `:fetch`/`:form` at an absolute `https://…` URL and widen the CSP `connect-src` (and `form-action` for native form POSTs). Darkmown owns no server — it adapts to yours.
+
+Templates get you to a running, deployable app fast: `darkmown init shop --template store` ships a cart **and** an `api/checkout.js`; `--template dashboard` ships a `:fetch` view **and** an `api/metrics.js`.
+
+## Interactions — `:slider`, `:sortable`, `:carousel`
+
+Rich interactions are **pay-for-what-you-use**: `:sortable`/`:carousel` compile to a tiny `/__wd/behaviors/<name>.js` module injected **only** on pages that use them, budgeted separately from the ≤8 KB core runtime. `:slider` is compile-time only — zero extra JS.
+
+```wd
+:slider volume = 50 min=0 max=100 step=5
+Volume: { volume }
+
+:store tasks = ["Draft", "Review", "Ship"]
+@loop tasks into t sortable
+- { t }
+@endloop
+
+:carousel autoplay=4000
+::: slide
+First slide
+:::
+::: slide
+Second slide
+:::
+:endcarousel
+```
+
+- **`:slider name = v min max step`** renders a range input two-way bound through `:bind`; range values coerce to Number so `:computed`/math see a number. Ships no behavior module.
+- **`:sortable`** (a `@loop` clause) drag-reorders the underlying `:state`/`:store` list via Pointer Events (mouse + touch), with full keyboard support (Arrow Up/Down on a focused row, screen-reader instructions + a live "Moved to position N of M" announcement), rewriting the list through the public `window.wd` API so the keyed loop repaints. Valid only on a plain reactive loop (no `where`/`sort`/`reverse`/`offset`/`limit`).
+- **`:carousel [autoplay=N]`** treats **each direct child block as one slide** (wrap each in its own block, e.g. `::: slide`, and size it in your skin), using native CSS scroll-snap (touch swipe is free) plus prev/next buttons, dot navigation, and mouse drag. `autoplay` is suppressed under `prefers-reduced-motion`.
 
 ## Inline attributes
 

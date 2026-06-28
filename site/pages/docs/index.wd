@@ -362,6 +362,27 @@ You have { cart } items.
 
 See it all live on the [Data & Forms page](/data/).
 
+## Backends & deploy
+
+Darkmown builds 100% static HTML — never per-request rendering. When you need a server, you write a plain serverless function; there is no Darkmown backend syntax to learn.
+
+- A backend endpoint is a Web-standard handler in a top-level `api/` directory: `export default (request, context) => Response`. `api/echo.js` → `/api/echo`; `api/users/[id].js` → `/api/users/:id`.
+- One shape runs everywhere: `darkmown dev` (local runner), Vercel (native Edge Functions), and Cloudflare Pages (the build emits a `dist/_worker.js`). `:fetch`/`:form` point at `/api/*` with no extra config.
+- `darkmown deploy vercel` or `darkmown deploy cloudflare` builds and ships in one command, printing your URL.
+- For a remote/custom backend, point `:fetch`/`:form` at an absolute URL and widen the CSP `connect-src` / `form-action`. Darkmown owns no server — it adapts to yours.
+
+`darkmown init shop --template store` scaffolds a cart **and** its `api/checkout.js`; `--template dashboard` ships a `:fetch` view **and** `api/metrics.js`.
+
+## Interactions — `:slider`, `:sortable`, `:carousel`
+
+Pay-for-what-you-use: `:sortable`/`:carousel` compile to a tiny `/__wd/behaviors/*.js` module loaded only where used, budgeted separately from the ≤8 KB core runtime. `:slider` is compile-time only.
+
+- `:slider name = v min=0 max=100 step=5` — a range input bound through `:bind`; range values coerce to Number.
+- `:sortable` (a `@loop` clause) — drag-to-reorder a `:state`/`:store` list via Pointer Events, with keyboard (Arrow Up/Down) + screen-reader announcements; valid on a plain reactive loop only.
+- `:carousel [autoplay=N]` — each direct child block is one slide (wrap each in its own block, e.g. `::: slide`); native scroll-snap plus prev/next, dots, and mouse drag. Autoplay respects `prefers-reduced-motion`.
+
+See all three live on the [Interactions page](/interactions/).
+
 ## Theme toggle — `:theme`
 
 For an explicit light/dark switch alongside the OS preference, declare `:theme` once and drive it with buttons. It registers a durable `theme` store and reflects onto `<html data-theme>`:

@@ -1,0 +1,140 @@
+tokens
+  ink #14161c
+  paper #ffffff
+  soft #f4f5f8
+  line #e6e8ee
+  accent #5b4bf5
+
+page
+  margin 0
+  font ui-sans-serif, system-ui, sans-serif
+  color $ink
+  bg $paper
+  line-height 1.6
+
+main
+  max-width 900px
+  margin 0 auto
+  padding 1rem 1.5rem 4rem
+
+nav
+  display flex
+  align-items center
+  justify-content space-between
+  max-width 900px
+  margin 0 auto
+  padding 1.25rem 1.5rem
+
+nav strong
+  font-size 1.15rem
+
+nav a
+  color $accent
+  text-decoration none
+
+.hero
+  text-align center
+  padding 3rem 1rem 2rem
+
+.hero h1
+  font-size 2.75rem
+  margin 0 0 .5rem
+
+.lede
+  font-size 1.2rem
+  color #555c6b
+  margin 0 0 1.5rem
+
+.cta
+  display inline-block
+  bg $accent
+  color white
+  text-decoration none
+  padding .8rem 1.4rem
+  radius 10px
+  font-weight 600
+
+.features
+  display grid
+  grid-template-columns repeat(auto-fit, minmax(220px, 1fr))
+  gap 1rem
+  margin 2rem 0
+
+.feature
+  background $soft
+  border 1px solid $line
+  radius 12px
+  padding 1.25rem
+
+.feature h3
+  margin .25rem 0 .5rem
+
+.wd-carousel
+  position relative
+  margin 1rem 0 2rem
+
+.wd-carousel-track
+  display flex
+  overflow-x auto
+  scroll-snap-type x mandatory
+  scroll-behavior smooth
+  gap 1rem
+
+.wd-carousel-track .quote
+  flex 0 0 100%
+  scroll-snap-align start
+  background $soft
+  border 1px solid $line
+  radius 12px
+  padding 1.75rem
+  font-size 1.2rem
+
+.quote .who
+  margin .5rem 0 0
+  color #555c6b
+  font-size .95rem
+
+.wd-carousel-prev
+  position absolute
+  left -.5rem
+  top 40%
+
+.wd-carousel-next
+  position absolute
+  right -.5rem
+  top 40%
+
+.wd-carousel-prev, .wd-carousel-next
+  bg white
+  color $ink
+  border 1px solid $line
+  radius 999px
+  width 2.25rem
+  height 2.25rem
+  cursor pointer
+
+.wd-carousel-dots
+  display flex
+  justify-content center
+  gap .5rem
+  margin-top .75rem
+
+.wd-carousel-dot
+  width .6rem
+  height .6rem
+  padding 0
+  border 0
+  radius 999px
+  bg $line
+  cursor pointer
+
+.wd-carousel-dot[aria-current="true"]
+  bg $accent
+
+.cta-band
+  text-align center
+  background $soft
+  border 1px solid $line
+  radius 16px
+  padding 2.5rem
+  margin-top 2rem

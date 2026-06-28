@@ -2,6 +2,8 @@
   { "id": "loops", "title": "Nested `:if` inside loop rows", "shipped": true, "blocked": false },
   { "id": "editor", "title": "VS Code syntax highlighting", "shipped": true, "blocked": false },
   { "id": "filter", "title": "Reactive `@loop where` filtering", "shipped": true, "blocked": false },
-  { "id": "api", "title": "First-party site/api/ runtime", "shipped": false, "blocked": true },
+  { "id": "api", "title": "Serverless `api/` model + local-dev runner", "shipped": true, "blocked": false },
+  { "id": "deploy", "title": "`init --template` + `darkmown deploy` CLI", "shipped": true, "blocked": false },
+  { "id": "behaviors", "title": "Interaction behaviors (`:slider`/`:sortable`/`:carousel`)", "shipped": true, "blocked": false },
   { "id": "swap", "title": "HTML-fragment swap responses", "shipped": false, "blocked": false }
 ]

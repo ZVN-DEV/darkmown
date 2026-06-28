@@ -1,0 +1,83 @@
+---
+title: Shop — built with Darkmown
+description: A storefront in Markdown — live search, a shared cart, and a checkout that posts to a serverless function.
+transitions: true
+---
+
+@include /nav.wd
+
+<main>
+
+::: section #shop
+
+:store cart = []
+:state q = ""
+:computed itemCount = count(cart)
+:computed subtotal = sum(cart, price)
+
+# Shop
+
+::: shop-search
+:bind q placeholder="Search products…"
+:::
+
+::: catalog
+@loop /products.json into p where p.name contains q
+::: card .product
+::: emoji
+{ p.emoji }
+:::
+::: pname
+{ p.name }
+:::
+::: price
+{ p.price | money }
+:::
+:button "Add to cart" -> cart += p
+:::
+@empty
+::: card .empty
+Nothing matches "**{ q }**".
+:::
+@endloop
+:::
+
+## Your cart ({ itemCount })
+
+@loop cart into item
+::: card .line
+{ item.emoji } **{ item.name }** — { item.price | money }
+:button "Remove" -> cart remove item
+:::
+@empty
+Your cart is empty — add something above.
+@endloop
+
+:if itemCount
+::: cart-foot
+**Subtotal: { subtotal | money }**
+:::
+
+### Checkout
+
+This form posts to `api/checkout.js` — a plain serverless function that runs in
+`darkmown dev` and on Vercel/Cloudflare alike. With JavaScript off it degrades to
+a native POST.
+
+:form action="/api/checkout" into receipt
+:input name placeholder="Full name" required
+:input email type=email placeholder="you@example.com" required
+:submit "Place order"
+:endform
+
+:if receipt
+::: card .receipt
+**Order placed ✓** — thanks { receipt.received.name }. A confirmation is on its way
+to { receipt.received.email }. Order { receipt.orderId }.
+:::
+:endif
+:endif
+
+:::
+
+</main>

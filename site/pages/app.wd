@@ -70,7 +70,7 @@ Nice — you are tracking the whole near-term roadmap.
 
 This form posts to the demo echo endpoint and shows the reply. With JavaScript it is a `fetch`; without it, the exact same markup is a native POST. On Vercel/dev the sample endpoint replies; on static-only hosts, point `action=` at your own backend — Darkmown adapts instead of owning one:
 
-:form action="/__wd/echo" into reply
+:form action="/api/echo" into reply
 :input note placeholder="Tell us what you'd build with this"
 :submit "Send to the server"
 :endform

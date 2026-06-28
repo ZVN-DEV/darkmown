@@ -1,0 +1,6 @@
+<nav>
+  <strong>My Blog</strong>
+  <span class="links">
+    <a href="/">Posts</a>
+  </span>
+</nav>

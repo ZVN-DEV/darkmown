@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
+import { stripRuntimeComments } from "../src/builder.js";
 
 const FALLBACK_BUDGET = 8192; // only if .size-snapshot.json is missing runtime.budget
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -43,7 +44,32 @@ const deltaText = delta === null ? "no snapshot" : `${delta >= 0 ? "+" : ""}${de
 
 console.log(`runtime: ${size} B (${deltaText}, budget ${budget})`);
 
+let failed = size >= budget;
 if (size >= budget) {
   console.error(`size:check — runtime ${size} B reached the ${budget} B budget.`);
-  process.exit(1);
 }
+
+// Pay-for-what-you-use behavior modules each carry their OWN budget, separate from
+// the core runtime ceiling — they only ship on pages that use them, so they never
+// tax the 8 KB core. Measure the comment-stripped source (exactly what emitBehaviors
+// emits) so the check doesn't depend on a demo page importing them.
+for (const [name, entry] of Object.entries(snapshot?.behaviors ?? {})) {
+  const file = path.join(repoRoot, entry.file);
+  if (!fs.existsSync(file)) {
+    console.error(`size:check — behavior "${name}" file ${entry.file} not found.`);
+    failed = true;
+    continue;
+  }
+  const stripped = stripRuntimeComments(fs.readFileSync(file, "utf8"));
+  const bsize = zlib.gzipSync(stripped).length;
+  const bdelta = typeof entry.gzip === "number" ? bsize - entry.gzip : null;
+  const bdeltaText =
+    bdelta === null ? "no snapshot" : `${bdelta >= 0 ? "+" : ""}${bdelta} vs snapshot`;
+  console.log(`behavior ${name}: ${bsize} B (${bdeltaText}, budget ${entry.budget})`);
+  if (bsize >= entry.budget) {
+    console.error(`size:check — behavior ${name} ${bsize} B reached the ${entry.budget} B budget.`);
+    failed = true;
+  }
+}
+
+if (failed) process.exit(1);

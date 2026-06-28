@@ -1,0 +1,24 @@
+---
+title: My Blog
+description: A markdown-native blog built with Darkmown.
+transitions: true
+---
+
+@include /nav.wd
+
+<main>
+
+# My Blog
+
+Posts are plain Markdown files in `site/pages/posts/`. This index is one `.wd`
+loop over a small JSON manifest — sorted newest-first, shipping zero JavaScript.
+
+@loop /posts.json into post sort by post.date desc
+::: post-card
+### [{ post.title }]({ post.url })
+<p class="post-meta">{ post.date }</p>
+{ post.excerpt }
+:::
+@endloop
+
+</main>

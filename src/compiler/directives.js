@@ -579,6 +579,129 @@ export function handleBind(line, ctx, index) {
 }
 
 /**
+ * `:slider name [= value] [min=N] [max=N] [step=N] [aria-label="…"] [persist]` — a
+ * range input two-way bound to a NUMBER :state. With `= value` it declares the state
+ * inline (seeding it numeric) and may `persist`; without `=` it binds to an already-
+ * declared :state. Pure compile-time: it reuses the runtime's input binding (range
+ * values coerce to Number), so it ships NO behavior module.
+ * @param {string} line
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @returns {string}
+ */
+export function handleSlider(line, ctx, index) {
+  const head = line.match(/^:slider\s+([A-Za-z_$][\w$]*)\s*(.*)$/);
+  if (!head)
+    throw new Error(
+      `Malformed :slider in ${at(ctx.file, index)}: ${line}. Use: :slider volume = 50 min=0 max=100 step=1`
+    );
+  const name = head[1];
+  let rest = head[2].trim();
+
+  /** @type {string | undefined} */
+  let initialRaw;
+  if (rest.startsWith("=")) {
+    const valueMatch = rest.match(/^=\s*(\S+)\s*(.*)$/);
+    if (!valueMatch)
+      throw new Error(
+        `Malformed :slider initial value in ${at(ctx.file, index)}: ${line}. Use: :slider ${name} = 50`
+      );
+    initialRaw = valueMatch[1];
+    rest = valueMatch[2].trim();
+  }
+
+  let min = "0";
+  let max = "100";
+  let step = "1";
+  /** @type {string | undefined} */
+  let ariaLabel;
+  let persist = false;
+  for (const token of rest.matchAll(/([A-Za-z-]+)=("[^"]*"|\S+)|(\bpersist\b)/g)) {
+    if (token[3]) {
+      persist = true;
+      continue;
+    }
+    const value = stripQuotes(token[2]);
+    if (token[1] === "min") min = value;
+    else if (token[1] === "max") max = value;
+    else if (token[1] === "step") step = value;
+    else if (token[1] === "aria-label") ariaLabel = value;
+    else throw new Error(`Unknown :slider attribute "${token[1]}" in ${at(ctx.file, index)}`);
+  }
+  for (const [label, raw] of [
+    ["min", min],
+    ["max", max],
+    ["step", step]
+  ]) {
+    if (!/^-?\d+(?:\.\d+)?$/.test(raw))
+      throw new Error(`:slider ${label} must be a number in ${at(ctx.file, index)}: ${raw}`);
+  }
+
+  ctx.comp.assets.runtime = true;
+  /** @type {string} */
+  let key;
+  let seed = "";
+  if (initialRaw !== undefined) {
+    const value = parseStateValue(initialRaw, at(ctx.file, index));
+    if (typeof value !== "number")
+      throw new Error(
+        `:slider ${name} initial value must be a number in ${at(ctx.file, index)}: ${initialRaw}`
+      );
+    key = declareState(name, value, ctx);
+    const persistAttr = persist ? ` data-wd-persist="${key}"` : "";
+    seed = `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
+  } else {
+    if (persist)
+      throw new Error(
+        `:slider persist only applies when declaring state inline (:slider ${name} = 0 … persist) in ${at(ctx.file, index)}`
+      );
+    const resolved = resolveStateKey(name, ctx);
+    if (!resolved)
+      throw new Error(
+        `:slider ${name} in ${ctx.file} has no matching state. Declare it: :slider ${name} = 0 min=0 max=100`
+      );
+    key = resolved;
+  }
+
+  const initial = ctx.comp.state.get(key);
+  const valueAttr =
+    initial === undefined || initial === null ? "" : ` value="${escapeHtml(String(initial))}"`;
+  const ariaAttr = ` aria-label="${escapeHtml(ariaLabel || humanizeName(name))}"`;
+  return `${seed}<input type="range" data-wd-bind-input="${key}" min="${escapeHtml(min)}" max="${escapeHtml(max)}" step="${escapeHtml(step)}"${valueAttr}${ariaAttr}>`;
+}
+
+/**
+ * `:carousel [autoplay=N]` … `:endcarousel` — a horizontally scroll-snapping
+ * carousel. Contract: each DIRECT child element of the track is one slide, so put
+ * each slide in its own block (e.g. a `::: slide` container) and give that block
+ * the slide sizing in your skin — loose prose lines would each count as a slide.
+ * Registers the `carousel` behavior (prev/next, dot nav, optional autoplay, mouse
+ * drag); native CSS scroll-snap + the page skin handle layout and touch swipe.
+ * `autoplay` is suppressed under `prefers-reduced-motion`. No runtime required.
+ * @param {string} line
+ * @param {string[]} bodyLines
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @returns {string}
+ */
+export function handleCarousel(line, bodyLines, ctx, index) {
+  const match = line.match(/^:carousel\s*(.*)$/);
+  const rest = (match?.[1] || "").trim();
+  let autoplayAttr = "";
+  if (rest) {
+    const auto = rest.match(/^autoplay=(\d+)$/);
+    if (!auto)
+      throw new Error(
+        `Malformed :carousel in ${at(ctx.file, index)}: ${line}. Use: :carousel [autoplay=3000] … :endcarousel`
+      );
+    autoplayAttr = ` data-wd-carousel-autoplay="${auto[1]}"`;
+  }
+  ctx.comp.assets.behaviors.add("carousel");
+  const inner = compileBody(bodyLines, ctx);
+  return `<div class="wd-carousel" data-wd-carousel${autoplayAttr}>\n<div class="wd-carousel-track" data-wd-carousel-track>\n${inner}\n</div>\n</div>`;
+}
+
+/**
  * @param {string} line
  * @param {Ctx} ctx
  * @param {number} index 0-based line index for `file:line` errors.

@@ -22,6 +22,9 @@
  *   - `:video`/`:audio` allow relative or `http(s)` sources — `media-src 'self' https:`.
  *   - `:embed` rewrites to exactly the YouTube no-cookie and Vimeo player origins,
  *     so `frame-src` pre-authorizes those two hosts (and nothing else).
+ *   - A native `:form action="/api/…"` POSTs same-origin, so `form-action 'self'`
+ *     authorizes it (and blocks a form exfiltrating to a third-party origin). Apps
+ *     posting to a remote backend widen this alongside `connect-src`.
  *
  * Static pages (zero framework JS) still emit inline `<style>` and an inline
  * `<script type="speculationrules">`, so they keep `'unsafe-inline'`, but they
@@ -51,6 +54,7 @@ const COMMON_CSP_DIRECTIVES = [
   CONNECT_SRC,
   "object-src 'none'",
   "base-uri 'self'",
+  "form-action 'self'",
   "frame-ancestors 'self'"
 ];
 

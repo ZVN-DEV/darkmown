@@ -162,7 +162,7 @@ test("run('init', '.') scaffolds and reports the in-place next step", async () =
   const c = capture(root);
   const result = await run(["init", "."], c.env);
   assert.equal(result.command, "init");
-  assert.match(c.stdout(), /Created Darkmown project at \./);
+  assert.match(c.stdout(), /Created Darkmown project \(starter\) at \./);
   assert.match(c.stdout(), /Next: npm install && npm run dev/);
   assert.ok(fs.existsSync(path.join(root, "site/pages/index.wd")));
 });
@@ -171,7 +171,7 @@ test("run('init', 'sub') reports a cd-prefixed next step", async () => {
   const root = freshDir("init-sub");
   const c = capture(root);
   await run(["init", "sub"], c.env);
-  assert.match(c.stdout(), /Created Darkmown project at sub/);
+  assert.match(c.stdout(), /Created Darkmown project \(starter\) at sub/);
   assert.match(c.stdout(), /Next: cd sub && npm install && npm run dev/);
 });
 
@@ -255,9 +255,17 @@ test("run('serve') serves the built dist over real HTTP, then closes cleanly", a
 
 // --- dev -------------------------------------------------------------------
 
-test("run('dev') serves dist with the dev client injected, SSE + echo, then closes", async () => {
+test("run('dev') serves dist with the dev client injected, SSE + api, then closes", async () => {
   const root = freshDir("dev");
   await run(["init", "."], capture(root).env);
+
+  // A project api/ function runs in dev with full Vercel/Cloudflare parity.
+  // `.mjs` keeps the fixture ESM regardless of the scaffold's package.json type.
+  fs.mkdirSync(path.join(root, "api"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "api/echo.mjs"),
+    "export default async (request) => Response.json({ ok: true, received: Object.fromEntries(await request.formData()) });\n"
+  );
 
   const c = capture(root);
   const prevPort = process.env.PORT;
@@ -291,8 +299,9 @@ test("run('dev') serves dist with the dev client injected, SSE + echo, then clos
     const missing = await httpGet(origin, "/no-such-page/");
     assert.equal(missing.status, 404, "dev serves a 404 for an unknown route");
 
-    // The echo endpoint round-trips a posted form body.
-    const echo = await httpPost(origin, "/__wd/echo", "name=ada&role=author");
+    // The project's api/echo function round-trips a posted form body — same
+    // path (/api/echo) the page would hit on Vercel/Cloudflare.
+    const echo = await httpPost(origin, "/api/echo", "name=ada&role=author");
     assert.equal(echo.status, 200);
     const parsed = JSON.parse(echo.body);
     assert.equal(parsed.ok, true);

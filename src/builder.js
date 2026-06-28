@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { discoverApiRoutes } from "./api-runner.js";
 import { compilePage } from "./compiler.js";
 import { createPaths } from "./config.js";
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
@@ -24,10 +25,19 @@ const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Compile the whole site under `cwd` into `dist`, returning the route manifest.
+ *
+ * The build is always 100% static, CDN-cacheable HTML. Backend `api/*.js`
+ * functions are NOT compiled — they are the host's concern. `target` only
+ * decides the small amount of host glue Darkmown emits alongside the static
+ * output: the default (`vercel`/anything) leaves `api/` for the platform to pick
+ * up natively; `cloudflare` emits a `dist/_worker.js/` module that routes
+ * `/api/*` to those same functions and serves everything else as a static asset.
+ *
  * @param {string} [cwd] Project working directory (defaults to `process.cwd()`).
+ * @param {{ target?: string }} [options] `target: "cloudflare"` emits the Pages worker.
  * @returns {{ routes: RouteManifestEntry[], distRoot: string }}
  */
-export function buildSite(cwd = process.cwd()) {
+export function buildSite(cwd = process.cwd(), options = {}) {
   const paths = createPaths(cwd);
   fs.rmSync(paths.distRoot, { recursive: true, force: true });
   fs.mkdirSync(paths.distRoot, { recursive: true });
@@ -55,14 +65,18 @@ export function buildSite(cwd = process.cwd()) {
     if (route.route === "/404/") notFoundHtml = page.html;
     emitAssets(page.assets, paths);
     if (page.assets.runtime) emitRuntime(paths);
+    emitBehaviors(page.assets, paths);
+    const behaviorSrcs = [...page.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
     manifest.push({
       route: route.route,
       file: path.relative(cwd, route.file).replaceAll(path.sep, "/"),
       assets: {
         skins: [...page.assets.skins],
-        scripts: page.assets.runtime
-          ? ["/__wd/runtime.js", ...page.assets.scripts]
-          : [...page.assets.scripts],
+        scripts: [
+          ...(page.assets.runtime ? ["/__wd/runtime.js"] : []),
+          ...behaviorSrcs,
+          ...page.assets.scripts
+        ],
         runtime: page.assets.runtime
       }
     });
@@ -85,7 +99,171 @@ export function buildSite(cwd = process.cwd()) {
   // sees every emitted route/framework file already on disk.
   emitPageAssets(paths);
 
+  // Surface api/ routing footguns on every build (target-independent): two files
+  // that resolve to the same /api path mean one is silently unreachable.
+  const apiDir = path.join(cwd, "api");
+  const apiRoutes = discoverApiRoutes(apiDir);
+  warnApiRouteCollisions(apiRoutes, apiDir);
+
+  if (options.target === "cloudflare") {
+    emitCloudflareWorker(paths, apiDir, apiRoutes);
+  }
+
   return { routes: manifest, distRoot: paths.distRoot };
+}
+
+/**
+ * Warn when more than one handler resolves to the same `/api` path, since only
+ * one is ever reachable and readdir order silently decides which. Two collisions
+ * are caught: an exact duplicate (`api/users.js` + `api/users/index.js`) and two
+ * dynamic siblings at the same position (`api/[id].js` + `api/[slug].js`), which
+ * is why dynamic segments are normalized to `[*]` before grouping.
+ * @param {import("./api-runner.js").ApiRoute[]} routes
+ * @param {string} apiDir
+ * @returns {void}
+ */
+function warnApiRouteCollisions(routes, apiDir) {
+  /** @type {Map<string, string[]>} */
+  const byPath = new Map();
+  for (const route of routes) {
+    const key = route.segments.map((s) => (s.startsWith("[") ? "[*]" : s)).join("/");
+    const list = byPath.get(key) || [];
+    list.push(path.relative(apiDir, route.file).replaceAll(path.sep, "/"));
+    byPath.set(key, list);
+  }
+  for (const [key, files] of byPath) {
+    if (files.length > 1) {
+      console.warn(
+        `hint: ${files.length} api handlers resolve to /api/${key} — only one is reachable. ` +
+          `Rename or remove: ${files.join(", ")}.`
+      );
+    }
+  }
+}
+
+/**
+ * Emit `dist/_worker.js/` for a Cloudflare Pages deploy (advanced mode). The
+ * project's `api/*.js` functions are copied in, and a generated `index.js` routes
+ * `/api/*` to them (Web-standard `(request, { params, env }) => Response`) and
+ * falls through to `env.ASSETS.fetch(request)` for static files — so `_headers`
+ * still applies to assets. No-op when the project has no `api/` functions.
+ *
+ * Handlers must be dependency-free (or pre-bundled): advanced mode does not run a
+ * bundler, so bare npm imports won't resolve. We scan copied handlers and warn on
+ * any bare specifier. Same source still runs on Vercel (which does bundle) and in
+ * `darkmown dev` — the shape is identical.
+ * @param {Paths} paths
+ * @param {string} apiDir Absolute path to the project's `api/` directory.
+ * @param {import("./api-runner.js").ApiRoute[]} routes Discovered api routes.
+ * @returns {void}
+ */
+function emitCloudflareWorker(paths, apiDir, routes) {
+  if (routes.length === 0) return;
+
+  const workerDir = path.join(paths.distRoot, "_worker.js");
+  fs.mkdirSync(workerDir, { recursive: true });
+
+  /** @type {{ ident: string, spec: string, segments: string[] }[]} */
+  const entries = [];
+  routes.forEach((route, i) => {
+    const rel = path.relative(apiDir, route.file).replaceAll(path.sep, "/");
+    const out = path.join(workerDir, "api", rel);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    const source = fs.readFileSync(route.file, "utf8");
+    warnBareImports(source, `api/${rel}`);
+    fs.writeFileSync(out, source);
+    entries.push({ ident: `h${i}`, spec: `./api/${rel}`, segments: route.segments });
+  });
+
+  const imports = entries
+    .map((e) => `import ${e.ident} from ${JSON.stringify(e.spec)};`)
+    .join("\n");
+  const table = entries
+    .map((e) => `  { segments: ${JSON.stringify(e.segments)}, handler: ${e.ident} }`)
+    .join(",\n");
+
+  fs.writeFileSync(path.join(workerDir, "index.js"), cloudflareWorkerSource(imports, table));
+}
+
+/**
+ * Warn when a Cloudflare-bound handler imports a bare npm package. Advanced mode
+ * runs no bundler, so only relative (`./`, `../`) and `node:` specifiers resolve
+ * at the edge; a bare `import x from "some-pkg"` would fail at runtime with no
+ * build-time signal. Advisory only — relative/`node:`/data imports pass clean.
+ * @param {string} source Handler source.
+ * @param {string} label Human-readable handler path for the message.
+ * @returns {void}
+ */
+function warnBareImports(source, label) {
+  /** @type {Set<string>} */
+  const bare = new Set();
+  const re =
+    /(?:^|[^.\w])(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]|(?:^|[^.\w])import\s*\(?\s*['"]([^'"]+)['"]/g;
+  for (let m = re.exec(source); m; m = re.exec(source)) {
+    const spec = m[1] || m[2];
+    if (spec && !/^[./]/.test(spec) && !spec.startsWith("node:")) bare.add(spec);
+  }
+  if (bare.size > 0) {
+    console.warn(
+      `hint: ${label} imports ${[...bare].map((s) => `"${s}"`).join(", ")} — Cloudflare ` +
+        "advanced mode runs no bundler, so bare npm imports won't resolve at the edge. " +
+        "Inline the dependency or pre-bundle the handler."
+    );
+  }
+}
+
+/**
+ * The generated Cloudflare Pages `_worker.js/index.js` source. Mirrors the
+ * dev runner's matching (static beats dynamic; `[param]` capture; `index`
+ * collapses to its directory) so routing is identical across dev and prod.
+ * @param {string} imports
+ * @param {string} table
+ * @returns {string}
+ */
+function cloudflareWorkerSource(imports, table) {
+  return `// Generated by Darkmown for Cloudflare Pages (advanced mode). Routes /api/* to
+// the project's api functions; every other request is a static asset.
+${imports}
+
+const routes = [
+${table}
+];
+
+function match(pathname) {
+  if (pathname !== "/api" && !pathname.startsWith("/api/")) return null;
+  const parts = pathname.split("/").filter(Boolean).slice(1);
+  for (const route of routes) {
+    if (route.segments.length !== parts.length) continue;
+    const params = {};
+    let ok = true;
+    for (let i = 0; i < parts.length; i++) {
+      const seg = route.segments[i];
+      if (seg[0] === "[" && seg[seg.length - 1] === "]") {
+        params[seg.slice(1, -1)] = decodeURIComponent(parts[i]);
+      } else if (seg !== parts[i]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return { handler: route.handler, params };
+  }
+  return null;
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const matched = match(new URL(request.url).pathname);
+    if (!matched) return env.ASSETS.fetch(request);
+    try {
+      const response = await matched.handler(request, { params: matched.params, env });
+      if (response instanceof Response) return response;
+      return Response.json({ ok: false, error: "Handler did not return a Response" }, { status: 500 });
+    } catch (err) {
+      return Response.json({ ok: false, error: String((err && err.message) || err) }, { status: 500 });
+    }
+  }
+};
+`;
 }
 
 /**
@@ -190,6 +368,23 @@ function emitRuntime(paths) {
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const source = fs.readFileSync(path.join(moduleDir, "runtime.js"), "utf8");
   fs.writeFileSync(out, stripRuntimeComments(source));
+}
+
+/**
+ * Emit the pay-for-what-you-use behavior modules a page asked for, comment-
+ * stripped like the runtime. Each is a standalone `/__wd/behaviors/<name>.js`
+ * module, NOT part of `runtime.js`, so the core runtime budget is untouched.
+ * @param {Assets} assets
+ * @param {Paths} paths
+ * @returns {void}
+ */
+function emitBehaviors(assets, paths) {
+  for (const name of assets.behaviors) {
+    const source = fs.readFileSync(path.join(moduleDir, "behaviors", `${name}.js`), "utf8");
+    const out = path.join(paths.distRoot, "__wd/behaviors", `${name}.js`);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, stripRuntimeComments(source));
+  }
 }
 
 /**

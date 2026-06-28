@@ -106,7 +106,7 @@ Tax (8%)
 
 This is a real form. With the runtime it posts over `fetch` and shows the reply inline; with JavaScript off, the identical markup degrades to a native POST. The demo endpoint simply echoes your order back.
 
-:form action="/__wd/echo" into receipt
+:form action="/api/echo" into receipt
 :input name placeholder="Full name" required
 :input email type=email placeholder="you@studio.com" required
 :select shipping
@@ -172,7 +172,7 @@ Total with tax — **{ total | money }**
 
 :button "Clear basket" -> cart clear
 
-:form action="/__wd/echo" into receipt
+:form action="/api/echo" into receipt
 :input name placeholder="Full name" required
 :input email type=email placeholder="you@studio.com" required
 :select shipping

@@ -1,0 +1,75 @@
+---
+title: Dashboard — built with Darkmown
+description: A live dashboard — stat cards fetched from a serverless function, on an otherwise static page.
+transitions: true
+---
+
+@include /nav.wd
+
+<main>
+
+::: section #dash
+
+# Dashboard
+
+:fetch metrics from "/api/metrics"
+
+:if metrics_loading
+::: card .note
+Loading metrics…
+:::
+:endif
+
+:if metrics_error
+::: card .error
+Couldn't load metrics: { metrics_error }
+:::
+:endif
+
+:if metrics
+::: stat-grid
+::: card .stat
+::: stat-label
+Revenue
+:::
+::: stat-num
+{ metrics.revenue | money }
+:::
+:::
+::: card .stat
+::: stat-label
+Orders
+:::
+::: stat-num
+{ metrics.orders }
+:::
+:::
+::: card .stat
+::: stat-label
+Visitors
+:::
+::: stat-num
+{ metrics.visitors }
+:::
+:::
+::: card .stat
+::: stat-label
+Conversion
+:::
+::: stat-num
+{ metrics.conversion }%
+:::
+:::
+:::
+
+::: updated
+Updated { metrics.updatedAt }
+:::
+:endif
+
+The numbers come from `api/metrics.js` — a serverless function that runs in
+`darkmown dev` and on your host. The page itself stays static; only the data fetches.
+
+:::
+
+</main>

@@ -20,18 +20,21 @@ Prints the command summary, authoring directories, and common directive syntax.
 
 Prints the installed package version.
 
-### `darkmown init [dir]`
+### `darkmown init [dir] [--template <name>]`
 
-Creates a minimal Darkmown site with:
+Scaffolds a Darkmown site from a template (default: `starter`). Available templates:
 
-- `package.json` (pins the current `@zvndev/darkmown` version)
-- `site/pages/index.wd`
-- `site/pages/index.skin`
-- `site/pages/about.md`
-- `site/_/nav.wd`
-- `README.md`
+- **`starter`** — the minimal counter + todo-loop site.
+- **`blog`** — markdown posts + a `.wd` index that loops a JSON manifest.
+- **`store`** — product grid, a shared `:store` cart, and a checkout that posts to `api/checkout.js`.
+- **`dashboard`** — stat cards that `:fetch` from `api/metrics.js`.
+- **`landing`** — a marketing one-pager with a `:carousel`.
 
-Existing files are not overwritten. The scaffolded `package.json` is private by default, includes `dev`, `build`, and `preview` scripts, and names the app after the target directory.
+```sh
+darkmown init my-site --template store
+```
+
+Existing files are never overwritten. The generated `package.json` is private, sets `"type": "module"` (so `api/*.js` import as ESM), includes `dev`/`build`/`preview` scripts, and names the app after the target directory.
 
 After scaffolding:
 
@@ -52,17 +55,28 @@ Runs a live compiler:
 - injects `/__wd/dev-client.js`
 - reloads the browser through `/__wd/dev-events`
 
-### `darkmown build`
+### `darkmown build [--target cloudflare]`
 
-Compiles `site/pages` into `dist`.
+Compiles `site/pages` into `dist`. The output is always 100% static HTML.
 
-Static pages do not receive `/__wd/runtime.js`; reactive pages do.
+Static pages do not receive `/__wd/runtime.js`; reactive pages do. Pay-for-what-you-use behavior modules (`:sortable`, `:carousel`) emit to `dist/__wd/behaviors/` only on the pages that use them.
+
+`--target cloudflare` additionally emits `dist/_worker.js` — a Cloudflare Pages worker that routes `/api/*` to the project's `api/*.js` functions and serves everything else from `env.ASSETS`. The default target leaves `api/` for Vercel to run natively. `darkmown deploy` sets the right target automatically.
 
 When a `.md` file contains `.wd` syntax (directives, includes, loops), the build prints a hint suggesting a rename to `.wd` — the syntax stays plain text in `.md` by design.
 
+### `darkmown deploy <vercel|cloudflare> [--prod]`
+
+Builds (target-aware) and deploys to the platform by wrapping its CLI:
+
+- **`vercel`** — writes a `vercel.json` if absent, then runs `npx vercel deploy` (`--prod` to promote). `api/` functions run natively as Edge Functions.
+- **`cloudflare`** — builds the `dist/_worker.js`, then runs `npx wrangler pages deploy dist --project-name <name>`.
+
+The deploy URL is printed when the CLI reports it. If the platform CLI isn't signed in, the command surfaces the login to run (`npx vercel login` / `npx wrangler login`) — in a Claude Code session you can run it inline with the `!` prefix — then re-run the deploy.
+
 ### `darkmown serve`
 
-Serves the already-built `dist` directory for local preview. Run `darkmown build` first.
+Serves the already-built `dist` directory for local preview (static only — use `darkmown dev` to exercise `api/*` locally). Run `darkmown build` first.
 
 ## Smoke checks
 
@@ -74,8 +88,24 @@ npm run smoke
 
 The smoke script packs the local tarball, installs the packed CLI in a temporary driver project, scaffolds a consumer app through that installed bin, installs the same tarball into the app, builds it, verifies the reactive home route, and verifies the plain `.md` about route stays zero-JS.
 
-## Deployment notes
+## Backends (`api/`)
 
-### Cloudflare Pages
+Backend endpoints are plain-JS Web-standard handlers in a top-level `api/` directory — the same shape on every host, and the only thing you write for a server:
 
-`wrangler.toml` builds and deploys the static `dist/` output for Cloudflare Pages. That configuration does **not** provide the demo `/__wd/echo` endpoint used by server-backed form examples; Vercel handles that route separately through `vercel.json` and `api/echo.js`. Add a Cloudflare Pages Function before advertising that demo endpoint on Cloudflare.
+```js
+// api/subscribe.js  →  /api/subscribe
+export const config = { runtime: "edge" }; // Vercel: run as an Edge Function
+
+export default async function (request, context) {
+  const { email } = await request.json();
+  return Response.json({ ok: true, email });
+}
+```
+
+`api/users/[id].js` maps to `/api/users/:id` (`context.params.id`). These run in `darkmown dev` (local runner), on **Vercel** natively, and on **Cloudflare Pages** via the `dist/_worker.js` that `darkmown deploy cloudflare` emits. `:fetch`/`:form` point at `/api/*` with no extra config. Need a Node-only API on Vercel? Drop `export const config` and use `(req, res)` — note local-dev parity is then lost for that function.
+
+**Custom server / remote backend.** Point `:fetch`/`:form` at an absolute URL (`https://api.example.com/…`) and widen the CSP `connect-src` (and `form-action` for native form POSTs) in `vercel.json` / `dist/_headers` / your serve config. Darkmown still ships static; only the requests leave your origin.
+
+### Cloudflare Pages note
+
+Cloudflare advanced mode (`dist/_worker.js`) does not run a bundler, so an `api/` handler deployed to Cloudflare must be dependency-free (or pre-bundled). The same source still runs on Vercel (which bundles) and in `darkmown dev`.

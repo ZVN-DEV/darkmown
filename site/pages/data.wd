@@ -95,7 +95,7 @@ Submit the form and this sentence reacts. Nothing leaves the page.
 
 Darkmown does not own your backend — point a form at any endpoint. With JS, the submit becomes a fetch and the JSON reply lands in state; without JS, the same markup is a plain native POST:
 
-:form action="/__wd/echo" into reply
+:form action="/api/echo" into reply
 :input message placeholder="Say something to the server"
 :submit "Send to server"
 :endform
@@ -110,7 +110,7 @@ The reply will appear here.
 The request failed: { reply_error }
 :endif
 
-In `darkmown dev` the echo endpoint is built into the dev server; on darkmown.com it is a real serverless function behind the same URL. On static-only hosts such as a plain Cloudflare Pages deploy, replace `action="/__wd/echo"` with your own API endpoint. Either way, Darkmown itself stays static — sessions ride on `:fetch` plus ordinary cookies against your real API.
+In `darkmown dev` the echo endpoint is built into the dev server; on darkmown.com it is a real serverless function behind the same URL. On static-only hosts such as a plain Cloudflare Pages deploy, replace `action="/api/echo"` with your own API endpoint. Either way, Darkmown itself stays static — sessions ride on `:fetch` plus ordinary cookies against your real API.
 
 ## Persistent state survives reload
 

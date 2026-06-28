@@ -61,9 +61,15 @@ export function compilePage(file, context) {
   const cssLinks = [...compiled.assets.skins]
     .map((href) => `<link rel="stylesheet" href="${href}">`)
     .join("\n");
-  const scriptSrcs = compiled.assets.runtime
-    ? ["/__wd/runtime.js", ...compiled.assets.scripts]
-    : [...compiled.assets.scripts];
+  // Pay-for-what-you-use behavior modules (slider is compile-time and never here;
+  // sortable/carousel each emit one) load after the runtime — sortable depends on
+  // `window.wd` — and before any colocated page script.
+  const behaviorSrcs = [...compiled.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
+  const scriptSrcs = [
+    ...(compiled.assets.runtime ? ["/__wd/runtime.js"] : []),
+    ...behaviorSrcs,
+    ...compiled.assets.scripts
+  ];
   const scripts = scriptSrcs
     .map((src) => `<script type="module" src="${src}"></script>`)
     .join("\n");
