@@ -1,0 +1,6 @@
+<nav>
+  <strong>Dashboard</strong>
+  <span class="links">
+    <a href="/">Overview</a>
+  </span>
+</nav>

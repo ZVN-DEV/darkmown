@@ -4,9 +4,11 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleApiRequest } from "./api-runner.js";
 import { buildSite } from "./builder.js";
+import { DEPLOY_TARGETS, deploy } from "./deploy.js";
 import { devClientPath, devClientScript, devEventsPath, injectDevClient } from "./dev.js";
-import { initProject } from "./scaffold.js";
+import { availableTemplates, initProject } from "./scaffold.js";
 import { contentType, resolvePublicFile, serve } from "./statics.js";
 
 const cliPath = fileURLToPath(import.meta.url);
@@ -27,6 +29,7 @@ const cliPath = fileURLToPath(import.meta.url);
  * @property {(message?: unknown, ...rest: unknown[]) => void} [log] stdout sink.
  * @property {(message?: unknown, ...rest: unknown[]) => void} [warn] stderr (warn) sink.
  * @property {(message?: unknown, ...rest: unknown[]) => void} [error] stderr (error) sink.
+ * @property {(file: string, args: string[], options: object) => Promise<{ code: number, stdout: string, stderr: string }>} [spawn] Process runner for `deploy` (defaults to a real spawn); injectable for tests.
  *
  * @param {string[]} argv The argv tail (i.e. `process.argv.slice(2)`).
  * @param {RunEnv} [env]
@@ -51,16 +54,20 @@ export async function run(argv, env = {}) {
     return { command: "version" };
   }
   if (command === "init") {
-    const target = argv[1] || ".";
-    const result = initProject(path.resolve(cwd, target));
+    const target = argv.slice(1).find((arg) => !arg.startsWith("-")) || ".";
+    const template = flagValue(argv, "--template");
+    const result = initProject(path.resolve(cwd, target), { template });
     const relativeRoot = path.relative(cwd, result.root) || ".";
-    log(`Created Darkmown project at ${relativeRoot}`);
+    log(`Created Darkmown project (${result.template}) at ${relativeRoot}`);
     log(`Next: ${nextStep(relativeRoot)}`);
     return { command: "init" };
   }
   if (command === "build") {
-    const result = buildSite(cwd);
+    const target = flagValue(argv, "--target");
+    const result = buildSite(cwd, { target });
     log(`Built ${result.routes.length} routes into ${path.relative(cwd, result.distRoot)}`);
+    if (target === "cloudflare")
+      log("Emitted dist/_worker.js for Cloudflare Pages api/* functions");
     return { command: "build" };
   }
   if (command === "dev") {
@@ -68,6 +75,15 @@ export async function run(argv, env = {}) {
   }
   if (command === "serve") {
     return startPreviewServer({ cwd, log, error });
+  }
+  if (command === "deploy") {
+    const target = argv.slice(1).find((arg) => !arg.startsWith("-"));
+    if (!target) {
+      error(`Usage: darkmown deploy <${DEPLOY_TARGETS.join("|")}> [--prod]`);
+      throw new CliError("Missing deploy target", { silent: true });
+    }
+    await deploy({ cwd, target, prod: argv.includes("--prod"), log, run: env.spawn });
+    return { command: "deploy" };
   }
   // No command matched: report it, show help, and fail like the binary always
   // did (exit 1). `silent` keeps `main` from re-printing a `✗` line on top.
@@ -157,52 +173,43 @@ function startDevServer({ cwd, log, warn, error }) {
     }
   }
 
+  const apiDir = path.join(cwd, "api");
   const server = http.createServer((req, res) => {
-    try {
-      const url = req.url || "/";
-      if (url.split("?")[0] === devEventsPath) {
-        res.writeHead(200, {
-          "content-type": "text/event-stream",
-          "cache-control": "no-cache",
-          connection: "keep-alive"
-        });
-        res.write("\n");
-        clients.add(res);
-        // Replay a broken build to clients that connect while it's still failing,
-        // so the overlay shows even after a startup or pre-connect compile error.
-        if (lastBuildError) {
-          res.write(
-            `event: builderror\ndata: ${JSON.stringify({ message: lastBuildError.slice(0, 4000) })}\n\n`
-          );
-        }
-        req.on("close", () => clients.delete(res));
-        return;
+    const url = req.url || "/";
+    if (url.split("?")[0] === devEventsPath) {
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive"
+      });
+      res.write("\n");
+      clients.add(res);
+      // Replay a broken build to clients that connect while it's still failing,
+      // so the overlay shows even after a startup or pre-connect compile error.
+      if (lastBuildError) {
+        res.write(
+          `event: builderror\ndata: ${JSON.stringify({ message: lastBuildError.slice(0, 4000) })}\n\n`
+        );
       }
-      if (url.split("?")[0] === devClientPath) {
-        res.writeHead(200, { "content-type": "text/javascript" });
-        res.end(devClientScript());
-        return;
-      }
-      if (url.split("?")[0] === "/__wd/echo" && req.method === "POST") {
-        let body = "";
-        req.on("data", (chunk) => (body += chunk));
-        req.on("end", () => {
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(
-            JSON.stringify({
-              ok: true,
-              received: Object.fromEntries(new URLSearchParams(body)),
-              at: new Date().toISOString()
-            })
-          );
-        });
-        return;
-      }
-      serveDev(distRoot, url, res);
-    } catch (err) {
-      res.writeHead(500, { "content-type": "text/plain" });
-      res.end((err instanceof Error && err.stack) || String(err));
+      req.on("close", () => clients.delete(res));
+      return;
     }
+    if (url.split("?")[0] === devClientPath) {
+      res.writeHead(200, { "content-type": "text/javascript" });
+      res.end(devClientScript());
+      return;
+    }
+    // Serverless parity: run a project `api/*.js` function if the path matches,
+    // exactly as Vercel/Cloudflare would in production; otherwise serve static. A
+    // throw on either path (e.g. a stat/read error) becomes a clean 500.
+    handleApiRequest({ apiDir, req, res })
+      .then((handled) => {
+        if (!handled) serveDev(distRoot, url, res);
+      })
+      .catch((err) => {
+        res.writeHead(500, { "content-type": "text/plain" });
+        res.end((err instanceof Error && err.stack) || String(err));
+      });
   });
 
   return new Promise((resolve) => {
@@ -293,16 +300,20 @@ export function helpText() {
   return `Darkmown
 
 Usage:
-  darkmown init [dir]   Scaffold a new Darkmown project
-  darkmown dev          Start the live compiler dev server
-  darkmown build        Compile site/pages into dist
-  darkmown serve        Preview the built dist locally
-  darkmown version      Print the installed Darkmown version
-  darkmown help         Show this help
+  darkmown init [dir] [--template <name>]   Scaffold a new project from a template
+  darkmown dev                              Start the live compiler dev server
+  darkmown build [--target cloudflare]      Compile site/pages into dist
+  darkmown deploy <${DEPLOY_TARGETS.join("|")}> [--prod]    Build + deploy to a platform
+  darkmown serve                            Preview the built dist locally
+  darkmown version                          Print the installed Darkmown version
+  darkmown help                             Show this help
+
+Templates (init --template <name>): ${availableTemplates().join(", ")}
 
 Authoring:
   site/pages          File-based routes: .md stays plain, .wd adds directives
   site/_              Include shelf for @include /name.wd
+  api/                Serverless functions: export default (request) => Response
   @loop x into item   Loop over JSON files, in-scope values, or :state lists
   *.skin              Colocated indentation-based CSS
   *.js                Colocated page behavior
@@ -316,6 +327,20 @@ Authoring:
 export function nextStep(relativeRoot) {
   if (relativeRoot === ".") return "npm install && npm run dev";
   return `cd ${relativeRoot} && npm install && npm run dev`;
+}
+
+/**
+ * Read a `--flag value` or `--flag=value` option out of an argv tail.
+ * @param {string[]} argv The argv tail.
+ * @param {string} flag The flag name, e.g. `"--target"`.
+ * @returns {string | undefined} The value, or undefined when the flag is absent.
+ */
+export function flagValue(argv, flag) {
+  const inline = argv.find((arg) => arg.startsWith(`${flag}=`));
+  if (inline) return inline.slice(flag.length + 1);
+  const index = argv.indexOf(flag);
+  if (index !== -1 && index + 1 < argv.length) return argv[index + 1];
+  return undefined;
 }
 
 /**

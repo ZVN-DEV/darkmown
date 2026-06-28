@@ -11,6 +11,7 @@ import { at } from "./context.js";
 import {
   handleBind,
   handleButton,
+  handleCarousel,
   handleChoiceGroup,
   handleComputed,
   handleContainer,
@@ -24,6 +25,7 @@ import {
   handleInput,
   handleMedia,
   handleSelect,
+  handleSlider,
   handleState,
   handleStore,
   handleSubmit,
@@ -155,6 +157,13 @@ export function compileBody(lines, ctx) {
       i = block.end;
       continue;
     }
+    if (/^:carousel(?:\s|$)/.test(line)) {
+      flush();
+      const block = scanBlock(lines, i, /^:carousel(?:\s|$)/, ":endcarousel", ctx.file);
+      out.push(handleCarousel(line, block.body, ctx, i));
+      i = block.end;
+      continue;
+    }
     if (/^:input\s/.test(line)) {
       flush();
       out.push(handleInput(line, ctx, i));
@@ -195,6 +204,11 @@ export function compileBody(lines, ctx) {
     if (/^:bind\s/.test(line)) {
       flush();
       out.push(handleBind(line, ctx, i));
+      continue;
+    }
+    if (/^:slider\s/.test(line)) {
+      flush();
+      out.push(handleSlider(line, ctx, i));
       continue;
     }
     if (/^:submit\s/.test(line)) {

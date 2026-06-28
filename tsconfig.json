@@ -14,5 +14,15 @@
     "types": ["node"]
   },
   "include": ["src/**/*.js"],
-  "exclude": ["node_modules", "dist", "tests", "site", "types", "bench", "editors", "api"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "site",
+    "types",
+    "bench",
+    "editors",
+    "api",
+    "src/templates"
+  ]
 }

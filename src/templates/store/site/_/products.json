@@ -1,0 +1,8 @@
+[
+  { "name": "Ceramic Mug", "emoji": "☕️", "price": 18 },
+  { "name": "Linen Tote", "emoji": "👜", "price": 32 },
+  { "name": "Pocket Notebook", "emoji": "📓", "price": 12 },
+  { "name": "Desk Lamp", "emoji": "💡", "price": 64 },
+  { "name": "Plant Pot", "emoji": "🪴", "price": 24 },
+  { "name": "Wall Clock", "emoji": "🕰️", "price": 48 }
+]

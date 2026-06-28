@@ -587,7 +587,9 @@ function render() {
 document.addEventListener("input", (event) => {
   const input = /** @type {HTMLInputElement | null} */ (/** @type {Element} */ (event.target)?.closest("[data-wd-bind-input]"));
   if (!input) return;
-  state[input.getAttribute("data-wd-bind-input") || ""] = input.value;
+  // A `:slider` binds a range input: keep state numeric so `:computed`/math see a
+  // number, not the DOM's string `.value`. Other inputs stay strings as before.
+  state[input.getAttribute("data-wd-bind-input") || ""] = input.type === "range" ? input.valueAsNumber : input.value;
   savePersisted();
   render();
   checkRefetch();

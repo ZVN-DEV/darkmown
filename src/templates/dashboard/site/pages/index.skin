@@ -1,0 +1,74 @@
+tokens
+  ink #0f1722
+  paper #0b1018
+  panel #131c28
+  line #243245
+  muted #8aa0b8
+  accent #4f9cff
+
+page
+  margin 0
+  font ui-sans-serif, system-ui, sans-serif
+  color #e7eefc
+  bg $paper
+  line-height 1.55
+
+main
+  max-width 880px
+  margin 0 auto
+  padding 2rem 1.5rem
+
+nav
+  display flex
+  align-items center
+  justify-content space-between
+  max-width 880px
+  margin 0 auto
+  padding 1.25rem 1.5rem
+
+nav strong
+  font-size 1.1rem
+
+nav a
+  color $accent
+  text-decoration none
+
+.stat-grid
+  display grid
+  grid-template-columns repeat(auto-fit, minmax(160px, 1fr))
+  gap 1rem
+  margin 1.5rem 0
+
+.stat
+  background $panel
+  border 1px solid $line
+  radius 12px
+  padding 1.1rem 1.25rem
+
+.stat-label
+  color $muted
+  font-size .85rem
+  text-transform uppercase
+  letter-spacing .04em
+
+.stat-num
+  font-size 1.9rem
+  font-weight 700
+  margin-top .35rem
+
+.note
+  background $panel
+  border 1px solid $line
+  radius 10px
+  padding 1rem
+
+.error
+  background #2a1620
+  border 1px solid #5b2738
+  radius 10px
+  padding 1rem
+
+.updated
+  color $muted
+  font-size .85rem
+  margin-top .5rem

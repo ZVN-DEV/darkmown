@@ -1,7 +1,19 @@
 {
   "runtime": {
     "file": "dist/__wd/runtime.js",
-    "gzip": 7440,
+    "gzip": 7459,
     "budget": 8192
+  },
+  "behaviors": {
+    "sortable": {
+      "file": "src/behaviors/sortable.js",
+      "gzip": 1541,
+      "budget": 2048
+    },
+    "carousel": {
+      "file": "src/behaviors/carousel.js",
+      "gzip": 1380,
+      "budget": 2048
+    }
   }
 }

@@ -29,15 +29,16 @@ import { compilePredicate, evalPredicate } from "./predicates.js";
  */
 
 // The fixed corrective suggestion shown for any malformed @loop header.
-const LOOP_USAGE = "Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N]";
+const LOOP_USAGE =
+  "Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N] [sortable]";
 
 /**
  * Parse the optional clause tail of a `@loop` header in FIXED order:
- * `[where P] [sort by key [asc|desc]] [reverse] [offset N] [limit N]`.
+ * `[where P] [sort by key [asc|desc]] [reverse] [offset N] [limit N] [sortable]`.
  * @param {string} tail Everything after `@loop src into item`.
  * @param {string} itemName
  * @param {Ctx} ctx
- * @returns {{ where: string|null, sort: import("./context.js").LoopOpts["sort"], reverse: boolean, offset: NumArg|null, limit: NumArg|null, refsState: boolean }}
+ * @returns {{ where: string|null, sort: import("./context.js").LoopOpts["sort"], reverse: boolean, offset: NumArg|null, limit: NumArg|null, refsState: boolean, sortable: boolean }}
  */
 function parseLoopClauses(tail, itemName, ctx) {
   // Peel clauses off the END in reverse fixed-order (limit, offset, reverse,
@@ -51,10 +52,22 @@ function parseLoopClauses(tail, itemName, ctx) {
   /** @type {NumArg|null} */ let offset = null;
   /** @type {NumArg|null} */ let limit = null;
   let refsState = false;
+  let sortable = false;
   /** @returns {never} */
   const bad = () => {
     throw new Error(`Malformed @loop clause in ${ctx.file}: "${tail.trim()}". ${LOOP_USAGE}`);
   };
+
+  // `sortable` is a position-independent flag (drag-reorder); peel it wherever it
+  // sits so the rest of the fixed-order parse is unaffected. handleLoop rejects it
+  // when combined with where/sort/reverse/offset/limit.
+  const sm = s.match(/(^|\s)sortable(?=\s|$)/);
+  if (sm) {
+    sortable = true;
+    s = (s.slice(0, sm.index) + s.slice((sm.index ?? 0) + sm[0].length))
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
   let m = s.match(/(^|\s)limit\s+(\d+|[A-Za-z_$][\w$]*)$/);
   if (m) {
@@ -96,7 +109,7 @@ function parseLoopClauses(tail, itemName, ctx) {
     // predicate means a clause was written before `where` finished (wrong order).
     if (/(^|\s)(sort\s+by\s|reverse(\s|$))/.test(where)) bad();
   }
-  return { where, sort, reverse, offset, limit, refsState };
+  return { where, sort, reverse, offset, limit, refsState, sortable };
 }
 
 /**
@@ -193,8 +206,27 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
   const itemName = match[2];
   const clauses = match[3]
     ? parseLoopClauses(match[3], itemName, ctx)
-    : { where: null, sort: null, reverse: false, offset: null, limit: null, refsState: false };
+    : {
+        where: null,
+        sort: null,
+        reverse: false,
+        offset: null,
+        limit: null,
+        refsState: false,
+        sortable: false
+      };
   const where = clauses.where ? compilePredicate(clauses.where, itemName, ctx) : null;
+  // `sortable` reorders the list directly, so it can't combine with a clause that
+  // re-derives the visible order (where/sort/reverse) or shows a partial view
+  // (offset/limit) — those would break the 1:1 DOM↔array index mapping.
+  if (
+    clauses.sortable &&
+    (where || clauses.sort || clauses.reverse || clauses.offset || clauses.limit)
+  ) {
+    throw new Error(
+      `@loop sortable cannot combine with where/sort/reverse/offset/limit in ${ctx.file}. ${LOOP_USAGE}`
+    );
+  }
   /** @type {LoopOpts} */
   const opts = {
     where,
@@ -203,7 +235,8 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
     offset: clauses.offset,
     limit: clauses.limit,
     empty: emptyLines,
-    clauseRefsState: clauses.refsState
+    clauseRefsState: clauses.refsState,
+    sortable: clauses.sortable
   };
 
   if (
@@ -242,6 +275,11 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
     // Inside a reactive loop, `@loop <outerItem>.<path> into x` loops a field of
     // the enclosing row item — an ITEM-RELATIVE loop the runtime fills per row.
     if (ctx.loopItem && segs[0] === ctx.loopItem && segs.length > 1) {
+      if (opts.sortable) {
+        throw new Error(
+          `@loop sortable is not supported on a nested (item-relative) loop in ${ctx.file}. ${LOOP_USAGE}`
+        );
+      }
       return itemRelativeLoop(segs.slice(1).join("."), itemName, bodyLines, ctx, opts);
     }
   }
@@ -298,6 +336,11 @@ function pipelineRows(rows, where, opts, ctx) {
  * @returns {string}
  */
 function loopOverData(rows, itemName, bodyLines, ctx, opts) {
+  if (opts.sortable) {
+    throw new Error(
+      `@loop sortable requires a :state or :store list to reorder, not a JSON file or in-scope value, in ${ctx.file}. ${LOOP_USAGE}`
+    );
+  }
   // Reactive when the where reads state OR an offset/limit references a state key.
   const reactive = (opts.where && opts.where.refsState) || opts.clauseRefsState;
   if (reactive) return reactiveLoop(null, itemName, bodyLines, ctx, { ...opts, data: rows });
@@ -396,7 +439,8 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
           ? { kind: "literal", value: num(limit) ?? allRows.length }
           : limit,
       empty: null,
-      clauseRefsState: false
+      clauseRefsState: false,
+      sortable: false
     },
     ctx
   );
@@ -421,9 +465,14 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
       ? compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()
       : initial;
 
+  // `sortable` tags the region for the drag-reorder behavior (emitted only here)
+  // and points it at the state key whose list it rewrites on drop.
+  const sortable = opts?.sortable || false;
+  if (sortable && key) ctx.comp.assets.behaviors.add("sortable");
   const attrs =
     loopClauseAttrs({ where, sort, reverse, offset, limit }) +
-    (baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "");
+    (baked ? ` data-wd-loop-data="${escapeHtml(JSON.stringify(baked))}"` : "") +
+    (sortable && key ? ` data-wd-sortable="${escapeHtml(key)}"` : "");
   return `<div data-wd-loop="${escapeHtml(key || "")}"${attrs}><template data-wd-loop-template>${itemTemplate}</template>${emptyTemplate}<${wrapperTag} data-wd-loop-out>${initialOut}</${wrapperTag}></div>`;
 }
 

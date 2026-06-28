@@ -1,0 +1,86 @@
+---
+title: Interactions — sliders, drag & carousels in Markdown
+description: :slider, :sortable, and :carousel — rich interactions that compile to tiny pay-for-what-you-use modules, declared in plain Markdown. Sliders ship zero JS; sortable and carousel each load one small module, only on the pages that use them.
+image: https://darkmown.com/__wd/media/og-showcase.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide app-interactions">
+
+::: section #interactions
+
+::: ix-head
+::: eyebrow .ix-eyebrow
+Pay-for-what-you-use interactions
+:::
+
+# *Interactions*
+
+::: ix-tagline
+A range slider, drag-to-reorder, and a carousel — all declared in Markdown. The
+slider is compile-time (zero JavaScript). `:sortable` and `:carousel` each load
+one tiny module from `/__wd/behaviors/`, **only** on this page.
+:::
+:::
+
+::: card .ix-panel
+## Slider
+
+:slider volume = 60 min=0 max=100 step=5
+
+::: readout
+Volume: **{ volume }** / 100
+:::
+
+::: ix-note
+`:slider` renders a bound range input. Range values coerce to a Number, so
+`{ volume }` and any `:computed` math see `60`, not `"60"`.
+:::
+:::
+
+::: card .ix-panel
+## Drag to reorder
+
+:store tasks = ["Sketch the idea", "Draft the page", "Review with the team", "Ship it"]
+
+::: sortlist
+@loop tasks into t sortable
+::: row
+<span class="grip" aria-hidden="true">⠿</span> { t }
+:::
+@endloop
+:::
+
+::: ix-note
+Drag a row to reorder, or focus one and press ↑ / ↓. The order is rewritten on
+the underlying `:store` through `window.wd`, so the keyed loop repaints.
+:::
+:::
+
+::: card .ix-panel
+## Carousel
+
+:carousel
+::: slide
+### Native swipe
+CSS scroll-snap does the swiping — touch works with zero JavaScript.
+:::
+::: slide
+### Controls, added
+The module adds prev/next buttons, dot navigation, and mouse drag.
+:::
+::: slide
+### Loaded on demand
+`carousel.js` ships only because this page uses `:carousel`.
+:::
+:endcarousel
+:::
+
+:::
+
+</main>
+
+@include /footer.wd

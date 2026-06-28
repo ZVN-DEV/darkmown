@@ -1,24 +1,60 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const templatesDir = path.join(moduleDir, "templates");
 
 const darkmownVersion = JSON.parse(
   fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version;
 
 /**
- * Scaffold a new Darkmown project into `root`, creating files that don't exist.
- * @param {string} root Absolute path to the target project directory.
- * @returns {{ root: string }}
+ * List the available scaffold templates (directory names under `src/templates`).
+ * @returns {string[]}
  */
-export function initProject(root) {
+export function availableTemplates() {
+  if (!fs.existsSync(templatesDir)) return [];
+  return fs
+    .readdirSync(templatesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/**
+ * Scaffold a new Darkmown project into `root` from a template, creating files
+ * that don't already exist (never overwriting). `package.json` is generated (so
+ * the name tracks the directory and the `@zvndev/darkmown` dep pins the installed
+ * version); every other file is copied verbatim from the chosen template.
+ * @param {string} root Absolute path to the target project directory.
+ * @param {{ template?: string }} [options] `template` defaults to `"starter"`.
+ * @returns {{ root: string, template: string }}
+ */
+export function initProject(root, options = {}) {
+  const template = options.template || "starter";
+  const templateDir = path.join(templatesDir, template);
+  if (!fs.existsSync(templateDir) || !fs.statSync(templateDir).isDirectory()) {
+    const list = availableTemplates().join(", ");
+    throw new Error(
+      `Unknown template "${template}". Available templates: ${list || "(none)"}. ` +
+        "Use: darkmown init [dir] --template <name>"
+    );
+  }
+
   fs.mkdirSync(root, { recursive: true });
+
+  // package.json is generated, not copied: the name follows the target directory,
+  // the dep pins the installed Darkmown version, and `type: "module"` makes a
+  // project `api/*.js` import as ESM in `darkmown dev` and on every host.
   writeNew(
     root,
     "package.json",
-    JSON.stringify(
+    `${JSON.stringify(
       {
         name: packageNameFromRoot(root),
         private: true,
+        type: "module",
         scripts: {
           dev: "darkmown dev",
           build: "darkmown build",
@@ -30,161 +66,57 @@ export function initProject(root) {
       },
       null,
       2
-    )
+    )}\n`
   );
-  writeNew(
-    root,
-    "site/pages/index.wd",
-    [
-      "---",
-      "title: My Darkmown site",
-      "---",
-      "",
-      "@include /nav.wd",
-      "",
-      "<main>",
-      "",
-      "# My Darkmown site",
-      "",
-      "Plain Markdown works. Rename to `.wd` when you want directives.",
-      "",
-      ":state count = 0",
-      "",
-      "Count: { count }",
-      "",
-      ':button "Increment" -> count++',
-      "",
-      ':state todos = ["Write a page"]',
-      "",
-      "@loop todos into todo",
-      "- { todo }",
-      "@endloop",
-      "",
-      ':button "Add" -> todos += "Add a loop"',
-      "",
-      "</main>"
-    ].join("\n")
-  );
-  writeNew(
-    root,
-    "site/pages/index.skin",
-    [
-      "tokens",
-      "  ink #172026",
-      "  paper #f7f2e8",
-      "  accent #0f8b8d",
-      "",
-      "page",
-      "  margin 0",
-      "  font ui-sans-serif, system-ui, sans-serif",
-      "  color $ink",
-      "  bg $paper",
-      "",
-      "main",
-      "  max-width 760px",
-      "  margin 0 auto",
-      "  padding 3rem 1.5rem",
-      "",
-      "nav",
-      "  display flex",
-      "  align-items center",
-      "  justify-content space-between",
-      "  gap 1rem",
-      "  max-width 760px",
-      "  margin 0 auto",
-      "  padding 1.25rem 1.5rem",
-      "",
-      "nav strong",
-      "  font-size 1.1rem",
-      "",
-      "nav .links",
-      "  display flex",
-      "  gap 1.25rem",
-      "",
-      "nav a",
-      "  color $ink",
-      "  text-decoration none",
-      "  opacity .8",
-      "",
-      "nav a:hover",
-      "  opacity 1",
-      "  color $accent",
-      "",
-      "button",
-      "  bg $accent",
-      "  color white",
-      "  border 0",
-      "  padding .75rem 1rem",
-      "  radius 8px"
-    ].join("\n")
-  );
-  writeNew(
-    root,
-    "site/_/nav.wd",
-    [
-      "<nav>",
-      "  <strong>My site</strong>",
-      '  <span class="links">',
-      '    <a href="/">Home</a>',
-      '    <a href="/about/">About</a>',
-      "  </span>",
-      "</nav>"
-    ].join("\n")
-  );
-  writeNew(
-    root,
-    "site/pages/about.md",
-    [
-      "---",
-      "title: About",
-      "---",
-      "",
-      "# About",
-      "",
-      "This page is plain Markdown (`.md`) — strict CommonMark, zero framework JavaScript.",
-      "Rename it to `.wd` when you want directives like state, loops, or forms.",
-      "",
-      "[Back home](/)"
-    ].join("\n")
-  );
-  writeNew(
-    root,
-    "README.md",
-    [
-      "# My Darkmown site",
-      "",
-      "Run `npm install` and `npm run dev` to start the live compiler.",
-      "",
-      "## Commands",
-      "",
-      "- `npm run dev` — live compiler on http://localhost:5173 with hot reload.",
-      "- `npm run build` — compile the site to `dist/`.",
-      "- `npm run preview` — serve the built `dist/` locally.",
-      "",
-      "## Layout",
-      "",
-      "- Pages live in `site/pages`.",
-      "- Shared includes live in `site/_`.",
-      "- Hidden route files start with `.` or `-`.",
-      "- Colocated `index.skin` and `index.js` attach automatically.",
-      "- Any other file under `site/pages` (images, fonts, …) copies to `dist/` at its own path."
-    ].join("\n")
-  );
-  return { root };
+
+  for (const rel of walk(templateDir)) {
+    copyNew(path.join(templateDir, rel), path.join(root, rel));
+  }
+  return { root, template };
 }
 
 /**
- * Write a file relative to `root` only if it does not already exist.
+ * Write a file relative to `root` only if it does not already exist. Content is
+ * written verbatim (callers include any trailing newline).
  * @param {string} root Project root directory.
  * @param {string} file Path relative to `root`.
- * @param {string} content File contents (a trailing newline is added).
+ * @param {string} content File contents.
  * @returns {void}
  */
 function writeNew(root, file, content) {
   const target = path.join(root, file);
   if (fs.existsSync(target)) return;
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, `${content}\n`);
+  fs.writeFileSync(target, content);
+}
+
+/**
+ * Copy a template file to `dest`, preserving bytes, only if `dest` is absent.
+ * @param {string} source
+ * @param {string} dest
+ * @returns {void}
+ */
+function copyNew(source, dest) {
+  if (fs.existsSync(dest)) return;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(source, dest);
+}
+
+/**
+ * Relative paths of every file under `dir` (POSIX-separated), recursively.
+ * @param {string} dir
+ * @param {string} [base]
+ * @returns {string[]}
+ */
+function walk(dir, base = dir) {
+  /** @type {string[]} */
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const abs = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walk(abs, base));
+    else files.push(path.relative(base, abs).replaceAll(path.sep, "/"));
+  }
+  return files;
 }
 
 /**

@@ -29,6 +29,9 @@
  * @property {Set<string>} scripts Public hrefs of colocated page scripts.
  * @property {Map<string, string>} files Source path → public href for emitted assets.
  * @property {boolean} runtime Whether the reactive runtime is required.
+ * @property {Set<string>} behaviors Names of framework behavior modules this page
+ *   needs (`slider` is compile-time only and never appears here; `sortable`,
+ *   `carousel` each emit a pay-for-what-you-use `/__wd/behaviors/<name>.js`).
  */
 
 /**
@@ -103,6 +106,8 @@
  * @property {NumArg | null} limit
  * @property {string[] | null} empty Empty-branch body lines, if any.
  * @property {boolean} clauseRefsState Whether offset/limit reference state.
+ * @property {boolean} sortable Drag-to-reorder the underlying :state/:store list
+ *   (the `sortable` clause). Only valid on a plain reactive state-key loop.
  */
 
 /**
@@ -130,7 +135,13 @@ export const LOOP_META = {
 /** @returns {Compilation} */
 export function createCompilation() {
   return {
-    assets: { skins: new Set(), scripts: new Set(), files: new Map(), runtime: false },
+    assets: {
+      skins: new Set(),
+      scripts: new Set(),
+      files: new Map(),
+      runtime: false,
+      behaviors: new Set()
+    },
     state: new Map(),
     stores: new Set(),
     warnings: [],

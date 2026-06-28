@@ -21,6 +21,22 @@ test("runtime stays under the gzip budget that the brand promises", () => {
   console.log(`shipped runtime: ${size} bytes gzipped (budget ${BUDGET})`);
 });
 
+test("each behavior module stays under its own gzip budget, separate from the runtime", () => {
+  // Behaviors are pay-for-what-you-use: emitted only on pages that use them, so they
+  // carry their OWN budget and never count against the 8 KB core runtime ceiling.
+  const behaviors = snapshot.behaviors ?? {};
+  assert.ok(Object.keys(behaviors).length > 0, ".size-snapshot.json must list behavior budgets");
+  for (const [name, entry] of Object.entries(behaviors)) {
+    const shipped = stripRuntimeComments(readFileSync(entry.file, "utf8"));
+    const size = gzipSync(shipped).length;
+    assert.ok(
+      size < entry.budget,
+      `behavior ${name} is ${size} bytes gzipped — budget is ${entry.budget}`
+    );
+    console.log(`behavior ${name}: ${size} bytes gzipped (budget ${entry.budget})`);
+  }
+});
+
 test("the gzip budget has a single source of truth — no config hardcodes it", () => {
   assert.equal(
     typeof BUDGET,

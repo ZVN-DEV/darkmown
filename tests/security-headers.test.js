@@ -22,6 +22,7 @@ test("reactive CSP allows unsafe-eval (new Function) and unsafe-inline", () => {
   assert.match(REACTIVE_CSP, /default-src 'self'/);
   assert.match(REACTIVE_CSP, /object-src 'none'/);
   assert.match(REACTIVE_CSP, /base-uri 'self'/);
+  assert.match(REACTIVE_CSP, /form-action 'self'/);
   assert.match(REACTIVE_CSP, /frame-ancestors 'self'/);
 });
 
@@ -174,6 +175,30 @@ test("vercel.json header rules contain only Vercel-allowed properties", () => {
         `vercel.json headers[${i}] has invalid property "${key}" — Vercel rejects unknown keys and fails the build. Allowed: ${[...ALLOWED].join(", ")}.`
       );
     }
+  }
+});
+
+// A native `:form action="/api/…"` POSTs same-origin; `form-action 'self'` permits
+// it while blocking a form that tries to exfiltrate to a third-party origin. The
+// directive must be present in BOTH CSP variants (headers.js → statics.js +
+// dist/_headers) AND in every CSP string in the hand-maintained vercel.json copy,
+// or a form silently breaks on one delivery surface. This guards that sync.
+test("form-action 'self' is present in both CSP variants and in vercel.json", () => {
+  for (const csp of [REACTIVE_CSP, STATIC_CSP]) {
+    assert.match(csp, /form-action 'self'/, "headers.js CSP must authorize same-origin form posts");
+  }
+  const vercel = JSON.parse(fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf8"));
+  const cspValues = (vercel.headers || [])
+    .flatMap((rule) => rule.headers || [])
+    .filter((h) => h.key === "Content-Security-Policy")
+    .map((h) => h.value);
+  assert.ok(cspValues.length >= 1, "vercel.json must define at least one CSP");
+  for (const value of cspValues) {
+    assert.match(
+      value,
+      /form-action 'self'/,
+      "vercel.json CSP is missing form-action 'self' — it drifted from headers.js, so native form posts break on Vercel"
+    );
   }
 });
 
