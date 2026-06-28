@@ -26,7 +26,7 @@ jobs:
       - run: npm test
 
   coverage:
-    name: Coverage gate (src-only line >= 90%)
+    name: Coverage gate (src-only line >= 100%)
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -40,8 +40,9 @@ jobs:
       - run: npm ci
       # Zero-dep, no experimental flags: runs the suite under NODE_V8_COVERAGE
       # and aggregates LINE coverage over src/** only (tests/** and scripts/**
-      # are excluded from the denominator). Fails if src-only line coverage
-      # drops below 90%. Works identically on Node 20/22/24. src/runtime.js is
+      # are excluded from the denominator). `test:cov` enforces 100% src-only
+      # line coverage (scripts/test-coverage-gate.mjs 100). Works identically on
+      # Node 20/22/24. src/runtime.js is
       # browser-only (loaded as a vm string in unit tests) so it is disclosed
       # but not in this line gate — the Playwright e2e job is its enforced net.
       - run: npm run test:cov
