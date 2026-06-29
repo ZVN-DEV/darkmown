@@ -124,20 +124,70 @@ test("npm run build writes dist/_headers with the CSP for static and reactive ro
 // ---------------------------------------------------------------------------
 // Drift guard: vercel.json is hand-maintained (Vercel reads it before the build,
 // so it can't be generated from the manifest like _headers). Cross-check its
-// static-CSP route list against the real demo build so a new static route can't
-// silently miss the eval-free CSP on Vercel.
+// static-CSP rules against the real demo build by resolving the CSP each FULL
+// route path would actually receive on Vercel — so a NESTED static route (e.g.
+// /blog/<slug>/) can't silently fall through to the relaxed (unsafe-eval) CSP.
+//
+// Vercel matches a header rule's `source` with path-to-regexp and applies every
+// matching rule in order; for a repeated header key the LAST match wins. We mirror
+// that here: compile each rule's `source` to a RegExp, run the route's served URL
+// (clean-URL, no trailing slash) through them in order, and take the last CSP.
 // ---------------------------------------------------------------------------
 
-test("vercel.json static-CSP route list covers every runtime:false demo route", () => {
+/**
+ * Translate the subset of path-to-regexp syntax our vercel.json uses into a
+ * RegExp, the way Vercel compiles a header rule `source`. Handles literal path
+ * segments, a `(a|b|c)` alternation group, and a trailing `:path*` (zero-or-more
+ * descendant segments). Anchored full-match, like Vercel.
+ * @param {string} source
+ * @returns {RegExp}
+ */
+function vercelSourceToRegExp(source) {
+  let re = "";
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === "(") {
+      // path-to-regexp passes a `(...)` group through as a raw regex (e.g. the
+      // catch-all `(.*)` or the alternation `(docs|blog|…)` whose segment names
+      // carry no regex metachars), so emit its contents verbatim.
+      const end = source.indexOf(")", i);
+      re += `(?:${source.slice(i + 1, end)})`;
+      i = end;
+    } else if (source.startsWith(":path*", i)) {
+      // Zero-or-more trailing path segments. The preceding "/" is already emitted,
+      // so make that slash + the rest optional: matches both `/blog` and `/blog/x`.
+      re = `${re.replace(/\/$/, "")}(?:/.*)?`;
+      i += ":path*".length - 1;
+    } else {
+      re += escapeRe(ch);
+    }
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/**
+ * Resolve the Content-Security-Policy a given URL path receives on Vercel: walk
+ * every header rule in order, and for each rule whose `source` matches, take its
+ * CSP — last writer wins (Vercel's behavior for a repeated header key).
+ * @param {{ source: string, headers: { key: string, value: string }[] }[]} rules
+ * @param {string} urlPath
+ * @returns {string | null}
+ */
+function resolveVercelCsp(rules, urlPath) {
+  let csp = null;
+  for (const rule of rules) {
+    if (!vercelSourceToRegExp(rule.source).test(urlPath)) continue;
+    for (const h of rule.headers || []) {
+      if (h.key === "Content-Security-Policy") csp = h.value;
+    }
+  }
+  return csp;
+}
+
+test("vercel.json applies the strict CSP to EVERY static route — incl. nested — and relaxed to reactive", () => {
   const repoRoot = process.cwd();
   const vercel = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
-  const staticRule = (vercel.headers || []).find((h) =>
-    (h.headers || []).some(
-      (x) => x.key === "Content-Security-Policy" && !x.value.includes("unsafe-eval")
-    )
-  );
-  assert.ok(staticRule, "vercel.json must define a static (eval-free) CSP rule");
-  const alts = (staticRule.source.match(/\(([^)]+)\)/) || ["", ""])[1].split("|").filter(Boolean);
+  const rules = vercel.headers || [];
 
   // Build the real demo (copied into a temp dir so we never clobber ./dist).
   const root = fixture();
@@ -146,12 +196,34 @@ test("vercel.json static-CSP route list covers every runtime:false demo route", 
   const routes = JSON.parse(fs.readFileSync(path.join(root, "dist/routes.json"), "utf8"));
 
   const staticRoutes = routes.filter((r) => r.assets.runtime === false);
+  const reactiveRoutes = routes.filter((r) => r.assets.runtime === true);
   assert.ok(staticRoutes.length > 0, "expected at least one static demo route");
+  assert.ok(reactiveRoutes.length > 0, "expected at least one reactive demo route");
+  // The demo must include a NESTED static route, or this guard can't catch the bug
+  // it exists to catch (a slug/pager route inheriting the relaxed CSP).
+  assert.ok(
+    staticRoutes.some((r) => r.route.replace(/^\/|\/$/g, "").includes("/")),
+    "expected a nested static demo route (e.g. /blog/<slug>/) to exercise the guard"
+  );
+
+  // cleanUrls + trailingSlash:false → "/blog/shipping-feeds/" is served at
+  // "/blog/shipping-feeds". The root "/" maps to "/".
+  const servedPath = (route) => (route === "/" ? "/" : route.replace(/\/$/, ""));
+
   for (const r of staticRoutes) {
-    const segment = r.route.replace(/^\//, "").split("/")[0] || "";
-    assert.ok(
-      alts.includes(segment),
-      `static route ${r.route} (segment "${segment}") is missing from vercel.json static-CSP source /(${alts.join("|")})/ — add it or its CSP drifts to the relaxed (unsafe-eval) policy on Vercel.`
+    const csp = resolveVercelCsp(rules, servedPath(r.route));
+    assert.equal(
+      csp,
+      STATIC_CSP,
+      `static route ${r.route} (served at ${servedPath(r.route)}) resolves to a CSP that is NOT the strict eval-free policy — it drifts to the relaxed (unsafe-eval) CSP on Vercel. Extend the vercel.json static-CSP source to cover it.`
+    );
+  }
+  for (const r of reactiveRoutes) {
+    const csp = resolveVercelCsp(rules, servedPath(r.route));
+    assert.equal(
+      csp,
+      REACTIVE_CSP,
+      `reactive route ${r.route} (served at ${servedPath(r.route)}) must keep the relaxed CSP — a strict CSP breaks its runtime new Function().`
     );
   }
 });

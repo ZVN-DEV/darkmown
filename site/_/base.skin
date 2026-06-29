@@ -37,6 +37,13 @@ tokens
   radius 12px
   radius-sm 8px
   radius-lg 20px
+  field-bg #ffffff
+  field-line #d9d2c4
+  field-line-strong #c4baa8
+  control-shadow 0 1px 2px rgba(28,24,20,.06)
+  control-shadow-hover 0 6px 18px -8px rgba(28,24,20,.45)
+  accent-press #094339
+  on-accent #ffffff
 
 tokens dark
   ink #ece6db
@@ -66,6 +73,13 @@ tokens dark
   code-number #f2bb8a
   code-punctuation #b6c2bc
   ring #5ccab4
+  field-bg #1a1612
+  field-line #38301f
+  field-line-strong #4a3f2c
+  control-shadow 0 1px 2px rgba(0,0,0,.4)
+  control-shadow-hover 0 8px 22px -10px rgba(0,0,0,.7)
+  accent-press #b6ecdc
+  on-accent #0c1310
 
 /* ── Reset & base ───────────────────────────────────────────────── */
 
@@ -156,45 +170,234 @@ main
   color $accent
   margin 0 0 .35rem
 
-/* ── Buttons ────────────────────────────────────────────────────── */
+/* ── Buttons ────────────────────────────────────────────────────────
+   Two ways to get a button, ONE consistent look:
+   1. The `.btn` class (for link-styled buttons: <a class="btn">).
+   2. A bare <button> — what the `:button`/`:submit` directives emit with
+      no class. Both share the same sizing, states, and tokens so a demo,
+      a scaffold, or a docs page looks designed without per-page styling.
+   The bare-button default is the ACCENT (filled) treatment, because a
+   directive button is almost always the page's primary action. Opt down
+   to a quieter look with class="secondary" / class="ghost".
+   ─────────────────────────────────────────────────────────────────── */
 
-.btn
+/* Shared geometry + motion for every button-shaped thing. One-line comma
+   selector (multi-line comma lists silently drop all but the last). */
+.btn, button, button[data-wd-action], button[data-wd-actions], [type=submit], [type=button], [type=reset]
   display inline-flex
   align-items center
+  justify-content center
   gap .5rem
   margin .4rem .5rem .4rem 0
-  padding .7rem 1.15rem
-  font-size .95rem
-  font-weight 550
-  line-height 1
+  padding .62rem 1.15rem
+  font-family system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
+  font-size .94rem
+  font-weight 560
+  line-height 1.15
+  letter-spacing -.005em
   color $ink
   bg $panel
   border 1px solid $line
   radius 999px
   text-decoration none
   cursor pointer
-  transition transform .12s ease, box-shadow .12s ease, background .12s ease
+  -webkit-appearance none
+  appearance none
+  transition transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s ease, background .14s ease, border-color .14s ease, color .14s ease
+
+/* The filled accent default — applies to bare directive buttons and to
+   the opt-in `.btn.primary` / `.btn.warm` link variants. One-line list. */
+button, button[data-wd-action], button[data-wd-actions], [type=submit], .btn.primary
+  bg $accent
+  color $on-accent
+  border-color $accent
+  box-shadow $control-shadow
+
+button:hover, button[data-wd-action]:hover, button[data-wd-actions]:hover, [type=submit]:hover, .btn.primary:hover
+  bg $accent-deep
+  border-color $accent-deep
+  color $on-accent
+  transform translateY(-1px)
+  box-shadow $control-shadow-hover
+
+button:active, button[data-wd-action]:active, button[data-wd-actions]:active, [type=submit]:active, .btn.primary:active
+  bg $accent-press
+  border-color $accent-press
+  transform translateY(0)
+  box-shadow $control-shadow
+
+/* Visible keyboard focus on every interactive control — accessibility. */
+.btn:focus-visible, button:focus-visible, [type=submit]:focus-visible, [type=button]:focus-visible, [type=reset]:focus-visible
+  outline 2px solid $ring
+  outline-offset 2px
+
+button:disabled, [type=submit]:disabled, .btn[aria-disabled=true], [type=button]:disabled
+  opacity .5
+  cursor not-allowed
+  box-shadow none
+  transform none
+
+/* Quieter, neutral button — a secondary/cancel action. One-line list. */
+.btn, button.secondary, button.ghost, .btn.secondary, .btn.ghost
+  bg $panel
+  color $ink
+  border-color $line
 
 .btn:hover
   transform translateY(-1px)
-  box-shadow 0 6px 18px -8px rgba(28,24,20,.35)
+  box-shadow $control-shadow-hover
 
-.btn.primary
-  bg $accent
-  color #fff
-  border-color $accent
+button.secondary:hover, .btn.secondary:hover
+  bg $sunk
+  border-color $line
+  color $ink
+  transform translateY(-1px)
+  box-shadow $control-shadow-hover
 
-.btn.primary:hover
-  bg $accent-deep
-  color #fff
+button.ghost, .btn.ghost
+  bg transparent
+  border-color transparent
+  box-shadow none
+
+button.ghost:hover, .btn.ghost:hover
+  bg $sunk
+  box-shadow none
+  transform none
 
 .btn.warm
   bg $warm
   color #fff
   border-color $warm
 
-.btn.ghost
-  bg transparent
+.btn.warm:hover
+  bg $warm
+  color #fff
+
+/* ── Form controls ──────────────────────────────────────────────────
+   `:input`/`:bind`/`:textarea`/`:select` emit bare <input>/<textarea>/
+   <select> — style them here so forms look designed by default. ─────── */
+
+input, textarea, select
+  font-family system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
+  font-size .95rem
+  line-height 1.4
+  color $ink
+  bg $field-bg
+  border 1px solid $field-line
+  radius $radius-sm
+  padding .58rem .8rem
+  margin .35rem 0
+  width 100%
+  max-width 28rem
+  -webkit-appearance none
+  appearance none
+  transition border-color .14s ease, box-shadow .14s ease, background .14s ease
+
+input::placeholder, textarea::placeholder
+  color $faint
+
+input:hover, textarea:hover, select:hover
+  border-color $field-line-strong
+
+input:focus-visible, textarea:focus-visible, select:focus-visible
+  outline none
+  border-color $accent
+  box-shadow 0 0 0 3px $accent-soft
+
+input:disabled, textarea:disabled, select:disabled
+  opacity .55
+  cursor not-allowed
+  bg $sunk
+
+textarea
+  min-height 6.5rem
+  resize vertical
+
+/* Native select chevron (the appearance reset hides the default arrow). */
+select
+  background-image url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23756a5d' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+  background-repeat no-repeat
+  background-position right .75rem center
+  padding-right 2.25rem
+  cursor pointer
+
+/* Checkbox / radio — accent-tinted, comfortable hit target. The directive
+   emits <label><input type=checkbox|radio> Text</label> in .wd-checkboxes /
+   .wd-radios groups. One-line comma list. */
+.wd-checkboxes, .wd-radios
+  display flex
+  flex-direction column
+  gap .55rem
+  margin .5rem 0
+
+.wd-checkboxes label, .wd-radios label
+  display flex
+  align-items center
+  gap .55rem
+  cursor pointer
+
+[type=checkbox], [type=radio]
+  width 1.1rem
+  height 1.1rem
+  min-width 1.1rem
+  margin 0
+  max-width none
+  padding 0
+  accent-color $accent
+  cursor pointer
+
+[type=checkbox]:focus-visible, [type=radio]:focus-visible
+  outline 2px solid $ring
+  outline-offset 2px
+
+label
+  font-size .95rem
+  color $ink-soft
+
+/* The range slider (`:slider`) — tint the track to the brand accent. */
+[type=range]
+  accent-color $accent
+  cursor pointer
+  padding 0
+
+/* Framework control buttons (`:carousel` injects these at runtime). They
+   must NOT inherit the big accent pill above — reset them to a compact,
+   neutral round control. Page skins can still override. One-line lists. */
+.wd-carousel-prev, .wd-carousel-next
+  width 2.25rem
+  height 2.25rem
+  padding 0
+  margin 0
+  bg $panel
+  color $ink
+  border 1px solid $line
+  radius 999px
+  box-shadow $control-shadow
+
+.wd-carousel-prev:hover, .wd-carousel-next:hover
+  bg $panel
+  border-color $accent
+  color $accent
+  transform none
+  box-shadow $control-shadow-hover
+
+.wd-carousel-dot
+  width .6rem
+  height .6rem
+  padding 0
+  margin 0
+  border 0
+  radius 999px
+  bg $line
+  box-shadow none
+
+.wd-carousel-dot:hover
+  bg $faint
+  transform none
+  box-shadow none
+
+.wd-carousel-dot[aria-current=true]
+  bg $accent
 
 /* ── Cards & surfaces ───────────────────────────────────────────── */
 
@@ -358,6 +561,16 @@ blockquote
 .source-reveal pre
   margin 0
   radius 0
+
+/* ── Motion preference ──────────────────────────────────────────────
+   Honour users who ask for less motion: drop the button lift/transition.
+   (@media must be indented in a .skin — its rules wrap automatically.) ── */
+
+@media (prefers-reduced-motion: reduce)
+  .btn, button, [type=submit], [type=button], input, textarea, select
+    transition none
+  .btn:hover, button:hover, [type=submit]:hover
+    transform none
 
 /* ── Footer ─────────────────────────────────────────────────────── */
 

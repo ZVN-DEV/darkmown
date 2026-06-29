@@ -1,8 +1,23 @@
 tokens
   ink #1d2530
   paper #fbfaf7
+  panel #ffffff
+  line #e7e3da
   muted #6b7785
   accent #2f6df0
+  accent-deep #2356cc
+  ring #2f6df0
+  radius 10px
+
+tokens dark
+  ink #e7ecf3
+  paper #0f141b
+  panel #161d27
+  line #28303c
+  muted #93a0b2
+  accent #5b8cff
+  accent-deep #80a6ff
+  ring #5b8cff
 
 page
   margin 0
@@ -10,6 +25,7 @@ page
   color $ink
   bg $paper
   line-height 1.6
+  -webkit-font-smoothing antialiased
 
 main
   max-width 720px
@@ -49,3 +65,71 @@ nav a
   margin 0 0 .5rem
   color $muted
   font-size .9rem
+
+/* Buttons & form controls — for newsletter signups, :button actions, etc. */
+button
+  display inline-flex
+  align-items center
+  justify-content center
+  gap .5rem
+  bg $accent
+  color white
+  border 1px solid $accent
+  padding .6rem 1.15rem
+  margin .4rem .5rem .4rem 0
+  radius 999px
+  font-size .94rem
+  font-weight 560
+  line-height 1.15
+  cursor pointer
+  appearance none
+  box-shadow 0 1px 2px rgba(29,37,48,.08)
+  transition transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s ease, background .14s ease, border-color .14s ease
+
+button:hover
+  bg $accent-deep
+  border-color $accent-deep
+  transform translateY(-1px)
+  box-shadow 0 8px 18px -8px rgba(47,109,240,.55)
+
+button:active
+  transform translateY(0)
+  box-shadow 0 1px 2px rgba(29,37,48,.08)
+
+button:focus-visible
+  outline 2px solid $ring
+  outline-offset 2px
+
+button:disabled
+  opacity .5
+  cursor not-allowed
+  box-shadow none
+  transform none
+
+input, textarea, select
+  font inherit
+  font-size .95rem
+  color $ink
+  bg $panel
+  border 1px solid $line
+  radius $radius
+  padding .58rem .8rem
+  margin .35rem 0
+  width 100%
+  max-width 24rem
+  appearance none
+  transition border-color .14s ease, box-shadow .14s ease
+
+input:hover, textarea:hover, select:hover
+  border-color $accent
+
+input:focus-visible, textarea:focus-visible, select:focus-visible
+  outline none
+  border-color $accent
+  box-shadow 0 0 0 3px rgba(47,109,240,.18)
+
+@media (prefers-reduced-motion: reduce)
+  button
+    transition none
+  button:hover
+    transform none

@@ -2,6 +2,8 @@
 title: Drafts that never leak
 description: draft true excludes a page everywhere in a production build — dist, routes.json, sitemap, and rss.
 date: 2026-06-27
+excerpt: Set draft true on a post and it vanishes from a production build — dist, routes.json, the sitemap, and the feed — even with a date.
+tags: [drafts, workflow]
 ---
 
 # Drafts that never leak

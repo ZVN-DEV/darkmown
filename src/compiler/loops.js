@@ -15,6 +15,7 @@ import {
   escapeHtml,
   getPath,
   lookupPath,
+  lookupVar,
   resolveStateKey,
   stripQuotes,
   unescapeHtml
@@ -30,15 +31,15 @@ import { compilePredicate, evalPredicate } from "./predicates.js";
 
 // The fixed corrective suggestion shown for any malformed @loop header.
 const LOOP_USAGE =
-  "Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N] [sortable]";
+  "Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N] [paginate N] [sortable]";
 
 /**
  * Parse the optional clause tail of a `@loop` header in FIXED order:
- * `[where P] [sort by key [asc|desc]] [reverse] [offset N] [limit N] [sortable]`.
+ * `[where P] [sort by key [asc|desc]] [reverse] [offset N] [limit N] [paginate N] [sortable]`.
  * @param {string} tail Everything after `@loop src into item`.
  * @param {string} itemName
  * @param {Ctx} ctx
- * @returns {{ where: string|null, sort: import("./context.js").LoopOpts["sort"], reverse: boolean, offset: NumArg|null, limit: NumArg|null, refsState: boolean, sortable: boolean }}
+ * @returns {{ where: string|null, sort: import("./context.js").LoopOpts["sort"], reverse: boolean, offset: NumArg|null, limit: NumArg|null, refsState: boolean, sortable: boolean, paginate: number|null }}
  */
 function parseLoopClauses(tail, itemName, ctx) {
   // Peel clauses off the END in reverse fixed-order (limit, offset, reverse,
@@ -53,6 +54,7 @@ function parseLoopClauses(tail, itemName, ctx) {
   /** @type {NumArg|null} */ let limit = null;
   let refsState = false;
   let sortable = false;
+  /** @type {number|null} */ let paginate = null;
   /** @returns {never} */
   const bad = () => {
     throw new Error(`Malformed @loop clause in ${ctx.file}: "${tail.trim()}". ${LOOP_USAGE}`);
@@ -65,6 +67,20 @@ function parseLoopClauses(tail, itemName, ctx) {
   if (sm) {
     sortable = true;
     s = (s.slice(0, sm.index) + s.slice((sm.index ?? 0) + sm[0].length))
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // `paginate N` slices the listing into static pages. Peel it position-
+  // independently (like `sortable`) so `paginate 2 limit 1` parses and handleLoop
+  // can reject the combination with a precise message rather than failing the
+  // fixed-order parse. The count is a positive integer literal — paginating "by a
+  // state value" makes no sense for a build-time route split.
+  const pm = s.match(/(^|\s)paginate\s+(\d+)(?=\s|$)/);
+  if (pm) {
+    paginate = Number(pm[2]);
+    if (paginate < 1) bad();
+    s = (s.slice(0, pm.index) + s.slice((pm.index ?? 0) + pm[0].length))
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -109,7 +125,7 @@ function parseLoopClauses(tail, itemName, ctx) {
     // predicate means a clause was written before `where` finished (wrong order).
     if (/(^|\s)(sort\s+by\s|reverse(\s|$))/.test(where)) bad();
   }
-  return { where, sort, reverse, offset, limit, refsState, sortable };
+  return { where, sort, reverse, offset, limit, refsState, sortable, paginate };
 }
 
 /**
@@ -213,18 +229,32 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
         offset: null,
         limit: null,
         refsState: false,
-        sortable: false
+        sortable: false,
+        paginate: null
       };
   const where = clauses.where ? compilePredicate(clauses.where, itemName, ctx) : null;
   // `sortable` reorders the list directly, so it can't combine with a clause that
   // re-derives the visible order (where/sort/reverse) or shows a partial view
-  // (offset/limit) — those would break the 1:1 DOM↔array index mapping.
+  // (offset/limit/paginate) — those would break the 1:1 DOM↔array index mapping.
   if (
     clauses.sortable &&
-    (where || clauses.sort || clauses.reverse || clauses.offset || clauses.limit)
+    (where ||
+      clauses.sort ||
+      clauses.reverse ||
+      clauses.offset ||
+      clauses.limit ||
+      clauses.paginate)
   ) {
     throw new Error(
-      `@loop sortable cannot combine with where/sort/reverse/offset/limit in ${ctx.file}. ${LOOP_USAGE}`
+      `@loop sortable cannot combine with where/sort/reverse/offset/limit/paginate in ${ctx.file}. ${LOOP_USAGE}`
+    );
+  }
+  // `paginate N` OWNS the page slice, so an explicit offset/limit alongside it is
+  // a conflict (which one wins?). Reject it with a clear hint rather than silently
+  // letting one override the other.
+  if (clauses.paginate && (clauses.offset || clauses.limit)) {
+    throw new Error(
+      `@loop paginate cannot combine with offset/limit in ${ctx.file} — paginate already slices each page. ${LOOP_USAGE}`
     );
   }
   /** @type {LoopOpts} */
@@ -236,7 +266,8 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
     limit: clauses.limit,
     empty: emptyLines,
     clauseRefsState: clauses.refsState,
-    sortable: clauses.sortable
+    sortable: clauses.sortable,
+    paginate: clauses.paginate
   };
 
   if (
@@ -245,6 +276,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
     source.startsWith("../") ||
     source.endsWith(".json")
   ) {
+    if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
     const dataFile = resolveInclude(source, ctx.file, ctx.context, true);
     const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
@@ -253,6 +285,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
 
   const resolved = lookupPath(source, ctx);
   if (resolved.found) {
+    if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
     if (!Array.isArray(resolved.value)) {
       throw new Error(
         `@loop ${source} in ${ctx.file} found an in-scope value, but it is not a list`
@@ -269,9 +302,15 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
     }
     const key = resolveStateKey(segs[0], ctx);
     if (key) {
+      if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
       const fullKey = segs.length > 1 ? `${key}.${segs.slice(1).join(".")}` : key;
       return reactiveLoop(fullKey, itemName, bodyLines, ctx, opts);
     }
+    // A bare name matching a collection (any `site/pages/<name>/` subdir) resolves
+    // to its entry rows at build time and static-unrolls — zero JS. This is checked
+    // after state so a declared `:state` of the same name still wins.
+    const collection = segs.length === 1 ? ctx.comp.collections.get(source) : undefined;
+    if (collection) return loopOverCollection(collection, source, itemName, bodyLines, ctx, opts);
     // Inside a reactive loop, `@loop <outerItem>.<path> into x` loops a field of
     // the enclosing row item — an ITEM-RELATIVE loop the runtime fills per row.
     if (ctx.loopItem && segs[0] === ctx.loopItem && segs.length > 1) {
@@ -280,13 +319,91 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
           `@loop sortable is not supported on a nested (item-relative) loop in ${ctx.file}. ${LOOP_USAGE}`
         );
       }
+      if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
       return itemRelativeLoop(segs.slice(1).join("."), itemName, bodyLines, ctx, opts);
     }
   }
 
-  throw new Error(
-    `@loop source "${source}" in ${ctx.file} was not found. Loop over a JSON file (@loop /data.json into row), an in-scope value, or a :state list.`
+  throw new Error(unresolvedSourceError(source, ctx));
+}
+
+/**
+ * The "source not found" error for an unresolved `@loop` bare name. Lists the
+ * valid collection names (the `site/pages/<name>/` subdirs) so a typo'd
+ * collection reference is immediately actionable.
+ * @param {string} source
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function unresolvedSourceError(source, ctx) {
+  const names = [...ctx.comp.collections.keys()].sort();
+  const collectionsHint = names.length ? ` Available collections: ${names.join(", ")}.` : "";
+  return (
+    `@loop source "${source}" in ${ctx.file} was not found. Loop over a collection ` +
+    `(a site/pages/<name>/ subdirectory, by its bare name), a JSON file ` +
+    `(@loop /data.json into row), an in-scope value, or a :state list.${collectionsHint}`
   );
+}
+
+/**
+ * The error for `paginate` on a non-collection source: pagination multiplies
+ * static routes, which only makes sense for a build-time collection listing.
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function paginateOnlyCollections(ctx) {
+  return `@loop paginate requires a collection source (a site/pages/<name>/ subdirectory) in ${ctx.file}. ${LOOP_USAGE}`;
+}
+
+/**
+ * Loop over a build-time collection's entry rows. With no `paginate`, this is a
+ * plain static unroll (filter/sort/reverse/offset/limit at build time, zero JS).
+ * With `paginate N`, it records the pagination intent (so the builder multiplies
+ * routes), then renders only the current page's slice using the injected `page`
+ * pager — `offset = (page.current - 1) * N`, `limit = N`.
+ * @param {import("./collections.js").CollectionRow[]} rows
+ * @param {string} name Collection name, for the pagination record.
+ * @param {string} itemName
+ * @param {string[]} bodyLines
+ * @param {Ctx} ctx
+ * @param {LoopOpts} opts
+ * @returns {string}
+ */
+function loopOverCollection(rows, name, itemName, bodyLines, ctx, opts) {
+  if (!opts.paginate) {
+    // No pagination → behave exactly like a JSON-file/in-scope source: a pure
+    // listing static-unrolls (zero JS); a `where` that reads :state turns it into
+    // a reactive baked-rows loop. `loopOverData` makes that call.
+    return loopOverData(rows, itemName, bodyLines, ctx, opts);
+  }
+  // Count rows AFTER where/sort/reverse but BEFORE the page slice, so `total`
+  // reflects what the reader will actually page through. Reuse pipelineRows with
+  // offset/limit stripped for the count.
+  const filtered = pipelineRows(rows, opts.where, { ...opts, offset: null, limit: null }, ctx);
+  const perPage = opts.paginate;
+  const total = Math.max(1, Math.ceil(filtered.length / perPage));
+  ctx.comp.pagination = { perPage, total, collection: name };
+  // `page.current` is the 1-based page the builder is rendering (it seeds the
+  // document scope). Slice this page out of the already-filtered/sorted list.
+  const current = currentPage(ctx);
+  const start = (current - 1) * perPage;
+  return staticUnroll(filtered.slice(start, start + perPage), itemName, bodyLines, ctx, opts.empty);
+}
+
+/**
+ * The 1-based page the builder is currently rendering, read from the injected
+ * `page.current` scope var. Defaults to page 1 (the discovery compile, before the
+ * builder knows the total, runs with `page.current = 1`).
+ * @param {Ctx} ctx
+ * @returns {number}
+ */
+function currentPage(ctx) {
+  const page = lookupVar(ctx.scope, "page");
+  if (page.found && page.value && typeof page.value === "object") {
+    const current = /** @type {Record<string, unknown>} */ (page.value).current;
+    if (typeof current === "number" && current >= 1) return current;
+  }
+  return 1;
 }
 
 // A static source (JSON file / in-scope value). No `where`, or a `where` that
@@ -440,7 +557,8 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
           : limit,
       empty: null,
       clauseRefsState: false,
-      sortable: false
+      sortable: false,
+      paginate: null
     },
     ctx
   );

@@ -2,6 +2,16 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 1.5.0 — 2026-06-28
+
+Content collections — query a folder of markdown as data, with optional typed validation and pagination. Plus a default-styling pass so buttons and form controls look good out of the box, and two fixes from a product review. The runtime is unchanged (still 7459 B gzipped); collections and styling are entirely build-time.
+
+- **Content collections.** Any `site/pages/<name>/` subdirectory is a queryable collection, referenced by its **bare name** in the existing loop — no new concept, no config file. `@loop blog into post sort by date desc paginate 10` reads the entries under `site/pages/blog/`, each as a row of its frontmatter plus derived `url`, `slug`, and `excerpt`. The whole `where` / `sort` / format-pipe / `:if` machinery works unchanged, and a pure listing stays zero-JS (`runtime: false`). Drafts are excluded by default (and can never leak into a listing); `build --drafts` includes them.
+- **Typed schemas (optional).** Drop a `_schema.wd` at a collection's root to validate every entry's frontmatter at build time — one `field: type` per line over a closed vocabulary (`string`, `number`, `boolean`, `date`, `string[]`, trailing `?` = optional). Mismatches fail the build with a `file:line` error naming the entry and field. Absent `_schema.wd` = no validation (opt-in, like everything else).
+- **Pagination.** `paginate N` on a collection loop multiplies one listing source into static pages — page 1 stays at `/blog/`, the rest at `/blog/page/2/`, `/blog/page/3/`. A `{ page.current }` / `{ page.total }` / `{ page.prev }` / `{ page.next }` pager is available in the listing scope; every generated page is static HTML in `routes.json` + `sitemap.xml`.
+- **Polished default styling.** `:button`/`:submit` compile to a bare classless `<button>`, so their look came entirely from the base skin — which previously left them as flat/unstyled. The base skin and **all five scaffold templates** now ship a token-driven default for buttons (filled-accent with hover/active/focus-visible/disabled states, plus `.secondary`/`.ghost` variants) and form controls (inputs, selects with a custom chevron, textareas, checkbox/radio/range) — consistent in light **and** dark, with `prefers-reduced-motion` honored. A freshly scaffolded site looks good immediately.
+- **Fixes (from a product review).** (1) Scoped-style stamping no longer corrupts the contents of raw-text elements (`<script>`/`<style>`/`<textarea>`/`<title>`) — it stamps their opening tags but leaves their bodies byte-intact. (2) Nested static routes (e.g. `/blog/<slug>/`, `/blog/page/2/`) now correctly receive the strict (no `unsafe-eval`) CSP on Vercel; the header drift-guard now validates full route paths so the gap can't recur.
+
 ## 1.4.0 — 2026-06-28
 
 Scoped styles — the long-standing "`.skin` selectors are global" gap, closed. Opt-in, compile-time, and **zero runtime** (the shared runtime is still 7459 B gzipped; nothing new ships to the client but one HTML attribute and one attribute selector).

@@ -42,6 +42,17 @@
  */
 
 /**
+ * The pagination intent a `@loop … paginate N` records during compile, so the
+ * builder can multiply routes (page 1 at the listing route, 2+ at
+ * `/<route>/page/<n>/`). `total` is the post-`where`/`sort` page count for the
+ * collection the loop drew from.
+ * @typedef {object} Pagination
+ * @property {number} perPage Rows per page (the `paginate N` value).
+ * @property {number} total Total page count (≥ 1).
+ * @property {string} collection Collection name the loop paginated.
+ */
+
+/**
  * Per-document compilation accumulator shared across includes/sections.
  * @typedef {object} Compilation
  * @property {Assets} assets
@@ -49,6 +60,12 @@
  * @property {Set<string>} stores Page-global store names (a subset of state keys).
  * @property {string[]} warnings Non-fatal authoring hints.
  * @property {number} sectionCounter Counter for auto-generated section ids.
+ * @property {Map<string, import("./collections.js").CollectionRow[]>} collections
+ *   Collection name → entry rows, built from the router's routes and threaded in
+ *   so a bare-name `@loop blog into post` resolves to its entries at build time.
+ * @property {import("./context.js").Pagination | null} pagination The pagination
+ *   intent a `@loop … paginate N` recorded this compile, or null. The builder
+ *   reads it to multiply routes; one paginated loop per page is supported.
  */
 
 /**
@@ -80,6 +97,8 @@
  * @property {string} html
  * @property {Assets} assets
  * @property {string[]} warnings
+ * @property {Pagination | null} pagination The pagination intent a paginated
+ *   `@loop` recorded, or null. The builder reads it to multiply routes.
  */
 
 /**
@@ -89,6 +108,8 @@
  * @property {string} html
  * @property {Assets} assets
  * @property {string[]} warnings
+ * @property {Pagination | null} pagination The pagination intent a paginated
+ *   `@loop` recorded, or null. The builder reads it to multiply routes.
  */
 
 /**
@@ -115,6 +136,10 @@
  * @property {boolean} clauseRefsState Whether offset/limit reference state.
  * @property {boolean} sortable Drag-to-reorder the underlying :state/:store list
  *   (the `sortable` clause). Only valid on a plain reactive state-key loop.
+ * @property {number | null} paginate Rows-per-page for a `paginate N` clause, or
+ *   null. Only valid on a collection loop; multiplies the listing into static
+ *   pages (page 1 at the route, 2+ at `/<route>/page/<n>/`) and exposes a `page`
+ *   pager to the template scope.
  */
 
 /**
@@ -154,7 +179,9 @@ export function createCompilation() {
     state: new Map(),
     stores: new Set(),
     warnings: [],
-    sectionCounter: 0
+    sectionCounter: 0,
+    collections: new Map(),
+    pagination: null
   };
 }
 

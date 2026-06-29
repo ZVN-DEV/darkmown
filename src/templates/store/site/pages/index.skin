@@ -1,8 +1,23 @@
 tokens
   ink #1a1f2b
+  muted #66707f
   paper #fbfbf9
+  panel #ffffff
   line #e6e4dd
   accent #146b54
+  accent-deep #0f5240
+  ring #146b54
+  radius 12px
+
+tokens dark
+  ink #e9edf2
+  muted #98a2b0
+  paper #0f1512
+  panel #18201d
+  line #28332e
+  accent #3bbd97
+  accent-deep #66d2b3
+  ring #3bbd97
 
 page
   margin 0
@@ -10,6 +25,7 @@ page
   color $ink
   bg $paper
   line-height 1.55
+  -webkit-font-smoothing antialiased
 
 main
   max-width 860px
@@ -31,13 +47,26 @@ nav a
   color $accent
   text-decoration none
 
-input
+input, select, textarea
   font inherit
-  padding .6rem .75rem
+  font-size .95rem
+  color $ink
+  padding .58rem .8rem
   border 1px solid $line
   radius 8px
   width 100%
   max-width 320px
+  bg $panel
+  appearance none
+  transition border-color .14s ease, box-shadow .14s ease
+
+input:hover, select:hover, textarea:hover
+  border-color $accent
+
+input:focus-visible, select:focus-visible, textarea:focus-visible
+  outline none
+  border-color $accent
+  box-shadow 0 0 0 3px rgba(20,107,84,.18)
 
 .catalog
   display grid
@@ -46,11 +75,20 @@ input
   margin 1.5rem 0
 
 .product
+  display flex
+  flex-direction column
   border 1px solid $line
-  radius 12px
-  padding 1rem
+  radius $radius
+  padding 1.1rem
   text-align center
-  background white
+  background $panel
+  box-shadow 0 1px 2px rgba(26,31,43,.04)
+  transition transform .16s ease, box-shadow .16s ease, border-color .16s ease
+
+.product:hover
+  transform translateY(-2px)
+  border-color $accent
+  box-shadow 0 12px 26px -16px rgba(26,31,43,.4)
 
 .emoji
   font-size 2.25rem
@@ -65,13 +103,45 @@ input
   margin-bottom .6rem
 
 button
+  display inline-flex
+  align-items center
+  justify-content center
+  gap .4rem
   font inherit
+  font-size .9rem
+  font-weight 560
   bg $accent
   color white
-  border 0
-  padding .55rem .9rem
-  radius 8px
+  border 1px solid $accent
+  padding .55rem 1rem
+  radius 999px
   cursor pointer
+  appearance none
+  box-shadow 0 1px 2px rgba(26,31,43,.08)
+  transition transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s ease, background .14s ease, border-color .14s ease
+
+button:hover
+  bg $accent-deep
+  border-color $accent-deep
+  transform translateY(-1px)
+  box-shadow 0 8px 18px -8px rgba(20,107,84,.55)
+
+button:active
+  transform translateY(0)
+  box-shadow 0 1px 2px rgba(26,31,43,.08)
+
+button:focus-visible
+  outline 2px solid $ring
+  outline-offset 2px
+
+button:disabled
+  opacity .5
+  cursor not-allowed
+  box-shadow none
+  transform none
+
+.product button
+  margin-top auto
 
 .line
   display flex
@@ -82,12 +152,18 @@ button
   radius 10px
   padding .6rem .9rem
   margin .4rem 0
-  background white
+  background $panel
 
 .line button
   bg transparent
-  color $ink
+  color $muted
   border 1px solid $line
+  box-shadow none
+
+.line button:hover
+  bg $accent
+  border-color $accent
+  color white
 
 .cart-foot
   font-size 1.1rem
@@ -97,4 +173,10 @@ button
   border 1px solid $accent
   radius 10px
   padding 1rem
-  background #ecf6f1
+  background $panel
+
+@media (prefers-reduced-motion: reduce)
+  button, .product
+    transition none
+  button:hover, .product:hover
+    transform none

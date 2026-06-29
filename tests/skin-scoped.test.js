@@ -219,6 +219,75 @@ test("stampScope does not corrupt attribute values containing > or quotes", () =
   assert.match(out, /data-wd-scope="wd-7c21"/);
 });
 
+// --- HTML stamp: raw-text / escapable-raw-text element bodies stay byte-intact -
+
+test("stampScope leaves a <script> body byte-intact (no attribute injected mid-JS)", () => {
+  // The bug: `if(a<b){x>y}` has bare <,> that are JS, not markup. Stamping inside
+  // would inject `x data-wd-scope=...>y`, corrupting the script.
+  const out = stampScope(`<div><script>if(a<b){x>y}</script></div>`, SCOPE);
+  // Surrounding element AND the script's own opening tag are stamped…
+  assert.match(out, new RegExp(`<div data-wd-scope="${SCOPE}">`));
+  assert.match(out, new RegExp(`<script data-wd-scope="${SCOPE}">`));
+  // …but the script body is untouched — the exact source survives verbatim.
+  assert.match(out, /<script data-wd-scope="wd-7c21">if\(a<b\)\{x>y\}<\/script>/);
+  // No scope attribute leaked between the script open and close.
+  const body = out.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1];
+  assert.equal(body, "if(a<b){x>y}");
+  assert.doesNotMatch(body, /data-wd-scope/);
+});
+
+test("stampScope leaves a <style> body byte-intact (the > combinator is not a tag)", () => {
+  const out = stampScope(`<div><style>a > b { color: red }</style></div>`, SCOPE);
+  assert.match(out, new RegExp(`<style data-wd-scope="${SCOPE}">`));
+  const body = out.match(/<style[^>]*>([\s\S]*?)<\/style>/)[1];
+  assert.equal(body, "a > b { color: red }");
+  assert.doesNotMatch(body, /data-wd-scope/);
+});
+
+test("stampScope leaves a <textarea> body byte-intact (a < in text is not a tag)", () => {
+  const out = stampScope(`<p><textarea>x < y > z</textarea></p>`, SCOPE);
+  assert.match(out, new RegExp(`<p data-wd-scope="${SCOPE}">`));
+  assert.match(out, new RegExp(`<textarea data-wd-scope="${SCOPE}">`));
+  const body = out.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/)[1];
+  assert.equal(body, "x < y > z");
+  assert.doesNotMatch(body, /data-wd-scope/);
+});
+
+test("stampScope leaves a <title> body byte-intact while stamping the tag", () => {
+  const out = stampScope(`<title>a < b</title>`, SCOPE);
+  assert.equal(out, `<title data-wd-scope="${SCOPE}">a < b</title>`);
+});
+
+test("stampScope resumes stamping siblings AFTER a raw-text element", () => {
+  // The sibling <div> after </script> must still be stamped — the skip ends at
+  // the matching close tag, not the end of the subtree.
+  const out = stampScope(`<script>x<y</script><div>after</div>`, SCOPE);
+  assert.match(out, new RegExp(`<script data-wd-scope="${SCOPE}">x<y</script>`));
+  assert.match(out, new RegExp(`<div data-wd-scope="${SCOPE}">after</div>`));
+});
+
+test("stampScope matches the raw-text close tag case-insensitively (<SCRIPT>…</SCRIPT>)", () => {
+  const out = stampScope(`<SCRIPT>a<b</SCRIPT><span>ok</span>`, SCOPE);
+  assert.equal(
+    out,
+    `<SCRIPT data-wd-scope="${SCOPE}">a<b</SCRIPT><span data-wd-scope="${SCOPE}">ok</span>`
+  );
+});
+
+test("stampScope copies the remainder verbatim when a raw-text element is unterminated", () => {
+  // No matching </script> — the body search returns -1, so we copy the rest of the
+  // subtree byte-for-byte and stop (never stamping the dangling content).
+  const out = stampScope(`<script>unterminated < tag`, SCOPE);
+  assert.equal(out, `<script data-wd-scope="${SCOPE}">unterminated < tag`);
+});
+
+test("stampScope still stamps a self-closed tag whose name matches a raw-text element", () => {
+  // A self-closing form has no body to protect, so the raw-text skip must NOT
+  // engage (the `!slash` guard) — the next element keeps getting stamped normally.
+  const out = stampScope(`<style/><div>x</div>`, SCOPE);
+  assert.equal(out, `<style data-wd-scope="${SCOPE}" /><div data-wd-scope="${SCOPE}">x</div>`);
+});
+
 // --- Build integration ------------------------------------------------------
 
 /** Capture everything `fn` logs via console.warn. */

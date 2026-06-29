@@ -148,6 +148,53 @@ Nothing left to do.
 
 These clauses stay build-time when the source and every argument are static — a sorted, limited loop over a JSON file ships zero JS. The loop turns reactive only when the source or a clause reads `:state`/`:store`/`:fetch` data.
 
+## Content collections
+
+Any folder under `site/pages/` is a **collection** — loop it by its bare name. No `content/` root, no marker file: a `site/pages/blog/` folder of posts *is* the `blog` collection. The whole [blog on this site](/blog/) is one such loop.
+
+```wd
+@loop blog into post sort by post.date desc
+- [{ post.title }]({ post.url }) — { post.date }
+@endloop
+```
+
+Each entry's frontmatter is a row, plus three derived fields: `{ post.url }` (the route), `{ post.slug }` (the filename), and `{ post.excerpt }` (the frontmatter `excerpt:`, else the first paragraph of a `.md` body). It's the same loop with the same clauses, resolved at build time — a pure listing ships zero JS. Drafts never appear in a default-build listing (only under `darkmown build --drafts`).
+
+### Typed schema — `_schema.wd`
+
+Drop a `_schema.wd` at a collection's root to validate every entry at build time. It's frontmatter-shaped, one `field: type` per line:
+
+```wd
+---
+title: string
+date: date
+excerpt: string?
+tags: string[]?
+---
+```
+
+Closed types: `string`, `number`, `boolean`, `date`, `string[]`, each with `?` for optional. A missing required field, a wrong type, an unknown extra field (typo guard), or an unknown type token fails the build with a `file:line`. No `_schema.wd` means no validation — it's opt-in.
+
+### Pagination — `paginate N`
+
+Add `paginate N` (collections only) to split a listing into static pages. Page 1 keeps the listing route; pages 2+ are at `/<route>/page/2/`, `/page/3/`, … all static HTML.
+
+```wd
+@loop blog into post sort by post.date desc paginate 5
+- [{ post.title }]({ post.url })
+@endloop
+
+Page { page.current } of { page.total }
+:if page.prev
+[← Newer]({ page.prev })
+:endif
+:if page.next
+[Older →]({ page.next })
+:endif
+```
+
+The pager — `{ page.current }`, `{ page.total }`, `{ page.prev }`, `{ page.next }` (URLs, empty at the ends) — is exposed to the whole page as plain links. Zero JS. `paginate` can't combine with `offset`/`limit` (it owns the slice).
+
 ## Interpolation
 
 One syntax everywhere: `{ name }` or `{ name.path }`.

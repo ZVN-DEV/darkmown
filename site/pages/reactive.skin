@@ -29,18 +29,44 @@ h2
   padding-top 1.2rem
 
 button
-  border 1px solid $ink
-  bg $ink
+  display inline-flex
+  align-items center
+  justify-content center
+  gap .5rem
+  border 1px solid $accent
+  bg $accent
   color white
-  padding .72rem 1rem
+  padding .6rem 1.1rem
   margin .3rem .5rem .3rem 0
-  radius $radius
-  font inherit
+  radius 999px
+  font system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
+  font-size .92rem
+  font-weight 560
+  line-height 1.15
   cursor pointer
+  appearance none
+  box-shadow 0 1px 2px rgba(23,23,23,.08)
+  transition transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s ease, background .14s ease, border-color .14s ease
 
 button:hover
   bg $accent
   border-color $accent
+  transform translateY(-1px)
+  box-shadow 0 8px 18px -8px rgba(22,100,90,.5)
+
+button:active
+  transform translateY(0)
+  box-shadow 0 1px 2px rgba(23,23,23,.08)
+
+button:focus-visible
+  outline 2px solid $accent
+  outline-offset 2px
+
+button:disabled
+  opacity .5
+  cursor not-allowed
+  box-shadow none
+  transform none
 
 a
   color $accent
@@ -89,4 +115,10 @@ ul
   bg transparent
   color $warm
   border 1px solid $line
-  padding .35rem .8rem
+  padding .4rem .9rem
+  box-shadow none
+
+.card.line button:hover
+  bg $warm
+  border-color $warm
+  color white
