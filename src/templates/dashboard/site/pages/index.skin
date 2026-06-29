@@ -2,9 +2,13 @@ tokens
   ink #0f1722
   paper #0b1018
   panel #131c28
+  field-bg #0e1620
   line #243245
   muted #8aa0b8
   accent #4f9cff
+  accent-deep #6fb0ff
+  ring #4f9cff
+  radius 12px
 
 page
   margin 0
@@ -12,6 +16,7 @@ page
   color #e7eefc
   bg $paper
   line-height 1.55
+  -webkit-font-smoothing antialiased
 
 main
   max-width 880px
@@ -72,3 +77,82 @@ nav a
   color $muted
   font-size .85rem
   margin-top .5rem
+
+/* Buttons & controls — refresh, filters, range pickers, etc. */
+button
+  display inline-flex
+  align-items center
+  justify-content center
+  gap .5rem
+  bg $accent
+  color #07101d
+  border 1px solid $accent
+  padding .55rem 1.05rem
+  margin .4rem .5rem .4rem 0
+  radius 999px
+  font-size .92rem
+  font-weight 600
+  line-height 1.15
+  cursor pointer
+  appearance none
+  transition transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s ease, background .14s ease, border-color .14s ease
+
+button:hover
+  bg $accent-deep
+  border-color $accent-deep
+  transform translateY(-1px)
+  box-shadow 0 8px 20px -8px rgba(79,156,255,.6)
+
+button:active
+  transform translateY(0)
+  box-shadow none
+
+button:focus-visible
+  outline 2px solid $ring
+  outline-offset 2px
+
+button:disabled
+  opacity .5
+  cursor not-allowed
+  transform none
+
+button.ghost
+  bg transparent
+  color #e7eefc
+  border-color $line
+
+button.ghost:hover
+  bg $panel
+  border-color $accent
+  box-shadow none
+
+input, select, textarea
+  font inherit
+  font-size .95rem
+  color #e7eefc
+  bg $field-bg
+  border 1px solid $line
+  radius 10px
+  padding .55rem .8rem
+  margin .35rem 0
+  width 100%
+  max-width 24rem
+  appearance none
+  transition border-color .14s ease, box-shadow .14s ease
+
+input::placeholder, textarea::placeholder
+  color $muted
+
+input:hover, select:hover, textarea:hover
+  border-color #2f4763
+
+input:focus-visible, select:focus-visible, textarea:focus-visible
+  outline none
+  border-color $accent
+  box-shadow 0 0 0 3px rgba(79,156,255,.22)
+
+@media (prefers-reduced-motion: reduce)
+  button
+    transition none
+  button:hover
+    transform none

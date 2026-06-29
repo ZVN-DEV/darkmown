@@ -1,9 +1,23 @@
 tokens
   ink #14161c
+  muted #555c6b
   paper #ffffff
   soft #f4f5f8
   line #e6e8ee
   accent #5b4bf5
+  accent-deep #4938e0
+  ring #5b4bf5
+  radius 12px
+
+tokens dark
+  ink #eceef4
+  muted #9aa1b4
+  paper #0d0e14
+  soft #16181f
+  line #262a36
+  accent #8b7dff
+  accent-deep #a79bff
+  ring #8b7dff
 
 page
   margin 0
@@ -11,6 +25,7 @@ page
   color $ink
   bg $paper
   line-height 1.6
+  -webkit-font-smoothing antialiased
 
 main
   max-width 900px
@@ -42,17 +57,94 @@ nav a
 
 .lede
   font-size 1.2rem
-  color #555c6b
+  color $muted
   margin 0 0 1.5rem
 
 .cta
-  display inline-block
+  display inline-flex
+  align-items center
+  justify-content center
+  gap .5rem
   bg $accent
   color white
   text-decoration none
-  padding .8rem 1.4rem
-  radius 10px
+  padding .8rem 1.5rem
+  radius 999px
   font-weight 600
+  border 1px solid $accent
+  box-shadow 0 6px 18px -8px rgba(91,75,245,.5)
+  transition transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s ease, background .14s ease
+
+.cta:hover
+  bg $accent-deep
+  transform translateY(-1px)
+  box-shadow 0 12px 26px -10px rgba(91,75,245,.6)
+
+.cta:focus-visible
+  outline 2px solid $ring
+  outline-offset 3px
+
+/* Bare buttons & form controls — for inline :button actions, signup forms. */
+button
+  display inline-flex
+  align-items center
+  justify-content center
+  gap .5rem
+  bg $accent
+  color white
+  border 1px solid $accent
+  padding .6rem 1.2rem
+  margin .4rem .5rem .4rem 0
+  radius 999px
+  font-size .94rem
+  font-weight 560
+  line-height 1.15
+  cursor pointer
+  appearance none
+  box-shadow 0 1px 2px rgba(20,22,28,.08)
+  transition transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .14s ease, background .14s ease, border-color .14s ease
+
+button:hover
+  bg $accent-deep
+  border-color $accent-deep
+  transform translateY(-1px)
+  box-shadow 0 8px 18px -8px rgba(91,75,245,.55)
+
+button:active
+  transform translateY(0)
+  box-shadow 0 1px 2px rgba(20,22,28,.08)
+
+button:focus-visible
+  outline 2px solid $ring
+  outline-offset 2px
+
+button:disabled
+  opacity .5
+  cursor not-allowed
+  box-shadow none
+  transform none
+
+input, textarea, select
+  font inherit
+  font-size .95rem
+  color $ink
+  bg $paper
+  border 1px solid $line
+  radius $radius
+  padding .58rem .8rem
+  margin .35rem 0
+  width 100%
+  max-width 24rem
+  appearance none
+  transition border-color .14s ease, box-shadow .14s ease
+
+input:hover, textarea:hover, select:hover
+  border-color $accent
+
+input:focus-visible, textarea:focus-visible, select:focus-visible
+  outline none
+  border-color $accent
+  box-shadow 0 0 0 3px rgba(91,75,245,.18)
 
 .features
   display grid
@@ -91,7 +183,7 @@ nav a
 
 .quote .who
   margin .5rem 0 0
-  color #555c6b
+  color $muted
   font-size .95rem
 
 .wd-carousel-prev
@@ -105,13 +197,20 @@ nav a
   top 40%
 
 .wd-carousel-prev, .wd-carousel-next
-  bg white
+  bg $paper
   color $ink
   border 1px solid $line
   radius 999px
   width 2.25rem
   height 2.25rem
+  padding 0
+  margin 0
+  box-shadow 0 2px 8px -2px rgba(20,22,28,.18)
   cursor pointer
+
+.wd-carousel-prev:hover, .wd-carousel-next:hover
+  border-color $accent
+  color $accent
 
 .wd-carousel-dots
   display flex
@@ -123,9 +222,11 @@ nav a
   width .6rem
   height .6rem
   padding 0
+  margin 0
   border 0
   radius 999px
   bg $line
+  box-shadow none
   cursor pointer
 
 .wd-carousel-dot[aria-current="true"]
@@ -138,3 +239,9 @@ nav a
   radius 16px
   padding 2.5rem
   margin-top 2rem
+
+@media (prefers-reduced-motion: reduce)
+  button, .cta
+    transition none
+  button:hover, .cta:hover
+    transform none
