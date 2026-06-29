@@ -1,0 +1,73 @@
+---
+title: The Darkmown Blog
+description: Notes on shipping Markdown that runs — collections, feeds, drafts, and zero-JS releases. This whole index is one @loop over a folder.
+image: https://darkmown.com/__wd/media/og.png
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main class="wide app-blog">
+
+<header class="blog-head">
+  <span class="eyebrow">The Darkmown Blog</span>
+
+# Notes from the framework
+
+Every post below is a plain `.md` file in `site/pages/blog/`. This page is **one
+`@loop` over that folder** — sorted newest-first, paginated, and 100% static
+HTML. No hand-maintained list, no config, no JavaScript.
+
+</header>
+
+<section class="post-list">
+
+@loop blog into post sort by post.date desc paginate 3
+::: card .post-card
+::: post-meta
+<time>{ post.date }</time>
+@loop post.tags into tag
+<span class="tag">{ tag }</span>
+@endloop
+:::
+
+### [{ post.title }]({ post.url })
+
+::: post-excerpt
+{ post.excerpt }
+:::
+
+::: post-more
+[Read post → ]({ post.url })
+:::
+:::
+@empty
+::: empty-note
+No posts yet. Add a dated `.md` file to `site/pages/blog/`.
+:::
+@endloop
+
+</section>
+
+::: pager
+::: pager-side
+:if page.prev
+[← Newer posts]({ page.prev }){.pager-link}
+:endif
+:::
+
+::: pager-now
+Page { page.current } of { page.total }
+:::
+
+::: pager-side .pager-side--end
+:if page.next
+[Older posts →]({ page.next }){.pager-link}
+:endif
+:::
+:::
+
+</main>
+
+@include /footer.wd

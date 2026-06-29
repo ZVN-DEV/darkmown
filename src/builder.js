@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverApiRoutes } from "./api-runner.js";
+import { buildCollections } from "./compiler/collections.js";
 import { compilePage, parseFrontmatter } from "./compiler.js";
 import { createPaths } from "./config.js";
 import {
@@ -59,6 +60,12 @@ export function buildSite(cwd = process.cwd(), options = {}) {
   fs.mkdirSync(paths.distRoot, { recursive: true });
   emitShelfAssets(paths);
   const routes = discoverRoutes(paths.routesRoot, { includeDrafts: options.includeDrafts });
+  // Build the collection index from the (post-draft-filter) routes — every
+  // site/pages/<name>/ subdirectory's entries become queryable rows a bare-name
+  // `@loop blog into post` resolves against. Drafts are already excluded, so a
+  // draft entry can never appear in a listing. Validates each collection's
+  // `_schema.wd` here (throwing on a bad entry with file:line).
+  const collections = buildCollections(routes, paths);
   // Site identity lives in the HOME page frontmatter (no config loader): the
   // `site_url` origin triggers + prefixes the feeds, reusing `title`/`description`
   // as the RSS channel fields. Resolved once, up front, so every page can link
@@ -80,35 +87,46 @@ export function buildSite(cwd = process.cwd(), options = {}) {
   /** @type {string | undefined} HTML of the `/404/` route, copied to dist/404.html. */
   let notFoundHtml;
 
+  // Extra (paginated 2+) routes the build generates beyond the discovered set —
+  // each is indexable static HTML, so it belongs in the sitemap (it has no own
+  // frontmatter `date:`; it reuses its listing source file for `<lastmod>`).
+  /** @type {Route[]} */
+  const extraRoutes = [];
+
   for (const route of routes) {
-    const page = compilePage(route.file, paths, { feed: feedLink });
-    for (const warning of page.warnings || []) {
-      if (warned.has(warning)) continue;
-      warned.add(warning);
-      console.warn(`hint: ${warning}`);
-    }
-    const outFile = outputPathForRoute(paths.distRoot, route.route);
-    fs.mkdirSync(path.dirname(outFile), { recursive: true });
-    fs.writeFileSync(outFile, page.html);
-    if (route.route === "/404/") notFoundHtml = page.html;
-    emitAssets(page.assets, paths, page.html, warned);
-    if (page.assets.runtime) emitRuntime(paths);
-    emitBehaviors(page.assets, paths);
-    if (page.assets.hasCode) emitHighlight(paths);
-    const behaviorSrcs = [...page.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
-    manifest.push({
-      route: route.route,
-      file: path.relative(cwd, route.file).replaceAll(path.sep, "/"),
-      assets: {
-        skins: [...page.assets.skins],
-        scripts: [
-          ...(page.assets.runtime ? ["/__wd/runtime.js"] : []),
-          ...behaviorSrcs,
-          ...page.assets.scripts
-        ],
-        runtime: page.assets.runtime
+    // Compile each route's page(s). A normal route yields one page; a route whose
+    // `@loop … paginate N` slices a collection yields page 1 at the route plus
+    // `/<route>/page/<n>/` for pages 2..N — every one static HTML.
+    for (const page of compileRoutePages(route, paths, collections, feedLink)) {
+      if (page.route !== route.route) extraRoutes.push({ ...route, route: page.route });
+      for (const warning of page.warnings || []) {
+        if (warned.has(warning)) continue;
+        warned.add(warning);
+        console.warn(`hint: ${warning}`);
       }
-    });
+      const outFile = outputPathForRoute(paths.distRoot, page.route);
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(outFile, page.html);
+      if (page.route === "/404/") notFoundHtml = page.html;
+      emitAssets(page.assets, paths, page.html, warned);
+      if (page.assets.runtime) emitRuntime(paths);
+      emitBehaviors(page.assets, paths);
+      if (page.assets.hasCode) emitHighlight(paths);
+      const behaviorSrcs = [...page.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
+      manifest.push({
+        route: page.route,
+        file: path.relative(cwd, route.file).replaceAll(path.sep, "/"),
+        assets: {
+          skins: [...page.assets.skins],
+          scripts: [
+            ...(page.assets.runtime ? ["/__wd/runtime.js"] : []),
+            ...behaviorSrcs,
+            ...page.assets.scripts
+          ],
+          runtime: page.assets.runtime
+        }
+      });
+    }
   }
 
   // Hosts (Vercel, Cloudflare Pages) and the framework's own server auto-serve
@@ -126,8 +144,10 @@ export function buildSite(cwd = process.cwd(), options = {}) {
 
   // Crawler files + feeds. robots.txt is ALWAYS emitted; sitemap.xml + rss.xml
   // need the home `site_url` (else a loud, actionable build hint). Drafts are
-  // already filtered out of `routes`, so neither feed can ever see one.
-  const feeds = emitFeeds(routes, identity, paths);
+  // already filtered out of `routes`, so neither feed can ever see one. The
+  // paginated 2+ routes are indexable HTML too, so they join the sitemap (RSS is
+  // dated-posts-only, which they are not, so it's unaffected).
+  const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths);
 
   // Page-colocated static assets (images, SVG, fonts, …) copy last, so the guard
   // sees every emitted route/framework file already on disk.
@@ -144,6 +164,94 @@ export function buildSite(cwd = process.cwd(), options = {}) {
   }
 
   return { routes: manifest, distRoot: paths.distRoot, feeds };
+}
+
+/**
+ * A compiled page bound for a concrete output route. Mirrors `CompiledPage` plus
+ * the public `route` it's written to — for a paginated listing, page 1 keeps the
+ * listing route and pages 2+ get `/<route>/page/<n>/`.
+ * @typedef {object} EmittedPage
+ * @property {string} route Public route path this page is written to.
+ * @property {string} html
+ * @property {import("./compiler.js").Assets} assets
+ * @property {string[]} warnings
+ */
+
+/**
+ * Compile a route into the one-or-more static pages it emits. A normal route is
+ * one page. A route whose body paginates a collection (`@loop … paginate N`) is
+ * compiled once to discover the page count, then recompiled per page with the
+ * correct `page` pager seeded into scope — page 1 at the route, pages 2..total at
+ * `/<route>/page/<n>/`. Every emitted page is static HTML (`runtime: false` for a
+ * pure listing).
+ * @param {Route} route
+ * @param {Paths} paths
+ * @param {Map<string, import("./compiler/collections.js").CollectionRow[]>} collections
+ * @param {{ href: string, title: string } | undefined} feedLink
+ * @returns {EmittedPage[]}
+ */
+function compileRoutePages(route, paths, collections, feedLink) {
+  // First compile (discovery): page 1 with a placeholder pager. If the page has
+  // no `paginate`, this is the only compile and we emit it as-is.
+  const first = compilePage(route.file, paths, {
+    feed: feedLink,
+    collections,
+    vars: { page: pagerVars(route.route, 1, 1) }
+  });
+  if (!first.pagination || first.pagination.total <= 1) {
+    return [
+      { route: route.route, html: first.html, assets: first.assets, warnings: first.warnings }
+    ];
+  }
+  // Paginated: recompile every page (including page 1, whose pager `total`/`next`
+  // were unknown on the discovery pass) with the correct pager.
+  const total = first.pagination.total;
+  /** @type {EmittedPage[]} */
+  const pages = [];
+  for (let n = 1; n <= total; n++) {
+    const page = compilePage(route.file, paths, {
+      feed: feedLink,
+      collections,
+      vars: { page: pagerVars(route.route, n, total) }
+    });
+    pages.push({
+      route: pageRoute(route.route, n),
+      html: page.html,
+      assets: page.assets,
+      warnings: page.warnings
+    });
+  }
+  return pages;
+}
+
+/**
+ * The output route for page `n` of a paginated listing: page 1 keeps the
+ * listing's own clean route; pages 2+ live at `/<route>/page/<n>/`.
+ * @param {string} baseRoute Listing route (trailing-slashed).
+ * @param {number} n 1-based page number.
+ * @returns {string}
+ */
+function pageRoute(baseRoute, n) {
+  return n === 1 ? baseRoute : `${baseRoute}page/${n}/`;
+}
+
+/**
+ * Build the `{ page.* }` pager exposed to the template scope of a paginated
+ * listing: `current`/`total` numbers and `prev`/`next` URLs (empty string at the
+ * ends, so `{ page.prev }` renders nothing on page 1). Plain links to the
+ * generated routes — zero JS.
+ * @param {string} baseRoute Listing route.
+ * @param {number} current 1-based current page.
+ * @param {number} total Total page count.
+ * @returns {{ current: number, total: number, prev: string, next: string }}
+ */
+function pagerVars(baseRoute, current, total) {
+  return {
+    current,
+    total,
+    prev: current > 1 ? pageRoute(baseRoute, current - 1) : "",
+    next: current < total ? pageRoute(baseRoute, current + 1) : ""
+  };
 }
 
 /**

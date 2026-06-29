@@ -113,7 +113,7 @@ tags: [sales, revenue, "q1, q2"]
 
 Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card).
 
-A few reserved keys drive **drafts and feeds** (see [SEO & feeds](#seo--feeds-sitemap-rss-robots) below): `draft: true` excludes a page from production builds; `site_url` on the home page turns on `sitemap.xml` + `rss.xml`; `date:` marks a page as a blog post (it lands in `rss.xml` and sets the page's `<lastmod>`); `excerpt:` is the RSS summary.
+A few reserved keys drive **drafts and feeds** (see [SEO & feeds](#seo--feeds-sitemap-rss-robots) below): `draft: true` excludes a page from production builds; `site_url` on the home page turns on `sitemap.xml` + `rss.xml`; `date:` marks a page as a blog post (it lands in `rss.xml` and sets the page's `<lastmod>`); `excerpt:` is the RSS summary. The same frontmatter is queryable when the page is an entry in a [content collection](#content-collections) — `{ post.date }`, `{ post.excerpt }`, `{ post.tags }`, and any custom key resolve in an `@loop` over the folder.
 
 `transitions: true` opts a page into **instant, flash-free navigation** — zero JavaScript, all declarative. It emits a directional fade+slide **view transition** for the page swap (old lifts up and out, new rises up and in — replacing the default cross-fade, which left both pages ghosted at ~50 % opacity mid-navigation), plus a **`<script type="speculationrules">` prerender** hint that renders the next same-origin page on hover/pointerdown so the click activates an already-painted page (no white render-gap flash). It honors `prefers-reduced-motion`. Only same-origin pages that both opt in transition; browsers without support — or with page-preloading disabled — navigate normally. Off by default; opt out with `transitions: false`. Mark a link `{.no-prefetch}` to exclude it from prerendering. (Chrome disables prerendering while DevTools is open, so test the built site with DevTools closed.)
 
@@ -350,6 +350,75 @@ That is a full add-to-cart / remove-line flow — and a to-do list with delete �
 > **Honest caveat:** nesting is **one level only** — an inner reactive loop may not itself contain a third reactive loop. Build-time loop nesting is unaffected by this limit.
 >
 > **Per-row actions inside an inner loop:** `cart += member` (append-row) works from an inner loop — it carries the inner item into a top-level `:state`/`:store` list. But a per-row **`remove`** needs a top-level list as its source, and an inner loop's source is a path off the outer row (`team.members`), so deleting an inner row in place is **not** supported — the compiler rejects it with a corrective message. Carry the row into a top-level list and remove it there.
+
+## Content collections
+
+**Any folder under `site/pages/` is a queryable collection** — referenced in `@loop` by its bare name. There is no `content/` root to opt into and no marker file to add: a `site/pages/blog/` directory of posts *is* the `blog` collection.
+
+```wd
+@loop blog into post sort by post.date desc
+- [{ post.title }]({ post.url }) — { post.date }
+@endloop
+```
+
+It's the same one loop, with the same clauses (`where`, `sort by`, `reverse`, `offset`, `limit`, format pipes). The collection resolves at **build time**, so a pure listing ships **zero JavaScript** (`runtime: false`).
+
+Each entry's frontmatter becomes a row, plus three fields the framework derives:
+
+| Field | Value |
+|---|---|
+| `{ post.url }` | the entry's route, e.g. `/blog/hello/` |
+| `{ post.slug }` | the filename without extension (an `index.md` uses its folder name) |
+| `{ post.excerpt }` | the frontmatter `excerpt:`, else the first paragraph of a `.md` body |
+
+Scalar frontmatter is coerced for querying, so `where post.featured == true` and numeric sorts behave like they do over a JSON file. **Drafts never leak:** a `draft: true` entry is excluded from a default build's listing (included only under `darkmown build --drafts`), exactly like routing and feeds.
+
+### Typed schema — `_schema.wd`
+
+Drop a `_schema.wd` at a collection's root to validate every entry's frontmatter at build time. It's frontmatter-shaped — one `field: type` rule per line:
+
+```wd
+---
+title: string
+date: date
+description: string
+excerpt: string?
+tags: string[]?
+---
+```
+
+The vocabulary is small and closed: `string`, `number`, `boolean`, `date`, `string[]`, each with a trailing `?` to mark it optional. A missing required field, a wrong type, an unknown extra field (a typo guard), or an unknown type token in the schema itself each **fail the build** with a `file:line` and the offending field. Validation is **opt-in** — no `_schema.wd`, no validation.
+
+### Pagination — `paginate N`
+
+Add `paginate N` (collections only) to split a listing into static pages: **page 1 keeps the listing's own route**, and pages 2+ live at `/<route>/page/2/`, `/<route>/page/3/`, … Every generated page is static HTML and appears in `routes.json` and `sitemap.xml`.
+
+```wd
+@loop blog into post sort by post.date desc paginate 5
+- [{ post.title }]({ post.url })
+@endloop
+
+Page { page.current } of { page.total }
+:if page.prev
+[← Newer]({ page.prev })
+:endif
+:if page.next
+[Older →]({ page.next })
+:endif
+```
+
+A `page` pager is exposed to the whole page:
+
+| Variable | Value |
+|---|---|
+| `{ page.current }` | 1-based current page number |
+| `{ page.total }` | total number of pages |
+| `{ page.prev }` | URL of the previous page, or `""` on page 1 |
+| `{ page.next }` | URL of the next page, or `""` on the last page |
+
+The pager is plain `<a href>` links to the generated routes — **zero JavaScript**. `paginate` is for collections only (route-multiplication only makes sense for a folder of entries) and can't combine with `offset`/`limit` (it owns the slice).
+
+> See the [live blog demo](https://darkmown.com/blog/) — the whole index, paginated and sorted, is one `@loop` over `site/pages/blog/`, validated by a `_schema.wd`, shipping no framework JS.
 
 ## Sections
 

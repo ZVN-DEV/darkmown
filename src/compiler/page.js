@@ -30,13 +30,16 @@ import { selectMd } from "./markdown.js";
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string } }} [options] When a site-wide
- *   RSS feed is emitted (the home page set `site_url` and the site has dated
- *   posts), `feed` carries its absolute href + title so every page links it.
+ * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown> }} [options]
+ *   When a site-wide RSS feed is emitted (the home page set `site_url` and the
+ *   site has dated posts), `feed` carries its absolute href + title so every page
+ *   links it. `collections` is the build-time collection index a bare-name
+ *   `@loop` resolves against; `vars` seeds the document scope (the pager `page`
+ *   object on a paginated route).
  * @returns {CompiledPage}
  */
 export function compilePage(file, context, options = {}) {
-  const compiled = compileDocument(file, context);
+  const compiled = compileDocument(file, context, [], options.vars, options.collections);
   const title = compiled.meta.title || "Darkmown";
   const description = compiled.meta.description || "";
   // Optional `image:` frontmatter sets the social-share preview (absolute URL).
@@ -158,7 +161,8 @@ ${scripts}
 </body>
 </html>`,
     assets: compiled.assets,
-    warnings: compiled.warnings
+    warnings: compiled.warnings,
+    pagination: compiled.pagination
   };
 }
 
@@ -266,12 +270,21 @@ function measureImage(src, paths) {
  * @param {Paths} context Resolved project paths.
  * @param {string[]} [stack] Include stack for cycle detection.
  * @param {Record<string, unknown>} [vars] Initial static scope variables.
+ * @param {Map<string, import("./collections.js").CollectionRow[]>} [collections]
+ *   Build-time collection index a bare-name `@loop` resolves against.
  * @returns {CompiledDocument}
  */
-export function compileDocument(file, context, stack = [], vars = {}) {
+export function compileDocument(file, context, stack = [], vars = {}, collections = new Map()) {
   const comp = createCompilation();
+  comp.collections = collections;
   const result = compileFile(file, context, stack, createScope(null, vars), comp, [], null);
-  return { meta: result.meta, html: result.html, assets: comp.assets, warnings: comp.warnings };
+  return {
+    meta: result.meta,
+    html: result.html,
+    assets: comp.assets,
+    warnings: comp.warnings,
+    pagination: comp.pagination
+  };
 }
 
 /**

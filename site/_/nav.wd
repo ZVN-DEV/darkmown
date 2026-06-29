@@ -2,10 +2,10 @@
   <a class="brand" href="/">Darkmown</a>
   <span class="nav-links">
     <a href="/docs/">Docs</a>
+    <a href="/blog/">Blog</a>
     <a href="/showcase/">Showcase</a>
     <a href="/reactive/">Reactive</a>
     <a href="/data/">Data</a>
-    <a href="/highlight/">Highlight</a>
   </span>
   <a class="nav-gh" href="https://github.com/ZVN-DEV/darkmown">GitHub ↗</a>
 </nav>

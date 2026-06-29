@@ -1,0 +1,144 @@
+/* The Darkmown blog index — a collection-driven, paginated listing. Thin layer
+   over /base.wd (tokens, typography, dark mode); only the post-card grid and the
+   pager live here. Namespaced under .app-blog so it can't leak. */
+
+.app-blog
+  max-width 52rem
+
+.app-blog .blog-head
+  margin 2.5rem 0 2rem
+
+.app-blog .blog-head .eyebrow
+  display inline-block
+  font-size .78rem
+  font-weight 600
+  text-transform uppercase
+  letter-spacing .12em
+  color var(--accent)
+  margin-bottom .6rem
+
+.app-blog .blog-head h1
+  margin .2rem 0 .8rem
+  line-height 1.1
+
+.app-blog .blog-head p
+  color var(--muted)
+  max-width 38rem
+
+/* The list of posts. */
+.app-blog .post-list
+  display flex
+  flex-direction column
+  gap 1.1rem
+  margin 2rem 0
+
+.app-blog .post-card
+  background var(--panel)
+  border 1px solid var(--line)
+  radius var(--radius-lg)
+  padding 1.5rem 1.6rem
+  transition border-color .15s ease, transform .15s ease, box-shadow .15s ease
+
+.app-blog .post-card:hover
+  border-color var(--accent)
+  transform translateY(-2px)
+  box-shadow 0 8px 24px -16px var(--accent-deep)
+
+.app-blog .post-meta
+  display flex
+  align-items center
+  flex-wrap wrap
+  gap .55rem
+  margin-bottom .55rem
+
+/* Each meta item (time / tag) renders as its own paragraph; strip the default
+   block margins so they sit inline in the flex row. */
+.app-blog .post-meta p
+  margin 0
+  display inline-flex
+
+.app-blog .post-meta time
+  font-size .82rem
+  font-weight 600
+  color var(--muted)
+  font-variant-numeric tabular-nums
+
+.app-blog .tag
+  font-size .72rem
+  font-weight 600
+  text-transform uppercase
+  letter-spacing .06em
+  color var(--accent-deep)
+  background var(--accent-soft)
+  border 1px solid color-mix(in srgb, var(--accent) 30%, transparent)
+  padding .15rem .5rem
+  radius 999px
+
+.app-blog .post-card h3
+  margin .1rem 0 .5rem
+  font-size 1.4rem
+  line-height 1.2
+
+.app-blog .post-card h3 a
+  color var(--ink)
+  text-decoration none
+
+.app-blog .post-card h3 a:hover
+  color var(--accent)
+
+.app-blog .post-excerpt
+  color var(--ink-soft)
+  margin 0 0 .8rem
+  line-height 1.55
+
+.app-blog .post-more a
+  font-size .88rem
+  font-weight 600
+  color var(--accent)
+  text-decoration none
+
+.app-blog .post-more a:hover
+  text-decoration underline
+
+.app-blog .empty-note
+  color var(--muted)
+  font-style italic
+  padding 2rem
+  text-align center
+  border 1px dashed var(--line)
+  radius var(--radius)
+
+/* The pager — plain links to the generated routes, zero JS. */
+.app-blog .pager
+  display flex
+  align-items center
+  justify-content space-between
+  gap 1rem
+  margin 2.5rem 0 3rem
+  padding-top 1.4rem
+  border-top 1px solid var(--line)
+
+.app-blog .pager-side
+  flex 1
+  min-width 0
+
+.app-blog .pager-side p
+  margin 0
+
+.app-blog .pager-side--end
+  text-align right
+
+.app-blog .pager-now
+  font-size .85rem
+  font-weight 600
+  color var(--muted)
+  white-space nowrap
+  font-variant-numeric tabular-nums
+
+.app-blog .pager-link
+  font-weight 600
+  color var(--accent)
+  text-decoration none
+
+.app-blog .pager-link:hover
+  text-decoration underline
