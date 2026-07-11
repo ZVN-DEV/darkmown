@@ -954,7 +954,16 @@ Set `window.wd.debug = true` (it defaults to `false`) to log any `:computed` or 
 
 ## Editor support
 
-A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown. For launch, it is source-installable: build a `.vsix` with `npm run pack:extension`, then install `editors/vscode/darkmown-*.vsix` with VS Code. Marketplace/Open VSX publishing is tracked as post-launch distribution work, so the public package does not imply store availability yet.
+A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown.
+
+Install from a `.vsix` today:
+
+```sh
+npm run pack:extension   # builds editors/vscode/darkmown-<version>.vsix
+code --install-extension editors/vscode/darkmown-*.vsix
+```
+
+Or inside VS Code: Extensions panel → `…` menu → **Install from VSIX…** and pick the built file. A Visual Studio Marketplace listing is pending (see [`editors/vscode/PUBLISHING.md`](editors/vscode/PUBLISHING.md)); until it lands, the `.vsix` route above is the supported install.
 
 ## Security
 

@@ -103,8 +103,8 @@ test("includes resolve relatively and from the include shelf across md/wd", () =
   write(root, "site/_/shared.wd", "## Shared");
 
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<h2>Local<\/h2>/);
-  assert.match(page.html, /<h2>Shared<\/h2>/);
+  assert.match(page.html, /<h2 id="local">Local<\/h2>/);
+  assert.match(page.html, /<h2 id="shared">Shared<\/h2>/);
 });
 
 test("include arguments pass literals and in-scope values, and unify on { name }", () => {
@@ -199,7 +199,7 @@ test("@loop nests and inner loops see outer values", () => {
   );
 
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(page.html, /<h2>Alpha<\/h2>/);
+  assert.match(page.html, /<h2[^>]*>Alpha<\/h2>/);
   assert.match(page.html, /Ann of Alpha/);
   assert.match(page.html, /Bob of Beta/);
   assert.match(page.html, /Bea of Beta/);

@@ -60,6 +60,8 @@
  * @property {Set<string>} stores Page-global store names (a subset of state keys).
  * @property {string[]} warnings Non-fatal authoring hints.
  * @property {number} sectionCounter Counter for auto-generated section ids.
+ * @property {Map<string, number>} headingSlugs Heading-slug occurrence counts,
+ *   shared across prose chunks and includes so anchor ids dedupe document-wide.
  * @property {Map<string, import("./collections.js").CollectionRow[]>} collections
  *   Collection name → entry rows, built from the router's routes and threaded in
  *   so a bare-name `@loop blog into post` resolves to its entries at build time.
@@ -182,6 +184,7 @@ export function createCompilation() {
     stores: new Set(),
     warnings: [],
     sectionCounter: 0,
+    headingSlugs: new Map(),
     collections: new Map(),
     pagination: null
   };

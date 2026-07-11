@@ -11,6 +11,7 @@ Fixes from a product review — build-time and dev-server correctness only; the 
 - **Compile errors report true file line numbers.** Line numbers were computed over the frontmatter-stripped body, so an error after a 3-line frontmatter block pointed three lines short. The frontmatter offset is now threaded through the compile context, so `file:line` matches what an editor's jump-to-line expects.
 - **The dev server no longer lies about a failed initial build.** The full compile error prints prominently, the "ready" line states the build failed (with the fix-to-retry flow), and unbuilt HTML routes serve a build-failure page carrying the dev client — the SSE overlay replays the error and the next successful build reloads — instead of the misleading "hidden or has not been created" 404.
 - **Dogfood regression tests.** The repo's own site now builds with `--drafts` in tests and CI (the staging path a default build never exercises), and every built page is swept for tag markup inside attribute values (the double-wrapped-link class of bug).
+- **VS Code extension is package-ready.** `npm run pack:extension` builds a clean `editors/vscode/darkmown-<version>.vsix` (git-ignored); the README's Editor support section now documents the install-from-VSIX flow, and `editors/vscode/PUBLISHING.md` records the Marketplace publisher/PAT prerequisites and exact publish commands — the Marketplace listing itself is pending.
 
 ## 1.5.0 — 2026-06-28
 

@@ -29,6 +29,7 @@ import {
 const md = new MarkdownIt({ html: true, highlight: highlightCode });
 md.use(bindingPlugin);
 md.use(attrsPlugin);
+md.use(anchorPlugin);
 
 // Raw HTML in markdown passes through by default (a documented design choice).
 // Pages can opt out with frontmatter `html: false` for untrusted content; the
@@ -47,6 +48,7 @@ export function selectMd(meta) {
     mdNoHtml = new MarkdownIt({ html: false, highlight: highlightCode });
     mdNoHtml.use(bindingPlugin);
     mdNoHtml.use(attrsPlugin);
+    mdNoHtml.use(anchorPlugin);
   }
   return mdNoHtml;
 }
@@ -59,7 +61,8 @@ export function selectMd(meta) {
 export function renderProse(text, ctx) {
   text = resolveDestinationBindings(text, ctx);
   return (ctx.md ?? md).render(text, {
-    resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx)
+    resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx),
+    headingSlugs: ctx.comp.headingSlugs
   });
 }
 
@@ -195,6 +198,51 @@ export function attrTarget(children, i) {
   // Unbalanced close with no matching open — markdown-it never emits this, but
   // the guard keeps attrTarget total: no element is attached.
   return null;
+}
+
+/**
+ * GitHub-style heading slug: lowercase, punctuation stripped (letters, numbers,
+ * whitespace, `_`, and `-` survive), each whitespace character becomes a hyphen.
+ * Punctuation-only headings fall back to `"section"` so the id is never empty.
+ * @param {string} text Plain heading text.
+ * @returns {string}
+ */
+export function slugify(text) {
+  const slug = text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]+/gu, "")
+    .replace(/\s/gu, "-");
+  return slug || "section";
+}
+
+/**
+ * markdown-it plugin (core rule): every heading gets a stable slugified `id`
+ * so long pages are linkable without any JS. Duplicate slugs dedupe with
+ * `-1`/`-2` suffixes; the counters live in `env.headingSlugs` so a page whose
+ * prose renders in chunks (directives between headings) still dedupes across
+ * the whole document. Bindings and inline HTML inside a heading contribute no
+ * slug text — only literal text and inline code do.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
+function anchorPlugin(mdInstance) {
+  mdInstance.core.ruler.push("wd_heading_anchors", (state) => {
+    const counts = (state.env.headingSlugs ??= new Map());
+    const tokens = state.tokens;
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].type !== "heading_open") continue;
+      let text = "";
+      for (const child of tokens[i + 1].children ?? []) {
+        if (child.type === "text" || child.type === "code_inline") text += child.content;
+      }
+      const base = slugify(text);
+      const seen = counts.get(base) ?? 0;
+      counts.set(base, seen + 1);
+      tokens[i].attrSet("id", seen ? `${base}-${seen}` : base);
+    }
+    return false;
+  });
 }
 
 /**
