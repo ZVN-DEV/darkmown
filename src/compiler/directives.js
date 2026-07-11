@@ -42,7 +42,7 @@ import { compileComputedExpr, compileWhen, evalPredicate } from "./predicates.js
  */
 export function handleInclude(line, ctx, index) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
-  if (!match) throw new Error(`Malformed @include in ${at(ctx.file, index)}: ${line}`);
+  if (!match) throw new Error(`Malformed @include in ${at(ctx, index)}: ${line}`);
   const target = resolveInclude(match[1], ctx.file, ctx.context);
   const args = parseIncludeArgs(match[2] || "", ctx);
   const childScope = createScope(ctx.scope, args);
@@ -130,7 +130,7 @@ export function handleContainer(header, bodyLines, ctx, index) {
     const cm = rest.match(/^\.([A-Za-z_][\w-]*)/);
     if (!cm)
       throw new Error(
-        `Unexpected token "${rest.split(/\s+/)[0]}" in container "::: ${header}" in ${at(ctx.file, index)}`
+        `Unexpected token "${rest.split(/\s+/)[0]}" in container "::: ${header}" in ${at(ctx, index)}`
       );
     const cls = cm[1];
     rest = rest.slice(cm[0].length).trim();
@@ -180,8 +180,8 @@ export function handleContainer(header, bodyLines, ctx, index) {
  */
 export function handleState(line, ctx, index) {
   const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+persist)?$/);
-  if (!match) throw new Error(`Malformed :state in ${at(ctx.file, index)}: ${line}`);
-  const value = parseStateValue(match[2], at(ctx.file, index));
+  if (!match) throw new Error(`Malformed :state in ${at(ctx, index)}: ${line}`);
+  const value = parseStateValue(match[2], at(ctx, index));
   const key = declareState(match[1], value, ctx);
   const persistAttr = match[3] ? ` data-wd-persist="${key}"` : "";
   return `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
@@ -219,9 +219,9 @@ export function handleStore(line, ctx, index) {
   const match = line.match(/^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+ephemeral)?$/);
   if (!match)
     throw new Error(
-      `Malformed :store in ${at(ctx.file, index)}: ${line}. Use: :store name = value [ephemeral]`
+      `Malformed :store in ${at(ctx, index)}: ${line}. Use: :store name = value [ephemeral]`
     );
-  const value = parseStateValue(match[2], at(ctx.file, index));
+  const value = parseStateValue(match[2], at(ctx, index));
   const name = declareStore(match[1], value, ctx);
   const ephemeral = match[3] ? " data-wd-store-ephemeral" : "";
   return `<script type="application/json" data-wd-store="${name}"${ephemeral}>${safeScriptJson(value)}</script>`;
@@ -276,18 +276,17 @@ const FETCH_USE =
  */
 export function handleFetch(line, ctx, index) {
   const head = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+)\s*(.*)$/);
-  if (!head) throw new Error(`Malformed :fetch in ${at(ctx.file, index)}: ${line}. ${FETCH_USE}`);
+  if (!head) throw new Error(`Malformed :fetch in ${at(ctx, index)}: ${line}. ${FETCH_USE}`);
   const name = head[1];
   const url = validateFetchUrl(stripQuotes(head[2]), ctx);
   /** @type {Record<string, string>} */
   const opts = {};
   for (const part of head[3].trim().split(/\s+/).filter(Boolean)) {
     const kv = part.match(/^([A-Za-z]+)=(.+)$/);
-    if (!kv)
-      throw new Error(`Unknown :fetch option "${part}" in ${at(ctx.file, index)}. ${FETCH_USE}`);
+    if (!kv) throw new Error(`Unknown :fetch option "${part}" in ${at(ctx, index)}. ${FETCH_USE}`);
     const optName = kv[1];
     if (!["method", "when", "timeout", "retry", "headers", "body", "refresh"].includes(optName)) {
-      throw new Error(`Unknown :fetch option "${optName}" in ${at(ctx.file, index)}. ${FETCH_USE}`);
+      throw new Error(`Unknown :fetch option "${optName}" in ${at(ctx, index)}. ${FETCH_USE}`);
     }
     opts[optName] = stripQuotes(kv[2]);
   }
@@ -297,18 +296,16 @@ export function handleFetch(line, ctx, index) {
     !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(opts.method.toUpperCase())
   ) {
     throw new Error(
-      `:fetch method "${opts.method}" is not allowed in ${at(ctx.file, index)}. ${FETCH_USE}`
+      `:fetch method "${opts.method}" is not allowed in ${at(ctx, index)}. ${FETCH_USE}`
     );
   }
   if (opts.when && !["load", "visible"].includes(opts.when)) {
-    throw new Error(
-      `:fetch when "${opts.when}" is not allowed in ${at(ctx.file, index)}. ${FETCH_USE}`
-    );
+    throw new Error(`:fetch when "${opts.when}" is not allowed in ${at(ctx, index)}. ${FETCH_USE}`);
   }
   for (const n of ["timeout", "retry"]) {
     if (opts[n] !== undefined && !/^\d+$/.test(opts[n])) {
       throw new Error(
-        `:fetch ${n} must be a non-negative integer in ${at(ctx.file, index)}. ${FETCH_USE}`
+        `:fetch ${n} must be a non-negative integer in ${at(ctx, index)}. ${FETCH_USE}`
       );
     }
   }
@@ -317,7 +314,7 @@ export function handleFetch(line, ctx, index) {
     // The new token is written back into the `headers=` state, so it is required.
     if (!opts.headers) {
       throw new Error(
-        `:fetch refresh= needs headers= (the state key holding the token to renew) in ${at(ctx.file, index)}. ${FETCH_USE}`
+        `:fetch refresh= needs headers= (the state key holding the token to renew) in ${at(ctx, index)}. ${FETCH_USE}`
       );
     }
     opts.refresh = validateFetchUrl(opts.refresh, ctx, ":fetch refresh");
@@ -410,7 +407,7 @@ export function handleComputed(line, ctx, index) {
   const match = line.match(/^:computed\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
   if (!match)
     throw new Error(
-      `Malformed :computed in ${at(ctx.file, index)}: ${line}. Use: :computed total = items.length * 4`
+      `Malformed :computed in ${at(ctx, index)}: ${line}. Use: :computed total = items.length * 4`
     );
   const expr = compileComputedExpr(match[2].trim(), ctx);
   /** @type {unknown} */
@@ -455,7 +452,7 @@ export function handleForm(line, bodyLines, ctx, index) {
     .trim();
   if ((!rawAction && !into) || leftover) {
     throw new Error(
-      `Malformed :form in ${at(ctx.file, index)}: ${line}. Use ':form into name' (client state), ':form action="/url"' (native post), or both (fetch round-trip into state).`
+      `Malformed :form in ${at(ctx, index)}: ${line}. Use ':form into name' (client state), ':form action="/url"' (native post), or both (fetch round-trip into state).`
     );
   }
   const action = rawAction ? validateFetchUrl(rawAction, ctx, ":form action") : undefined;
@@ -479,7 +476,7 @@ export function handleForm(line, bodyLines, ctx, index) {
  */
 export function handleInput(line, ctx, index) {
   const match = line.match(/^:input\s+([A-Za-z_][\w-]*)\s*(.*)$/);
-  if (!match) throw new Error(`Malformed :input in ${at(ctx.file, index)}: ${line}`);
+  if (!match) throw new Error(`Malformed :input in ${at(ctx, index)}: ${line}`);
   const attrs = [`name="${escapeHtml(match[1])}"`];
   let type = "text";
   let placeholder;
@@ -488,7 +485,7 @@ export function handleInput(line, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "autofocus", "disabled", "readonly"].includes(token[3])) {
-        throw new Error(`Unknown :input flag "${token[3]}" in ${at(ctx.file, index)}`);
+        throw new Error(`Unknown :input flag "${token[3]}" in ${at(ctx, index)}`);
       }
       attrs.push(token[3]);
       continue;
@@ -511,7 +508,7 @@ export function handleInput(line, ctx, index) {
         "aria-describedby"
       ].includes(token[1])
     ) {
-      throw new Error(`Unknown :input attribute "${token[1]}" in ${at(ctx.file, index)}`);
+      throw new Error(`Unknown :input attribute "${token[1]}" in ${at(ctx, index)}`);
     }
     if (token[1] === "placeholder") placeholder = value;
     if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
@@ -539,7 +536,7 @@ export function handleBind(line, ctx, index) {
   const match = line.match(/^:bind\s+([A-Za-z_$][\w$]*)\s*(.*)$/);
   if (!match)
     throw new Error(
-      `Malformed :bind in ${at(ctx.file, index)}: ${line}. Use: :bind query placeholder="Search"`
+      `Malformed :bind in ${at(ctx, index)}: ${line}. Use: :bind query placeholder="Search"`
     );
   const key = resolveStateKey(match[1], ctx);
   if (!key) {
@@ -556,7 +553,7 @@ export function handleBind(line, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "autofocus"].includes(token[3]))
-        throw new Error(`Unknown :bind flag "${token[3]}" in ${at(ctx.file, index)}`);
+        throw new Error(`Unknown :bind flag "${token[3]}" in ${at(ctx, index)}`);
       attrs.push(token[3]);
       continue;
     }
@@ -566,7 +563,7 @@ export function handleBind(line, ctx, index) {
       continue;
     }
     if (!["placeholder", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
-      throw new Error(`Unknown :bind attribute "${token[1]}" in ${at(ctx.file, index)}`);
+      throw new Error(`Unknown :bind attribute "${token[1]}" in ${at(ctx, index)}`);
     }
     if (token[1] === "placeholder") placeholder = value;
     if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
@@ -599,7 +596,7 @@ export function handleSlider(line, ctx, index) {
   const head = line.match(/^:slider\s+([A-Za-z_$][\w$]*)\s*(.*)$/);
   if (!head)
     throw new Error(
-      `Malformed :slider in ${at(ctx.file, index)}: ${line}. Use: :slider volume = 50 min=0 max=100 step=1`
+      `Malformed :slider in ${at(ctx, index)}: ${line}. Use: :slider volume = 50 min=0 max=100 step=1`
     );
   const name = head[1];
   let rest = head[2].trim();
@@ -610,7 +607,7 @@ export function handleSlider(line, ctx, index) {
     const valueMatch = rest.match(/^=\s*(\S+)\s*(.*)$/);
     if (!valueMatch)
       throw new Error(
-        `Malformed :slider initial value in ${at(ctx.file, index)}: ${line}. Use: :slider ${name} = 50`
+        `Malformed :slider initial value in ${at(ctx, index)}: ${line}. Use: :slider ${name} = 50`
       );
     initialRaw = valueMatch[1];
     rest = valueMatch[2].trim();
@@ -632,7 +629,7 @@ export function handleSlider(line, ctx, index) {
     else if (token[1] === "max") max = value;
     else if (token[1] === "step") step = value;
     else if (token[1] === "aria-label") ariaLabel = value;
-    else throw new Error(`Unknown :slider attribute "${token[1]}" in ${at(ctx.file, index)}`);
+    else throw new Error(`Unknown :slider attribute "${token[1]}" in ${at(ctx, index)}`);
   }
   for (const [label, raw] of [
     ["min", min],
@@ -640,7 +637,7 @@ export function handleSlider(line, ctx, index) {
     ["step", step]
   ]) {
     if (!/^-?\d+(?:\.\d+)?$/.test(raw))
-      throw new Error(`:slider ${label} must be a number in ${at(ctx.file, index)}: ${raw}`);
+      throw new Error(`:slider ${label} must be a number in ${at(ctx, index)}: ${raw}`);
   }
 
   ctx.comp.assets.runtime = true;
@@ -648,10 +645,10 @@ export function handleSlider(line, ctx, index) {
   let key;
   let seed = "";
   if (initialRaw !== undefined) {
-    const value = parseStateValue(initialRaw, at(ctx.file, index));
+    const value = parseStateValue(initialRaw, at(ctx, index));
     if (typeof value !== "number")
       throw new Error(
-        `:slider ${name} initial value must be a number in ${at(ctx.file, index)}: ${initialRaw}`
+        `:slider ${name} initial value must be a number in ${at(ctx, index)}: ${initialRaw}`
       );
     key = declareState(name, value, ctx);
     const persistAttr = persist ? ` data-wd-persist="${key}"` : "";
@@ -659,7 +656,7 @@ export function handleSlider(line, ctx, index) {
   } else {
     if (persist)
       throw new Error(
-        `:slider persist only applies when declaring state inline (:slider ${name} = 0 … persist) in ${at(ctx.file, index)}`
+        `:slider persist only applies when declaring state inline (:slider ${name} = 0 … persist) in ${at(ctx, index)}`
       );
     const resolved = resolveStateKey(name, ctx);
     if (!resolved)
@@ -698,7 +695,7 @@ export function handleCarousel(line, bodyLines, ctx, index) {
     const auto = rest.match(/^autoplay=(\d+)$/);
     if (!auto)
       throw new Error(
-        `Malformed :carousel in ${at(ctx.file, index)}: ${line}. Use: :carousel [autoplay=3000] … :endcarousel`
+        `Malformed :carousel in ${at(ctx, index)}: ${line}. Use: :carousel [autoplay=3000] … :endcarousel`
       );
     autoplayAttr = ` data-wd-carousel-autoplay="${auto[1]}"`;
   }
@@ -716,7 +713,7 @@ export function handleCarousel(line, bodyLines, ctx, index) {
 export function handleSubmit(line, ctx, index) {
   const match = line.match(/^:submit\s+"([^"]+)"\s*$/);
   if (!match)
-    throw new Error(`Malformed :submit in ${at(ctx.file, index)}: ${line}. Use: :submit "Label"`);
+    throw new Error(`Malformed :submit in ${at(ctx, index)}: ${line}. Use: :submit "Label"`);
   return `<button type="submit">${escapeHtml(match[1])}</button>`;
 }
 
@@ -734,7 +731,7 @@ export function handleTextarea(line, ctx, index) {
   const match = line.match(/^:textarea\s+([A-Za-z_][\w-]*)\s*(.*)$/);
   if (!match)
     throw new Error(
-      `Malformed :textarea in ${at(ctx.file, index)}: ${line}. Use: :textarea name [placeholder="…"] [rows=N] [required]`
+      `Malformed :textarea in ${at(ctx, index)}: ${line}. Use: :textarea name [placeholder="…"] [rows=N] [required]`
     );
   const attrs = [`name="${escapeHtml(match[1])}"`];
   let placeholder;
@@ -743,7 +740,7 @@ export function handleTextarea(line, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "autofocus", "disabled", "readonly"].includes(token[3])) {
-        throw new Error(`Unknown :textarea flag "${token[3]}" in ${at(ctx.file, index)}`);
+        throw new Error(`Unknown :textarea flag "${token[3]}" in ${at(ctx, index)}`);
       }
       attrs.push(token[3]);
       continue;
@@ -761,7 +758,7 @@ export function handleTextarea(line, ctx, index) {
         "aria-describedby"
       ].includes(token[1])
     ) {
-      throw new Error(`Unknown :textarea attribute "${token[1]}" in ${at(ctx.file, index)}`);
+      throw new Error(`Unknown :textarea attribute "${token[1]}" in ${at(ctx, index)}`);
     }
     if (token[1] === "placeholder") placeholder = value;
     if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
@@ -787,7 +784,7 @@ export function handleSelect(line, optionLines, ctx, index) {
   const match = line.match(/^:select\s+([A-Za-z_][\w-]*)\s*(.*)$/);
   if (!match)
     throw new Error(
-      `Malformed :select in ${at(ctx.file, index)}: ${line}. Use: :select name [required] then "- Label" lines`
+      `Malformed :select in ${at(ctx, index)}: ${line}. Use: :select name [required] then "- Label" lines`
     );
   const attrs = [`name="${escapeHtml(match[1])}"`];
   let hasAria = false;
@@ -795,14 +792,14 @@ export function handleSelect(line, optionLines, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "disabled", "autofocus"].includes(token[3])) {
-        throw new Error(`Unknown :select flag "${token[3]}" in ${at(ctx.file, index)}`);
+        throw new Error(`Unknown :select flag "${token[3]}" in ${at(ctx, index)}`);
       }
       attrs.push(token[3]);
       continue;
     }
     const value = stripQuotes(token[2]);
     if (!["autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
-      throw new Error(`Unknown :select attribute "${token[1]}" in ${at(ctx.file, index)}`);
+      throw new Error(`Unknown :select attribute "${token[1]}" in ${at(ctx, index)}`);
     }
     if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
     attrs.push(`${token[1]}="${escapeHtml(value)}"`);
@@ -813,7 +810,7 @@ export function handleSelect(line, optionLines, ctx, index) {
   const options = optionLines.map((l) => l.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
   if (!options.length) {
     throw new Error(
-      `:select "${match[1]}" in ${at(ctx.file, index)} has no options. Add "- Label" lines beneath it.`
+      `:select "${match[1]}" in ${at(ctx, index)} has no options. Add "- Label" lines beneath it.`
     );
   }
   const opts = options
@@ -848,7 +845,7 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
   );
   if (!match)
     throw new Error(
-      `Malformed ${directive} in ${at(ctx.file, index)}: ${line}. Use: ${directive} name [required] then "- Label" lines`
+      `Malformed ${directive} in ${at(ctx, index)}: ${line}. Use: ${directive} name [required] then "- Label" lines`
     );
   const name = match[1];
   const flags = [];
@@ -858,7 +855,7 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "disabled", "autofocus"].includes(token[3])) {
-        throw new Error(`Unknown ${directive} flag "${token[3]}" in ${at(ctx.file, index)}`);
+        throw new Error(`Unknown ${directive} flag "${token[3]}" in ${at(ctx, index)}`);
       }
       flags.push(token[3]);
       continue;
@@ -866,12 +863,12 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
     const value = stripQuotes(token[2]);
     if (token[1] === "aria-label") ariaLabel = value;
     else if (token[1] === "aria-describedby") ariaDescribedby = value;
-    else throw new Error(`Unknown ${directive} attribute "${token[1]}" in ${at(ctx.file, index)}`);
+    else throw new Error(`Unknown ${directive} attribute "${token[1]}" in ${at(ctx, index)}`);
   }
   const options = optionLines.map((l) => l.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
   if (!options.length) {
     throw new Error(
-      `${directive} "${name}" in ${at(ctx.file, index)} has no options. Add "- Label" lines beneath it.`
+      `${directive} "${name}" in ${at(ctx, index)} has no options. Add "- Label" lines beneath it.`
     );
   }
   const isCheckbox = kind === "checkbox";
@@ -905,7 +902,7 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
  */
 export function handleButton(line, ctx, index) {
   const match = line.match(/^:button\s+"([^"]+)"\s*->\s*(.+)$/);
-  if (!match) throw new Error(`Malformed :button in ${at(ctx.file, index)}: ${line}`);
+  if (!match) throw new Error(`Malformed :button in ${at(ctx, index)}: ${line}`);
   ctx.comp.assets.runtime = true;
   const action = parseAction(match[2], ctx);
   if (Array.isArray(action)) {
@@ -933,8 +930,7 @@ const EFFECT_USE =
  */
 export function handleEffect(line, ctx, index) {
   const match = line.match(/^:effect\s+([A-Za-z_$][\w$.]*)\s*->\s*(.+)$/);
-  if (!match)
-    throw new Error(`Malformed :effect in ${at(ctx.file, index)}: ${line}. ${EFFECT_USE}`);
+  if (!match) throw new Error(`Malformed :effect in ${at(ctx, index)}: ${line}. ${EFFECT_USE}`);
   const segs = validatePath(match[1], ctx, EFFECT_USE);
   const key = resolveStateKey(segs[0], ctx);
   if (!key)
@@ -976,11 +972,11 @@ function parseDuration(raw) {
  */
 export function handleEvery(line, ctx, index) {
   const match = line.match(/^:every\s+(\S+)\s*->\s*(.+)$/);
-  if (!match) throw new Error(`Malformed :every in ${at(ctx.file, index)}: ${line}. ${EVERY_USE}`);
+  if (!match) throw new Error(`Malformed :every in ${at(ctx, index)}: ${line}. ${EVERY_USE}`);
   const ms = parseDuration(match[1]);
   if (ms == null || ms <= 0) {
     throw new Error(
-      `:every duration "${match[1]}" is not valid in ${at(ctx.file, index)}. ${EVERY_USE}`
+      `:every duration "${match[1]}" is not valid in ${at(ctx, index)}. ${EVERY_USE}`
     );
   }
   ctx.comp.assets.runtime = true;
@@ -1005,11 +1001,11 @@ export function handleTheme(line, ctx, index) {
   const match = line.match(/^:theme(?:\s+([A-Za-z_$][\w$]*))?(?:\s*=\s*(.+))?$/);
   if (!match) {
     throw new Error(
-      `Malformed :theme in ${at(ctx.file, index)}: ${line}. Use: :theme  (or  :theme name = "auto")`
+      `Malformed :theme in ${at(ctx, index)}: ${line}. Use: :theme  (or  :theme name = "auto")`
     );
   }
   const name = match[1] || "theme";
-  const seed = match[2] != null ? parseStateValue(match[2], at(ctx.file, index)) : "auto";
+  const seed = match[2] != null ? parseStateValue(match[2], at(ctx, index)) : "auto";
   const storeName = declareStore(name, seed, ctx);
   return `<script type="application/json" data-wd-store="${storeName}">${safeScriptJson(seed)}</script><span data-wd-theme="${storeName}" hidden></span>`;
 }
@@ -1046,7 +1042,7 @@ export function handleMedia(line, kind, ctx, index) {
   const match = line.match(new RegExp(`^:${kind}\\s+(\\S+)\\s*(.*)$`));
   if (!match) {
     throw new Error(
-      `Malformed :${kind} in ${at(ctx.file, index)}: ${line}. Use: :${kind} /clip [controls] [autoplay] [loop] [muted]`
+      `Malformed :${kind} in ${at(ctx, index)}: ${line}. Use: :${kind} /clip [controls] [autoplay] [loop] [muted]`
     );
   }
   const src = validateFetchUrl(stripQuotes(match[1]), ctx, `:${kind}`);
@@ -1059,11 +1055,11 @@ export function handleMedia(line, kind, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!spec.flags.includes(token[3]))
-        throw new Error(`Unknown :${kind} flag "${token[3]}" in ${at(ctx.file, index)}`);
+        throw new Error(`Unknown :${kind} flag "${token[3]}" in ${at(ctx, index)}`);
       flags.add(token[3]);
     } else {
       if (!spec.attrs.includes(token[1]))
-        throw new Error(`Unknown :${kind} attribute "${token[1]}" in ${at(ctx.file, index)}`);
+        throw new Error(`Unknown :${kind} attribute "${token[1]}" in ${at(ctx, index)}`);
       attrs.set(token[1], stripQuotes(token[2]));
     }
   }
@@ -1098,7 +1094,7 @@ export function handleEmbed(line, ctx, index) {
   const match = line.match(/^:embed\s+(\S+)\s*(.*)$/);
   if (!match) {
     throw new Error(
-      `Malformed :embed in ${at(ctx.file, index)}: ${line}. Use: :embed https://youtu.be/ID [title="…"]`
+      `Malformed :embed in ${at(ctx, index)}: ${line}. Use: :embed https://youtu.be/ID [title="…"]`
     );
   }
   const raw = stripQuotes(match[1]);
@@ -1106,7 +1102,7 @@ export function handleEmbed(line, ctx, index) {
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)/g;
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[1] !== "title")
-      throw new Error(`Unknown :embed attribute "${token[1]}" in ${at(ctx.file, index)}`);
+      throw new Error(`Unknown :embed attribute "${token[1]}" in ${at(ctx, index)}`);
     title = stripQuotes(token[2]);
   }
   const { url, label } = resolveEmbed(raw, ctx);
@@ -1204,7 +1200,7 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
   // a global if-region (evaluated each render) when it reads state. No raw eval.
   if (!condition)
     throw new Error(
-      `Malformed :if in ${at(ctx.file, index)}: ${line}. Use ":if name" or ":if a <op> b [and|or|not …]".`
+      `Malformed :if in ${at(ctx, index)}: ${line}. Use ":if name" or ":if a <op> b [and|or|not …]".`
     );
   const compiled = compileWhen(condition, ctx, '":if"');
   if (compiled.static) return compileBody(compiled.value ? truthyLines : falsyLines, ctx);

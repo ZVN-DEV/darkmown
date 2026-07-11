@@ -68,10 +68,8 @@ export function compilePage(file, context, options = {}) {
   // The framework highlight stylesheet rides ahead of page skins so a project's
   // own `$code-*` tokens / overrides still cascade over it. Pay-for-what-you-use:
   // linked only on pages with a highlighted code block (`hasCode`).
-  const highlightLink = compiled.assets.hasCode
-    ? [`<link rel="stylesheet" href="/__wd/highlight.css">`]
-    : [];
-  const cssLinks = [...highlightLink, ...compiled.assets.skins]
+  const highlightHref = compiled.assets.hasCode ? ["/__wd/highlight.css"] : [];
+  const cssLinks = [...highlightHref, ...compiled.assets.skins]
     .map((href) => `<link rel="stylesheet" href="${href}">`)
     .join("\n");
   // RSS feed discovery: when the site emits an `rss.xml` (home `site_url` set +
@@ -347,7 +345,7 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
   }
 
   const raw = fs.readFileSync(file, "utf8");
-  const { meta, body } = parseFrontmatter(raw, file);
+  const { meta, body, bodyLine } = parseFrontmatter(raw, file);
   warnLikelyFrontmatter(raw, file, comp);
   collectColocatedAssets(file, context, comp.assets);
 
@@ -363,6 +361,7 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
   /** @type {Ctx} */
   const ctx = {
     file,
+    bodyLine,
     context,
     stack: [...stack, real],
     scope: createScope(scope, { meta }),

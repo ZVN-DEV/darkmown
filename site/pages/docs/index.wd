@@ -146,6 +146,8 @@ Nothing left to do.
 @endloop
 ```
 
+A **missing** in-scope source is an empty list, not an error — `@loop meta.tags into tag` on a page whose frontmatter omits `tags` (an optional field) loops zero rows and renders the `@empty` branch. A value that is present but not a list is still a compile error with the file and line.
+
 These clauses stay build-time when the source and every argument are static — a sorted, limited loop over a JSON file ships zero JS. The loop turns reactive only when the source or a clause reads `:state`/`:store`/`:fetch` data.
 
 ## Content collections

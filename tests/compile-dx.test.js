@@ -34,6 +34,36 @@ test("an unclosed :if reports the opener's line", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Frontmatter offset: errors report TRUE file lines, not body-relative ones.
+// ---------------------------------------------------------------------------
+
+test("a directive error after a frontmatter block reports the true file line", () => {
+  const root = fixture();
+  // Frontmatter occupies file lines 1-3, so the bad :state on body line 2 is
+  // FILE line 5 — the number an editor jump-to-line needs.
+  write(root, "site/pages/bad.wd", ["---", "title: Offset", "---", "", ":state x"].join("\n"));
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:5/
+  );
+});
+
+test("an unclosed block after a frontmatter block reports the opener's true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    ["---", "title: Offset", "date: 2026-01-01", "---", "", "@loop items into item", "- x"].join(
+      "\n"
+    )
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Missing @endloop.*bad\.wd:6/
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Malformed-directive errors carry the directive's own line (file:line), not
 // just the file — matching the unclosed-block errors above.
 // ---------------------------------------------------------------------------

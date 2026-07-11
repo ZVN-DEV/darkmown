@@ -403,14 +403,32 @@ test("run('dev') records a broken initial build and replays it to SSE clients", 
   let handle;
   try {
     handle = await run(["dev"], c.env);
-    // The initial build error was printed to the error sink, not thrown.
+    // The initial build error was printed to the error sink, prominently.
+    assert.match(c.stderr(), /✗ Initial build failed:/);
     assert.match(c.stderr(), /Missing @endloop/);
+    // The "ready" line is honest: it says the build failed instead of
+    // pretending everything is fine.
+    assert.match(c.stdout(), /ready at http:\/\/127\.0\.0\.1:0.*initial build FAILED/);
 
     const origin = originOf(handle.server);
     const sse = await readSse(origin, "/__wd/dev-events", { timeout: 400 });
     assert.equal(sse.status, 200);
     assert.match(sse.data, /event: builderror/, "broken build replays to a fresh SSE client");
     assert.match(sse.data, /Missing @endloop/);
+
+    // An unbuilt HTML route serves the build-failure page (with the dev client
+    // so the overlay replays and the next successful build reloads it) — NOT
+    // the misleading "hidden or has not been created" 404 copy.
+    const page = await httpGet(origin, "/broken/");
+    assert.equal(page.status, 500, "an unbuilt route is a 500 while the build is failing");
+    assert.match(page.body, /Darkmown build failed/);
+    assert.match(page.body, /Missing @endloop/);
+    assert.match(page.body, /__wd\/dev-client\.js/, "the failure page carries the dev client");
+    assert.doesNotMatch(page.body, /hidden or has not been created/);
+
+    // Non-HTML asset URLs still 404 normally (no HTML error page for a .css).
+    const asset = await httpGet(origin, "/missing.css");
+    assert.equal(asset.status, 404);
   } finally {
     if (prevPort === undefined) delete process.env.PORT;
     else process.env.PORT = prevPort;

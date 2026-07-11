@@ -2,6 +2,16 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 1.5.1 (Unreleased)
+
+Fixes from a product review — build-time and dev-server correctness only; the runtime is unchanged (still 7459 B gzipped).
+
+- **Fixed: highlighted pages emitted a mangled stylesheet link.** The `/__wd/highlight.css` `<link>` was wrapped inside a second link tag's `href` attribute on every page with a highlighted code block. Each such page now emits exactly one well-formed tag, still ordered before page skins so `$code-*` overrides cascade.
+- **`@loop` over a missing field is an empty list, not an error.** An in-scope loop source that resolves to `undefined`/`null` — like an optional frontmatter field (`tags: string[]?`) a page omits — loops zero rows and renders the `@empty` branch, matching the runtime. Previously `build --drafts` died on a draft post without `tags`. A present-but-non-list value is still a compile error, now with the true `file:line` and a corrective hint.
+- **Compile errors report true file line numbers.** Line numbers were computed over the frontmatter-stripped body, so an error after a 3-line frontmatter block pointed three lines short. The frontmatter offset is now threaded through the compile context, so `file:line` matches what an editor's jump-to-line expects.
+- **The dev server no longer lies about a failed initial build.** The full compile error prints prominently, the "ready" line states the build failed (with the fix-to-retry flow), and unbuilt HTML routes serve a build-failure page carrying the dev client — the SSE overlay replays the error and the next successful build reloads — instead of the misleading "hidden or has not been created" 404.
+- **Dogfood regression tests.** The repo's own site now builds with `--drafts` in tests and CI (the staging path a default build never exercises), and every built page is swept for tag markup inside attribute values (the double-wrapped-link class of bug).
+
 ## 1.5.0 — 2026-06-28
 
 Content collections — query a folder of markdown as data, with optional typed validation and pagination. Plus a default-styling pass so buttons and form controls look good out of the box, and two fixes from a product review. The runtime is unchanged (still 7459 B gzipped); collections and styling are entirely build-time.

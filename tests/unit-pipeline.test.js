@@ -194,7 +194,9 @@ test("@include traversal outside the shelf/pages roots is rejected", () => {
 
 // --- @loop error paths ------------------------------------------------------
 
-test("@loop over an in-scope non-array value is rejected clearly", () => {
+test("@loop over an in-scope non-array value is rejected with file:line + hint", () => {
+  // The @loop sits on file line 5 (after the 3-line frontmatter block), and the
+  // error must report that TRUE file line, plus a corrective Use: hint.
   compileThrows(
     [
       "---",
@@ -206,8 +208,29 @@ test("@loop over an in-scope non-array value is rejected clearly", () => {
       "@endloop",
       "</main>"
     ],
-    /found an in-scope value, but it is not a list/
+    /index\.wd:5 found an in-scope value, but it is not a list \(got string\)[\s\S]*Use:/
   );
+});
+
+test("@loop over a missing optional frontmatter field loops zero rows and renders @empty", () => {
+  // `tags` is absent from the frontmatter (an optional field) — the loop must
+  // resolve to an empty list, not a fatal error.
+  const page = compile([
+    "---",
+    "title: No tags here",
+    "---",
+    "@loop meta.tags into tag",
+    "- { tag }",
+    "@endloop",
+    "@loop meta.tags into tag",
+    "- { tag }",
+    "@empty",
+    "No tags yet.",
+    "@endloop"
+  ]);
+  assert.match(page.html, /No tags yet\./);
+  assert.doesNotMatch(page.html, /<li>/);
+  assert.equal(page.assets.runtime, false, "an empty static loop stays zero-JS");
 });
 
 test("@loop over a JSON file that is not an array is rejected", () => {

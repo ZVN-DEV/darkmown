@@ -12,13 +12,15 @@ import { stripQuotes } from "./interpolation.js";
  */
 
 /**
- * Split a raw file into its frontmatter `meta` and `body`.
+ * Split a raw file into its frontmatter `meta` and `body`. `bodyLine` is the
+ * 0-based file line index the body starts on (the number of lines the
+ * frontmatter block consumed) so compile errors can report true file lines.
  * @param {string} raw Full file contents.
  * @param {string} [file] Source path, used only for error messages.
- * @returns {{ meta: Meta, body: string }}
+ * @returns {{ meta: Meta, body: string, bodyLine: number }}
  */
 export function parseFrontmatter(raw, file) {
-  if (!raw.startsWith("---\n")) return { meta: {}, body: raw };
+  if (!raw.startsWith("---\n")) return { meta: {}, body: raw, bodyLine: 0 };
   const end = raw.indexOf("\n---", 3);
   if (end === -1) {
     const where = file ? ` in ${file}` : "";
@@ -27,14 +29,17 @@ export function parseFrontmatter(raw, file) {
     );
   }
   const front = raw.slice(4, end).trim();
-  const body = raw.slice(end + 4).replace(/^\n/, "");
+  let bodyStart = end + 4;
+  if (raw[bodyStart] === "\n") bodyStart++;
+  const body = raw.slice(bodyStart);
+  const bodyLine = raw.slice(0, bodyStart).split("\n").length - 1;
   /** @type {Meta} */
   const meta = {};
   for (const line of front.split("\n")) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (match) meta[match[1]] = parseFrontmatterValue(match[2]);
   }
-  return { meta, body };
+  return { meta, body, bodyLine };
 }
 
 /**

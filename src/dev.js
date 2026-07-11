@@ -1,3 +1,5 @@
+import { escapeHtml } from "./compiler.js";
+
 export const devClientPath = "/__wd/dev-client.js";
 export const devEventsPath = "/__wd/dev-events";
 
@@ -40,6 +42,34 @@ banner.style.cssText = [
 ].join(";");
 document.addEventListener("DOMContentLoaded", () => document.body.prepend(banner));
 `;
+}
+
+/**
+ * The page the dev server serves for a route with no dist output while the last
+ * build is FAILED — the honest alternative to the production 404 copy, which
+ * would claim the route "is hidden or has not been created" when the real cause
+ * is a compile error. The message renders inline (works without JS) and the
+ * injected dev client replays the `builderror` overlay on connect, then reloads
+ * the real page on the next successful build.
+ * @param {string} message The recorded build failure.
+ * @returns {string}
+ */
+export function buildFailedPage(message) {
+  return injectDevClient(
+    `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Darkmown build failed</title>
+</head>
+<body>
+  <h1>Darkmown build failed</h1>
+  <pre>${escapeHtml(message)}</pre>
+  <p>This route has no built output because the last build failed. Fix the file above and this page reloads on the next successful build.</p>
+</body>
+</html>`
+  );
 }
 
 /**

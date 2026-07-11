@@ -82,9 +82,9 @@ export function compileBody(lines, ctx) {
     }
     if (/^@loop\s/.test(line)) {
       flush();
-      const block = scanBlock(lines, i, /^@loop\s/, "@endloop", ctx.file);
+      const block = scanBlock(lines, i, /^@loop\s/, "@endloop", ctx);
       const split = splitEmptyBranch(block.body);
-      out.push(handleLoop(line, split.body, split.empty, ctx));
+      out.push(handleLoop(line, split.body, split.empty, ctx, i));
       i = block.end;
       continue;
     }
@@ -93,7 +93,7 @@ export function compileBody(lines, ctx) {
       flush();
       if (!container[1].trim())
         throw new Error(`Stray ::: close with no open container in ${ctx.file}`);
-      const block = scanContainer(lines, i, ctx.file);
+      const block = scanContainer(lines, i, ctx);
       out.push(handleContainer(container[1].trim(), block.body, ctx, i));
       i = block.end;
       continue;
@@ -152,14 +152,14 @@ export function compileBody(lines, ctx) {
     }
     if (/^:form\s/.test(line)) {
       flush();
-      const block = scanBlock(lines, i, /^:form\s/, ":endform", ctx.file);
+      const block = scanBlock(lines, i, /^:form\s/, ":endform", ctx);
       out.push(handleForm(line, block.body, ctx, i));
       i = block.end;
       continue;
     }
     if (/^:carousel(?:\s|$)/.test(line)) {
       flush();
-      const block = scanBlock(lines, i, /^:carousel(?:\s|$)/, ":endcarousel", ctx.file);
+      const block = scanBlock(lines, i, /^:carousel(?:\s|$)/, ":endcarousel", ctx);
       out.push(handleCarousel(line, block.body, ctx, i));
       i = block.end;
       continue;
@@ -223,7 +223,7 @@ export function compileBody(lines, ctx) {
     }
     if (/^:if\s/.test(line)) {
       flush();
-      const block = scanConditional(lines, i, ctx.file);
+      const block = scanConditional(lines, i, ctx);
       out.push(handleIf(line, block.truthy, block.falsy, ctx, i));
       i = block.end;
       continue;
@@ -342,10 +342,10 @@ function joinValueDirective(lines, start) {
  * @param {number} start Index of the opening line.
  * @param {RegExp} openRe Pattern that re-opens a nested block.
  * @param {string} endToken Literal closing token (e.g. `@endloop`).
- * @param {string} file Source path for errors.
+ * @param {Ctx} ctx Compile context, for `file:line` errors.
  * @returns {{ body: string[], end: number }}
  */
-function scanBlock(lines, start, openRe, endToken, file) {
+function scanBlock(lines, start, openRe, endToken, ctx) {
   /** @type {string[]} */
   const body = [];
   let depth = 0;
@@ -371,7 +371,7 @@ function scanBlock(lines, start, openRe, endToken, file) {
     }
     body.push(line);
   }
-  throw new Error(`Missing ${endToken} for "${lines[start]}" in ${at(file, start)}`);
+  throw new Error(`Missing ${endToken} for "${lines[start]}" in ${at(ctx, start)}`);
 }
 
 /**
@@ -418,10 +418,10 @@ function splitEmptyBranch(body) {
  * Capture the body of a `:::` container up to its matching close, honoring nesting.
  * @param {string[]} lines
  * @param {number} start Index of the opening line.
- * @param {string} file Source path for errors.
+ * @param {Ctx} ctx Compile context, for `file:line` errors.
  * @returns {{ body: string[], end: number }}
  */
-function scanContainer(lines, start, file) {
+function scanContainer(lines, start, ctx) {
   /** @type {string[]} */
   const body = [];
   let depth = 0;
@@ -452,7 +452,7 @@ function scanContainer(lines, start, file) {
     }
     body.push(line);
   }
-  throw new Error(`Missing closing ::: for "${lines[start]}" in ${at(file, start)}`);
+  throw new Error(`Missing closing ::: for "${lines[start]}" in ${at(ctx, start)}`);
 }
 
 /**
@@ -465,10 +465,10 @@ function scanContainer(lines, start, file) {
  * identical behavior for static, reactive, and loop-row conditionals.
  * @param {string[]} lines
  * @param {number} start Index of the `:if` line.
- * @param {string} file Source path for errors.
+ * @param {Ctx} ctx Compile context, for `file:line` errors.
  * @returns {{ truthy: string[], falsy: string[], end: number }}
  */
-function scanConditional(lines, start, file) {
+function scanConditional(lines, start, ctx) {
   /** @type {string[]} */
   const truthy = [];
   /** @type {string[]} */
@@ -509,7 +509,7 @@ function scanConditional(lines, start, file) {
       if (elseIf) {
         if (mode === "else")
           throw new Error(
-            `":else if" after ":else" in ${file}. ":else" must be the last branch — order the "else if" conditions before the bare ":else".`
+            `":else if" after ":else" in ${ctx.file}. ":else" must be the last branch — order the "else if" conditions before the bare ":else".`
           );
         falsy.push(`:if ${elseIf[1]}`); // desugar the chain tail into a nested :if
         current = falsy;
@@ -519,7 +519,7 @@ function scanConditional(lines, start, file) {
       if (t === ":else") {
         if (mode === "else")
           throw new Error(
-            `Duplicate ":else" in ${file}. A conditional may have only one bare ":else".`
+            `Duplicate ":else" in ${ctx.file}. A conditional may have only one bare ":else".`
           );
         current = falsy;
         mode = "else";
@@ -528,5 +528,5 @@ function scanConditional(lines, start, file) {
     }
     current.push(line);
   }
-  throw new Error(`Missing :endif for "${lines[start]}" in ${at(file, start)}`);
+  throw new Error(`Missing :endif for "${lines[start]}" in ${at(ctx, start)}`);
 }

@@ -293,6 +293,8 @@ Nothing left to do.
 @endloop
 ```
 
+A **missing** in-scope source is an empty list, not an error: `@loop meta.tags into tag` over a page whose frontmatter omits `tags` (say, an optional `tags: string[]?` schema field) loops zero rows and renders the `@empty` branch. A field that is *present but not a list* (a string, a number) is still a compile error with the file:line.
+
 > **Note:** All of these clauses stay build-time when the source and every clause argument are static — a sorted, limited loop over a JSON file ships **zero JavaScript**. The loop becomes reactive only when the source is `:state`/`:store`/`:fetch` data, or a clause reads reactive state (like `limit pageSize`).
 
 ### Editable lists — per-row actions

@@ -8,7 +8,13 @@ import { handleApiRequest } from "./api-runner.js";
 import { buildSite } from "./builder.js";
 import { createPaths } from "./config.js";
 import { DEPLOY_TARGETS, deploy } from "./deploy.js";
-import { devClientPath, devClientScript, devEventsPath, injectDevClient } from "./dev.js";
+import {
+  buildFailedPage,
+  devClientPath,
+  devClientScript,
+  devEventsPath,
+  injectDevClient
+} from "./dev.js";
 import { discoverRoutes, isDraft, outputPathForRoute } from "./router.js";
 import { availableTemplates, initProject } from "./scaffold.js";
 import { contentType, resolvePublicFile, serve } from "./statics.js";
@@ -142,7 +148,7 @@ function startDevServer({ cwd, log, warn, error }) {
     buildSite(cwd, { includeDrafts: true });
   } catch (err) {
     lastBuildError = (err instanceof Error ? err.message : String(err)).trim();
-    error(lastBuildError);
+    error(`✗ Initial build failed:\n${lastBuildError}`);
   }
 
   // Rebuild in a child process so changes to Darkmown's own src/ always load
@@ -211,7 +217,7 @@ function startDevServer({ cwd, log, warn, error }) {
     // throw on either path (e.g. a stat/read error) becomes a clean 500.
     handleApiRequest({ apiDir, req, res })
       .then((handled) => {
-        if (!handled) serveDev(distRoot, url, res, draftRoutes(cwd));
+        if (!handled) serveDev(distRoot, url, res, draftRoutes(cwd), () => lastBuildError);
       })
       .catch((err) => {
         res.writeHead(500, { "content-type": "text/plain" });
@@ -221,7 +227,13 @@ function startDevServer({ cwd, log, warn, error }) {
 
   return new Promise((resolve) => {
     server.listen(port, host, () => {
-      log(`Darkmown dev server ready at http://${host}:${port}`);
+      // Never claim a clean start over a broken build: when the initial build
+      // failed, say so on the ready line and point at the fix-to-retry flow.
+      log(
+        lastBuildError
+          ? `Darkmown dev server ready at http://${host}:${port} — but the initial build FAILED (see the error above). Routes show it until you fix the file; rebuilds run on save.`
+          : `Darkmown dev server ready at http://${host}:${port}`
+      );
       log(`Live compiler watching site/ and src/`);
       resolve({
         command: "dev",
@@ -271,11 +283,23 @@ function startPreviewServer({ cwd, log, error }) {
  * @param {import("node:http").ServerResponse} res
  * @param {Set<string>} draftFiles Absolute dist HTML paths of draft pages — each
  *   gets the dev-only draft banner injected (never written to disk).
+ * @param {() => string | undefined} buildError Reads the last recorded build
+ *   failure (undefined once a build succeeds).
  * @returns {void}
  */
-function serveDev(distRoot, url, res, draftFiles) {
+function serveDev(distRoot, url, res, draftFiles, buildError) {
   const file = resolvePublicFile(distRoot, url);
   if (!file || !fs.existsSync(file)) {
+    // An HTML route with no dist output while the last build FAILED is almost
+    // certainly unbuilt because of that failure — serve the compile error (the
+    // SSE overlay replays it too), not the misleading "hidden or not created"
+    // 404. Non-HTML assets and traversal-rejected URLs still 404 normally.
+    const failure = buildError();
+    if (failure && file?.endsWith(".html")) {
+      res.writeHead(500, { "content-type": "text/html; charset=utf-8" });
+      res.end(buildFailedPage(failure));
+      return;
+    }
     serve(distRoot, url, res);
     return;
   }

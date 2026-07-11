@@ -79,6 +79,8 @@
  * Per-file compile context threaded through the directive handlers.
  * @typedef {object} Ctx
  * @property {string} file Absolute path to the file being compiled.
+ * @property {number} [bodyLine] 0-based file line the compiled body starts on
+ *   (the frontmatter offset), so `at` reports true file line numbers.
  * @property {Paths} context Resolved project paths.
  * @property {string[]} stack Include stack (real paths) for cycle detection.
  * @property {Scope} scope Static value scope chain.
@@ -197,11 +199,13 @@ export function createScope(parent, vars = {}) {
 /**
  * Format a source location as `file:line` (1-based) for compile errors. Keeps the
  * file path intact so existing message matchers still pass, while pointing at the
- * directive's (or unclosed opener's) line.
- * @param {string} file
- * @param {number} index 0-based line index.
+ * directive's (or unclosed opener's) line. `index` is 0-based into the compiled
+ * body; `ctx.bodyLine` (the frontmatter offset) shifts it back to the true file
+ * line.
+ * @param {Pick<Ctx, "file" | "bodyLine">} ctx
+ * @param {number} index 0-based line index into the compiled body.
  * @returns {string}
  */
-export function at(file, index) {
-  return `${file}:${index + 1}`;
+export function at(ctx, index) {
+  return `${ctx.file}:${index + 1 + (ctx.bodyLine ?? 0)}`;
 }

@@ -8,7 +8,7 @@
 
 import fs from "node:fs";
 import { compileBody } from "./body.js";
-import { createScope } from "./context.js";
+import { at, createScope } from "./context.js";
 import { applyPipeline, stagesFromAttr } from "./format.js";
 import { resolveInclude } from "./includes.js";
 import {
@@ -213,9 +213,10 @@ function numArgAttr(arg) {
  * @param {string[]} bodyLines
  * @param {string[] | null} emptyLines
  * @param {Ctx} ctx
+ * @param {number} index 0-based line index of the `@loop` opener.
  * @returns {string}
  */
-export function handleLoop(line, bodyLines, emptyLines, ctx) {
+export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
   const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(\s+.+?)?\s*$/);
   if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. ${LOOP_USAGE}`);
   const source = stripQuotes(match[1].trim());
@@ -286,9 +287,16 @@ export function handleLoop(line, bodyLines, emptyLines, ctx) {
   const resolved = lookupPath(source, ctx);
   if (resolved.found) {
     if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
+    // A missing/unset field (e.g. an optional frontmatter key) is an EMPTY
+    // list, not an error — the `@empty` branch renders, matching the runtime.
+    if (resolved.value === null || resolved.value === undefined) {
+      return loopOverData([], itemName, bodyLines, ctx, opts);
+    }
     if (!Array.isArray(resolved.value)) {
       throw new Error(
-        `@loop ${source} in ${ctx.file} found an in-scope value, but it is not a list`
+        `@loop ${source} in ${at(ctx, index)} found an in-scope value, but it is not a list ` +
+          `(got ${typeof resolved.value}). Use: a list value (e.g. \`tags: [a, b]\` in frontmatter) — ` +
+          `or leave the field out entirely, which loops zero rows and renders the @empty branch.`
       );
     }
     return loopOverData(resolved.value, itemName, bodyLines, ctx, opts);

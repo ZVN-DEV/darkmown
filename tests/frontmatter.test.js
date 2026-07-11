@@ -135,7 +135,15 @@ test("the unterminated-frontmatter error names the file when given one", () => {
 
 test("a file with no frontmatter at all is left untouched (no error)", () => {
   const raw = "Just a plain body, no leading fence.";
-  assert.deepEqual(parseFrontmatter(raw), { meta: {}, body: raw });
+  assert.deepEqual(parseFrontmatter(raw), { meta: {}, body: raw, bodyLine: 0 });
+});
+
+test("parseFrontmatter reports the 0-based file line the body starts on", () => {
+  const { bodyLine, body } = parseFrontmatter(
+    "---\ntitle: T\ndate: 2026-01-01\n---\n\n# Heading\n"
+  );
+  assert.equal(bodyLine, 4);
+  assert.equal(body.split("\n")[1], "# Heading");
 });
 
 // ---------------------------------------------------------------------------
