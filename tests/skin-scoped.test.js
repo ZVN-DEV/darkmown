@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildSite } from "../src/builder.js";
-import { stampScope } from "../src/compiler/page.js";
+import { stampScope } from "../src/compiler/includes.js";
 import { compileSkin, scopeIdFor } from "../src/skin.js";
 
 // ===========================================================================

@@ -7,7 +7,6 @@
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
-import { compileBody } from "./body.js";
 import { at, createScope } from "./context.js";
 import { applyPipeline, stagesFromAttr } from "./format.js";
 import { resolveInclude } from "./includes.js";
@@ -487,7 +486,7 @@ function loopOverData(rows, itemName, bodyLines, ctx, opts) {
  * @returns {string}
  */
 function staticUnroll(rows, itemName, bodyLines, ctx, empty = null) {
-  if (rows.length === 0 && empty) return compileBody(empty, { ...ctx, loopMeta: true });
+  if (rows.length === 0 && empty) return ctx.compileBody(empty, { ...ctx, loopMeta: true });
   const out = [];
   const count = rows.length;
   for (let i = 0; i < count; i++) {
@@ -503,7 +502,7 @@ function staticUnroll(rows, itemName, bodyLines, ctx, empty = null) {
       loopMeta: true,
       scope: createScope(ctx.scope, { [itemName]: rows[i], ...meta })
     };
-    out.push(compileBody(bodyLines, rowCtx));
+    out.push(ctx.compileBody(bodyLines, rowCtx));
   }
   return out.join("\n");
 }
@@ -529,7 +528,7 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
     loopMeta: true,
     scope: createScope(ctx.scope)
   };
-  const templateHtml = compileBody(bodyLines, templateCtx).trim();
+  const templateHtml = ctx.compileBody(bodyLines, templateCtx).trim();
 
   const { wrapperTag, itemTemplate } = wrapRowTemplate(templateHtml);
 
@@ -588,7 +587,7 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   const emptyTemplate = loopEmptyTemplate(emptyLines, ctx);
   const initialOut =
     count === 0 && emptyLines
-      ? compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()
+      ? ctx.compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()
       : initial;
 
   // `sortable` tags the region for the drag-reorder behavior (emitted only here)
@@ -627,7 +626,7 @@ function wrapRowTemplate(templateHtml) {
  */
 function loopEmptyTemplate(emptyLines, ctx) {
   return emptyLines
-    ? `<template data-wd-loop-empty>${compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>`
+    ? `<template data-wd-loop-empty>${ctx.compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>`
     : "";
 }
 
@@ -676,7 +675,7 @@ function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
     loopMeta: true,
     scope: createScope(ctx.scope)
   };
-  const templateHtml = compileBody(bodyLines, templateCtx).trim();
+  const templateHtml = ctx.compileBody(bodyLines, templateCtx).trim();
 
   const { wrapperTag, itemTemplate } = wrapRowTemplate(templateHtml);
 

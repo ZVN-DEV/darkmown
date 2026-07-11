@@ -95,6 +95,13 @@
  * @property {string} [loopKey] State key of the list being looped, if any.
  * @property {boolean} [loopMeta] Inside a loop body, so `$index`/`$first`/… are valid.
  * @property {import("markdown-it").default} [md] Markdown-it instance selected for this file.
+ * @property {(lines: string[], ctx: Ctx) => string} compileBody The body
+ *   dispatcher, threaded through the context so block handlers (`:if`, `:::`,
+ *   `:form`, `@loop`, …) recurse into nested bodies without importing the
+ *   dispatcher back — the module graph stays an import-cycle-free DAG.
+ * @property {(file: string, context: Paths, stack: string[], scope: Scope, comp: Compilation, sections: string[], loopItem: string | null) => { meta: Meta, html: string }} compileFile
+ *   The per-file compile, threaded for the same reason so `@include` can
+ *   compile its target file.
  */
 
 /**

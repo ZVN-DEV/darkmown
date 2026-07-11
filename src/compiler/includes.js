@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
 // Includes / assets: resolve `@include` (and `@loop` data) targets to absolute
 // paths inside `site/pages` or `site/_`, register colocated `.skin`/`.js`
-// siblings, and warn when a plain `.md` file uses `.wd`-only syntax.
+// siblings, detect scoped skins and stamp their subtree HTML (`stampScope`),
+// and warn when a plain `.md` file uses `.wd`-only syntax.
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
@@ -55,6 +56,70 @@ export function scopedSkinFor(file, context) {
   const candidate = `${file.slice(0, -ext.length)}.skin`;
   if (!fs.existsSync(candidate)) return null;
   return scopeInfoForSkin(candidate, context.cwd);
+}
+
+/**
+ * Raw-text (`script`, `style`) and escapable-raw-text (`textarea`, `title`)
+ * elements per the HTML spec: their CONTENT is not markup, so `<`/`>` inside them
+ * are plain characters and must never be treated as tags. The content runs to the
+ * first matching close tag.
+ * @type {Set<string>}
+ */
+const RAW_TEXT_ELEMENTS = new Set(["script", "style", "textarea", "title"]);
+
+/**
+ * Stamp `data-wd-scope="<id>"` onto every opening tag of a subtree — the HTML
+ * half of compile-time scoped styles, mirroring {@link enhanceImages}: a
+ * compile-time post-pass over assembled HTML, zero runtime JS. Every element
+ * start tag that doesn't already carry a scope attribute gets one, so the scoped
+ * stylesheet (whose selectors end in `[data-wd-scope="<id>"]`) matches inside
+ * this subtree and nowhere else. Void/self-closing tags are stamped too (the
+ * attribute is valid on any element). Closing tags, comments, doctype, and the
+ * `<!`/`<?` families are left alone. A tag that ALREADY has a `data-wd-scope`
+ * (e.g. a nested include with its own scope) keeps its own — first stamp wins.
+ *
+ * Raw-text / escapable-raw-text elements (`script`, `style`, `textarea`,
+ * `title`) are special-cased: their OPENING tag is stamped (valid), but their
+ * BODY is left byte-intact — `<`/`>` inside a `<script>` are JavaScript, not
+ * markup, so stamping there would corrupt the content. A small tokenizer walks
+ * tag-by-tag (quote-aware in attribute lists) and, on entering a raw-text
+ * element, copies through verbatim until the matching close tag.
+ * @param {string} html Subtree HTML to scope.
+ * @param {string} scopeId Scope id (from {@link import("../skin.js").scopeIdFor}).
+ * @returns {string}
+ */
+export function stampScope(html, scopeId) {
+  // Opening tag: name + (quote-aware) attribute list + optional self-close slash.
+  const openTag = /<([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
+  let out = "";
+  let cursor = 0;
+  for (let m = openTag.exec(html); m; m = openTag.exec(html)) {
+    const [tag, name, attrs, slash] = m;
+    out += html.slice(cursor, m.index); // text/markup before this opening tag
+    const stamped = /\bdata-wd-scope\s*=/.test(attrs)
+      ? tag // first stamp wins — a pre-stamped tag keeps its own scope
+      : `<${name}${attrs} data-wd-scope="${scopeId}"${slash ? " /" : ""}>`;
+    out += stamped;
+    cursor = m.index + tag.length;
+
+    // Raw-text element (not self-closed): copy its body through untouched and
+    // resume scanning after the matching close tag, so nothing inside is stamped.
+    if (!slash && RAW_TEXT_ELEMENTS.has(name.toLowerCase())) {
+      const rest = html.slice(cursor);
+      const closeMatch = new RegExp(`</${name}\\s*>`, "i").exec(rest);
+      if (!closeMatch) {
+        out += rest; // unterminated raw-text element — copy the remainder verbatim
+        cursor = html.length;
+        break;
+      }
+      const through = closeMatch.index + closeMatch[0].length; // body + close tag
+      out += rest.slice(0, through); // byte-intact
+      cursor += through;
+      openTag.lastIndex = cursor; // skip the body the scanner would otherwise re-walk
+    }
+  }
+  out += html.slice(cursor); // trailing text after the last opening tag
+  return out;
 }
 
 /**
