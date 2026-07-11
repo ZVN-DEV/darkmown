@@ -97,6 +97,225 @@ test("a malformed directive error includes file:line for several directives", ()
 });
 
 // ---------------------------------------------------------------------------
+// Nested-block error line numbers: handlers inside a block body get indices
+// relative to the SLICED body, so the recursive compile threads a line offset
+// (nestedCtx) — errors report the TRUE file line at any depth, in every block
+// kind (container, loop rows/@empty, :if branches, form, carousel).
+// ---------------------------------------------------------------------------
+
+test("a malformed directive nested in a container reports the true file line", () => {
+  const root = fixture();
+  // The bad :state sits on FILE line 5; body-relative it is line 2 of the slice.
+  write(root, "site/pages/bad.wd", ["# Title", "", "::: hero", "", ":state x", ":::"].join("\n"));
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:5/
+  );
+});
+
+test("a malformed directive at container depth 2 reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    ["::: outer", "::: inner", "", ":state x", ":::", ":::"].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:4/
+  );
+});
+
+test("a malformed directive in a reactive loop body reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [
+      ":state items = [1, 2]",
+      "",
+      "@loop items into item",
+      "- { item }",
+      ":state y",
+      "@endloop"
+    ].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:5/
+  );
+});
+
+test("a malformed directive in a static loop body reports the true file line (with frontmatter)", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [
+      "---",
+      "title: T",
+      "tags: [a, b]",
+      "---",
+      "",
+      "@loop meta.tags into tag",
+      "- { tag }",
+      ":state z",
+      "@endloop"
+    ].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:8/
+  );
+});
+
+test("a malformed directive in a reactive loop @empty branch reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [
+      ":state items = []",
+      "",
+      "@loop items into item",
+      "- { item }",
+      "@empty",
+      ":state z",
+      "@endloop"
+    ].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:6/
+  );
+});
+
+test("a malformed directive in a static loop @empty branch reports the true file line", () => {
+  const root = fixture();
+  // meta.tags is absent → zero rows → the @empty branch compiles.
+  write(
+    root,
+    "site/pages/bad.wd",
+    [
+      "---",
+      "title: T",
+      "---",
+      "",
+      "@loop meta.tags into tag",
+      "- x",
+      "@empty",
+      ":state z",
+      "@endloop"
+    ].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:8/
+  );
+});
+
+test("a malformed directive nested at depth 2 (loop inside container) reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    ["::: wrap", ":state items = [1]", "@loop items into item", ":state y", "@endloop", ":::"].join(
+      "\n"
+    )
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:4/
+  );
+});
+
+test("a malformed directive in a nested (item-relative) loop body reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [
+      ':state teams = [{"members": [1]}]',
+      "",
+      "@loop teams into team",
+      "@loop team.members into m",
+      ":state bad",
+      "@endloop",
+      "@endloop"
+    ].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:5/
+  );
+});
+
+test("a malformed directive in an :if truthy branch reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [":state n = 0", "", ":if n > 0", ":state q", ":endif"].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:4/
+  );
+});
+
+test("a malformed directive in an :else branch reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [":state n = 0", "", ":if n > 0", "high", ":else", ":state q", ":endif"].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:6/
+  );
+});
+
+test("a malformed directive in an :else if branch reports the true file line (desugared :if)", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [":state n = 0", "", ":if n > 5", "high", ":else if n > 1", ":state q", ":endif"].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:6/
+  );
+});
+
+test("a malformed directive inside a :form body reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [":form into contact", ":input name", ":state bad", ":endform"].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:3/
+  );
+});
+
+test("a malformed directive inside a :carousel slide reports the true file line", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/bad.wd",
+    [":carousel", "::: slide", ":state bad", ":::", ":endcarousel"].join("\n")
+  );
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/bad.wd"), createPaths(root)),
+    /Malformed :state.*bad\.wd:3/
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Action-literal errors name the failing page (no longer a bare token).
 // ---------------------------------------------------------------------------
 

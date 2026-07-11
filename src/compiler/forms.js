@@ -9,7 +9,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at } from "./context.js";
+import { at, nestedCtx } from "./context.js";
 import { validateFetchUrl } from "./fetch.js";
 import {
   escapeHtml,
@@ -48,7 +48,7 @@ export function handleForm(line, bodyLines, ctx, index) {
     );
   }
   const action = rawAction ? validateFetchUrl(rawAction, ctx, ":form action") : undefined;
-  const inner = ctx.compileBody(bodyLines, ctx).trim();
+  const inner = ctx.compileBody(bodyLines, nestedCtx(ctx, index + 1)).trim();
   if (!into) {
     return `<form action="${escapeHtml(action)}" method="${escapeHtml(method)}">${inner}</form>`;
   }

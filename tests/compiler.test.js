@@ -107,6 +107,16 @@ test("includes resolve relatively and from the include shelf across md/wd", () =
   assert.match(page.html, /<h2 id="shared">Shared<\/h2>/);
 });
 
+test("heading anchors dedupe document-wide through .md includes", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", ["# Intro", "", "@include /note.md"].join("\n"));
+  write(root, "site/_/note.md", "# Intro");
+
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<h1 id="intro">Intro<\/h1>/);
+  assert.match(page.html, /<h1 id="intro-1">Intro<\/h1>/, ".md include shares the slug counters");
+});
+
 test("include arguments pass literals and in-scope values, and unify on { name }", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", '@include /card.wd with title="Hello" count=3');

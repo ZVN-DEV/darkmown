@@ -199,7 +199,9 @@ ${scripts}
 function ensureMainLandmark(html) {
   const open = html.match(/<main\b[^>]*>/i);
   if (!open) return { content: `<main id="main">\n${html}\n</main>`, target: "main" };
-  const id = open[0].match(/\bid\s*=\s*["']([^"']*)["']/i);
+  // The id attribute must start after whitespace (or a closing quote — sloppy
+  // but browser-parsed) so `data-id="…"` never masquerades as the real id.
+  const id = open[0].match(/[\s"']id\s*=\s*["']([^"']*)["']/i);
   if (id) return { content: html, target: id[1] || "main" };
   return { content: html.replace(open[0], `${open[0].slice(0, -1)} id="main">`), target: "main" };
 }
@@ -330,7 +332,9 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
 
   if (path.extname(file) === ".md") {
     scanMarkdownHints(body, file, comp);
-    const html = selectMd(meta).render(body, {});
+    // Share the compilation's heading-slug counters (as renderProse does), so a
+    // `.md` included from a `.wd` page still dedupes anchors document-wide.
+    const html = selectMd(meta).render(body, { headingSlugs: comp.headingSlugs });
     if (htmlHasHighlight(html)) comp.assets.hasCode = true;
     return { meta, html };
   }

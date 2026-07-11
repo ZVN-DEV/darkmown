@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
-import { at, createScope } from "./context.js";
+import { at, createScope, nestedCtx } from "./context.js";
 import { applyPipeline, stagesFromAttr } from "./format.js";
 import { resolveInclude } from "./includes.js";
 import {
@@ -213,9 +213,11 @@ function numArgAttr(arg) {
  * @param {string[] | null} emptyLines
  * @param {Ctx} ctx
  * @param {number} index 0-based line index of the `@loop` opener.
+ * @param {number} [emptyStart] 0-based index the empty branch starts at within
+ *   the loop body, so its nested errors report the true file line.
  * @returns {string}
  */
-export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
+export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart = 0) {
   const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(\s+.+?)?\s*$/);
   if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. ${LOOP_USAGE}`);
   const source = stripQuotes(match[1].trim());
@@ -265,10 +267,14 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
     offset: clauses.offset,
     limit: clauses.limit,
     empty: emptyLines,
+    emptyStart,
     clauseRefsState: clauses.refsState,
     sortable: clauses.sortable,
     paginate: clauses.paginate
   };
+  // The loop body starts on the line after the opener; nested errors in it (and
+  // in the empty branch, via `opts.emptyStart`) report the true file line.
+  const bodyCtx = nestedCtx(ctx, index + 1);
 
   if (
     source.startsWith("/") ||
@@ -281,7 +287,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
     ctx.comp.deps.add(dataFile);
     const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
-    return loopOverData(rows, itemName, bodyLines, ctx, opts);
+    return loopOverData(rows, itemName, bodyLines, bodyCtx, opts);
   }
 
   const resolved = lookupPath(source, ctx);
@@ -290,7 +296,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
     // A missing/unset field (e.g. an optional frontmatter key) is an EMPTY
     // list, not an error — the `@empty` branch renders, matching the runtime.
     if (resolved.value === null || resolved.value === undefined) {
-      return loopOverData([], itemName, bodyLines, ctx, opts);
+      return loopOverData([], itemName, bodyLines, bodyCtx, opts);
     }
     if (!Array.isArray(resolved.value)) {
       throw new Error(
@@ -299,7 +305,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
           `or leave the field out entirely, which loops zero rows and renders the @empty branch.`
       );
     }
-    return loopOverData(resolved.value, itemName, bodyLines, ctx, opts);
+    return loopOverData(resolved.value, itemName, bodyLines, bodyCtx, opts);
   }
 
   // A bare name OR a dotted path resolving to declared :state (e.g. team.members).
@@ -312,7 +318,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
     if (key) {
       if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
       const fullKey = segs.length > 1 ? `${key}.${segs.slice(1).join(".")}` : key;
-      return reactiveLoop(fullKey, itemName, bodyLines, ctx, opts);
+      return reactiveLoop(fullKey, itemName, bodyLines, bodyCtx, opts);
     }
     // A bare name matching a collection (any `site/pages/<name>/` subdir) resolves
     // to its entry rows at build time and static-unrolls — zero JS. This is checked
@@ -320,7 +326,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
     const collection = segs.length === 1 ? ctx.comp.collections.get(source) : undefined;
     if (collection) {
       ctx.comp.collectionsUsed.add(source);
-      return loopOverCollection(collection, source, itemName, bodyLines, ctx, opts);
+      return loopOverCollection(collection, source, itemName, bodyLines, bodyCtx, opts);
     }
     // Inside a reactive loop, `@loop <outerItem>.<path> into x` loops a field of
     // the enclosing row item — an ITEM-RELATIVE loop the runtime fills per row.
@@ -331,7 +337,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
         );
       }
       if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
-      return itemRelativeLoop(segs.slice(1).join("."), itemName, bodyLines, ctx, opts);
+      return itemRelativeLoop(segs.slice(1).join("."), itemName, bodyLines, bodyCtx, opts);
     }
   }
 
@@ -398,7 +404,14 @@ function loopOverCollection(rows, name, itemName, bodyLines, ctx, opts) {
   // document scope). Slice this page out of the already-filtered/sorted list.
   const current = currentPage(ctx);
   const start = (current - 1) * perPage;
-  return staticUnroll(filtered.slice(start, start + perPage), itemName, bodyLines, ctx, opts.empty);
+  return staticUnroll(
+    filtered.slice(start, start + perPage),
+    itemName,
+    bodyLines,
+    ctx,
+    opts.empty,
+    opts.emptyStart
+  );
 }
 
 /**
@@ -477,7 +490,8 @@ function loopOverData(rows, itemName, bodyLines, ctx, opts) {
     itemName,
     bodyLines,
     ctx,
-    opts.empty
+    opts.empty,
+    opts.emptyStart
   );
 }
 
@@ -487,10 +501,13 @@ function loopOverData(rows, itemName, bodyLines, ctx, opts) {
  * @param {string[]} bodyLines
  * @param {Ctx} ctx
  * @param {string[] | null} [empty] Empty-branch body, rendered when 0 rows.
+ * @param {number} [emptyStart] 0-based index the empty branch starts at within
+ *   the loop body, so its nested errors report the true file line.
  * @returns {string}
  */
-function staticUnroll(rows, itemName, bodyLines, ctx, empty = null) {
-  if (rows.length === 0 && empty) return ctx.compileBody(empty, { ...ctx, loopMeta: true });
+function staticUnroll(rows, itemName, bodyLines, ctx, empty = null, emptyStart = 0) {
+  if (rows.length === 0 && empty)
+    return ctx.compileBody(empty, { ...nestedCtx(ctx, emptyStart), loopMeta: true });
   const out = [];
   const count = rows.length;
   for (let i = 0; i < count; i++) {
@@ -588,10 +605,12 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
     })
     .join("");
 
-  const emptyTemplate = loopEmptyTemplate(emptyLines, ctx);
+  const emptyTemplate = loopEmptyTemplate(emptyLines, ctx, opts?.emptyStart);
   const initialOut =
     count === 0 && emptyLines
-      ? ctx.compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()
+      ? ctx
+          .compileBody(emptyLines, { ...nestedCtx(ctx, opts?.emptyStart ?? 0), loopMeta: true })
+          .trim()
       : initial;
 
   // `sortable` tags the region for the drag-reorder behavior (emitted only here)
@@ -626,11 +645,13 @@ function wrapRowTemplate(templateHtml) {
  * there is no empty branch). Shared by top-level and item-relative loops.
  * @param {string[] | null} emptyLines
  * @param {Ctx} ctx
+ * @param {number} [emptyStart] 0-based index the empty branch starts at within
+ *   the loop body, so its nested errors report the true file line.
  * @returns {string}
  */
-function loopEmptyTemplate(emptyLines, ctx) {
+function loopEmptyTemplate(emptyLines, ctx, emptyStart = 0) {
   return emptyLines
-    ? `<template data-wd-loop-empty>${ctx.compileBody(emptyLines, { ...ctx, loopMeta: true }).trim()}</template>`
+    ? `<template data-wd-loop-empty>${ctx.compileBody(emptyLines, { ...nestedCtx(ctx, emptyStart), loopMeta: true }).trim()}</template>`
     : "";
 }
 
@@ -683,7 +704,7 @@ function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
 
   const { wrapperTag, itemTemplate } = wrapRowTemplate(templateHtml);
 
-  const emptyTemplate = loopEmptyTemplate(opts.empty || null, ctx);
+  const emptyTemplate = loopEmptyTemplate(opts.empty || null, ctx, opts.emptyStart);
   const attrs = loopClauseAttrs({
     where: opts.where || null,
     sort: opts.sort || null,

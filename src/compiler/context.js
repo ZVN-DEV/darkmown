@@ -92,6 +92,9 @@
  * @property {string} file Absolute path to the file being compiled.
  * @property {number} [bodyLine] 0-based file line the compiled body starts on
  *   (the frontmatter offset), so `at` reports true file line numbers.
+ * @property {number} [lineOffset] 0-based body line the current `compileBody`
+ *   slice starts on. Block handlers recurse with {@link nestedCtx}, so a line
+ *   index inside a nested block body still maps to the true file line.
  * @property {Paths} context Resolved project paths.
  * @property {string[]} stack Include stack (real paths) for cycle detection.
  * @property {Scope} scope Static value scope chain.
@@ -157,6 +160,8 @@
  * @property {NumArg | null} offset
  * @property {NumArg | null} limit
  * @property {string[] | null} empty Empty-branch body lines, if any.
+ * @property {number} [emptyStart] 0-based index the empty branch starts at
+ *   within the loop body, so its nested errors report the true file line.
  * @property {boolean} clauseRefsState Whether offset/limit reference state.
  * @property {boolean} sortable Drag-to-reorder the underlying :state/:store list
  *   (the `sortable` clause). Only valid on a plain reactive state-key loop.
@@ -225,13 +230,28 @@ export function createScope(parent, vars = {}) {
 /**
  * Format a source location as `file:line` (1-based) for compile errors. Keeps the
  * file path intact so existing message matchers still pass, while pointing at the
- * directive's (or unclosed opener's) line. `index` is 0-based into the compiled
- * body; `ctx.bodyLine` (the frontmatter offset) shifts it back to the true file
- * line.
- * @param {Pick<Ctx, "file" | "bodyLine">} ctx
- * @param {number} index 0-based line index into the compiled body.
+ * directive's (or unclosed opener's) line. `index` is 0-based into the current
+ * `compileBody` slice; `ctx.lineOffset` (where that slice starts in the body,
+ * accumulated by {@link nestedCtx} as block handlers recurse) and `ctx.bodyLine`
+ * (the frontmatter offset) shift it back to the true file line.
+ * @param {Pick<Ctx, "file" | "bodyLine" | "lineOffset">} ctx
+ * @param {number} index 0-based line index into the current body slice.
  * @returns {string}
  */
 export function at(ctx, index) {
-  return `${ctx.file}:${index + 1 + (ctx.bodyLine ?? 0)}`;
+  return `${ctx.file}:${index + 1 + (ctx.bodyLine ?? 0) + (ctx.lineOffset ?? 0)}`;
+}
+
+/**
+ * The compile context for a nested block body that starts `start` lines into the
+ * current slice. The offset accumulates, so errors inside arbitrarily nested
+ * blocks (`::: container`, `:form`, `@loop`, `:if`, `:carousel`) still report
+ * the true file line through {@link at}.
+ * @template {Pick<Ctx, "lineOffset">} T
+ * @param {T} ctx
+ * @param {number} start 0-based index the nested body starts at in the current slice.
+ * @returns {T}
+ */
+export function nestedCtx(ctx, start) {
+  return { ...ctx, lineOffset: (ctx.lineOffset ?? 0) + start };
 }

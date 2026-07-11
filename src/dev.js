@@ -4,6 +4,52 @@ export const devClientPath = "/__wd/dev-client.js";
 export const devEventsPath = "/__wd/dev-events";
 
 /**
+ * Serialize the dev server's rebuilds: at most ONE child build runs at a time.
+ * Every build read-modify-writes the dependency map (`dist/.wd-dev-deps.json`),
+ * so overlapping children could persist a stale map missing deps a concurrent
+ * build just recorded — after which the affected routes silently stop
+ * rebuilding. Changes debounce into a batch; changes arriving MID-build
+ * accumulate into the next batch (duplicate paths coalesce via the Set, and a
+ * `null` — a `src/` change or an unattributable event, forcing a full rebuild —
+ * swallows the whole batch into one full build).
+ * @param {(changed: string[]) => Promise<void> | void} runBuild Runs one child
+ *   build over the changed `site/` paths (`[]` = full rebuild). Build failures
+ *   are its own concern (report + resolve); a rejection still frees the queue.
+ * @param {number} [debounceMs] Debounce window for batching change events.
+ * @returns {{ change: (path: string | null) => void, close: () => void }}
+ */
+export function createRebuildQueue(runBuild, debounceMs = 30) {
+  /** @type {Set<string | null>} */
+  const pending = new Set();
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let timer;
+  let running = false;
+  const flush = () => {
+    if (running || pending.size === 0) return;
+    const changed = pending.has(null) ? [] : /** @type {string[]} */ ([...pending]);
+    pending.clear();
+    running = true;
+    Promise.resolve()
+      .then(() => runBuild(changed))
+      .catch(() => {}) // runBuild reports its own failures; never wedge the queue
+      .then(() => {
+        running = false;
+        flush(); // drain changes that arrived mid-build (already waited a build long)
+      });
+  };
+  return {
+    change(path) {
+      pending.add(path);
+      clearTimeout(timer);
+      timer = setTimeout(flush, debounceMs);
+    },
+    close() {
+      clearTimeout(timer);
+    }
+  };
+}
+
+/**
  * Inject the dev-client `<script>` before `</body>` (or append it if absent),
  * plus — for a `draft: true` page — an inline draft-banner script. Both are
  * injected at dev-SERVE time only, so neither ever touches the shipped HTML on

@@ -10,6 +10,7 @@ import { createPaths } from "./config.js";
 import { DEPLOY_TARGETS, deploy } from "./deploy.js";
 import {
   buildFailedPage,
+  createRebuildQueue,
   devClientPath,
   devClientScript,
   devEventsPath,
@@ -140,8 +141,6 @@ function startDevServer({ cwd, log, warn, error }) {
   const distRoot = path.join(cwd, "dist");
   /** @type {Set<import("node:http").ServerResponse>} */
   const clients = new Set();
-  /** @type {ReturnType<typeof setTimeout> | undefined} */
-  let timer;
   /** @type {string | undefined} Last build failure, replayed to clients on connect. */
   let lastBuildError;
 
@@ -165,16 +164,13 @@ function startDevServer({ cwd, log, warn, error }) {
   // rebuild only the routes whose dependency graph contains them (the builder
   // falls back to a full rebuild on any uncertainty). A src/ change — or an
   // event with no attributable file — queues `null`, forcing the full rebuild.
-  /** @type {Set<string | null>} */
-  const pending = new Set();
-  const rebuild = (/** @type {string | null} */ changedPath) => {
-    pending.add(changedPath);
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      const changed = pending.has(null) ? [] : [...pending];
-      pending.clear();
+  // The queue serializes the children: every build read-modify-writes the
+  // dependency map, so overlapping children could persist a stale map and
+  // silently stop rebuilding affected routes.
+  const runBuild = (/** @type {string[]} */ changed) =>
+    new Promise((/** @type {(value?: void) => void} */ done) => {
       const args = [cliPath, "build", "--drafts", "--dep-map"];
-      for (const file of changed) args.push("--changed", /** @type {string} */ (file));
+      for (const file of changed) args.push("--changed", file);
       const started = performance.now();
       execFile(process.execPath, args, { cwd }, (err, stdout, stderr) => {
         if (err) {
@@ -185,6 +181,7 @@ function startDevServer({ cwd, log, warn, error }) {
             clients,
             `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`
           );
+          done();
           return;
         }
         lastBuildError = undefined;
@@ -192,9 +189,10 @@ function startDevServer({ cwd, log, warn, error }) {
         if (stderr.trim()) warn(stderr.trim());
         broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
         log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
+        done();
       });
-    }, 30);
-  };
+    });
+  const queue = createRebuildQueue(runBuild);
 
   /** @type {import("node:fs").FSWatcher[]} */
   const watchers = [];
@@ -203,7 +201,7 @@ function startDevServer({ cwd, log, warn, error }) {
     if (fs.existsSync(abs)) {
       watchers.push(
         fs.watch(abs, { recursive: true }, (_event, filename) => {
-          rebuild(
+          queue.change(
             dir === "site" && filename
               ? path.join(dir, filename.toString()).replaceAll(path.sep, "/")
               : null
@@ -266,7 +264,7 @@ function startDevServer({ cwd, log, warn, error }) {
         command: "dev",
         server,
         close: () => {
-          clearTimeout(timer);
+          queue.close();
           for (const watcher of watchers) watcher.close();
           for (const client of clients) client.end();
           clients.clear();

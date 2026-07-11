@@ -92,6 +92,37 @@ test("an author-supplied main id wins as the skip target", () => {
   assert.doesNotMatch(page.html, /<main id="main">/);
 });
 
+test('a data-id on <main> is not mistaken for the id: id="main" still gets stamped', () => {
+  const page = compileWd([
+    "---",
+    "html: true",
+    "---",
+    '<main data-id="hero">',
+    "",
+    "# Inside",
+    "",
+    "</main>"
+  ]);
+  assert.match(page.html, /<main data-id="hero" id="main">/);
+  assert.match(page.html, /<a class="wd-skip-link" href="#main">Skip to content<\/a>/);
+  assert.equal(page.html.match(/<main\b/g).length, 1, "no double wrap");
+});
+
+test("a real id next to a data-id still wins as the skip target", () => {
+  const page = compileWd([
+    "---",
+    "html: true",
+    "---",
+    '<main data-id="hero" id="content">',
+    "",
+    "# Inside",
+    "",
+    "</main>"
+  ]);
+  assert.match(page.html, /<a class="wd-skip-link" href="#content">Skip to content<\/a>/);
+  assert.doesNotMatch(page.html, /id="main"/);
+});
+
 test("an empty author main id keeps the markup intact and falls back to #main", () => {
   const page = compileWd([
     "---",

@@ -11,7 +11,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, createScope, LOOP_META } from "./context.js";
+import { at, createScope, LOOP_META, nestedCtx } from "./context.js";
 import { resolveInclude, scopedSkinFor, stampScope } from "./includes.js";
 import {
   escapeHtml,
@@ -147,7 +147,7 @@ export function handleContainer(header, bodyLines, ctx, index) {
   ctx.sections.push(id);
   let inner;
   try {
-    inner = ctx.compileBody(bodyLines, ctx);
+    inner = ctx.compileBody(bodyLines, nestedCtx(ctx, index + 1));
   } finally {
     ctx.sections.pop();
   }
@@ -192,7 +192,7 @@ export function handleCarousel(line, bodyLines, ctx, index) {
     autoplayAttr = ` data-wd-carousel-autoplay="${auto[1]}"`;
   }
   ctx.comp.assets.behaviors.add("carousel");
-  const inner = ctx.compileBody(bodyLines, ctx);
+  const inner = ctx.compileBody(bodyLines, nestedCtx(ctx, index + 1));
   return `<div class="wd-carousel" data-wd-carousel${autoplayAttr}>\n<div class="wd-carousel-track" data-wd-carousel-track>\n${inner}\n</div>\n</div>`;
 }
 
@@ -221,9 +221,13 @@ function fetchLiveAttr(key, branches, ctx) {
  * @param {string[]} falsyLines
  * @param {Ctx} ctx
  * @param {number} index 0-based line index for `file:line` errors.
+ * @param {number} [falsyStart] 0-based index the falsy body starts at in the
+ *   current slice, so nested errors in that branch report the true file line.
  * @returns {string}
  */
-export function handleIf(line, truthyLines, falsyLines, ctx, index) {
+export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart = index + 1) {
+  const truthyCtx = nestedCtx(ctx, index + 1);
+  const falsyCtx = nestedCtx(ctx, falsyStart);
   const condition = line.replace(/^:if\s+/, "").trim();
   // Fast path: a bare truthy dotted path (`:if open`, `:if item.done`). Keeps the
   // existing markup/behavior identical. Anything with operators (`>`, `==`, `and`,
@@ -240,8 +244,8 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
           `":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`
         );
       if (ctx.loopItem) {
-        const truthy = ctx.compileBody(truthyLines, ctx).trim();
-        const falsy = ctx.compileBody(falsyLines, ctx).trim();
+        const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
+        const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
         return `<span data-wd-each-if data-wd-meta="${LOOP_META[head]}"><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
       }
       // static: the meta boolean is in scope — fall through to the static branch below.
@@ -250,12 +254,12 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
     const staticValue = lookupVar(ctx.scope, head);
     if (staticValue.found) {
       const active = Boolean(getPath(staticValue.value, segs.slice(1)));
-      return ctx.compileBody(active ? truthyLines : falsyLines, ctx);
+      return ctx.compileBody(active ? truthyLines : falsyLines, active ? truthyCtx : falsyCtx);
     }
 
     if (ctx.loopItem && head === ctx.loopItem) {
-      const truthy = ctx.compileBody(truthyLines, ctx).trim();
-      const falsy = ctx.compileBody(falsyLines, ctx).trim();
+      const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
+      const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
       const rest = segs.slice(1).join(".");
       const pathAttr = ` data-wd-path="${escapeHtml(rest)}"`;
       return `<span data-wd-each-if${pathAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
@@ -268,8 +272,8 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
       );
     }
     ctx.comp.assets.runtime = true;
-    const truthy = ctx.compileBody(truthyLines, ctx).trim();
-    const falsy = ctx.compileBody(falsyLines, ctx).trim();
+    const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
+    const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
     const restPath = segs.slice(1).join(".");
     const pathAttr = restPath ? ` data-wd-path="${escapeHtml(restPath)}"` : "";
     const liveAttr = restPath ? "" : fetchLiveAttr(key, truthy + falsy, ctx);
@@ -287,10 +291,14 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
       `Malformed :if in ${at(ctx, index)}: ${line}. Use ":if name" or ":if a <op> b [and|or|not …]".`
     );
   const compiled = compileWhen(condition, ctx, '":if"');
-  if (compiled.static) return ctx.compileBody(compiled.value ? truthyLines : falsyLines, ctx);
+  if (compiled.static)
+    return ctx.compileBody(
+      compiled.value ? truthyLines : falsyLines,
+      compiled.value ? truthyCtx : falsyCtx
+    );
   ctx.comp.assets.runtime = true;
-  const truthy = ctx.compileBody(truthyLines, ctx).trim();
-  const falsy = ctx.compileBody(falsyLines, ctx).trim();
+  const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
+  const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
   const exprAttr = ` data-wd-if-expr="${escapeHtml(compiled.body)}"`;
   if (compiled.item) {
     return `<span data-wd-each-if${exprAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
