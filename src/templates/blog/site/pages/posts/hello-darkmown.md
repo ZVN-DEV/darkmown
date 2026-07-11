@@ -6,6 +6,8 @@ excerpt: I rewrote my blog as plain Markdown files — no React, no build ceremo
 transitions: true
 ---
 
+[← All posts](/)
+
 # Hello, Darkmown
 
 This post is a plain `.md` file — strict CommonMark, **zero** framework

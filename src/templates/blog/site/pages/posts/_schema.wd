@@ -1,0 +1,16 @@
+---
+# Typed schema for the posts collection. Every .md file next to this file is
+# validated against these rules at build time — a missing required field, a
+# wrong type, or an unknown extra field fails the build with a file:line.
+# Append "?" to a type to make a field optional. Page-shell flags a post sets
+# (like transitions) are declared here too. Remove this file to turn
+# validation off (it is opt-in).
+title: string
+date: date
+description: string
+excerpt: string?
+transitions: boolean?
+---
+
+The posts collection schema. Posts are plain `.md` files next to this file;
+their frontmatter must match the rules above.

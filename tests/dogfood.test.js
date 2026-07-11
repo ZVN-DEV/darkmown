@@ -45,6 +45,27 @@ test("the repo's own site builds with --drafts (staging) and includes the draft"
   assert.ok(fs.existsSync(path.join(root, "dist/blog/unfinished-thoughts/index.html")));
 });
 
+test("the docs table of contents is honest: every #fragment link targets a real heading id, statically", () => {
+  const root = siteCopy();
+  const result = buildSite(root, { includeDrafts: true });
+  const html = fs.readFileSync(path.join(root, "dist/docs/index.html"), "utf8");
+
+  const fragments = [...html.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+  const tocLinks = fragments.filter((id) => id !== "main"); // "main" is the shell's skip link
+  assert.ok(
+    tocLinks.length >= 20,
+    `the docs TOC lists the page's sections (saw ${tocLinks.length})`
+  );
+
+  const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  for (const id of tocLinks) {
+    assert.ok(ids.has(id), `docs TOC links to #${id} but no element carries id="${id}"`);
+  }
+
+  const docs = result.routes.find((route) => route.route === "/docs/");
+  assert.equal(docs?.assets.runtime, false, "the docs page (TOC included) stays static");
+});
+
 test("every built page's markup is well-formed: no <link>/<script> inside an attribute value", () => {
   const root = siteCopy();
   buildSite(root, { includeDrafts: true });

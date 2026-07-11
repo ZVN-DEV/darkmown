@@ -18,6 +18,40 @@ transitions: true
 Darkmown is a Markdown-native framework for mostly-static sites with tiny reactive islands. Pages are plain files: `.md` stays pure CommonMark, and `.wd` ("whateverdown") is the same Markdown plus first-party directives.
 </header>
 
+<nav class="docs-toc" aria-label="On this page">
+
+**On this page**
+
+- [Install](#install)
+- [The two formats](#the-two-formats)
+- [Routing rules](#routing-rules)
+- [Includes](#includes)
+- [Loops](#loops)
+- [Content collections](#content-collections)
+- [Interpolation](#interpolation)
+- [Frontmatter](#frontmatter)
+- [SEO & feeds](#seo--feeds)
+- [Drafts](#drafts)
+- [Instant navigation](#instant-navigation)
+- [Images](#images)
+- [Sections](#sections)
+- [Reactive directives](#reactive-directives)
+- [Fetching data](#fetching-data)
+- [Global state — `:store`](#global-state--store)
+- [Forms and persistence](#forms-and-persistence)
+- [Backends & deploy](#backends--deploy)
+- [Interactions](#interactions--slider-sortable-carousel)
+- [Theme toggle — `:theme`](#theme-toggle--theme)
+- [Scoped styles — `scoped`](#scoped-styles--scoped)
+- [Media directives](#media--video-audio-embed)
+- [Syntax highlighting](#syntax-highlighting)
+- [Trust boundary](#trust-boundary)
+- [Colocation](#colocation)
+- [Spec status](#spec-status)
+</nav>
+
+Every heading on every page gets a stable, GitHub-style `id` at build time (lowercased, punctuation stripped, duplicates deduped), so the links above — and deep links into any Darkmown page — are plain `#` anchors with zero JavaScript.
+
 @include ./-relative-note.wd
 
 ## Install
@@ -30,6 +64,8 @@ npm run dev
 ```
 
 Or add Darkmown to an existing project with `npm install -D @zvndev/darkmown`. The package is scoped; the command it installs is plain `darkmown`.
+
+For editing, a [VS Code extension](https://github.com/ZVN-DEV/darkmown/tree/main/editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — install it from a `.vsix` today with `npm run pack:extension` (a Marketplace listing is pending).
 
 `darkmown dev` rebuilds incrementally: it tracks which routes depend on each file (includes, colocated assets, loop data, collections), so editing one page or include recompiles only the routes it affects — and falls back to a full rebuild whenever a file is added, removed, or renamed. `routes.json`, the sitemap, and the RSS feed are regenerated on every rebuild, so they always describe the whole site.
 

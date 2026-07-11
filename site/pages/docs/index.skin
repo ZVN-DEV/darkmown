@@ -17,6 +17,33 @@ main.docs
   color $ink-soft
   max-width 60ch
 
+/* On-page TOC — a compact multi-column block of plain # anchors. */
+.docs-toc
+  border 1px solid $line
+  bg $panel
+  radius $radius
+  padding 1.1rem 1.35rem
+  margin 1.25rem 0 .5rem
+
+.docs-toc ul
+  columns 2
+  column-gap 2.5rem
+  margin .55rem 0 0
+  padding 0
+  list-style none
+
+.docs-toc li
+  margin .18rem 0
+  break-inside avoid
+  font-size .95rem
+
+.docs-toc a
+  font-weight 500
+
+@media (max-width: 600px)
+  .docs-toc ul
+    columns 1
+
 /* Section headings get a quiet rule above them so the long page scans. */
 main.docs h2
   margin-top 3rem

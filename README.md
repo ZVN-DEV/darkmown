@@ -761,7 +761,7 @@ export default async function (request, context) {
 - **Deploy in one command.** `darkmown deploy vercel` (functions run natively) or `darkmown deploy cloudflare` (the build emits a `dist/_worker.js` that routes `/api/*` and serves the rest from `env.ASSETS`). It prints your URL, or the login to run if the platform CLI isn't signed in.
 - **Custom server / remote backend.** Point `:fetch`/`:form` at an absolute `https://…` URL and widen the CSP `connect-src` (and `form-action` for native form POSTs). Darkmown owns no server — it adapts to yours.
 
-Templates get you to a running, deployable app fast: `darkmown init shop --template store` ships a cart **and** an `api/checkout.js`; `--template dashboard` ships a `:fetch` view **and** an `api/metrics.js`.
+Templates get you to a running, deployable app fast: `darkmown init shop --template store` ships a cart **and** an `api/checkout.js`; `--template dashboard` ships a `:fetch` view **and** an `api/metrics.js`; `--template blog` ships a typed posts collection (`_schema.wd` + one `@loop` over the folder) — adding a post is adding a `.md` file.
 
 ## Interactions — `:slider`, `:sortable`, `:carousel`
 
