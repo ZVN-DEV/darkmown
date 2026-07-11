@@ -37,6 +37,18 @@ test("date / time / datetime formatters are pure (no clock)", () => {
   assert.equal(f("date", "tomorrow"), "tomorrow");
 });
 
+test("date-only strings format in UTC so the calendar date is build-machine independent", () => {
+  // "2026-06-22" parses as UTC midnight; without the UTC guard, a machine west of
+  // UTC would render "Jun 21". The guard keeps the written date.
+  assert.equal(f("date", "2026-06-22", "medium"), "Jun 22, 2026");
+  assert.equal(f("date", "2026-01-01", "medium"), "Jan 1, 2026");
+  // A full datetime keeps local-zone behavior (an explicit instant, not a bare date).
+  const dt = f("datetime", "2026-06-22T12:00:00Z");
+  assert.match(dt, /2026/);
+  // datetime over a date-only string is also stabilized in UTC (midnight).
+  assert.match(f("datetime", "2026-06-22"), /Jun 22, 2026/);
+});
+
 test("text formatters", () => {
   assert.equal(f("upper", "hi"), "HI");
   assert.equal(f("lower", "HI"), "hi");

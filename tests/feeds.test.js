@@ -347,6 +347,62 @@ test("without site_url: robots emits (no Sitemap line), feeds skipped with a hin
   assert.ok(warnings.some((w) => /site_url/.test(w) && /sitemap\.xml \+ rss\.xml/.test(w)));
 });
 
+// Capture console.warn for the duration of `fn`, returning the collected messages.
+function captureWarnings(fn) {
+  /** @type {string[]} */
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    fn();
+  } finally {
+    console.warn = originalWarn;
+  }
+  return warnings;
+}
+
+test("site_url is the placeholder example.com: build prints a deploy hint", () => {
+  const root = fixture();
+  siteWithUrl(root); // fixture URL is exactly https://example.com
+  write(
+    root,
+    "site/pages/post.md",
+    ["---", "title: Post", "date: 2026-06-10", "---", "", "Body."].join("\n")
+  );
+  const warnings = captureWarnings(() => buildSite(root));
+  assert.ok(
+    warnings.some((w) => /placeholder https:\/\/example\.com/.test(w)),
+    "expected a hint that site_url is the example.com placeholder"
+  );
+});
+
+test("a real site_url does NOT print the placeholder hint", () => {
+  const root = fixture();
+  siteWithUrl(root);
+  // Override the home page with a real origin.
+  write(
+    root,
+    "site/pages/index.md",
+    ["---", "title: My Blog", "site_url: https://darkmown.com", "---", "", "# Home"].join("\n")
+  );
+  const warnings = captureWarnings(() => buildSite(root));
+  assert.ok(!warnings.some((w) => /placeholder/.test(w)));
+});
+
+test("quietFeedHints suppresses both the missing-site_url and placeholder hints", () => {
+  // Missing site_url: normally hints; quiet suppresses it (dev rebuilds → once per session).
+  const noUrl = fixture();
+  write(noUrl, "site/pages/index.md", ["---", "title: No URL", "---", "", "# Home"].join("\n"));
+  const quietNoUrl = captureWarnings(() => buildSite(noUrl, { quietFeedHints: true }));
+  assert.ok(!quietNoUrl.some((w) => /site_url/.test(w)));
+
+  // Placeholder site_url: quiet suppresses the example.com hint too.
+  const placeholder = fixture();
+  siteWithUrl(placeholder);
+  const quietPlaceholder = captureWarnings(() => buildSite(placeholder, { quietFeedHints: true }));
+  assert.ok(!quietPlaceholder.some((w) => /placeholder/.test(w)));
+});
+
 test("site_url set but NO dated post: sitemap emits, rss is skipped (no feed)", () => {
   const root = fixture();
   siteWithUrl(root);

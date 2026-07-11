@@ -1,4 +1,5 @@
 ---
+html: true
 title: Scoped styles — same class name, zero collision
 description: Two components reuse the class name .card and never clash. Compile-time scoped styles stamp each component's subtree with a path-derived id and rewrite its skin's selectors to match only there. Zero runtime JS — a static page stays static.
 transitions: true

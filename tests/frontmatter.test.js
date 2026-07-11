@@ -135,26 +135,69 @@ test("the unterminated-frontmatter error names the file when given one", () => {
 
 test("a file with no frontmatter at all is left untouched (no error)", () => {
   const raw = "Just a plain body, no leading fence.";
-  assert.deepEqual(parseFrontmatter(raw), { meta: {}, body: raw });
+  assert.deepEqual(parseFrontmatter(raw), { meta: {}, body: raw, bodyLine: 0 });
+});
+
+test("parseFrontmatter reports the 0-based file line the body starts on", () => {
+  const { bodyLine, body } = parseFrontmatter(
+    "---\ntitle: T\ndate: 2026-01-01\n---\n\n# Heading\n"
+  );
+  assert.equal(bodyLine, 4);
+  assert.equal(body.split("\n")[1], "# Heading");
 });
 
 // ---------------------------------------------------------------------------
-// html passthrough opt-out: default passes raw HTML, `html: false` strips it
+// raw-HTML opt-in: default escapes raw HTML, `html: true` passes it through
 // ---------------------------------------------------------------------------
 
-test("raw HTML in a .md body passes through by default", () => {
+test("raw HTML in a .md body is escaped by default", () => {
   const root = fixture();
-  write(root, "site/pages/index.md", '<div class="raw">hi</div>\n');
+  write(root, "site/pages/index.md", '<div class="raw">hi</div>\n<img src=x onerror=alert(1)>\n');
+  const page = compilePage(path.join(root, "site/pages/index.md"), createPaths(root));
+  assert.doesNotMatch(page.html, /<div class="raw">/);
+  assert.doesNotMatch(page.html, /<img src=x/);
+  assert.match(page.html, /&lt;div/);
+  assert.match(page.html, /&lt;img/);
+});
+
+test("raw HTML in a .wd body is escaped by default", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "# Hi\n\n<script>alert(1)</script>\n");
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.doesNotMatch(page.html, /<script>alert/);
+  assert.match(page.html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+});
+
+test("frontmatter html: true restores raw HTML passthrough", () => {
+  const root = fixture();
+  write(root, "site/pages/index.md", '---\nhtml: true\n---\n<div class="raw">hi</div>\n');
   const page = compilePage(path.join(root, "site/pages/index.md"), createPaths(root));
   assert.match(page.html, /<div class="raw">hi<\/div>/);
 });
 
-test("frontmatter html: false escapes raw HTML in a .md body", () => {
+test("frontmatter html: true on a .wd page passes raw HTML through", () => {
   const root = fixture();
-  write(root, "site/pages/index.md", '---\nhtml: false\n---\n<div class="raw">hi</div>\n');
-  const page = compilePage(path.join(root, "site/pages/index.md"), createPaths(root));
-  assert.doesNotMatch(page.html, /<div class="raw">/);
-  assert.match(page.html, /&lt;div/);
+  write(
+    root,
+    "site/pages/index.wd",
+    '---\nhtml: true\n---\n\n<section class="hero">\n\n# Hi\n\n</section>\n'
+  );
+  const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  assert.match(page.html, /<section class="hero">/);
+});
+
+test("interpolated values stay escaped regardless of the html setting", () => {
+  const root = fixture();
+  for (const fm of ["", "---\nhtml: true\n---\n\n"]) {
+    write(
+      root,
+      "site/pages/index.wd",
+      `${fm}:state label = "<b>bold</b> & <script>x</script>"\n\nValue: { label }\n`
+    );
+    const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+    assert.match(page.html, /&lt;b&gt;bold&lt;\/b&gt; &amp; &lt;script&gt;x&lt;\/script&gt;/);
+    assert.doesNotMatch(page.html, /<b>bold<\/b>/);
+  }
 });
 
 function fixture() {

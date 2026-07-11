@@ -58,14 +58,25 @@
  * @property {Assets} assets
  * @property {Map<string, unknown>} state Declared state keys → initial values.
  * @property {Set<string>} stores Page-global store names (a subset of state keys).
+ * @property {Set<string>} fetchKeys Base state keys declared by `:fetch`, so
+ *   bare `:if <key>_loading` / `:if <key>_error` regions get compile-time
+ *   `role`/`aria-live` announcements.
  * @property {string[]} warnings Non-fatal authoring hints.
  * @property {number} sectionCounter Counter for auto-generated section ids.
+ * @property {Map<string, number>} headingSlugs Heading-slug occurrence counts,
+ *   shared across prose chunks and includes so anchor ids dedupe document-wide.
  * @property {Map<string, import("./collections.js").CollectionRow[]>} collections
  *   Collection name → entry rows, built from the router's routes and threaded in
  *   so a bare-name `@loop blog into post` resolves to its entries at build time.
  * @property {import("./context.js").Pagination | null} pagination The pagination
  *   intent a `@loop … paginate N` recorded this compile, or null. The builder
  *   reads it to multiply routes; one paginated loop per page is supported.
+ * @property {Set<string>} deps Absolute paths of every source file this compile
+ *   read: the page itself, every `@include` target, and every `@loop` JSON data
+ *   file. The dev builder unions these (plus colocated assets) into the per-route
+ *   dependency map that drives incremental rebuilds.
+ * @property {Set<string>} collectionsUsed Names of the collections this compile
+ *   looped, so a change to any entry of a collection rebuilds its consumers.
  */
 
 /**
@@ -79,6 +90,11 @@
  * Per-file compile context threaded through the directive handlers.
  * @typedef {object} Ctx
  * @property {string} file Absolute path to the file being compiled.
+ * @property {number} [bodyLine] 0-based file line the compiled body starts on
+ *   (the frontmatter offset), so `at` reports true file line numbers.
+ * @property {number} [lineOffset] 0-based body line the current `compileBody`
+ *   slice starts on. Block handlers recurse with {@link nestedCtx}, so a line
+ *   index inside a nested block body still maps to the true file line.
  * @property {Paths} context Resolved project paths.
  * @property {string[]} stack Include stack (real paths) for cycle detection.
  * @property {Scope} scope Static value scope chain.
@@ -88,6 +104,13 @@
  * @property {string} [loopKey] State key of the list being looped, if any.
  * @property {boolean} [loopMeta] Inside a loop body, so `$index`/`$first`/… are valid.
  * @property {import("markdown-it").default} [md] Markdown-it instance selected for this file.
+ * @property {(lines: string[], ctx: Ctx) => string} compileBody The body
+ *   dispatcher, threaded through the context so block handlers (`:if`, `:::`,
+ *   `:form`, `@loop`, …) recurse into nested bodies without importing the
+ *   dispatcher back — the module graph stays an import-cycle-free DAG.
+ * @property {(file: string, context: Paths, stack: string[], scope: Scope, comp: Compilation, sections: string[], loopItem: string | null) => { meta: Meta, html: string }} compileFile
+ *   The per-file compile, threaded for the same reason so `@include` can
+ *   compile its target file.
  */
 
 /**
@@ -99,6 +122,8 @@
  * @property {string[]} warnings
  * @property {Pagination | null} pagination The pagination intent a paginated
  *   `@loop` recorded, or null. The builder reads it to multiply routes.
+ * @property {Set<string>} deps Absolute source-file dependencies of this compile.
+ * @property {Set<string>} collectionsUsed Collection names this compile looped.
  */
 
 /**
@@ -110,6 +135,8 @@
  * @property {string[]} warnings
  * @property {Pagination | null} pagination The pagination intent a paginated
  *   `@loop` recorded, or null. The builder reads it to multiply routes.
+ * @property {Set<string>} deps Absolute source-file dependencies of this compile.
+ * @property {Set<string>} collectionsUsed Collection names this compile looped.
  */
 
 /**
@@ -133,6 +160,8 @@
  * @property {NumArg | null} offset
  * @property {NumArg | null} limit
  * @property {string[] | null} empty Empty-branch body lines, if any.
+ * @property {number} [emptyStart] 0-based index the empty branch starts at
+ *   within the loop body, so its nested errors report the true file line.
  * @property {boolean} clauseRefsState Whether offset/limit reference state.
  * @property {boolean} sortable Drag-to-reorder the underlying :state/:store list
  *   (the `sortable` clause). Only valid on a plain reactive state-key loop.
@@ -178,10 +207,14 @@ export function createCompilation() {
     },
     state: new Map(),
     stores: new Set(),
+    fetchKeys: new Set(),
     warnings: [],
     sectionCounter: 0,
+    headingSlugs: new Map(),
     collections: new Map(),
-    pagination: null
+    pagination: null,
+    deps: new Set(),
+    collectionsUsed: new Set()
   };
 }
 
@@ -197,11 +230,28 @@ export function createScope(parent, vars = {}) {
 /**
  * Format a source location as `file:line` (1-based) for compile errors. Keeps the
  * file path intact so existing message matchers still pass, while pointing at the
- * directive's (or unclosed opener's) line.
- * @param {string} file
- * @param {number} index 0-based line index.
+ * directive's (or unclosed opener's) line. `index` is 0-based into the current
+ * `compileBody` slice; `ctx.lineOffset` (where that slice starts in the body,
+ * accumulated by {@link nestedCtx} as block handlers recurse) and `ctx.bodyLine`
+ * (the frontmatter offset) shift it back to the true file line.
+ * @param {Pick<Ctx, "file" | "bodyLine" | "lineOffset">} ctx
+ * @param {number} index 0-based line index into the current body slice.
  * @returns {string}
  */
-export function at(file, index) {
-  return `${file}:${index + 1}`;
+export function at(ctx, index) {
+  return `${ctx.file}:${index + 1 + (ctx.bodyLine ?? 0) + (ctx.lineOffset ?? 0)}`;
+}
+
+/**
+ * The compile context for a nested block body that starts `start` lines into the
+ * current slice. The offset accumulates, so errors inside arbitrarily nested
+ * blocks (`::: container`, `:form`, `@loop`, `:if`, `:carousel`) still report
+ * the true file line through {@link at}.
+ * @template {Pick<Ctx, "lineOffset">} T
+ * @param {T} ctx
+ * @param {number} start 0-based index the nested body starts at in the current slice.
+ * @returns {T}
+ */
+export function nestedCtx(ctx, start) {
+  return { ...ctx, lineOffset: (ctx.lineOffset ?? 0) + start };
 }

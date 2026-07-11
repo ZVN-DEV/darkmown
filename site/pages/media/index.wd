@@ -1,4 +1,5 @@
 ---
+html: true
 title: Media — video, audio, and embeds in Markdown
 description: Three one-line directives — :video, :audio, :embed — compile to hardened, accessible, privacy-friendly players. No framework JavaScript ships: a media page stays zero-JS, just like static Markdown.
 image: https://darkmown.com/__wd/media/og-showcase.png

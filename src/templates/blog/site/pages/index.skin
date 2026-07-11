@@ -66,6 +66,9 @@ nav a
   color $muted
   font-size .9rem
 
+.post-meta p
+  margin 0
+
 /* Buttons & form controls — for newsletter signups, :button actions, etc. */
 button
   display inline-flex

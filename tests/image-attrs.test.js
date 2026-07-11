@@ -94,9 +94,10 @@ test("a missing local file degrades gracefully — no dimensions, no throw", () 
 test("author-set sizing/loading is never clobbered", () => {
   // Raw HTML <img> with explicit width + loading; the compiler must respect it:
   // no auto height (would distort the author's width), keep loading as written.
-  const html = project('<img src="/__wd/media/hero.png" width="50" loading="eager">', {
-    "hero.png": [640, 360]
-  });
+  const html = project(
+    '---\nhtml: true\n---\n\n<img src="/__wd/media/hero.png" width="50" loading="eager">',
+    { "hero.png": [640, 360] }
+  );
   const tag = img(html, 0);
   assert.match(tag, /width="50"/, "keep the author width");
   assert.doesNotMatch(tag, /height=/, "do not add a mismatched height when author sized it");

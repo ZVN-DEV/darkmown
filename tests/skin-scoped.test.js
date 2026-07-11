@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildSite } from "../src/builder.js";
-import { stampScope } from "../src/compiler/page.js";
+import { stampScope } from "../src/compiler/includes.js";
 import { compileSkin, scopeIdFor } from "../src/skin.js";
 
 // ===========================================================================
@@ -316,7 +316,8 @@ function project(files) {
 
 test("build: a page-scoped skin stamps the page body and stays runtime:false", () => {
   const root = project({
-    "site/pages/index.wd": '<main>\n\n<div class="panel">Hi</div>\n\n</main>\n',
+    "site/pages/index.wd":
+      '---\nhtml: true\n---\n\n<main>\n\n<div class="panel">Hi</div>\n\n</main>\n',
     "site/pages/index.skin": ["scoped", ".panel", "  color red"].join("\n")
   });
   const { result } = captureWarnings(() => buildSite(root));
@@ -335,6 +336,10 @@ test("build: a page-scoped skin stamps the page body and stays runtime:false", (
 test("build: an include's scope covers its subtree ONLY, not its siblings", () => {
   const root = project({
     "site/pages/index.wd": [
+      "---",
+      "html: true",
+      "---",
+      "",
       "<main>",
       "",
       '<div class="card">page-level card, unscoped</div>',
@@ -344,7 +349,8 @@ test("build: an include's scope covers its subtree ONLY, not its siblings", () =
       "</main>",
       ""
     ].join("\n"),
-    "site/_/widget.wd": '<section class="card">scoped widget card</section>\n',
+    "site/_/widget.wd":
+      '---\nhtml: true\n---\n\n<section class="card">scoped widget card</section>\n',
     "site/_/widget.skin": ["scoped", ".card", "  border 1px solid red"].join("\n")
   });
   buildSite(root);
@@ -365,6 +371,10 @@ test("build: an include's scope covers its subtree ONLY, not its siblings", () =
 test("build: two includes reuse .card with NO collision (distinct scope ids)", () => {
   const root = project({
     "site/pages/index.wd": [
+      "---",
+      "html: true",
+      "---",
+      "",
       "<main>",
       "",
       "@include /a.wd",
@@ -373,9 +383,9 @@ test("build: two includes reuse .card with NO collision (distinct scope ids)", (
       "</main>",
       ""
     ].join("\n"),
-    "site/_/a.wd": '<div class="card">A</div>\n',
+    "site/_/a.wd": '---\nhtml: true\n---\n\n<div class="card">A</div>\n',
     "site/_/a.skin": ["scoped", ".card", "  color red"].join("\n"),
-    "site/_/b.wd": '<div class="card">B</div>\n',
+    "site/_/b.wd": '---\nhtml: true\n---\n\n<div class="card">B</div>\n',
     "site/_/b.skin": ["scoped", ".card", "  color blue"].join("\n")
   });
   buildSite(root);
@@ -394,7 +404,8 @@ test("build: two includes reuse .card with NO collision (distinct scope ids)", (
 
 test("build: an unused scoped selector WARNS (and the rule is NOT removed)", () => {
   const root = project({
-    "site/pages/index.wd": '<main>\n\n<div class="used">x</div>\n\n</main>\n',
+    "site/pages/index.wd":
+      '---\nhtml: true\n---\n\n<main>\n\n<div class="used">x</div>\n\n</main>\n',
     "site/pages/index.skin": ["scoped", ".used", "  color green", ".badge", "  color red"].join(
       "\n"
     )
@@ -418,6 +429,10 @@ test("build: unused-selector check spans id, tag, and class subjects", () => {
   // matching the subtree, some not — exercising every subjectMatchesTag branch.
   const root = project({
     "site/pages/index.wd": [
+      "---",
+      "html: true",
+      "---",
+      "",
       "<main>",
       "",
       '<section id="hero">',

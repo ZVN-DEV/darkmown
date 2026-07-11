@@ -115,13 +115,13 @@ test("plain .md pages highlight fenced code too and flag hasCode", () => {
   assert.match(doc.html, /class="hljs/);
 });
 
-// --- html: false (strict, no-raw-HTML) instance ----------------------------
+// --- html: true (raw-HTML opt-in) instance ----------------------------------
 
-test("html: false pages still highlight (the strict instance shares the option)", () => {
+test("html: true pages still highlight (the raw-HTML instance shares the option)", () => {
   const page = compilePageWith(fixture(), [
     "---",
     "title: S",
-    "html: false",
+    "html: true",
     "---",
     "",
     "```python",
@@ -146,6 +146,10 @@ test("a code-bearing page links /__wd/highlight.css in <head>", () => {
   ]);
   const head = page.html.slice(0, page.html.indexOf("</head>"));
   assert.match(head, /<link rel="stylesheet" href="\/__wd\/highlight\.css">/);
+  // Exactly ONE well-formed tag — never a link tag nested inside another's
+  // href attribute (the double-wrap regression this pins down).
+  assert.equal(head.match(/<link[^>]*highlight\.css/g)?.length, 1);
+  assert.doesNotMatch(head, /="[^"]*<(?:link|script)/, "no tag markup inside an attribute value");
 });
 
 test("a page with no highlighted code links nothing extra", () => {

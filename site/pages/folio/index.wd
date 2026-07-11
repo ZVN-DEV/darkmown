@@ -1,4 +1,5 @@
 ---
+html: true
 title: Folio — a boutique storefront
 description: A multi-page store written in pure Markdown. The cart persists across pages, reloads, and browser tabs; navigation is instant. No framework JavaScript written by hand.
 image: https://darkmown.com/__wd/media/og-folio.png

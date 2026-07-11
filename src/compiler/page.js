@@ -12,7 +12,12 @@ import { htmlHasHighlight } from "../highlight.js";
 import { compileBody } from "./body.js";
 import { createCompilation, createScope } from "./context.js";
 import { parseFrontmatter, warnLikelyFrontmatter } from "./frontmatter.js";
-import { collectColocatedAssets, scanMarkdownHints, scopedSkinFor } from "./includes.js";
+import {
+  collectColocatedAssets,
+  scanMarkdownHints,
+  scopedSkinFor,
+  stampScope
+} from "./includes.js";
 import { escapeHtml } from "./interpolation.js";
 import { selectMd } from "./markdown.js";
 
@@ -25,6 +30,13 @@ import { selectMd } from "./markdown.js";
  * @typedef {import("./context.js").CompiledDocument} CompiledDocument
  * @typedef {import("./context.js").CompiledPage} CompiledPage
  */
+
+// Skip-to-content link: the first focusable element on every page, visually
+// hidden until keyboard focus reveals it. Styled inline (not via a skin) so it
+// behaves on pages with no stylesheet at all; it rides ahead of page skins in
+// the head, so a project skin can restyle `.wd-skip-link` freely.
+const SKIP_LINK_STYLE =
+  "<style>.wd-skip-link{position:absolute;top:0;left:0;z-index:100;padding:.55rem 1.1rem;background:#18221d;color:#f7f3ea;font:600 .9rem/1.2 system-ui,sans-serif;text-decoration:none;border-radius:0 0 8px 0;transform:translateY(-150%)}.wd-skip-link:focus{transform:none}</style>";
 
 /**
  * Compile a page source file into a full HTML document plus its assets.
@@ -42,6 +54,12 @@ export function compilePage(file, context, options = {}) {
   const compiled = compileDocument(file, context, [], options.vars, options.collections);
   const title = compiled.meta.title || "Darkmown";
   const description = compiled.meta.description || "";
+  // Per-page document language for the `<html lang>` attribute (`lang: fr` in
+  // frontmatter). Defaults to English.
+  const lang =
+    typeof compiled.meta.lang === "string" && compiled.meta.lang.trim()
+      ? compiled.meta.lang.trim()
+      : "en";
   // Optional `image:` frontmatter sets the social-share preview (absolute URL).
   const image = typeof compiled.meta.image === "string" ? compiled.meta.image : "";
   /** @type {string[]} */
@@ -68,10 +86,8 @@ export function compilePage(file, context, options = {}) {
   // The framework highlight stylesheet rides ahead of page skins so a project's
   // own `$code-*` tokens / overrides still cascade over it. Pay-for-what-you-use:
   // linked only on pages with a highlighted code block (`hasCode`).
-  const highlightLink = compiled.assets.hasCode
-    ? [`<link rel="stylesheet" href="/__wd/highlight.css">`]
-    : [];
-  const cssLinks = [...highlightLink, ...compiled.assets.skins]
+  const highlightHref = compiled.assets.hasCode ? ["/__wd/highlight.css"] : [];
+  const cssLinks = [...highlightHref, ...compiled.assets.skins]
     .map((href) => `<link rel="stylesheet" href="${href}">`)
     .join("\n");
   // RSS feed discovery: when the site emits an `rss.xml` (home `site_url` set +
@@ -143,20 +159,25 @@ export function compilePage(file, context, options = {}) {
   const stamped =
     scopedSkin && scopedSkin.scoped ? stampScope(compiled.html, scopedSkin.scopeId) : compiled.html;
   const body = enhanceImages(stamped, context);
+  const { content, target } = ensureMainLandmark(body);
 
   return {
     meta: compiled.meta,
+    deps: compiled.deps,
+    collectionsUsed: compiled.collectionsUsed,
     html: `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(lang)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>${descriptionTag}
   <link rel="icon" href="${favicon}">${feedLink}
+  ${SKIP_LINK_STYLE}
   ${cssLinks}${transitions}${speculation}
 </head>
 <body>
-${body}
+<a class="wd-skip-link" href="#${escapeHtml(target)}">Skip to content</a>
+${content}
 ${scripts}
 </body>
 </html>`,
@@ -164,6 +185,25 @@ ${scripts}
     warnings: compiled.warnings,
     pagination: compiled.pagination
   };
+}
+
+/**
+ * Guarantee the page body exposes a main-content landmark the skip link can
+ * target. A body that already has a `<main>` keeps it: an author-supplied id
+ * wins as the skip target; a `<main>` without one gets `id="main"` stamped on.
+ * A body with no `<main>` at all is wrapped whole. Pure compile-time string
+ * pass (like {@link enhanceImages}) — a static page stays static.
+ * @param {string} html Assembled page body HTML.
+ * @returns {{ content: string, target: string }}
+ */
+function ensureMainLandmark(html) {
+  const open = html.match(/<main\b[^>]*>/i);
+  if (!open) return { content: `<main id="main">\n${html}\n</main>`, target: "main" };
+  // The id attribute must start after whitespace (or a closing quote — sloppy
+  // but browser-parsed) so `data-id="…"` never masquerades as the real id.
+  const id = open[0].match(/[\s"']id\s*=\s*["']([^"']*)["']/i);
+  if (id) return { content: html, target: id[1] || "main" };
+  return { content: html.replace(open[0], `${open[0].slice(0, -1)} id="main">`), target: "main" };
 }
 
 /**
@@ -201,70 +241,6 @@ export function enhanceImages(html, paths) {
     if (!add.length) return tag;
     return `${tag.replace(/\s*\/?>\s*$/, "")} ${add.join(" ")}>`;
   });
-}
-
-/**
- * Raw-text (`script`, `style`) and escapable-raw-text (`textarea`, `title`)
- * elements per the HTML spec: their CONTENT is not markup, so `<`/`>` inside them
- * are plain characters and must never be treated as tags. The content runs to the
- * first matching close tag.
- * @type {Set<string>}
- */
-const RAW_TEXT_ELEMENTS = new Set(["script", "style", "textarea", "title"]);
-
-/**
- * Stamp `data-wd-scope="<id>"` onto every opening tag of a subtree — the HTML
- * half of compile-time scoped styles, mirroring {@link enhanceImages}: a
- * compile-time post-pass over assembled HTML, zero runtime JS. Every element
- * start tag that doesn't already carry a scope attribute gets one, so the scoped
- * stylesheet (whose selectors end in `[data-wd-scope="<id>"]`) matches inside
- * this subtree and nowhere else. Void/self-closing tags are stamped too (the
- * attribute is valid on any element). Closing tags, comments, doctype, and the
- * `<!`/`<?` families are left alone. A tag that ALREADY has a `data-wd-scope`
- * (e.g. a nested include with its own scope) keeps its own — first stamp wins.
- *
- * Raw-text / escapable-raw-text elements (`script`, `style`, `textarea`,
- * `title`) are special-cased: their OPENING tag is stamped (valid), but their
- * BODY is left byte-intact — `<`/`>` inside a `<script>` are JavaScript, not
- * markup, so stamping there would corrupt the content. A small tokenizer walks
- * tag-by-tag (quote-aware in attribute lists) and, on entering a raw-text
- * element, copies through verbatim until the matching close tag.
- * @param {string} html Subtree HTML to scope.
- * @param {string} scopeId Scope id (from {@link import("../skin.js").scopeIdFor}).
- * @returns {string}
- */
-export function stampScope(html, scopeId) {
-  // Opening tag: name + (quote-aware) attribute list + optional self-close slash.
-  const openTag = /<([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
-  let out = "";
-  let cursor = 0;
-  for (let m = openTag.exec(html); m; m = openTag.exec(html)) {
-    const [tag, name, attrs, slash] = m;
-    out += html.slice(cursor, m.index); // text/markup before this opening tag
-    const stamped = /\bdata-wd-scope\s*=/.test(attrs)
-      ? tag // first stamp wins — a pre-stamped tag keeps its own scope
-      : `<${name}${attrs} data-wd-scope="${scopeId}"${slash ? " /" : ""}>`;
-    out += stamped;
-    cursor = m.index + tag.length;
-
-    // Raw-text element (not self-closed): copy its body through untouched and
-    // resume scanning after the matching close tag, so nothing inside is stamped.
-    if (!slash && RAW_TEXT_ELEMENTS.has(name.toLowerCase())) {
-      const rest = html.slice(cursor);
-      const closeMatch = new RegExp(`</${name}\\s*>`, "i").exec(rest);
-      if (!closeMatch) {
-        out += rest; // unterminated raw-text element — copy the remainder verbatim
-        cursor = html.length;
-        break;
-      }
-      const through = closeMatch.index + closeMatch[0].length; // body + close tag
-      out += rest.slice(0, through); // byte-intact
-      cursor += through;
-      openTag.lastIndex = cursor; // skip the body the scanner would otherwise re-walk
-    }
-  }
-  out += html.slice(cursor); // trailing text after the last opening tag
-  return out;
 }
 
 /**
@@ -323,7 +299,9 @@ export function compileDocument(file, context, stack = [], vars = {}, collection
     html: result.html,
     assets: comp.assets,
     warnings: comp.warnings,
-    pagination: comp.pagination
+    pagination: comp.pagination,
+    deps: comp.deps,
+    collectionsUsed: comp.collectionsUsed
   };
 }
 
@@ -347,13 +325,16 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
   }
 
   const raw = fs.readFileSync(file, "utf8");
-  const { meta, body } = parseFrontmatter(raw, file);
+  const { meta, body, bodyLine } = parseFrontmatter(raw, file);
   warnLikelyFrontmatter(raw, file, comp);
+  comp.deps.add(file);
   collectColocatedAssets(file, context, comp.assets);
 
   if (path.extname(file) === ".md") {
     scanMarkdownHints(body, file, comp);
-    const html = selectMd(meta).render(body, {});
+    // Share the compilation's heading-slug counters (as renderProse does), so a
+    // `.md` included from a `.wd` page still dedupes anchors document-wide.
+    const html = selectMd(meta).render(body, { headingSlugs: comp.headingSlugs });
     if (htmlHasHighlight(html)) comp.assets.hasCode = true;
     return { meta, html };
   }
@@ -363,13 +344,16 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
   /** @type {Ctx} */
   const ctx = {
     file,
+    bodyLine,
     context,
     stack: [...stack, real],
     scope: createScope(scope, { meta }),
     comp,
     sections,
     loopItem,
-    md: selectMd(meta)
+    md: selectMd(meta),
+    compileBody,
+    compileFile
   };
   const html = compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx);
   if (htmlHasHighlight(html)) comp.assets.hasCode = true;

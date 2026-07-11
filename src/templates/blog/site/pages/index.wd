@@ -1,4 +1,5 @@
 ---
+html: true
 title: My Blog
 description: A markdown-native blog built with Darkmown.
 site_url: https://example.com
@@ -11,15 +12,20 @@ transitions: true
 
 # My Blog
 
-Posts are plain Markdown files in `site/pages/posts/`. This index is one `.wd`
-loop over a small JSON manifest — sorted newest-first, shipping zero JavaScript.
+Posts are plain Markdown files in `site/pages/posts/` — that folder is a typed
+content collection, and this index is one `.wd` loop over it. No manifest, no
+config, zero JavaScript; each post's frontmatter is the data.
 
-@loop /posts.json into post sort by post.date desc
+@loop posts into post sort by post.date desc
 ::: post-card
 ### [{ post.title }]({ post.url })
-<p class="post-meta">{ post.date }</p>
+::: post-meta
+{ post.date }
+:::
 { post.excerpt }
 :::
+@empty
+No posts yet — add a `.md` file to `site/pages/posts/`.
 @endloop
 
 </main>

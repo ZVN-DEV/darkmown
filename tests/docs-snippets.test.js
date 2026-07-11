@@ -114,6 +114,29 @@ test("key .wd documentation snippets compile with the documented grammar", () =>
   }
 });
 
+test("every ```wd block on the docs page compiles (deliberate fragments are tagged wd-fragment)", () => {
+  // Compile EVERY complete `wd` snippet on the docs page — not a hand-picked
+  // subset — so a structurally broken example (unclosed block, stray `:::`,
+  // missing @endloop) can't ship again. Snippets that reference external files,
+  // collections, or undeclared state can't compile standalone and are marked
+  // ```wd-fragment (excluded here) rather than skipped silently.
+  const file = "site/pages/docs/index.wd";
+  const complete = fenced(file, "wd");
+  assert.ok(complete.length > 0, "expected complete `wd` snippets on the docs page");
+  complete.forEach((body, i) => {
+    assert.doesNotThrow(
+      () => compileSnippet(`docs-wd-${i}`, body),
+      `docs wd block #${i} failed to compile:\n${body}`
+    );
+  });
+  // The fragment channel must actually be in use — otherwise a real broken block
+  // could be hidden by mistagging it, or the tag convention has silently lapsed.
+  assert.ok(
+    fenced(file, "wd-fragment").length > 0,
+    "expected some blocks tagged ```wd-fragment (docs examples that reference external context)"
+  );
+});
+
 test("README documents the package consumer smoke script", () => {
   const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
   const readme = fs.readFileSync("README.md", "utf8");
@@ -145,7 +168,9 @@ function snippetFrom(file, needle) {
 function fenced(file, lang) {
   const text = fs.readFileSync(file, "utf8");
   const out = [];
-  const re = /```(\w*)\n([\s\S]*?)```/g;
+  // `[\w-]` (not `\w`) so a hyphenated info string like `wd-fragment` is captured
+  // as one token — otherwise the fence pairing desyncs and later blocks are lost.
+  const re = /```([\w-]*)\n([\s\S]*?)```/g;
   let match;
   while ((match = re.exec(text)) !== null) {
     if (match[1] === lang) out.push(match[2].trim());

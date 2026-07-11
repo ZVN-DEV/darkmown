@@ -1,3 +1,7 @@
+---
+html: true
+---
+
 <nav class="topnav">
   <a class="brand" href="/">Darkmown</a>
   <span class="nav-links">

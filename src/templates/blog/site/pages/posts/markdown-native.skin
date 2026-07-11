@@ -1,0 +1,59 @@
+/* Colocated post styling — a .skin next to a .md attaches automatically.
+   Copy this file beside each new post to keep the reading design. */
+
+tokens
+  ink #1d2530
+  paper #fbfaf7
+  panel #ffffff
+  line #e7e3da
+  muted #6b7785
+  accent #2f6df0
+
+tokens dark
+  ink #e7ecf3
+  paper #0f141b
+  panel #161d27
+  line #28303c
+  muted #93a0b2
+  accent #5b8cff
+
+html
+  bg $paper
+
+page
+  max-width 680px
+  margin 0 auto
+  padding 2.5rem 1.5rem 4rem
+  font ui-serif, Georgia, Cambria, serif
+  color $ink
+  bg $paper
+  line-height 1.7
+  -webkit-font-smoothing antialiased
+
+h1
+  font-size 2.1rem
+  line-height 1.2
+  margin 1rem 0 1.25rem
+
+a
+  color $accent
+
+code
+  font ui-monospace, SFMono-Regular, Menlo, monospace
+  font-size .88em
+  bg $panel
+  border 1px solid $line
+  padding .08rem .28rem
+  radius 5px
+
+pre code
+  display block
+  padding .9rem 1.1rem
+  overflow-x auto
+
+blockquote
+  margin 1rem 0
+  padding .5rem 1.2rem
+  border-left 3px solid $accent
+  bg $panel
+  color $muted

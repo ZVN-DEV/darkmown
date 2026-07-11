@@ -1,4 +1,5 @@
 ---
+html: true
 title: Darkmown docs
 description: Learn Darkmown routing, directives, state, loops, forms, and the static-to-reactive model.
 transitions: true
@@ -17,6 +18,40 @@ transitions: true
 Darkmown is a Markdown-native framework for mostly-static sites with tiny reactive islands. Pages are plain files: `.md` stays pure CommonMark, and `.wd` ("whateverdown") is the same Markdown plus first-party directives.
 </header>
 
+<nav class="docs-toc" aria-label="On this page">
+
+**On this page**
+
+- [Install](#install)
+- [The two formats](#the-two-formats)
+- [Routing rules](#routing-rules)
+- [Includes](#includes)
+- [Loops](#loops)
+- [Content collections](#content-collections)
+- [Interpolation](#interpolation)
+- [Frontmatter](#frontmatter)
+- [SEO & feeds](#seo--feeds)
+- [Drafts](#drafts)
+- [Instant navigation](#instant-navigation)
+- [Images](#images)
+- [Sections](#sections)
+- [Reactive directives](#reactive-directives)
+- [Fetching data](#fetching-data)
+- [Global state — `:store`](#global-state--store)
+- [Forms and persistence](#forms-and-persistence)
+- [Backends & deploy](#backends--deploy)
+- [Interactions](#interactions--slider-sortable-carousel)
+- [Theme toggle — `:theme`](#theme-toggle--theme)
+- [Scoped styles — `scoped`](#scoped-styles--scoped)
+- [Media directives](#media--video-audio-embed)
+- [Syntax highlighting](#syntax-highlighting)
+- [Trust boundary](#trust-boundary)
+- [Colocation](#colocation)
+- [Spec status](#spec-status)
+</nav>
+
+Every heading on every page gets a stable, GitHub-style `id` at build time (lowercased, punctuation stripped, duplicates deduped), so the links above — and deep links into any Darkmown page — are plain `#` anchors with zero JavaScript.
+
 @include ./-relative-note.wd
 
 ## Install
@@ -29,6 +64,10 @@ npm run dev
 ```
 
 Or add Darkmown to an existing project with `npm install -D @zvndev/darkmown`. The package is scoped; the command it installs is plain `darkmown`.
+
+For editing, a [VS Code extension](https://github.com/ZVN-DEV/darkmown/tree/master/editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — install it from a `.vsix` built out of the framework repo (see its `editors/vscode` README; a Marketplace listing is pending).
+
+`darkmown dev` rebuilds incrementally: it tracks which routes depend on each file (includes, colocated assets, loop data, collections), so editing one page or include recompiles only the routes it affects — and falls back to a full rebuild whenever a file is added, removed, or renamed. `routes.json`, the sitemap, and the RSS feed are regenerated on every rebuild, so they always describe the whole site.
 
 ## The two formats
 
@@ -54,7 +93,7 @@ Or add Darkmown to an existing project with `npm install -D @zvndev/darkmown`. T
 
 `@loop <things> into <thing>` is the only loop. The body is normal Markdown (or more directives) and repeats once per row:
 
-```wd
+```wd-fragment
 @loop /features.json into card
 @include /feature-card.wd
 @endloop
@@ -72,7 +111,7 @@ Loops nest, and `{ card.title }` style dotted paths reach into each row.
 
 Add `where <predicate>` to filter a loop. Conditions join with `and` / `or`:
 
-```wd
+```wd-fragment
 @loop /products.json into p where p.featured == true and p.price < 80
 - { p.name }
 @endloop
@@ -100,12 +139,22 @@ The predicate decides reactivity exactly like the source does: read only the row
 A `:button` inside a reactive loop can act on its own row — the basis for carts and to-do lists:
 
 ```wd
+:state products = [{"id": 1, "name": "Aurora", "price": 49}]
+:state cart = []
+
 @loop products into product
+::: card
+**{ product.name }** — ${ product.price }
 :button "Add to cart" -> cart += product
 :::
+@endloop
+
 @loop cart into line
+::: card
+{ line.name }
 :button "Remove" -> cart remove line
 :::
+@endloop
 ```
 
 `cart += product` appends a copy of the current row to another `:state` list; `cart remove line` removes the current row from the list being looped. Both are checked against the enclosing loop at compile time — no JavaScript.
@@ -114,7 +163,7 @@ A `:button` inside a reactive loop can act on its own row — the basis for cart
 
 Shape a loop with clauses in a fixed order after `into`: `where`, then `sort by`, `reverse`, `offset`, `limit`.
 
-```wd
+```wd-fragment
 @loop /posts.json into post sort by post.date desc limit 5
 { $number }. { post.title }
 @endloop
@@ -125,7 +174,7 @@ Shape a loop with clauses in a fixed order after `into`: `where`, then `sort by`
 
 Every row exposes meta variables — `{ $index }` (0-based), `{ $number }` (1-based), `{ $first }`, `{ $last }`, `{ $count }` — usable in interpolation and `:if`:
 
-```wd
+```wd-fragment
 @loop products into product
 :if $first
 **Top pick:**
@@ -138,7 +187,7 @@ Every row exposes meta variables — `{ $index }` (0-based), `{ $number }` (1-ba
 
 Add an `@empty` branch to render a fallback when the loop produces no rows (after filtering and slicing):
 
-```wd
+```wd-fragment
 @loop todos into todo
 - { todo.title }
 @empty
@@ -146,13 +195,15 @@ Nothing left to do.
 @endloop
 ```
 
+A **missing** in-scope source is an empty list, not an error — `@loop meta.tags into tag` on a page whose frontmatter omits `tags` (an optional field) loops zero rows and renders the `@empty` branch. A value that is present but not a list is still a compile error with the file and line.
+
 These clauses stay build-time when the source and every argument are static — a sorted, limited loop over a JSON file ships zero JS. The loop turns reactive only when the source or a clause reads `:state`/`:store`/`:fetch` data.
 
 ## Content collections
 
 Any folder under `site/pages/` is a **collection** — loop it by its bare name. No `content/` root, no marker file: a `site/pages/blog/` folder of posts *is* the `blog` collection. The whole [blog on this site](/blog/) is one such loop.
 
-```wd
+```wd-fragment
 @loop blog into post sort by post.date desc
 - [{ post.title }]({ post.url }) — { post.date }
 @endloop
@@ -179,7 +230,7 @@ Closed types: `string`, `number`, `boolean`, `date`, `string[]`, each with `?` f
 
 Add `paginate N` (collections only) to split a listing into static pages. Page 1 keeps the listing route; pages 2+ are at `/<route>/page/2/`, `/page/3/`, … all static HTML.
 
-```wd
+```wd-fragment
 @loop blog into post sort by post.date desc paginate 5
 - [{ post.title }]({ post.url })
 @endloop
@@ -208,6 +259,8 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 
 Shape a value for display with a pipe: `{ price | money }`, `{ joinedAt | date:"medium" }`, `{ ratio | percent }`. Pipes chain (`{ name | trim | capitalize }`) and take literal arguments (`{ total | money:"EUR" }`, `{ bio | truncate:80 }`). The same syntax works on static values (folded at build time, zero-JS) and live bindings (re-applied on render).
 
+The value being piped must be **in scope** — a loop variable, `:state`/`:store`, an include argument, or `meta`. A bare literal like `{ 89 | money }` is not a name in scope, so it stays literal text (braces and all), exactly like any unresolved `{ … }`. A date-only value (`"2026-06-22"`) formats in UTC, so `date` prints the written calendar date on any build machine.
+
 The whitelist: `money`, `number`, `percent`, `round`, `date` / `time` / `datetime` (Intl-backed; `short` / `medium` / `long`), `upper` / `lower` / `capitalize`, `truncate:n` / `trim`, `pluralize:"item"`, and `default:"—"`. The five aggregates double as list pipes — `{ cart | count }`, `{ cart | sum:"price" | money }`, plus `avg` / `min` / `max`. No custom functions, nothing `eval`'d; an unknown pipe is a compile error. There is deliberately no relative "time ago" formatter, so builds stay reproducible.
 
 ## Frontmatter
@@ -222,6 +275,8 @@ tags: [sales, revenue, "q1, q2"]
 ```
 
 `{ meta.title }` prints a scalar and `{ meta.tags }` joins an array with `, `. You can loop a frontmatter array at build time — `@loop meta.tags into tag` — and the page stays static. Arrays are inline flow only (`[a, b]`); quoted items keep their commas.
+
+`lang:` sets the document language on `<html lang>` per page (`lang: fr`, `lang: pt-BR`, …); it defaults to `en`. Every page also ships a visually-hidden-until-focused **skip-to-content link** targeting the main landmark — your own `<main>` is reused (an existing `id` wins as the target; an id-less one gets `id="main"`), and a page without one is wrapped in `<main id="main">`. Restyle it via `.wd-skip-link` in a skin. All compile-time — static pages stay zero-JS.
 
 ## SEO & feeds
 
@@ -311,7 +366,7 @@ The aggregate's field is a bare row key (`price`, not `item.price`).
 
 A condition reads the same predicate grammar as `.class when` — a bare path (truthy), or the comparisons `==` `!=` `<` `<=` `>` `>=` `contains`, joined with `and`, `or`, and `not`. (`@loop … where` is the comparison-only subset.) Chain with `:else if` (any number; a bare `:else` must come last):
 
-```wd
+```wd-fragment
 :if plan == "pro" or seats >= 5
 Pro plan
 :else if trialDays > 0 and not expired
@@ -327,7 +382,7 @@ A whole chain compiles to nested conditional regions, so it folds at build time 
 
 A container class can react to state or the loop item. Static `.class` tokens stay as-is; add `when <predicate>` for a reactive one:
 
-```wd
+```wd-fragment
 @loop products into p
 ::: card .product .on-sale when p.price < 50
 **{ p.name }** — ${ p.price }
@@ -362,7 +417,7 @@ A `:button "Label" -> action` mutates one `:state` or `:store` value. The vocabu
 
 Values are literals — a `"string"`, number, `true`/`false`/`null`, or inline JSON. Targets may be dotted paths (`cart.count++`), and one button can run several actions separated by `;` (applied in order, rendered once):
 
-```wd
+```wd-fragment
 :button "Add to cart" -> cart.count++ ; cart.total += 9
 ```
 
@@ -387,6 +442,8 @@ No team members yet.
 @endloop
 :endif
 ```
+
+The lifecycle regions announce themselves to assistive tech: a bare `:if name_loading` compiles with `role="status" aria-live="polite"` and `:if name_error` with `role="alert"` — compile-time attributes, no extra runtime JS. Write your own `role`/`aria-live` inside a region and nothing is added.
 
 Options after the URL: `method=` (default `GET`), `when=load|visible`, `timeout=<ms>`, `retry=<N>`, `headers=<key>`, and `body=<key>` (the last two name a `:state`/`:store` key). A URL can interpolate state (`"/api/users/{ userId }"`) and re-fetches automatically when that state changes; trigger a reload by hand with `:button "Reload" -> team refetch`. Loop a sub-path of fetched data with a dotted source — `@loop team.members into member`. URLs must be relative, `http(s)://`, or a leading `{ state }` interpolation — other schemes are rejected at compile time.
 
@@ -530,10 +587,10 @@ The framework ships a small default `$code-*` set, so highlighting looks right o
 Darkmown is a trusted-author site generator: you compile content you wrote, the way you trust your own source. Three things define that boundary.
 
 - **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
-- **Raw HTML passes through by default.** Markdown renders with `html: true`, so raw HTML is emitted verbatim and there is no built-in sanitizer. Set `html: false` in a page's frontmatter to drop raw HTML for untrusted content.
+- **Raw HTML is escaped by default.** Markdown renders with `html: false`, so a stray `<script>` in content becomes inert text — safe for multi-author collections out of the box. Set `html: true` in a page's frontmatter to pass your own raw HTML through verbatim; there is no built-in sanitizer, so keep it off pages with content you didn't write.
 - **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. The runtime compiles `:computed` / `@loop … where` / `.class when` expressions via `new Function`, so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
 
-See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in the package for the full security model.
+See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/master/SECURITY.md) in the package for the full security model.
 
 ## Colocation
 
@@ -544,7 +601,7 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in 
 
 ## Spec status
 
-The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:store`, the full `:fetch` lifecycle (loading/error/empty states, dynamic URLs, `refetch`, dotted loop sources, authenticated `headers=` + `refresh=` token renewal), `:form` (including server round-trips), loop ergonomics (`sort by`/`limit`/`offset`/`reverse`/`@empty` and `$index`/`$number`/`$first`/`$last`/`$count`), `:if … :else if … :else`, reactive `.class when …`, `:effect`, `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/) and the [Reactive page](/reactive/). Still on the roadmap: a first-party server runtime (`site/api/`) and HTML-fragment swaps. See `docs/spec-alignment.md` in the package for the full audit.
+The implementation is faithful to the original core thesis: Markdown-first authoring, no component ceremony, zero runtime on static pages, and tiny direct-DOM reactivity only when declared. `:store`, the full `:fetch` lifecycle (loading/error/empty states, dynamic URLs, `refetch`, dotted loop sources, authenticated `headers=` + `refresh=` token renewal), `:form` (including server round-trips), loop ergonomics (`sort by`/`limit`/`offset`/`reverse`/`@empty` and `$index`/`$number`/`$first`/`$last`/`$count`), `:if … :else if … :else`, reactive `.class when …`, `:effect`, `:computed`, and `persist` are all shipped and live — try them on the [Data & Forms page](/data/) and the [Reactive page](/reactive/). Still on the roadmap: HTML-fragment `swap` semantics and cart server sync. (The serverless `api/` model already shipped in 1.2.0 — see [Backends & deploy](#backends--deploy) above; a `.wd` backend DSL remains a deliberate non-goal.) See `docs/spec-alignment.md` in the package for the full audit.
 
 See these directives composed into real apps on the [showcase](/showcase/).
 

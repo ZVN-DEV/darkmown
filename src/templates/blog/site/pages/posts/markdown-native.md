@@ -6,17 +6,22 @@ excerpt: Every post is a plain .md file; the index is one .wd loop. The date in 
 transitions: true
 ---
 
+[← All posts](/)
+
 # Markdown-native, by default
 
-To add a post, drop a Markdown file in `site/pages/posts/` and add a line to
-`site/_/posts.json`. The home page loops that manifest:
+To add a post, drop a Markdown file in `site/pages/posts/`. That folder is a
+typed content collection, and the home page loops it directly:
 
 ```wd
-@loop /posts.json into post sort by post.date desc
+@loop posts into post sort by post.date desc
 ### [{ post.title }]({ post.url })
 @endloop
 ```
 
-No build config, no plugins, no content layer. The file *is* the page.
+No manifest, no build config, no content layer. The file *is* the page, and its
+frontmatter is the data — `site/pages/posts/_schema.wd` type-checks every
+post's `title`, `date`, and `description` at build time, so a typo fails the
+build with a file and line instead of shipping a broken list.
 
 [← Back to all posts](/)

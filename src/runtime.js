@@ -142,6 +142,8 @@ const fmtToDate = (v) => {
 };
 /** @param {Date} d @param {any} opts @param {any} fb */
 const fmtDate = (d, opts, fb) => (Number.isNaN(d.getTime()) ? String(fb) : new Intl.DateTimeFormat(undefined, opts).format(d));
+/** Date-only strings (no time) format in UTC so the calendar date is stable. @param {any} v */
+const fmtTZ = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? { timeZone: "UTC" } : undefined);
 
 /** @type {Record<string, (value: any, args: any[]) => any>} */
 const FMT = {
@@ -149,9 +151,9 @@ const FMT = {
   number: (v, [d]) => new Intl.NumberFormat(undefined, d == null ? {} : { minimumFractionDigits: +d, maximumFractionDigits: +d }).format(fmtNum(v)),
   percent: (v, [d = 0]) => new Intl.NumberFormat(undefined, { style: "percent", minimumFractionDigits: +d, maximumFractionDigits: +d }).format(fmtNum(v)),
   round: (v, [d = 0]) => { const p = 10 ** +d; return Math.round(fmtNum(v) * p) / p; },
-  date: (v, [s = "medium"]) => fmtDate(fmtToDate(v), { dateStyle: s }, v),
-  time: (v, [s = "short"]) => fmtDate(fmtToDate(v), { timeStyle: s }, v),
-  datetime: (v, [ds = "medium", ts = "short"]) => fmtDate(fmtToDate(v), { dateStyle: ds, timeStyle: ts }, v),
+  date: (v, [s = "medium"]) => fmtDate(fmtToDate(v), { dateStyle: s, ...fmtTZ(v) }, v),
+  time: (v, [s = "short"]) => fmtDate(fmtToDate(v), { timeStyle: s, ...fmtTZ(v) }, v),
+  datetime: (v, [ds = "medium", ts = "short"]) => fmtDate(fmtToDate(v), { dateStyle: ds, timeStyle: ts, ...fmtTZ(v) }, v),
   upper: (v) => String(v ?? "").toUpperCase(),
   lower: (v) => String(v ?? "").toLowerCase(),
   capitalize: (v) => { const s = String(v ?? ""); return s ? s[0].toUpperCase() + s.slice(1) : s; },

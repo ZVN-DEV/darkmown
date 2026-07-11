@@ -2,7 +2,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { stripRuntimeComments } from "../../src/builder.js";
 import { compilePage } from "../../src/compiler.js";
 import { createPaths } from "../../src/config.js";
 
@@ -10,14 +9,12 @@ import { createPaths } from "../../src/config.js";
 // Fetch lifecycle e2e. The published e2e suite serves the static `dist`, but
 // :fetch needs a live, route-mockable endpoint and a per-test page, so these
 // tests are self-contained: compile a .wd fixture to HTML, set it as the page
-// content, mock the network with page.route(), then inject the *real* runtime.
-// This drives the genuine startFetch lifecycle without adding a demo page.
+// content, mock the network with page.route(), then boot the *real* runtime.
+// The runtime is injected by URL (`/__wd/runtime.js`, same-origin, covered by
+// the served page's `script-src 'self'`) rather than as an inline <script>,
+// which the shipped reactive CSP blocks — matching how the other e2e specs load
+// it and driving the genuine startFetch lifecycle without adding a demo page.
 // ---------------------------------------------------------------------------
-
-const here = path.dirname(new URL(import.meta.url).pathname);
-const runtimeSource = stripRuntimeComments(
-  fs.readFileSync(path.join(here, "..", "..", "src", "runtime.js"), "utf8")
-);
 
 /**
  * Compile a .wd source string and return just the <body> inner HTML, with the
@@ -45,7 +42,7 @@ async function mount(page, src) {
   // (and page.route can intercept them); then swap in the compiled markup.
   await page.goto("/");
   await page.setContent(`<!doctype html><html><body>${compileBody(src)}</body></html>`);
-  await page.addScriptTag({ content: runtimeSource });
+  await page.addScriptTag({ url: "/__wd/runtime.js" });
 }
 
 test.describe("fetch lifecycle", () => {

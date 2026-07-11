@@ -51,7 +51,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 ## Commands
 
 - `darkmown init [dir] [--template <name>]` scaffolds a new site from a template (`starter`, `blog`, `store`, `dashboard`, `landing`).
-- `darkmown dev` starts the live compiler with browser reload, an in-browser error overlay, and a local runner for `api/*` functions.
+- `darkmown dev` starts the live compiler with browser reload, an in-browser error overlay, and a local runner for `api/*` functions. Rebuilds are incremental: each dev build records a per-route dependency map (page file, includes, colocated assets, loop data, collections), so editing one file recompiles only the routes that depend on it — with a full rebuild on any uncertainty (a new/deleted/renamed file, or a framework `src/` change). Rebuilds run one at a time; edits landing mid-build batch into the next one.
 - `darkmown build [--target cloudflare] [--drafts]` writes static output to `dist` (plus `sitemap.xml`/`rss.xml`/`robots.txt`); `--drafts` includes `draft: true` pages for staging.
 - `darkmown deploy <vercel|cloudflare> [--prod]` builds and deploys via the platform CLI.
 - `darkmown serve` previews the built `dist` locally.
@@ -82,17 +82,21 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 
 Shape a value for display with a pipe, Liquid/Angular style: `{ price | money }`, `{ joinedAt | date:"medium" }`, `{ ratio | percent }`. Pipes **chain** left to right (`{ name | trim | capitalize }`) and take literal arguments (`{ total | money:"EUR" }`, `{ bio | truncate:80 }`). They work in static prose (folded at build time, zero-JS) and on live `:state`/`:store` bindings (re-applied on every render) — identical syntax either way. The pipe list is a fixed whitelist compiled to safe calls; there is no custom-function hook and nothing is `eval`'d.
 
+A pipe shapes a value that is **in scope** — a loop variable, `:state`/`:store`, an include argument, or `meta`. The examples below read a field off a loop row `p` (e.g. inside `@loop products into p`, with `p.price == 89`, `p.joined == "2026-06-22"`, …). A bare literal like `{ 89 | money }` is **not** a name in scope, so — like any unresolved `{ … }` — it is left as literal text, braces and all; pipes only transform a value the page can resolve.
+
 | Pipe | Example | Result |
 |---|---|---|
-| `money[:currency[:locale]]` | `{ 89 \| money }` | `$89.00` |
-| `number[:decimals]` | `{ 1234.5 \| number }` | `1,234.5` |
-| `percent[:decimals]` | `{ 0.082 \| percent }` | `8%` |
-| `round[:decimals]` | `{ 3.14159 \| round:2 }` | `3.14` |
-| `date` / `time` / `datetime` `[:style]` | `{ "2026-06-22" \| date:"medium" }` | `Jun 22, 2026` |
-| `upper` / `lower` / `capitalize` | `{ "draft" \| capitalize }` | `Draft` |
-| `truncate:n` / `trim` | `{ bio \| truncate:80 }` | `…the first 80 chars…` |
-| `pluralize:"item"[:"plural"]` | `{ 3 \| pluralize:"item" }` | `3 items` |
-| `default:"—"` | `{ missing \| default:"—" }` | `—` |
+| `money[:currency[:locale]]` | `{ p.price \| money }` | `$89.00` |
+| `number[:decimals]` | `{ p.units \| number }` | `1,234.5` |
+| `percent[:decimals]` | `{ p.ratio \| percent }` | `8%` |
+| `round[:decimals]` | `{ p.pi \| round:2 }` | `3.14` |
+| `date` / `time` / `datetime` `[:style]` | `{ p.joined \| date:"medium" }` | `Jun 22, 2026` |
+| `upper` / `lower` / `capitalize` | `{ p.status \| capitalize }` | `Draft` |
+| `truncate:n` / `trim` | `{ p.bio \| truncate:80 }` | `…the first 80 chars…` |
+| `pluralize:"item"[:"plural"]` | `{ p.qty \| pluralize:"item" }` | `3 items` |
+| `default:"—"` | `{ p.nickname \| default:"—" }` | `—` |
+
+(A date-only value like `p.joined == "2026-06-22"` formats in UTC, so `date:"medium"` renders the written calendar date on any build machine.)
 
 The five **aggregates** double as pipes over a list — `{ cart \| count }`, `{ cart \| sum:"price" \| money }`, plus `avg` / `min` / `max` — and `join:", ":"name"` flattens a list of rows to a string. `date`/`time`/`datetime` are `Intl`-backed (`short` / `medium` / `long`); there is deliberately **no relative "time ago"** formatter, so builds stay byte-for-byte reproducible. An unknown pipe name is a compile error with the valid list.
 
@@ -111,7 +115,7 @@ tags: [sales, revenue, "q1, q2"]
 - `@loop meta.tags into tag` iterates an array field at build time (stays static, zero-JS).
 - Arrays are inline flow only (`[a, b]`); quoted items keep internal commas (`"q1, q2"`). A value without a leading `[` stays a plain string.
 
-Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card).
+Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card). `lang:` sets the document language on `<html lang>` (`lang: fr`, `lang: pt-BR`, …) — it defaults to `en`.
 
 A few reserved keys drive **drafts and feeds** (see [SEO & feeds](#seo--feeds-sitemap-rss-robots) below): `draft: true` excludes a page from production builds; `site_url` on the home page turns on `sitemap.xml` + `rss.xml`; `date:` marks a page as a blog post (it lands in `rss.xml` and sets the page's `<lastmod>`); `excerpt:` is the RSS summary. The same frontmatter is queryable when the page is an entry in a [content collection](#content-collections) — `{ post.date }`, `{ post.excerpt }`, `{ post.tags }`, and any custom key resolve in an `@loop` over the folder.
 
@@ -292,6 +296,8 @@ Add an `@empty` branch to show a fallback when the loop renders no rows (after `
 Nothing left to do.
 @endloop
 ```
+
+A **missing** in-scope source is an empty list, not an error: `@loop meta.tags into tag` over a page whose frontmatter omits `tags` (say, an optional `tags: string[]?` schema field) loops zero rows and renders the `@empty` branch. A field that is *present but not a list* (a string, a number) is still a compile error with the file:line.
 
 > **Note:** All of these clauses stay build-time when the source and every clause argument are static — a sorted, limited loop over a JSON file ships **zero JavaScript**. The loop becomes reactive only when the source is `:state`/`:store`/`:fetch` data, or a clause reads reactive state (like `limit pageSize`).
 
@@ -600,6 +606,8 @@ No team members yet.
 :endif
 ```
 
+The lifecycle regions announce themselves: a bare `:if name_loading` compiles with `role="status" aria-live="polite"` and `:if name_error` with `role="alert"`, so assistive tech hears the flips with no extra markup. Author-supplied `role`/`aria-live` inside a region always wins.
+
 ### Options
 
 - `method=` — `GET` (default), `POST`, `PUT`, `PATCH`, or `DELETE`.
@@ -757,7 +765,7 @@ export default async function (request, context) {
 - **Deploy in one command.** `darkmown deploy vercel` (functions run natively) or `darkmown deploy cloudflare` (the build emits a `dist/_worker.js` that routes `/api/*` and serves the rest from `env.ASSETS`). It prints your URL, or the login to run if the platform CLI isn't signed in.
 - **Custom server / remote backend.** Point `:fetch`/`:form` at an absolute `https://…` URL and widen the CSP `connect-src` (and `form-action` for native form POSTs). Darkmown owns no server — it adapts to yours.
 
-Templates get you to a running, deployable app fast: `darkmown init shop --template store` ships a cart **and** an `api/checkout.js`; `--template dashboard` ships a `:fetch` view **and** an `api/metrics.js`.
+Templates get you to a running, deployable app fast: `darkmown init shop --template store` ships a cart **and** an `api/checkout.js`; `--template dashboard` ships a `:fetch` view **and** an `api/metrics.js`; `--template blog` ships a typed posts collection (`_schema.wd` + one `@loop` over the folder) — adding a post is adding a `.md` file.
 
 ## Interactions — `:slider`, `:sortable`, `:carousel`
 
@@ -796,6 +804,8 @@ A trailing `{.class .class #id}` attaches classes / an id to the inline element 
 ```
 
 The block must follow the element with no space, and works on links, images, emphasis, and inline code. It never collides with `{ name }` interpolation — an interpolation always starts with a name, never a `.` or `#`.
+
+**Headings get anchors for free.** Every markdown heading carries a stable, GitHub-style slug `id` at build time (lowercased, punctuation stripped, whitespace → hyphens; duplicates dedupe with `-1`/`-2` suffixes across the whole document), so any section of any page is deep-linkable with a plain `#the-slug` fragment — zero JS. The [docs page's](https://darkmown.com/docs/) "On this page" table of contents is just markdown links to those anchors.
 
 ## Media — `:video`, `:audio`, `:embed`
 
@@ -952,7 +962,25 @@ Set `window.wd.debug = true` (it defaults to `false`) to log any `:computed` or 
 
 ## Editor support
 
-A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown. For launch, it is source-installable: build a `.vsix` with `npm run pack:extension`, then install `editors/vscode/darkmown-*.vsix` with VS Code. Marketplace/Open VSX publishing is tracked as post-launch distribution work, so the public package does not imply store availability yet.
+A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown.
+
+Install from a `.vsix` today:
+
+```sh
+npm run pack:extension   # builds editors/vscode/darkmown-<version>.vsix
+code --install-extension editors/vscode/darkmown-*.vsix
+```
+
+Or inside VS Code: Extensions panel → `…` menu → **Install from VSIX…** and pick the built file. A Visual Studio Marketplace listing is pending (see [`editors/vscode/PUBLISHING.md`](editors/vscode/PUBLISHING.md)); until it lands, the `.vsix` route above is the supported install.
+
+## Accessibility
+
+Every compiled page ships with landmark-and-announcement basics baked in at build time — zero runtime JS, so static pages stay static:
+
+- **Skip link.** The first focusable element on every page is a visually-hidden-until-focused "Skip to content" link. The shell guarantees it has a target: your own `<main>` is reused (an existing `id` wins as the skip target; an id-less `<main>` gets `id="main"` stamped on), and a page without one is wrapped in `<main id="main">`. Restyle it via `.wd-skip-link` in a skin.
+- **Document language.** `lang:` frontmatter sets `<html lang>` per page (default `en`).
+- **Live `:fetch` regions.** A bare `:if name_loading` region over a `:fetch` key compiles to `role="status" aria-live="polite"` and `:if name_error` to `role="alert"`, so screen readers announce loading and error flips for free. Write your own `role`/`aria-live` inside the region and Darkmown adds nothing.
+- **Accessible names on form controls.** Generated `:input`/`:bind`/`:textarea`/`:select` controls without an author-supplied `aria-label`/`aria-describedby` get an `aria-label` derived from the placeholder or field name; `:slider` and choice groups do the same.
 
 ## Security
 
@@ -961,10 +989,10 @@ A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin
 Darkmown is a **trusted-author** site generator: you compile content you wrote, the same way you trust your own source code. Three assumptions hold the model together — know them before you point Darkmown at content from anyone else.
 
 - **Compile only trusted, author-written content.** Do not compile `.md`/`.wd` files you did not write — user-generated content, third-party docs, form input — without sanitizing it first.
-- **Raw HTML passes through by default.** Darkmown runs `markdown-it` with `html: true`, so raw HTML in your content is emitted verbatim — by design, like every Markdown site generator. There is no built-in sanitizer; a raw `<script>` or event-handler attribute in untrusted content would execute in the visitor's browser. A page can opt into strict mode with `html: false` frontmatter, which drops raw HTML entirely.
+- **Raw HTML is escaped by default; `html: true` opts a page back in.** Darkmown runs `markdown-it` with `html: false`, so a raw `<script>` or event-handler attribute in content renders as inert escaped text instead of executing — multi-author content (blog collections, contributed docs) is stored-XSS-safe out of the box. A page whose author writes their own HTML sets `html: true` in its frontmatter to pass raw HTML through verbatim. There is still no built-in sanitizer: on an `html: true` page, untrusted content executes in the visitor's browser.
 - **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** A fetch/form URL is taken straight from the page source; the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Reactive pages also require `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function` — a strict CSP without `unsafe-eval` will break reactive pages (static pages are unaffected).
 
-> **The single biggest footgun:** do not compile untrusted or user-submitted Markdown without sanitizing it first. There is no built-in sanitizer. A page can flip to strict mode with `html: false` frontmatter, which drops raw HTML entirely (see [SECURITY.md](SECURITY.md)).
+> **The single biggest footgun:** do not put `html: true` on a page whose content is even partly out of your hands, and do not compile untrusted or user-submitted Markdown without sanitizing it first — there is no built-in sanitizer (see [SECURITY.md](SECURITY.md)).
 
 Directive actions and `:computed`/`@loop … where` expressions are never `eval`'d as raw user content — they compile to a whitelisted grammar (item paths, declared `:state`, numbers, strings) that runs via `new Function`. See [SECURITY.md](SECURITY.md) for the full security model.
 
@@ -972,7 +1000,7 @@ Directive actions and `:computed`/`@loop … where` expressions are never `eval`
 
 Builds emit security response headers so a deployed site gets sane defaults without hand-writing a config. The build writes a `dist/_headers` file (Cloudflare Pages format), and the Vercel/local `serve` paths apply the equivalent. On every page:
 
-- **`Content-Security-Policy`** — static pages get a tight policy; **reactive pages** (those that ship `/__wd/runtime.js`) add `script-src 'unsafe-eval' 'unsafe-inline'`, which the runtime needs to compile validated `:computed` / `@loop … where` / `.class when` expressions via `new Function`. Static pages stay strict.
+- **`Content-Security-Policy`** — no `'unsafe-inline'` on `script-src` for any page: the only inline script the framework emits that CSP gates (the `transitions: true` speculationrules block) is authorized by a build-time `'sha256-…'` hash, and the inline state seed is a non-executable JSON data block CSP does not gate. Static pages get a tight, eval-free policy; **reactive pages** (those that ship `/__wd/runtime.js`) add `script-src 'unsafe-eval'`, which the runtime needs to compile validated `:computed` / `@loop … where` / `.class when` expressions via `new Function`. A raw inline `<script>` you write into an `html: true` page is blocked by the shipped CSP — put it in a colocated `.js` file (same-origin, allowed by `'self'`) or widen `script-src` deliberately.
 - **`X-Content-Type-Options: nosniff`**, **`Referrer-Policy`**, and a **`frame-ancestors`** directive (clickjacking protection) on every page.
 
 **If you use `:fetch` or `:form action=` against another host, widen `connect-src`.** The shipped CSP allows same-origin connections; calling a third-party API is otherwise blocked by the policy. Add the host to `connect-src` in your deploy config (it is not auto-derived from your page sources). The CSP is a defense-in-depth layer — it does not replace the trust-boundary rules above; see [SECURITY.md](SECURITY.md) for tightening guidance.

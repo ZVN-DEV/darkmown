@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { discoverApiRoutes } from "./api-runner.js";
 import { buildCollections } from "./compiler/collections.js";
 import { compilePage, parseFrontmatter } from "./compiler.js";
-import { createPaths } from "./config.js";
+import { createPaths, routesDir, shelfDir } from "./config.js";
 import {
   absoluteUrl,
   buildRobots,
@@ -35,6 +35,29 @@ import { compileSkin, scopeIdFor } from "./skin.js";
  * @property {{ skins: string[], scripts: string[], runtime: boolean }} assets
  */
 
+/**
+ * One source route's record in the dev dependency map (`dist/.wd-dev-deps.json`),
+ * written by dev builds so a later `--changed` build can rebuild only the routes
+ * whose dependency graph contains the changed file.
+ * @typedef {object} DepMapEntry
+ * @property {string} file Source file, project-relative, POSIX-separated.
+ * @property {string[]} deps Every source file this route's compile read (the page
+ *   itself, includes, loop JSON data files, colocated `.skin`/`.js`) —
+ *   project-relative, POSIX-separated, sorted.
+ * @property {string[]} collections Collection names the route loops, so a change
+ *   to any entry of the collection rebuilds this route.
+ * @property {RouteManifestEntry[]} pages The manifest entries this route emitted
+ *   (one, or one per pagination page), so `routes.json`/`_headers`/the sitemap
+ *   can be reassembled globally without recompiling untouched routes.
+ */
+
+/** The dev dependency map's filename under `dist/`. */
+export const DEP_MAP_FILE = ".wd-dev-deps.json";
+
+// Bumped whenever the map's shape changes, so a stale map from an older
+// Darkmown falls back to a full rebuild instead of being misread.
+const DEP_MAP_VERSION = 1;
+
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -48,14 +71,47 @@ const moduleDir = path.dirname(fileURLToPath(import.meta.url));
  * `/api/*` to those same functions and serves everything else as a static asset.
  *
  * @param {string} [cwd] Project working directory (defaults to `process.cwd()`).
- * @param {{ target?: string, includeDrafts?: boolean }} [options] `target:
- *   "cloudflare"` emits the Pages worker. `includeDrafts: true` keeps `draft:
- *   true` pages in the build + feeds (dev / `build --drafts`); default excludes
- *   them at route discovery so feeds never see a draft.
- * @returns {{ routes: RouteManifestEntry[], distRoot: string, feeds: { sitemap: number | null, rss: number | null } }}
+ * @param {{ target?: string, includeDrafts?: boolean, depMap?: boolean, changed?: string[], quietFeedHints?: boolean }} [options]
+ *   `target: "cloudflare"` emits the Pages worker. `includeDrafts: true` keeps
+ *   `draft: true` pages in the build + feeds (dev / `build --drafts`); default
+ *   excludes them at route discovery so feeds never see a draft. `depMap: true`
+ *   (dev builds) writes the per-route dependency map to `dist/.wd-dev-deps.json`.
+ *   `changed` (project-relative paths, dev only; implies `depMap`) attempts an
+ *   incremental rebuild of just the affected routes, falling back to a full
+ *   rebuild on ANY uncertainty — a stale page is worse than a slow rebuild.
+ * @returns {BuildResult}
  */
 export function buildSite(cwd = process.cwd(), options = {}) {
   const paths = createPaths(cwd);
+  const changed = (options.changed ?? []).map((file) => file.replaceAll(path.sep, "/"));
+  if (changed.length > 0) {
+    const partial = buildIncremental(cwd, paths, options, changed);
+    if (partial) return partial;
+    // A `changed` build that fell back still writes the map, so the NEXT change
+    // gets to be incremental again.
+    return buildFull(cwd, paths, { ...options, depMap: true });
+  }
+  return buildFull(cwd, paths, options);
+}
+
+/**
+ * The value `buildSite` returns. `incremental` is present only when a `changed`
+ * build actually rebuilt a subset of routes (absent on every full rebuild).
+ * @typedef {object} BuildResult
+ * @property {RouteManifestEntry[]} routes
+ * @property {string} distRoot
+ * @property {{ sitemap: number | null, rss: number | null }} feeds
+ * @property {{ changed: string[], rebuilt: string[], total: number }} [incremental]
+ */
+
+/**
+ * The full site build: wipe `dist`, compile every route, emit every global file.
+ * @param {string} cwd
+ * @param {Paths} paths
+ * @param {{ target?: string, includeDrafts?: boolean, depMap?: boolean, quietFeedHints?: boolean }} options
+ * @returns {BuildResult}
+ */
+function buildFull(cwd, paths, options) {
   fs.rmSync(paths.distRoot, { recursive: true, force: true });
   fs.mkdirSync(paths.distRoot, { recursive: true });
   emitShelfAssets(paths);
@@ -71,13 +127,7 @@ export function buildSite(cwd = process.cwd(), options = {}) {
   // as the RSS channel fields. Resolved once, up front, so every page can link
   // the feed during the loop.
   const identity = siteIdentity(routes);
-  // Advertise the feed in every page's <head> only when rss.xml will actually be
-  // emitted: the home set `site_url` AND there is at least one dated post. A
-  // stale `<link>` to a missing feed would 404 for aggregators.
-  const feedLink =
-    identity.siteUrl && hasDatedPost(routes)
-      ? { href: absoluteUrl(identity.siteUrl, "/rss.xml"), title: identity.title }
-      : undefined;
+  const feedLink = feedLinkFor(identity, routes);
   /** @type {RouteManifestEntry[]} */
   const manifest = [];
 
@@ -93,40 +143,17 @@ export function buildSite(cwd = process.cwd(), options = {}) {
   /** @type {Route[]} */
   const extraRoutes = [];
 
+  /** @type {Record<string, DepMapEntry>} */
+  const mapRoutes = {};
+
   for (const route of routes) {
-    // Compile each route's page(s). A normal route yields one page; a route whose
-    // `@loop … paginate N` slices a collection yields page 1 at the route plus
-    // `/<route>/page/<n>/` for pages 2..N — every one static HTML.
-    for (const page of compileRoutePages(route, paths, collections, feedLink)) {
-      if (page.route !== route.route) extraRoutes.push({ ...route, route: page.route });
-      for (const warning of page.warnings || []) {
-        if (warned.has(warning)) continue;
-        warned.add(warning);
-        console.warn(`hint: ${warning}`);
-      }
-      const outFile = outputPathForRoute(paths.distRoot, page.route);
-      fs.mkdirSync(path.dirname(outFile), { recursive: true });
-      fs.writeFileSync(outFile, page.html);
-      if (page.route === "/404/") notFoundHtml = page.html;
-      emitAssets(page.assets, paths, page.html, warned);
-      if (page.assets.runtime) emitRuntime(paths);
-      emitBehaviors(page.assets, paths);
-      if (page.assets.hasCode) emitHighlight(paths);
-      const behaviorSrcs = [...page.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
-      manifest.push({
-        route: page.route,
-        file: path.relative(cwd, route.file).replaceAll(path.sep, "/"),
-        assets: {
-          skins: [...page.assets.skins],
-          scripts: [
-            ...(page.assets.runtime ? ["/__wd/runtime.js"] : []),
-            ...behaviorSrcs,
-            ...page.assets.scripts
-          ],
-          runtime: page.assets.runtime
-        }
-      });
+    const built = buildRoute(route, cwd, paths, collections, feedLink, warned);
+    manifest.push(...built.mapEntry.pages);
+    if (built.notFoundHtml !== undefined) notFoundHtml = built.notFoundHtml;
+    for (const entry of built.mapEntry.pages) {
+      if (entry.route !== route.route) extraRoutes.push({ ...route, route: entry.route });
     }
+    mapRoutes[route.route] = built.mapEntry;
   }
 
   // Hosts (Vercel, Cloudflare Pages) and the framework's own server auto-serve
@@ -134,20 +161,14 @@ export function buildSite(cwd = process.cwd(), options = {}) {
   // minimal page so a 404 is always available.
   fs.writeFileSync(path.join(paths.distRoot, "404.html"), notFoundHtml ?? defaultNotFoundHtml());
 
-  fs.writeFileSync(path.join(paths.distRoot, "routes.json"), JSON.stringify(manifest, null, 2));
-
-  // Cloudflare Pages reads dist/_headers for security headers (Vercel reads
-  // vercel.json; the local server adds them in src/statics.js). Static routes
-  // get the stricter CSP (no 'unsafe-eval'); reactive routes get the relaxed
-  // one. A catch-all keeps assets and any future path covered.
-  fs.writeFileSync(path.join(paths.distRoot, "_headers"), renderCloudflareHeaders(manifest));
+  emitGlobalFiles(manifest, paths);
 
   // Crawler files + feeds. robots.txt is ALWAYS emitted; sitemap.xml + rss.xml
   // need the home `site_url` (else a loud, actionable build hint). Drafts are
   // already filtered out of `routes`, so neither feed can ever see one. The
   // paginated 2+ routes are indexable HTML too, so they join the sitemap (RSS is
   // dated-posts-only, which they are not, so it's unaffected).
-  const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths);
+  const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths, options.quietFeedHints);
 
   // Page-colocated static assets (images, SVG, fonts, …) copy last, so the guard
   // sees every emitted route/framework file already on disk.
@@ -163,7 +184,332 @@ export function buildSite(cwd = process.cwd(), options = {}) {
     emitCloudflareWorker(paths, apiDir, apiRoutes);
   }
 
+  if (options.depMap) writeDepMap(paths, feedLink, mapRoutes);
+
   return { routes: manifest, distRoot: paths.distRoot, feeds };
+}
+
+/**
+ * The incremental (dev) build: rebuild only the routes whose dependency graph
+ * contains a changed file, reusing everything else from the previous build.
+ * Correctness first — returns null (→ full rebuild) on ANY uncertainty: no/stale
+ * dependency map, a route added/removed/renamed, a deleted changed file, a
+ * changed file no dependency graph accounts for, or a change to the site-wide
+ * feed link every page embeds. The global outputs (`routes.json`, `_headers`,
+ * robots/sitemap/rss, the dep map) are re-emitted from the merged manifest every
+ * time so a partial rebuild can never leave them inconsistent.
+ * @param {string} cwd
+ * @param {Paths} paths
+ * @param {{ target?: string, includeDrafts?: boolean, quietFeedHints?: boolean }} options
+ * @param {string[]} changed Project-relative POSIX paths of the changed files.
+ * @returns {BuildResult | null} null → caller runs the full build.
+ */
+function buildIncremental(cwd, paths, options, changed) {
+  if (options.target) return fullFallback(changed, "targeted builds always run full");
+  const map = readDepMap(paths);
+  if (!map) return fullFallback(changed, "no dependency map from a previous dev build");
+
+  const routes = discoverRoutes(paths.routesRoot, { includeDrafts: options.includeDrafts });
+  const current = new Map(routes.map((route) => [route.route, relPosix(cwd, route.file)]));
+  const prevRoutes = Object.keys(map.routes);
+  if (
+    prevRoutes.length !== current.size ||
+    prevRoutes.some((key) => map.routes[key].file !== current.get(key))
+  ) {
+    return fullFallback(changed, "a route was added, removed, or renamed");
+  }
+
+  const collections = buildCollections(routes, paths);
+  const identity = siteIdentity(routes);
+  const feedLink = feedLinkFor(identity, routes);
+  // The feed <link> is embedded in EVERY page's head, so a change to it
+  // (site_url/title set or cleared, the first dated post appearing) fans out to
+  // the whole site — that is a full rebuild, not a partial one.
+  if (JSON.stringify(feedLink ?? null) !== JSON.stringify(map.feed ?? null)) {
+    return fullFallback(changed, "the site feed link changed");
+  }
+
+  /** @type {Set<string>} */
+  const affected = new Set();
+  for (const file of changed) {
+    if (!fs.existsSync(path.join(cwd, file))) {
+      return fullFallback(changed, `"${file}" was removed or renamed`);
+    }
+    const hits = routesAffectedBy(file, map.routes, collections);
+    if (!hits) return fullFallback(changed, `"${file}" is not in the dependency map`);
+    for (const routePath of hits) affected.add(routePath);
+    copyChangedAsset(file, cwd, paths);
+  }
+
+  const byRoute = new Map(routes.map((route) => [route.route, route]));
+  /** @type {Set<string>} */
+  const warned = new Set();
+  const rebuilt = [...affected].sort();
+  for (const routePath of rebuilt) {
+    const route = /** @type {Route} */ (byRoute.get(routePath));
+    const built = buildRoute(route, cwd, paths, collections, feedLink, warned);
+    // A shrunk pagination leaves stale `/page/N/` outputs behind — remove any
+    // previously-emitted page this rebuild no longer produces.
+    const kept = new Set(built.mapEntry.pages.map((entry) => entry.route));
+    for (const page of map.routes[routePath].pages) {
+      if (!kept.has(page.route)) {
+        fs.rmSync(outputPathForRoute(paths.distRoot, page.route), { force: true });
+      }
+    }
+    if (built.notFoundHtml !== undefined) {
+      fs.writeFileSync(path.join(paths.distRoot, "404.html"), built.notFoundHtml);
+    }
+    map.routes[routePath] = built.mapEntry;
+  }
+
+  // Reassemble the GLOBAL outputs from the merged map (fresh entries for rebuilt
+  // routes, previous entries for untouched ones) in discovery order, so
+  // routes.json, _headers, and the feeds stay whole-site consistent.
+  /** @type {RouteManifestEntry[]} */
+  const manifest = [];
+  /** @type {Route[]} */
+  const extraRoutes = [];
+  for (const route of routes) {
+    for (const entry of map.routes[route.route].pages) {
+      manifest.push(entry);
+      if (entry.route !== route.route) extraRoutes.push({ ...route, route: entry.route });
+    }
+  }
+  emitGlobalFiles(manifest, paths);
+  const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths, options.quietFeedHints);
+  writeDepMap(paths, feedLink, map.routes);
+
+  return {
+    routes: manifest,
+    distRoot: paths.distRoot,
+    feeds,
+    incremental: { changed, rebuilt, total: routes.length }
+  };
+}
+
+/**
+ * Compile one source route and emit its page(s) + assets. A normal route emits
+ * one page; a paginated listing emits page 1 at the route and `/page/<n>/` for
+ * the rest. Shared verbatim by the full and incremental builds so a partially
+ * rebuilt route is byte-identical to a fully rebuilt one.
+ * @param {Route} route
+ * @param {string} cwd
+ * @param {Paths} paths
+ * @param {Map<string, import("./compiler/collections.js").CollectionRow[]>} collections
+ * @param {{ href: string, title: string } | undefined} feedLink
+ * @param {Set<string>} warned Cross-route dedupe set for emitted hints.
+ * @returns {{ mapEntry: DepMapEntry, notFoundHtml: string | undefined }}
+ */
+function buildRoute(route, cwd, paths, collections, feedLink, warned) {
+  const compiled = compileRoutePages(route, paths, collections, feedLink);
+  /** @type {RouteManifestEntry[]} */
+  const entries = [];
+  /** @type {string | undefined} */
+  let notFoundHtml;
+  for (const page of compiled.pages) {
+    for (const warning of page.warnings || []) {
+      if (warned.has(warning)) continue;
+      warned.add(warning);
+      console.warn(`hint: ${warning}`);
+    }
+    const outFile = outputPathForRoute(paths.distRoot, page.route);
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, page.html);
+    if (page.route === "/404/") notFoundHtml = page.html;
+    emitAssets(page.assets, paths, page.html, warned);
+    if (page.assets.runtime) emitRuntime(paths);
+    emitBehaviors(page.assets, paths);
+    if (page.assets.hasCode) emitHighlight(paths);
+    const behaviorSrcs = [...page.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
+    entries.push({
+      route: page.route,
+      file: relPosix(cwd, route.file),
+      assets: {
+        skins: [...page.assets.skins],
+        scripts: [
+          ...(page.assets.runtime ? ["/__wd/runtime.js"] : []),
+          ...behaviorSrcs,
+          ...page.assets.scripts
+        ],
+        runtime: page.assets.runtime
+      }
+    });
+  }
+  return {
+    notFoundHtml,
+    mapEntry: {
+      file: relPosix(cwd, route.file),
+      deps: [...compiled.deps].map((dep) => relPosix(cwd, dep)).sort(),
+      collections: [...compiled.collections].sort(),
+      pages: entries
+    }
+  };
+}
+
+/**
+ * Write the global manifest files derived from the (whole-site) route manifest:
+ * `routes.json` and the Cloudflare `_headers`. One emit path for full and
+ * incremental builds keeps them consistent by construction.
+ *
+ * Cloudflare Pages reads dist/_headers for security headers (Vercel reads
+ * vercel.json; the local server adds them in src/statics.js). Static routes get
+ * the stricter CSP (no 'unsafe-eval'); reactive routes get the relaxed one. A
+ * catch-all keeps assets and any future path covered.
+ * @param {RouteManifestEntry[]} manifest
+ * @param {Paths} paths
+ * @returns {void}
+ */
+function emitGlobalFiles(manifest, paths) {
+  fs.writeFileSync(path.join(paths.distRoot, "routes.json"), JSON.stringify(manifest, null, 2));
+  fs.writeFileSync(path.join(paths.distRoot, "_headers"), renderCloudflareHeaders(manifest));
+}
+
+/**
+ * The site-wide RSS `<link rel="alternate">` every page embeds — present only
+ * when rss.xml will actually be emitted: the home set `site_url` AND there is at
+ * least one dated post. A stale `<link>` to a missing feed would 404 for
+ * aggregators.
+ * @param {{ siteUrl: string, title: string, description: string }} identity
+ * @param {Route[]} routes
+ * @returns {{ href: string, title: string } | undefined}
+ */
+function feedLinkFor(identity, routes) {
+  return identity.siteUrl && hasDatedPost(routes)
+    ? { href: absoluteUrl(identity.siteUrl, "/rss.xml"), title: identity.title }
+    : undefined;
+}
+
+/**
+ * A project-relative, POSIX-separated path — the canonical file-path form in
+ * `routes.json` and the dev dependency map (and what the dev watcher reports).
+ * @param {string} cwd
+ * @param {string} file Absolute path.
+ * @returns {string}
+ */
+function relPosix(cwd, file) {
+  return path.relative(cwd, file).replaceAll(path.sep, "/");
+}
+
+/**
+ * Read the previous dev build's dependency map, or null when it is absent,
+ * unreadable, or from an incompatible version — every one of which means the
+ * incremental build cannot trust its picture of the site and must go full.
+ * @param {Paths} paths
+ * @returns {{ version: number, feed: { href: string, title: string } | null, routes: Record<string, DepMapEntry> } | null}
+ */
+function readDepMap(paths) {
+  try {
+    const map = JSON.parse(fs.readFileSync(path.join(paths.distRoot, DEP_MAP_FILE), "utf8"));
+    if (map && map.version === DEP_MAP_VERSION && map.routes) return map;
+  } catch {
+    /* absent or corrupt — full rebuild */
+  }
+  return null;
+}
+
+/**
+ * Persist the dependency map for the next incremental build.
+ * @param {Paths} paths
+ * @param {{ href: string, title: string } | undefined} feedLink
+ * @param {Record<string, DepMapEntry>} mapRoutes
+ * @returns {void}
+ */
+function writeDepMap(paths, feedLink, mapRoutes) {
+  fs.writeFileSync(
+    path.join(paths.distRoot, DEP_MAP_FILE),
+    JSON.stringify({ version: DEP_MAP_VERSION, feed: feedLink ?? null, routes: mapRoutes })
+  );
+}
+
+/**
+ * Log why an incremental build is falling back to a full rebuild, and return
+ * null so the caller runs one. The reason lands on stderr, which the dev server
+ * surfaces alongside the rebuild output.
+ * @param {string[]} changed
+ * @param {string} reason
+ * @returns {null}
+ */
+function fullFallback(changed, reason) {
+  console.warn(`hint: full rebuild — ${reason} (changed: ${changed.join(", ")})`);
+  return null;
+}
+
+/**
+ * The source routes a changed file affects: every route whose dependency set
+ * contains it, plus — when the file is a page inside a collection directory
+ * (an entry or its `_schema.wd`) — every route that loops that collection.
+ * Returns null when NO dependency graph accounts for the file (a brand-new
+ * include, an asset whose consumers aren't tracked, …) — the uncertainty signal
+ * that forces a full rebuild.
+ * @param {string} file Project-relative POSIX path of the changed file.
+ * @param {Record<string, DepMapEntry>} mapRoutes
+ * @param {Map<string, import("./compiler/collections.js").CollectionRow[]>} collections
+ * @returns {Set<string> | null}
+ */
+function routesAffectedBy(file, mapRoutes, collections) {
+  /** @type {Set<string>} */
+  const affected = new Set();
+  let known = false;
+  for (const [routePath, entry] of Object.entries(mapRoutes)) {
+    if (entry.deps.includes(file)) {
+      affected.add(routePath);
+      known = true;
+    }
+  }
+  const collection = collectionMemberOf(file);
+  if (collection && collections.has(collection)) {
+    known = true;
+    for (const [routePath, entry] of Object.entries(mapRoutes)) {
+      if (entry.collections.includes(collection)) affected.add(routePath);
+    }
+  }
+  return known ? affected : null;
+}
+
+/**
+ * The collection a changed page file belongs to: `site/pages/blog/hello.md` →
+ * `"blog"`. Only `.md`/`.wd` files nested under a `site/pages/<name>/` directory
+ * qualify — any other file type there (an image a page might measure) is not a
+ * collection membership signal and must go through the deps/full-rebuild path.
+ * @param {string} file Project-relative POSIX path.
+ * @returns {string | null}
+ */
+function collectionMemberOf(file) {
+  const prefix = `${routesDir}/`;
+  if (!file.startsWith(prefix)) return null;
+  if (![".md", ".wd"].includes(path.posix.extname(file))) return null;
+  const parts = file.slice(prefix.length).split("/");
+  return parts.length >= 2 ? parts[0] : null;
+}
+
+/**
+ * Re-copy a changed non-page asset to its published location during an
+ * incremental build (the full build's `emitShelfAssets`/`emitPageAssets` sweep
+ * doesn't run there). Only files a dependency graph already vouched for reach
+ * this point — in practice `@loop` JSON data files, published under
+ * `/__wd/data/` (shelf) or beside their page (site/pages). Page/skin/script
+ * sources have their own emit paths and hidden segments are never published, so
+ * both are skipped.
+ * @param {string} file Project-relative POSIX path of the changed file.
+ * @param {string} cwd
+ * @param {Paths} paths
+ * @returns {void}
+ */
+function copyChangedAsset(file, cwd, paths) {
+  const ext = path.posix.extname(file).toLowerCase();
+  if ([".md", ".wd", ".skin", ".js"].includes(ext)) return;
+  /** @type {string} */
+  let out;
+  if (file.startsWith(`${shelfDir}/`)) {
+    const rel = file.slice(shelfDir.length + 1);
+    out = path.join(paths.distRoot, ext === ".json" ? "__wd/data" : "__wd/media", rel);
+  } else {
+    const rel = file.slice(routesDir.length + 1);
+    if (rel.split("/").some((segment) => /^[._-]/.test(segment))) return;
+    out = path.join(paths.distRoot, rel);
+  }
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.copyFileSync(path.join(cwd, file), out);
 }
 
 /**
@@ -178,9 +524,11 @@ export function buildSite(cwd = process.cwd(), options = {}) {
  */
 
 /**
- * Compile a route into the one-or-more static pages it emits. A normal route is
- * one page. A route whose body paginates a collection (`@loop … paginate N`) is
- * compiled once to discover the page count, then recompiled per page with the
+ * Compile a route into the one-or-more static pages it emits, plus the union of
+ * every source file the compiles read (`deps`) and every collection they looped
+ * (`collections`) — the raw material of the dev dependency map. A normal route
+ * is one page. A route whose body paginates a collection (`@loop … paginate N`)
+ * is compiled once to discover the page count, then recompiled per page with the
  * correct `page` pager seeded into scope — page 1 at the route, pages 2..total at
  * `/<route>/page/<n>/`. Every emitted page is static HTML (`runtime: false` for a
  * pure listing).
@@ -188,9 +536,18 @@ export function buildSite(cwd = process.cwd(), options = {}) {
  * @param {Paths} paths
  * @param {Map<string, import("./compiler/collections.js").CollectionRow[]>} collections
  * @param {{ href: string, title: string } | undefined} feedLink
- * @returns {EmittedPage[]}
+ * @returns {{ pages: EmittedPage[], deps: Set<string>, collections: Set<string> }}
  */
 function compileRoutePages(route, paths, collections, feedLink) {
+  /** @type {Set<string>} */
+  const deps = new Set();
+  /** @type {Set<string>} */
+  const used = new Set();
+  const track = (/** @type {import("./compiler.js").CompiledPage} */ page) => {
+    for (const dep of page.deps) deps.add(dep);
+    for (const name of page.collectionsUsed) used.add(name);
+    for (const source of page.assets.files.keys()) deps.add(source);
+  };
   // First compile (discovery): page 1 with a placeholder pager. If the page has
   // no `paginate`, this is the only compile and we emit it as-is.
   const first = compilePage(route.file, paths, {
@@ -198,10 +555,15 @@ function compileRoutePages(route, paths, collections, feedLink) {
     collections,
     vars: { page: pagerVars(route.route, 1, 1) }
   });
+  track(first);
   if (!first.pagination || first.pagination.total <= 1) {
-    return [
-      { route: route.route, html: first.html, assets: first.assets, warnings: first.warnings }
-    ];
+    return {
+      pages: [
+        { route: route.route, html: first.html, assets: first.assets, warnings: first.warnings }
+      ],
+      deps,
+      collections: used
+    };
   }
   // Paginated: recompile every page (including page 1, whose pager `total`/`next`
   // were unknown on the discovery pass) with the correct pager.
@@ -214,6 +576,7 @@ function compileRoutePages(route, paths, collections, feedLink) {
       collections,
       vars: { page: pagerVars(route.route, n, total) }
     });
+    track(page);
     pages.push({
       route: pageRoute(route.route, n),
       html: page.html,
@@ -221,7 +584,7 @@ function compileRoutePages(route, paths, collections, feedLink) {
       warnings: page.warnings
     });
   }
-  return pages;
+  return { pages, deps, collections: used };
 }
 
 /**
@@ -298,17 +661,33 @@ function hasDatedPost(routes) {
  * @param {Route[]} routes Emitted (post-draft-filter) routes.
  * @param {{ siteUrl: string, title: string, description: string }} identity
  * @param {Paths} paths
+ * @param {boolean} [quietHints] Suppress the site_url/placeholder feed hints — set
+ *   on dev-server rebuilds so they print once per session (at the initial build)
+ *   instead of on every incremental rebuild. A production `darkmown build` never
+ *   sets it, so the hints always show there.
  * @returns {{ sitemap: number | null, rss: number | null }}
  */
-function emitFeeds(routes, identity, paths) {
+function emitFeeds(routes, identity, paths, quietHints = false) {
   fs.writeFileSync(path.join(paths.distRoot, "robots.txt"), buildRobots(identity.siteUrl));
 
   if (!identity.siteUrl) {
-    console.warn(
-      "hint: set site_url in site/pages/index frontmatter to emit sitemap.xml + rss.xml " +
-        "(e.g. `site_url: https://example.com`). robots.txt was still written."
-    );
+    if (!quietHints) {
+      console.warn(
+        "hint: set site_url in site/pages/index frontmatter to emit sitemap.xml + rss.xml " +
+          "(e.g. `site_url: https://example.com`). robots.txt was still written."
+      );
+    }
     return { sitemap: null, rss: null };
+  }
+
+  // The blog template ships `site_url: https://example.com` as a placeholder — a
+  // real build against it would point every feed/sitemap URL at example.com.
+  // Flag it so the author swaps in their real origin before deploying.
+  if (identity.siteUrl === "https://example.com" && !quietHints) {
+    console.warn(
+      "hint: site_url is the placeholder https://example.com — sitemap.xml and rss.xml will " +
+        "point at example.com. Set it to your real origin before deploying."
+    );
   }
 
   // The `/404/` route is never a feed entry — it's not an indexable page and

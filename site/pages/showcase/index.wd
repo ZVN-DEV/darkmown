@@ -1,4 +1,5 @@
 ---
+html: true
 title: Showcase — real apps built in Markdown
 description: Five complete, beautiful apps — a storefront, a live dashboard, a pricing configurator, a product-finder quiz, and a sortable expense ledger — each one a readable Markdown file. See the app, then view its source.
 image: https://darkmown.com/__wd/media/og-showcase.png

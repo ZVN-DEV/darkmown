@@ -8,7 +8,14 @@ import { handleApiRequest } from "./api-runner.js";
 import { buildSite } from "./builder.js";
 import { createPaths } from "./config.js";
 import { DEPLOY_TARGETS, deploy } from "./deploy.js";
-import { devClientPath, devClientScript, devEventsPath, injectDevClient } from "./dev.js";
+import {
+  buildFailedPage,
+  createRebuildQueue,
+  devClientPath,
+  devClientScript,
+  devEventsPath,
+  injectDevClient
+} from "./dev.js";
 import { discoverRoutes, isDraft, outputPathForRoute } from "./router.js";
 import { availableTemplates, initProject } from "./scaffold.js";
 import { contentType, resolvePublicFile, serve } from "./statics.js";
@@ -69,7 +76,16 @@ export async function run(argv, env = {}) {
     // `--drafts` includes `draft: true` pages in the build + feeds (staging);
     // the default production build excludes them at route discovery.
     const includeDrafts = argv.includes("--drafts");
-    const result = buildSite(cwd, { target, includeDrafts });
+    // Dev-server plumbing: `--dep-map` writes the per-route dependency map;
+    // `--changed <path>` (repeatable, implies --dep-map) attempts an incremental
+    // rebuild of just the affected routes, with a full-rebuild fallback on any
+    // uncertainty. Not part of the public CLI surface.
+    const changed = flagValues(argv, "--changed");
+    const depMap = argv.includes("--dep-map") || changed.length > 0;
+    // Dev rebuilds pass this so the site_url/placeholder feed hints print once per
+    // session (from the initial in-process build) instead of on every rebuild.
+    const quietFeedHints = argv.includes("--quiet-feed-hints");
+    const result = buildSite(cwd, { target, includeDrafts, changed, depMap, quietFeedHints });
     log(buildSummary(result, path.relative(cwd, result.distRoot)));
     if (target === "cloudflare")
       log("Emitted dist/_worker.js for Cloudflare Pages api/* functions");
@@ -128,8 +144,6 @@ function startDevServer({ cwd, log, warn, error }) {
   const distRoot = path.join(cwd, "dist");
   /** @type {Set<import("node:http").ServerResponse>} */
   const clients = new Set();
-  /** @type {ReturnType<typeof setTimeout> | undefined} */
-  let timer;
   /** @type {string | undefined} Last build failure, replayed to clients on connect. */
   let lastBuildError;
 
@@ -138,20 +152,30 @@ function startDevServer({ cwd, log, warn, error }) {
   // see it on connect; the next successful rebuild clears it via `reload`.
   // Dev builds + serves `draft: true` pages (they're work-in-progress you want
   // to preview); the dev client stamps a visible banner so a draft is obvious.
+  // `depMap: true` writes the per-route dependency map that lets the rebuilds
+  // below be incremental for site/ content changes.
   try {
-    buildSite(cwd, { includeDrafts: true });
+    buildSite(cwd, { includeDrafts: true, depMap: true });
   } catch (err) {
     lastBuildError = (err instanceof Error ? err.message : String(err)).trim();
-    error(lastBuildError);
+    error(`✗ Initial build failed:\n${lastBuildError}`);
   }
 
   // Rebuild in a child process so changes to Darkmown's own src/ always load
   // fresh modules — an in-process rebuild would reuse the stale import cache.
-  const rebuild = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
+  // A site/ change additionally passes the changed path(s), so the child can
+  // rebuild only the routes whose dependency graph contains them (the builder
+  // falls back to a full rebuild on any uncertainty). A src/ change — or an
+  // event with no attributable file — queues `null`, forcing the full rebuild.
+  // The queue serializes the children: every build read-modify-writes the
+  // dependency map, so overlapping children could persist a stale map and
+  // silently stop rebuilding affected routes.
+  const runBuild = (/** @type {string[]} */ changed) =>
+    new Promise((/** @type {(value?: void) => void} */ done) => {
+      const args = [cliPath, "build", "--drafts", "--dep-map", "--quiet-feed-hints"];
+      for (const file of changed) args.push("--changed", file);
       const started = performance.now();
-      execFile(process.execPath, [cliPath, "build", "--drafts"], { cwd }, (err, stdout, stderr) => {
+      execFile(process.execPath, args, { cwd }, (err, stdout, stderr) => {
         if (err) {
           const message = (stderr || stdout || String(err)).trim();
           lastBuildError = message;
@@ -160,6 +184,7 @@ function startDevServer({ cwd, log, warn, error }) {
             clients,
             `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`
           );
+          done();
           return;
         }
         lastBuildError = undefined;
@@ -167,16 +192,25 @@ function startDevServer({ cwd, log, warn, error }) {
         if (stderr.trim()) warn(stderr.trim());
         broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
         log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
+        done();
       });
-    }, 30);
-  };
+    });
+  const queue = createRebuildQueue(runBuild);
 
   /** @type {import("node:fs").FSWatcher[]} */
   const watchers = [];
   for (const dir of ["site", "src"]) {
     const abs = path.join(cwd, dir);
     if (fs.existsSync(abs)) {
-      watchers.push(fs.watch(abs, { recursive: true }, rebuild));
+      watchers.push(
+        fs.watch(abs, { recursive: true }, (_event, filename) => {
+          queue.change(
+            dir === "site" && filename
+              ? path.join(dir, filename.toString()).replaceAll(path.sep, "/")
+              : null
+          );
+        })
+      );
     }
   }
 
@@ -211,7 +245,7 @@ function startDevServer({ cwd, log, warn, error }) {
     // throw on either path (e.g. a stat/read error) becomes a clean 500.
     handleApiRequest({ apiDir, req, res })
       .then((handled) => {
-        if (!handled) serveDev(distRoot, url, res, draftRoutes(cwd));
+        if (!handled) serveDev(distRoot, url, res, draftRoutes(cwd), () => lastBuildError);
       })
       .catch((err) => {
         res.writeHead(500, { "content-type": "text/plain" });
@@ -221,13 +255,19 @@ function startDevServer({ cwd, log, warn, error }) {
 
   return new Promise((resolve) => {
     server.listen(port, host, () => {
-      log(`Darkmown dev server ready at http://${host}:${port}`);
+      // Never claim a clean start over a broken build: when the initial build
+      // failed, say so on the ready line and point at the fix-to-retry flow.
+      log(
+        lastBuildError
+          ? `Darkmown dev server ready at http://${host}:${port} — but the initial build FAILED (see the error above). Routes show it until you fix the file; rebuilds run on save.`
+          : `Darkmown dev server ready at http://${host}:${port}`
+      );
       log(`Live compiler watching site/ and src/`);
       resolve({
         command: "dev",
         server,
         close: () => {
-          clearTimeout(timer);
+          queue.close();
           for (const watcher of watchers) watcher.close();
           for (const client of clients) client.end();
           clients.clear();
@@ -271,11 +311,23 @@ function startPreviewServer({ cwd, log, error }) {
  * @param {import("node:http").ServerResponse} res
  * @param {Set<string>} draftFiles Absolute dist HTML paths of draft pages — each
  *   gets the dev-only draft banner injected (never written to disk).
+ * @param {() => string | undefined} buildError Reads the last recorded build
+ *   failure (undefined once a build succeeds).
  * @returns {void}
  */
-function serveDev(distRoot, url, res, draftFiles) {
+function serveDev(distRoot, url, res, draftFiles, buildError) {
   const file = resolvePublicFile(distRoot, url);
   if (!file || !fs.existsSync(file)) {
+    // An HTML route with no dist output while the last build FAILED is almost
+    // certainly unbuilt because of that failure — serve the compile error (the
+    // SSE overlay replays it too), not the misleading "hidden or not created"
+    // 404. Non-HTML assets and traversal-rejected URLs still 404 normally.
+    const failure = buildError();
+    if (failure && file?.endsWith(".html")) {
+      res.writeHead(500, { "content-type": "text/html; charset=utf-8" });
+      res.end(buildFailedPage(failure));
+      return;
+    }
     serve(distRoot, url, res);
     return;
   }
@@ -353,11 +405,19 @@ Authoring:
  * (home `site_url` set), the sitemap URL and RSS post counts — e.g.
  * `Built 14 routes, sitemap (14 urls), rss (6 posts) into dist`. When no
  * `site_url` is set the feed clauses are omitted (a hint was already warned).
- * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null } }} result
+ * An incremental (dev `--changed`) build reports what it actually rebuilt —
+ * `Rebuilt 2 of 14 routes (/blog/, /blog/hello/) into dist` — naming the routes
+ * when there are few enough to read.
+ * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null }, incremental?: { rebuilt: string[], total: number } }} result
  * @param {string} relativeRoot `dist` relative to cwd, for the message tail.
  * @returns {string}
  */
 export function buildSummary(result, relativeRoot) {
+  if (result.incremental) {
+    const { rebuilt, total } = result.incremental;
+    const shown = rebuilt.length > 0 && rebuilt.length <= 6 ? ` (${rebuilt.join(", ")})` : "";
+    return `Rebuilt ${rebuilt.length} of ${total} routes${shown} into ${relativeRoot}`;
+  }
   const parts = [`Built ${result.routes.length} routes`];
   if (result.feeds.sitemap !== null) parts.push(`sitemap (${result.feeds.sitemap} urls)`);
   if (result.feeds.rss !== null) parts.push(`rss (${result.feeds.rss} posts)`);
@@ -385,6 +445,24 @@ export function flagValue(argv, flag) {
   const index = argv.indexOf(flag);
   if (index !== -1 && index + 1 < argv.length) return argv[index + 1];
   return undefined;
+}
+
+/**
+ * Read every occurrence of a repeatable `--flag value` / `--flag=value` option
+ * out of an argv tail (e.g. the dev server passing one `--changed <path>` per
+ * file in a debounced batch).
+ * @param {string[]} argv The argv tail.
+ * @param {string} flag The flag name, e.g. `"--changed"`.
+ * @returns {string[]} The values, in argv order (empty when the flag is absent).
+ */
+export function flagValues(argv, flag) {
+  /** @type {string[]} */
+  const values = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === flag && i + 1 < argv.length) values.push(argv[++i]);
+    else if (argv[i].startsWith(`${flag}=`)) values.push(argv[i].slice(flag.length + 1));
+  }
+  return values;
 }
 
 /**

@@ -1,4 +1,5 @@
 ---
+html: true
 title: Folio — your basket
 description: The Folio checkout. The same :store cart shared with the catalog, a per-row remove, and a form that round-trips to a server — all written in Markdown.
 image: https://darkmown.com/__wd/media/og-folio.png

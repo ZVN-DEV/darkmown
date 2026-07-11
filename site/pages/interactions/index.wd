@@ -1,4 +1,5 @@
 ---
+html: true
 title: Interactions — sliders, drag & carousels in Markdown
 description: :slider, :sortable, and :carousel — rich interactions that compile to tiny pay-for-what-you-use modules, declared in plain Markdown. Sliders ship zero JS; sortable and carousel each load one small module, only on the pages that use them.
 image: https://darkmown.com/__wd/media/og-showcase.png

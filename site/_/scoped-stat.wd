@@ -1,3 +1,7 @@
+---
+html: true
+---
+
 <!-- Scoped component B. Reuses the SAME class names as scoped-promo.wd
      (.card / .title / .body) but its colocated scoped-stat.skin scopes them to a
      dark, centered stat tile. Proof the leak is gone: two `.card` definitions on

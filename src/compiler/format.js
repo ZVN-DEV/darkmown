@@ -48,6 +48,17 @@ function toDate(v) {
 const fmtDate = (d, opts, fallback) =>
   Number.isNaN(d.getTime()) ? String(fallback) : new Intl.DateTimeFormat(undefined, opts).format(d);
 
+/**
+ * A date-ONLY ISO string (`2026-06-22`, no time) parses as UTC midnight, so
+ * formatting it in the build machine's local zone can shift the calendar date a
+ * day (e.g. `Jun 21` west of UTC). Format those in UTC so the output is
+ * deterministic and matches the written date; full datetimes keep local behavior.
+ * @param {unknown} v
+ * @returns {{ timeZone: "UTC" } | undefined}
+ */
+const dateOnlyTZ = (v) =>
+  typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? { timeZone: "UTC" } : undefined;
+
 // --- aggregates (shared by pipes and `:computed`) --------------------------
 
 /** @type {Record<string, (list: any[], field?: string) => number>} */
@@ -89,13 +100,15 @@ export const FORMATTERS = {
     const p = 10 ** +dec;
     return Math.round(toNum(v) * p) / p;
   },
-  // dates (format a given instant — pure, no "now")
-  date: (v, [style = "medium"]) => fmtDate(toDate(v), { dateStyle: /** @type {any} */ (style) }, v),
-  time: (v, [style = "short"]) => fmtDate(toDate(v), { timeStyle: /** @type {any} */ (style) }, v),
+  // dates (format a given instant — pure, no "now"; date-only strings in UTC)
+  date: (v, [style = "medium"]) =>
+    fmtDate(toDate(v), { dateStyle: /** @type {any} */ (style), ...dateOnlyTZ(v) }, v),
+  time: (v, [style = "short"]) =>
+    fmtDate(toDate(v), { timeStyle: /** @type {any} */ (style), ...dateOnlyTZ(v) }, v),
   datetime: (v, [ds = "medium", ts = "short"]) =>
     fmtDate(
       toDate(v),
-      { dateStyle: /** @type {any} */ (ds), timeStyle: /** @type {any} */ (ts) },
+      { dateStyle: /** @type {any} */ (ds), timeStyle: /** @type {any} */ (ts), ...dateOnlyTZ(v) },
       v
     ),
   // text

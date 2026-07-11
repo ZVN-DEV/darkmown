@@ -1,4 +1,5 @@
 ---
+html: true
 title: Syntax highlighting — code that dark-modes for free
 description: Build-time syntax highlighting in plain Markdown. Fenced code blocks highlight at compile time (zero client JS) and recolor with your theme through the same tokens dark / :theme system — flip the toggle and watch every language recolor at once.
 image: https://darkmown.com/__wd/media/og-showcase.png

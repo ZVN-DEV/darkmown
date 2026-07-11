@@ -1,5 +1,53 @@
+import { escapeHtml } from "./compiler.js";
+
 export const devClientPath = "/__wd/dev-client.js";
 export const devEventsPath = "/__wd/dev-events";
+
+/**
+ * Serialize the dev server's rebuilds: at most ONE child build runs at a time.
+ * Every build read-modify-writes the dependency map (`dist/.wd-dev-deps.json`),
+ * so overlapping children could persist a stale map missing deps a concurrent
+ * build just recorded — after which the affected routes silently stop
+ * rebuilding. Changes debounce into a batch; changes arriving MID-build
+ * accumulate into the next batch (duplicate paths coalesce via the Set, and a
+ * `null` — a `src/` change or an unattributable event, forcing a full rebuild —
+ * swallows the whole batch into one full build).
+ * @param {(changed: string[]) => Promise<void> | void} runBuild Runs one child
+ *   build over the changed `site/` paths (`[]` = full rebuild). Build failures
+ *   are its own concern (report + resolve); a rejection still frees the queue.
+ * @param {number} [debounceMs] Debounce window for batching change events.
+ * @returns {{ change: (path: string | null) => void, close: () => void }}
+ */
+export function createRebuildQueue(runBuild, debounceMs = 30) {
+  /** @type {Set<string | null>} */
+  const pending = new Set();
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let timer;
+  let running = false;
+  const flush = () => {
+    if (running || pending.size === 0) return;
+    const changed = pending.has(null) ? [] : /** @type {string[]} */ ([...pending]);
+    pending.clear();
+    running = true;
+    Promise.resolve()
+      .then(() => runBuild(changed))
+      .catch(() => {}) // runBuild reports its own failures; never wedge the queue
+      .then(() => {
+        running = false;
+        flush(); // drain changes that arrived mid-build (already waited a build long)
+      });
+  };
+  return {
+    change(path) {
+      pending.add(path);
+      clearTimeout(timer);
+      timer = setTimeout(flush, debounceMs);
+    },
+    close() {
+      clearTimeout(timer);
+    }
+  };
+}
 
 /**
  * Inject the dev-client `<script>` before `</body>` (or append it if absent),
@@ -40,6 +88,34 @@ banner.style.cssText = [
 ].join(";");
 document.addEventListener("DOMContentLoaded", () => document.body.prepend(banner));
 `;
+}
+
+/**
+ * The page the dev server serves for a route with no dist output while the last
+ * build is FAILED — the honest alternative to the production 404 copy, which
+ * would claim the route "is hidden or has not been created" when the real cause
+ * is a compile error. The message renders inline (works without JS) and the
+ * injected dev client replays the `builderror` overlay on connect, then reloads
+ * the real page on the next successful build.
+ * @param {string} message The recorded build failure.
+ * @returns {string}
+ */
+export function buildFailedPage(message) {
+  return injectDevClient(
+    `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Darkmown build failed</title>
+</head>
+<body>
+  <h1>Darkmown build failed</h1>
+  <pre>${escapeHtml(message)}</pre>
+  <p>This route has no built output because the last build failed. Fix the file above and this page reloads on the next successful build.</p>
+</body>
+</html>`
+  );
 }
 
 /**

@@ -104,6 +104,10 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: test -f dist/index.html && test -f dist/routes.json
+      # Staging (dogfood): the site must ALSO build with drafts included — a
+      # draft-only compile error never surfaces in the default build above.
+      - run: node src/cli.js build --drafts
+      - run: test -f dist/blog/unfinished-thoughts/index.html
 
   size:
     name: Runtime size budget

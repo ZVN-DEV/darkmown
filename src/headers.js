@@ -12,11 +12,21 @@
  * The CSP is derived from what the framework's own output actually emits
  * (verify against built `dist/` HTML):
  *   - External script `/__wd/runtime.js` (same-origin) on reactive pages.
- *   - Inline `<script type="application/json" data-wd-state>` (state seed) and
- *     inline `<script type="speculationrules">` (prerender) — JSON/speculation
- *     blocks can't be nonce'd cleanly, so `script-src 'unsafe-inline'`.
+ *   - Inline `<script type="application/json" data-wd-state>` (state seed) —
+ *     a non-executable data block, which `script-src` does not govern, so it
+ *     needs no source at all.
+ *   - Inline `<script type="speculationrules">` (prerender, `transitions: true`)
+ *     — the one inline script `script-src` does gate. Its body is a single
+ *     build-time constant, so a `'sha256-…'` hash source authorizes exactly it
+ *     (plus the `'inline-speculation-rules'` keyword for browsers that check
+ *     that instead of the hash) and `'unsafe-inline'` is dropped entirely. A
+ *     raw `<script>` an author writes into `html: true` markdown is therefore
+ *     blocked by the shipped CSP — use a colocated `.js` file (same-origin,
+ *     covered by `'self'`) or widen `script-src` deliberately.
  *   - The reactive runtime compiles validated expressions via `new Function`,
- *     so reactive pages additionally need `script-src 'unsafe-eval'`.
+ *     so reactive pages additionally need `script-src 'unsafe-eval'`. That
+ *     keyword cannot be hashed away: it gates eval-family APIs, not inline
+ *     script elements.
  *   - Inline `<style>` for view transitions — `style-src 'unsafe-inline'`.
  *   - `data:` favicon and remote images — `img-src 'self' data: https:`.
  *   - `:video`/`:audio` allow relative or `http(s)` sources — `media-src 'self' https:`.
@@ -26,10 +36,39 @@
  *     authorizes it (and blocks a form exfiltrating to a third-party origin). Apps
  *     posting to a remote backend widen this alongside `connect-src`.
  *
- * Static pages (zero framework JS) still emit inline `<style>` and an inline
- * `<script type="speculationrules">`, so they keep `'unsafe-inline'`, but they
+ * Static pages (zero framework JS) share the same hash-based `script-src` but
  * never call `new Function`, so their CSP drops `'unsafe-eval'`.
  */
+
+import { createHash } from "node:crypto";
+
+/**
+ * The exact body of the inline `<script type="speculationrules">` block that
+ * `compilePage` emits for `transitions: true` pages. Kept in sync with
+ * `src/compiler/page.js` by a drift-guard test that hashes the block out of a
+ * real build — if the emitted rules change, that test fails before the CSP
+ * silently starts blocking prerender.
+ * @type {string}
+ */
+export const SPECULATION_RULES_JSON =
+  '{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"selector_matches":".no-prefetch"}},{"not":{"selector_matches":"[rel~=nofollow]"}}]},"eagerness":"moderate"}]}';
+
+/**
+ * CSP hash source for the speculationrules block — computed from the constant
+ * above at module load, never hand-maintained.
+ * @type {string}
+ */
+export const SPECULATION_RULES_HASH = `'sha256-${createHash("sha256")
+  .update(SPECULATION_RULES_JSON)
+  .digest("base64")}'`;
+
+/**
+ * The `script-src` both CSP variants share: same-origin scripts, plus the two
+ * grants for the inline speculationrules block (hash + keyword). No
+ * `'unsafe-inline'` — the state seed is a data block and needs nothing.
+ * @type {string}
+ */
+const SCRIPT_SRC = `script-src 'self' ${SPECULATION_RULES_HASH} 'inline-speculation-rules'`;
 
 /**
  * `connect-src` for the demo is `'self'`: the framework's own pages only
@@ -42,6 +81,10 @@ const CONNECT_SRC = "connect-src 'self'";
 
 /**
  * Directives shared by both the static and reactive CSP. Order is cosmetic.
+ * `img-src`/`media-src` deliberately allow any `https:` host — remote images
+ * and media in markdown are legitimate everywhere. Sites that only serve their
+ * own assets can tighten both to `'self'` (plus `data:` for the favicon) in
+ * their deploy config; see SECURITY.md "Tightening the policy".
  * @type {string[]}
  */
 const COMMON_CSP_DIRECTIVES = [
@@ -59,24 +102,20 @@ const COMMON_CSP_DIRECTIVES = [
 ];
 
 /**
- * Relaxed CSP for reactive pages: `new Function` needs `'unsafe-eval'`, the
- * inline state/speculationrules JSON needs `'unsafe-inline'`.
+ * Relaxed CSP for reactive pages: `new Function` needs `'unsafe-eval'`; the
+ * inline speculationrules block rides on the shared hash source, so no
+ * `'unsafe-inline'`.
  * @type {string}
  */
-export const REACTIVE_CSP = [
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  ...COMMON_CSP_DIRECTIVES
-].join("; ");
+export const REACTIVE_CSP = [`${SCRIPT_SRC} 'unsafe-eval'`, ...COMMON_CSP_DIRECTIVES].join("; ");
 
 /**
  * Stricter CSP for static pages: no runtime means no `new Function`, so
- * `'unsafe-eval'` is dropped. Inline `<style>`/`<script type=speculationrules>`
- * keep `'unsafe-inline'` on script/style.
+ * `'unsafe-eval'` is dropped too. Inline `<style>` (view transitions) keeps
+ * `'unsafe-inline'` on style-src only.
  * @type {string}
  */
-export const STATIC_CSP = ["script-src 'self' 'unsafe-inline'", ...COMMON_CSP_DIRECTIVES].join(
-  "; "
-);
+export const STATIC_CSP = [SCRIPT_SRC, ...COMMON_CSP_DIRECTIVES].join("; ");
 
 /**
  * Baseline security headers applied to every HTML response, independent of the

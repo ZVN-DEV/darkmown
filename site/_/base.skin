@@ -231,6 +231,14 @@ button:active, button[data-wd-action]:active, button[data-wd-actions]:active, [t
   outline 2px solid $ring
   outline-offset 2px
 
+/* Skip-to-content link (emitted by the page shell) — themed reveal on focus. */
+.wd-skip-link:focus
+  bg $accent
+  color $on-accent
+  border-radius 0 0 $radius-sm 0
+  outline 2px solid $ring
+  outline-offset 2px
+
 button:disabled, [type=submit]:disabled, .btn[aria-disabled=true], [type=button]:disabled
   opacity .5
   cursor not-allowed

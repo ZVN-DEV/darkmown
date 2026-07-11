@@ -1,4 +1,5 @@
 ---
+html: true
 title: Shop — built with Darkmown
 description: A storefront in Markdown — live search, a shared cart, and a checkout that posts to a serverless function.
 transitions: true

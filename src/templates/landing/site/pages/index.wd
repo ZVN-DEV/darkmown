@@ -1,4 +1,5 @@
 ---
+html: true
 title: Acme — ship faster
 description: A marketing one-pager built with Darkmown. Zero framework JS on the static parts, with a testimonials carousel.
 transitions: true

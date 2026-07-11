@@ -121,8 +121,10 @@ for (const dest of DANGEROUS_LINK_DESTINATIONS) {
 test("plain javascript: link is left as literal text, not an anchor", () => {
   const html = compileWithShelf(["[click](javascript:alert(1))"]);
   // Positive proof of the neutralization: the destination survives as text, and
-  // the only thing it is NOT is an executable link.
-  assert.ok(!/<a /i.test(html), "no <a> element emitted at all for the rejected scheme");
+  // the only thing it is NOT is an executable link. (The shell's own skip link
+  // sits before <main>, so only the content region is checked.)
+  const content = html.slice(html.indexOf("<main"));
+  assert.ok(!/<a /i.test(content), "no <a> element emitted at all for the rejected scheme");
 });
 
 test("an INTERPOLATED destination resolving to javascript: is neutralized (href)", () => {

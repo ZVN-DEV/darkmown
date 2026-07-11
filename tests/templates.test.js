@@ -57,3 +57,42 @@ test("every shipped template scaffolds and builds without error", () => {
     assert.ok(routes.length > 0, `${name} produced no routes`);
   }
 });
+
+test("every template's .md pages link a stylesheet and stay static", () => {
+  let mdPages = 0;
+  for (const name of availableTemplates()) {
+    const root = tmp();
+    initProject(root, { template: name });
+    const { routes } = buildSite(root);
+    for (const route of routes.filter((r) => r.file.endsWith(".md"))) {
+      mdPages++;
+      assert.ok(route.assets.skins.length > 0, `${name} ${route.route} links no stylesheet`);
+      assert.equal(route.assets.runtime, false, `${name} ${route.route} must stay static`);
+      assert.deepEqual(route.assets.scripts, [], `${name} ${route.route} must ship no scripts`);
+      const html = fs.readFileSync(
+        path.join(root, "dist", route.route.slice(1), "index.html"),
+        "utf8"
+      );
+      assert.match(html, /<link rel="stylesheet"/, `${name} ${route.route} HTML lacks the link`);
+    }
+  }
+  assert.ok(mdPages > 0, "no template ships a .md page — the assertion never ran");
+});
+
+test("blog template lists posts from the collection, dated by frontmatter", () => {
+  const root = tmp();
+  initProject(root, { template: "blog" });
+  assert.ok(
+    !fs.existsSync(path.join(root, "site/_/posts.json")),
+    "posts are a collection now — no manifest"
+  );
+  assert.ok(fs.existsSync(path.join(root, "site/pages/posts/_schema.wd")));
+  buildSite(root);
+  const html = fs.readFileSync(path.join(root, "dist/index.html"), "utf8");
+  assert.ok(html.includes("2026-01-15"), "hello-darkmown renders its frontmatter date");
+  assert.ok(html.includes("2026-02-02"), "markdown-native renders its frontmatter date");
+  assert.ok(
+    html.indexOf("markdown-native") < html.indexOf("hello-darkmown"),
+    "posts sort newest first"
+  );
+});

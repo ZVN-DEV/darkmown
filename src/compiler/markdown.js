@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
-// Markdown layer: the shared markdown-it instances (raw-HTML default + a lazy
-// `html: false` strict variant), the `wd_binding` inline plugin and `wd_attrs`
+// Markdown layer: the shared markdown-it instances (strict default + a lazy
+// `html: true` raw-HTML variant), the `wd_binding` inline plugin and `wd_attrs`
 // core plugin, and prose rendering with `{ name.path }` interpolation resolved
 // against the loop item / static scope / declared state.
 // ---------------------------------------------------------------------------
@@ -26,29 +26,33 @@ import {
 // with a known language. The callback returns escaped token HTML or `""` to let
 // markdown-it render a plain escaped `<code>` (graceful degradation). Both
 // instances share it so `html: false` pages highlight too.
-const md = new MarkdownIt({ html: true, highlight: highlightCode });
+const md = new MarkdownIt({ html: false, highlight: highlightCode });
 md.use(bindingPlugin);
 md.use(attrsPlugin);
+md.use(anchorPlugin);
 
-// Raw HTML in markdown passes through by default (a documented design choice).
-// Pages can opt out with frontmatter `html: false` for untrusted content; the
-// stricter instance is built lazily so the default path stays a single instance.
+// Raw HTML in markdown is escaped by default: a stray `<script>` or `onerror=`
+// attribute in content renders as inert text, so multi-author content (blog
+// collections, contributed docs) is stored-XSS-safe out of the box. A page
+// whose author writes their own HTML opts in with frontmatter `html: true`;
+// that instance is built lazily so the default path stays a single instance.
 /** @type {MarkdownIt | null} */
-let mdNoHtml = null;
+let mdRawHtml = null;
 /**
- * Pick the markdown-it instance for a page (raw HTML on by default, off with `html: false`).
+ * Pick the markdown-it instance for a page (raw HTML off by default, on with `html: true`).
  * @param {Meta} [meta]
  * @returns {MarkdownIt}
  */
 export function selectMd(meta) {
   // Frontmatter scalars stay strings (no coercion), so accept both forms.
-  if (meta?.html !== false && meta?.html !== "false") return md;
-  if (!mdNoHtml) {
-    mdNoHtml = new MarkdownIt({ html: false, highlight: highlightCode });
-    mdNoHtml.use(bindingPlugin);
-    mdNoHtml.use(attrsPlugin);
+  if (meta?.html !== true && meta?.html !== "true") return md;
+  if (!mdRawHtml) {
+    mdRawHtml = new MarkdownIt({ html: true, highlight: highlightCode });
+    mdRawHtml.use(bindingPlugin);
+    mdRawHtml.use(attrsPlugin);
+    mdRawHtml.use(anchorPlugin);
   }
-  return mdNoHtml;
+  return mdRawHtml;
 }
 
 /**
@@ -59,7 +63,8 @@ export function selectMd(meta) {
 export function renderProse(text, ctx) {
   text = resolveDestinationBindings(text, ctx);
   return (ctx.md ?? md).render(text, {
-    resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx)
+    resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx),
+    headingSlugs: ctx.comp.headingSlugs
   });
 }
 
@@ -195,6 +200,51 @@ export function attrTarget(children, i) {
   // Unbalanced close with no matching open — markdown-it never emits this, but
   // the guard keeps attrTarget total: no element is attached.
   return null;
+}
+
+/**
+ * GitHub-style heading slug: lowercase, punctuation stripped (letters, numbers,
+ * whitespace, `_`, and `-` survive), each whitespace character becomes a hyphen.
+ * Punctuation-only headings fall back to `"section"` so the id is never empty.
+ * @param {string} text Plain heading text.
+ * @returns {string}
+ */
+export function slugify(text) {
+  const slug = text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]+/gu, "")
+    .replace(/\s/gu, "-");
+  return slug || "section";
+}
+
+/**
+ * markdown-it plugin (core rule): every heading gets a stable slugified `id`
+ * so long pages are linkable without any JS. Duplicate slugs dedupe with
+ * `-1`/`-2` suffixes; the counters live in `env.headingSlugs` so a page whose
+ * prose renders in chunks (directives between headings) still dedupes across
+ * the whole document. Bindings and inline HTML inside a heading contribute no
+ * slug text — only literal text and inline code do.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
+function anchorPlugin(mdInstance) {
+  mdInstance.core.ruler.push("wd_heading_anchors", (state) => {
+    const counts = (state.env.headingSlugs ??= new Map());
+    const tokens = state.tokens;
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].type !== "heading_open") continue;
+      let text = "";
+      for (const child of tokens[i + 1].children ?? []) {
+        if (child.type === "text" || child.type === "code_inline") text += child.content;
+      }
+      const base = slugify(text);
+      const seen = counts.get(base) ?? 0;
+      counts.set(base, seen + 1);
+      tokens[i].attrSet("id", seen ? `${base}-${seen}` : base);
+    }
+    return false;
+  });
 }
 
 /**

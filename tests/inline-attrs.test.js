@@ -42,7 +42,8 @@ test("a trailing {.class} styles an image", () => {
 test("a link with no attr block is unchanged", () => {
   const html = compileWd(["[Plain](/p/)"]);
   assert.match(html, /<a href="\/p\/">Plain<\/a>/);
-  assert.ok(!/class=/.test(html));
+  const content = html.slice(html.indexOf("<main"));
+  assert.ok(!/class=/.test(content));
 });
 
 test("an attr block separated by a space is NOT applied (stays literal)", () => {

@@ -1,4 +1,5 @@
 ---
+html: true
 title: Dashboard — built with Darkmown
 description: A live dashboard — stat cards fetched from a serverless function, on an otherwise static page.
 transitions: true

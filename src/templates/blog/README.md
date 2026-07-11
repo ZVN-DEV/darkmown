@@ -1,12 +1,21 @@
 # Blog — a Darkmown template
 
-A markdown-native blog. Posts are plain `.md` files in `site/pages/posts/`; the
-home page loops `site/_/posts.json` to list them. Static pages, zero JavaScript.
+A markdown-native blog. Posts are plain `.md` files in `site/pages/posts/` —
+that folder is a typed content collection, and the home page is one `@loop`
+over it. No manifest, no config. Static pages, zero JavaScript.
 
 ## Add a post
 
-1. Create `site/pages/posts/<slug>.md` with a `title` in frontmatter.
-2. Add an entry to `site/_/posts.json` (`slug`, `url`, `title`, `date`, `excerpt`).
+1. Create `site/pages/posts/<slug>.md` with `title`, `date`, and `description`
+   in frontmatter (`excerpt` is optional). That's it — the home page lists it
+   automatically, newest first, and dated posts land in `rss.xml`.
+2. Optional: copy an existing post's `.skin` beside the new file — a colocated
+   `.skin` attaches automatically, keeping the reading design.
+
+`site/pages/posts/_schema.wd` type-checks every post's frontmatter at build
+time, so a typo'd or missing field fails the build with a file and line. When
+the list grows, add `paginate 10` to the loop in `site/pages/index.wd` to split
+it into `/page/2/`, `/page/3/`, … automatically.
 
 ## Commands
 

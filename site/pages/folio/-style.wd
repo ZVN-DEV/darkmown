@@ -1,3 +1,7 @@
+---
+html: true
+---
+
 <!-- Folio — shared style carrier.
 
      Both the catalog (/folio/) and the cart (/folio/cart/) `@include ./style.wd`
