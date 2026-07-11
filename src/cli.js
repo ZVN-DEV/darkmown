@@ -75,7 +75,13 @@ export async function run(argv, env = {}) {
     // `--drafts` includes `draft: true` pages in the build + feeds (staging);
     // the default production build excludes them at route discovery.
     const includeDrafts = argv.includes("--drafts");
-    const result = buildSite(cwd, { target, includeDrafts });
+    // Dev-server plumbing: `--dep-map` writes the per-route dependency map;
+    // `--changed <path>` (repeatable, implies --dep-map) attempts an incremental
+    // rebuild of just the affected routes, with a full-rebuild fallback on any
+    // uncertainty. Not part of the public CLI surface.
+    const changed = flagValues(argv, "--changed");
+    const depMap = argv.includes("--dep-map") || changed.length > 0;
+    const result = buildSite(cwd, { target, includeDrafts, changed, depMap });
     log(buildSummary(result, path.relative(cwd, result.distRoot)));
     if (target === "cloudflare")
       log("Emitted dist/_worker.js for Cloudflare Pages api/* functions");
@@ -144,8 +150,10 @@ function startDevServer({ cwd, log, warn, error }) {
   // see it on connect; the next successful rebuild clears it via `reload`.
   // Dev builds + serves `draft: true` pages (they're work-in-progress you want
   // to preview); the dev client stamps a visible banner so a draft is obvious.
+  // `depMap: true` writes the per-route dependency map that lets the rebuilds
+  // below be incremental for site/ content changes.
   try {
-    buildSite(cwd, { includeDrafts: true });
+    buildSite(cwd, { includeDrafts: true, depMap: true });
   } catch (err) {
     lastBuildError = (err instanceof Error ? err.message : String(err)).trim();
     error(`✗ Initial build failed:\n${lastBuildError}`);
@@ -153,11 +161,22 @@ function startDevServer({ cwd, log, warn, error }) {
 
   // Rebuild in a child process so changes to Darkmown's own src/ always load
   // fresh modules — an in-process rebuild would reuse the stale import cache.
-  const rebuild = () => {
+  // A site/ change additionally passes the changed path(s), so the child can
+  // rebuild only the routes whose dependency graph contains them (the builder
+  // falls back to a full rebuild on any uncertainty). A src/ change — or an
+  // event with no attributable file — queues `null`, forcing the full rebuild.
+  /** @type {Set<string | null>} */
+  const pending = new Set();
+  const rebuild = (/** @type {string | null} */ changedPath) => {
+    pending.add(changedPath);
     clearTimeout(timer);
     timer = setTimeout(() => {
+      const changed = pending.has(null) ? [] : [...pending];
+      pending.clear();
+      const args = [cliPath, "build", "--drafts", "--dep-map"];
+      for (const file of changed) args.push("--changed", /** @type {string} */ (file));
       const started = performance.now();
-      execFile(process.execPath, [cliPath, "build", "--drafts"], { cwd }, (err, stdout, stderr) => {
+      execFile(process.execPath, args, { cwd }, (err, stdout, stderr) => {
         if (err) {
           const message = (stderr || stdout || String(err)).trim();
           lastBuildError = message;
@@ -182,7 +201,15 @@ function startDevServer({ cwd, log, warn, error }) {
   for (const dir of ["site", "src"]) {
     const abs = path.join(cwd, dir);
     if (fs.existsSync(abs)) {
-      watchers.push(fs.watch(abs, { recursive: true }, rebuild));
+      watchers.push(
+        fs.watch(abs, { recursive: true }, (_event, filename) => {
+          rebuild(
+            dir === "site" && filename
+              ? path.join(dir, filename.toString()).replaceAll(path.sep, "/")
+              : null
+          );
+        })
+      );
     }
   }
 
@@ -377,11 +404,19 @@ Authoring:
  * (home `site_url` set), the sitemap URL and RSS post counts — e.g.
  * `Built 14 routes, sitemap (14 urls), rss (6 posts) into dist`. When no
  * `site_url` is set the feed clauses are omitted (a hint was already warned).
- * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null } }} result
+ * An incremental (dev `--changed`) build reports what it actually rebuilt —
+ * `Rebuilt 2 of 14 routes (/blog/, /blog/hello/) into dist` — naming the routes
+ * when there are few enough to read.
+ * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null }, incremental?: { rebuilt: string[], total: number } }} result
  * @param {string} relativeRoot `dist` relative to cwd, for the message tail.
  * @returns {string}
  */
 export function buildSummary(result, relativeRoot) {
+  if (result.incremental) {
+    const { rebuilt, total } = result.incremental;
+    const shown = rebuilt.length > 0 && rebuilt.length <= 6 ? ` (${rebuilt.join(", ")})` : "";
+    return `Rebuilt ${rebuilt.length} of ${total} routes${shown} into ${relativeRoot}`;
+  }
   const parts = [`Built ${result.routes.length} routes`];
   if (result.feeds.sitemap !== null) parts.push(`sitemap (${result.feeds.sitemap} urls)`);
   if (result.feeds.rss !== null) parts.push(`rss (${result.feeds.rss} posts)`);
@@ -409,6 +444,24 @@ export function flagValue(argv, flag) {
   const index = argv.indexOf(flag);
   if (index !== -1 && index + 1 < argv.length) return argv[index + 1];
   return undefined;
+}
+
+/**
+ * Read every occurrence of a repeatable `--flag value` / `--flag=value` option
+ * out of an argv tail (e.g. the dev server passing one `--changed <path>` per
+ * file in a debounced batch).
+ * @param {string[]} argv The argv tail.
+ * @param {string} flag The flag name, e.g. `"--changed"`.
+ * @returns {string[]} The values, in argv order (empty when the flag is absent).
+ */
+export function flagValues(argv, flag) {
+  /** @type {string[]} */
+  const values = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === flag && i + 1 < argv.length) values.push(argv[++i]);
+    else if (argv[i].startsWith(`${flag}=`)) values.push(argv[i].slice(flag.length + 1));
+  }
+  return values;
 }
 
 /**

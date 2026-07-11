@@ -278,6 +278,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
   ) {
     if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
     const dataFile = resolveInclude(source, ctx.file, ctx.context, true);
+    ctx.comp.deps.add(dataFile);
     const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
     return loopOverData(rows, itemName, bodyLines, ctx, opts);
@@ -317,7 +318,10 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index) {
     // to its entry rows at build time and static-unrolls — zero JS. This is checked
     // after state so a declared `:state` of the same name still wins.
     const collection = segs.length === 1 ? ctx.comp.collections.get(source) : undefined;
-    if (collection) return loopOverCollection(collection, source, itemName, bodyLines, ctx, opts);
+    if (collection) {
+      ctx.comp.collectionsUsed.add(source);
+      return loopOverCollection(collection, source, itemName, bodyLines, ctx, opts);
+    }
     // Inside a reactive loop, `@loop <outerItem>.<path> into x` loops a field of
     // the enclosing row item — an ITEM-RELATIVE loop the runtime fills per row.
     if (ctx.loopItem && segs[0] === ctx.loopItem && segs.length > 1) {

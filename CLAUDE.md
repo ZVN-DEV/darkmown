@@ -43,6 +43,7 @@ Styling: `src/skin.js`'s `compileSkin` turns an indentation-structural `.skin` i
 
 - `npm test` — node --test, all suites must pass
 - `npm run dev` — demo site on :5173 with SSE reload and an error overlay; **rebuilds run in a child process** so framework src changes always load fresh (don't "optimize" this back to in-process)
+- How dev rebuilds work: every dev build writes a per-route dependency map (`dist/.wd-dev-deps.json` — page file, resolved includes, colocated `.skin`/`.js`, `@loop` JSON data, collections looped). A `site/` change spawns `build --drafts --dep-map --changed <path>` and `buildSite` rebuilds only the routes whose dep graph contains the file (a collection member fans out to the collection's listing/paginated consumers); `routes.json`/`_headers`/sitemap/rss re-emit globally each time. ANY uncertainty (new/deleted/renamed file, unmapped file, feed-link change, missing/stale map) or a `src/` change ⇒ full rebuild — never trade a stale page for speed.
 - Every new feature: test in `tests/`, live demo under `site/pages/`, docs in `README.md` + `site/pages/docs/index.wd`, entry in `docs/spec-alignment.md`
 - Version bumps: `package.json` only — CLI version and scaffold pin read it dynamically
 

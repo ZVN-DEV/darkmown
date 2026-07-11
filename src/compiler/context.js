@@ -71,6 +71,12 @@
  * @property {import("./context.js").Pagination | null} pagination The pagination
  *   intent a `@loop … paginate N` recorded this compile, or null. The builder
  *   reads it to multiply routes; one paginated loop per page is supported.
+ * @property {Set<string>} deps Absolute paths of every source file this compile
+ *   read: the page itself, every `@include` target, and every `@loop` JSON data
+ *   file. The dev builder unions these (plus colocated assets) into the per-route
+ *   dependency map that drives incremental rebuilds.
+ * @property {Set<string>} collectionsUsed Names of the collections this compile
+ *   looped, so a change to any entry of a collection rebuilds its consumers.
  */
 
 /**
@@ -113,6 +119,8 @@
  * @property {string[]} warnings
  * @property {Pagination | null} pagination The pagination intent a paginated
  *   `@loop` recorded, or null. The builder reads it to multiply routes.
+ * @property {Set<string>} deps Absolute source-file dependencies of this compile.
+ * @property {Set<string>} collectionsUsed Collection names this compile looped.
  */
 
 /**
@@ -124,6 +132,8 @@
  * @property {string[]} warnings
  * @property {Pagination | null} pagination The pagination intent a paginated
  *   `@loop` recorded, or null. The builder reads it to multiply routes.
+ * @property {Set<string>} deps Absolute source-file dependencies of this compile.
+ * @property {Set<string>} collectionsUsed Collection names this compile looped.
  */
 
 /**
@@ -197,7 +207,9 @@ export function createCompilation() {
     sectionCounter: 0,
     headingSlugs: new Map(),
     collections: new Map(),
-    pagination: null
+    pagination: null,
+    deps: new Set(),
+    collectionsUsed: new Set()
   };
 }
 

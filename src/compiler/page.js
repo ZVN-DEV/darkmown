@@ -163,6 +163,8 @@ export function compilePage(file, context, options = {}) {
 
   return {
     meta: compiled.meta,
+    deps: compiled.deps,
+    collectionsUsed: compiled.collectionsUsed,
     html: `<!doctype html>
 <html lang="${escapeHtml(lang)}">
 <head>
@@ -295,7 +297,9 @@ export function compileDocument(file, context, stack = [], vars = {}, collection
     html: result.html,
     assets: comp.assets,
     warnings: comp.warnings,
-    pagination: comp.pagination
+    pagination: comp.pagination,
+    deps: comp.deps,
+    collectionsUsed: comp.collectionsUsed
   };
 }
 
@@ -321,6 +325,7 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
   const raw = fs.readFileSync(file, "utf8");
   const { meta, body, bodyLine } = parseFrontmatter(raw, file);
   warnLikelyFrontmatter(raw, file, comp);
+  comp.deps.add(file);
   collectColocatedAssets(file, context, comp.assets);
 
   if (path.extname(file) === ".md") {

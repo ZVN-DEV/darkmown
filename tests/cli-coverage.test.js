@@ -18,7 +18,15 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildSummary, CliError, helpText, isEntryPoint, nextStep, run } from "../src/cli.js";
+import {
+  buildSummary,
+  CliError,
+  flagValues,
+  helpText,
+  isEntryPoint,
+  nextStep,
+  run
+} from "../src/cli.js";
 
 const cliPath = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
@@ -205,6 +213,41 @@ test("buildSummary appends feed counts only when feeds were emitted", () => {
     buildSummary({ routes: new Array(3), feeds: { sitemap: null, rss: null } }, "out"),
     "Built 3 routes into out"
   );
+});
+
+test("buildSummary reports an incremental rebuild, naming routes only when few", () => {
+  const feeds = { sitemap: 14, rss: 6 };
+  assert.equal(
+    buildSummary(
+      { routes: new Array(14), feeds, incremental: { rebuilt: ["/a/", "/b/"], total: 14 } },
+      "dist"
+    ),
+    "Rebuilt 2 of 14 routes (/a/, /b/) into dist"
+  );
+  // Too many routes to read → the list is dropped, the counts stay.
+  const many = ["/a/", "/b/", "/c/", "/d/", "/e/", "/f/", "/g/"];
+  assert.equal(
+    buildSummary(
+      { routes: new Array(14), feeds, incremental: { rebuilt: many, total: 14 } },
+      "dist"
+    ),
+    "Rebuilt 7 of 14 routes into dist"
+  );
+  // Nothing affected (e.g. a schema of an unconsumed collection) is still honest.
+  assert.equal(
+    buildSummary({ routes: new Array(14), feeds, incremental: { rebuilt: [], total: 14 } }, "dist"),
+    "Rebuilt 0 of 14 routes into dist"
+  );
+});
+
+test("flagValues reads every repeatable --flag value / --flag=value occurrence", () => {
+  assert.deepEqual(
+    flagValues(["build", "--changed", "site/a.md", "--changed=site/b.md", "--drafts"], "--changed"),
+    ["site/a.md", "site/b.md"]
+  );
+  assert.deepEqual(flagValues(["build", "--drafts"], "--changed"), []);
+  // A trailing flag with no value contributes nothing.
+  assert.deepEqual(flagValues(["build", "--changed"], "--changed"), []);
 });
 
 test("run('build') on a site with site_url reports the feed counts in the summary", async () => {
@@ -505,13 +548,50 @@ test("dev server rebuilds on a file change and broadcasts a reload to SSE client
     // Give the SSE GET a moment to register the client before we touch a file.
     await new Promise((r) => setTimeout(r, 50));
 
-    // Touch a watched site file → fs.watch fires → debounced child `build` →
-    // success path broadcasts `event: reload`.
+    // Touch a watched site file → fs.watch fires → debounced child `build
+    // --changed <path>` → the dependency-tracked incremental rebuild recompiles
+    // just the touched route and the success path broadcasts `event: reload`.
     fs.writeFileSync(path.join(root, "site/pages/index.wd"), "# Rebuilt\n\nFresh content.\n");
 
     const data = await reloadPromise;
     assert.match(data, /event: reload/, "a successful rebuild broadcasts reload");
-    assert.match(c.stdout(), /Built \d+ routes/, "the rebuild logs the child build output");
+    assert.match(
+      c.stdout(),
+      /Rebuilt 1 of \d+ routes \(\/\) into dist/,
+      "a site content change rebuilds only the affected route"
+    );
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
+
+test("dev server runs a FULL child rebuild for a src/ change (never incremental)", async () => {
+  const root = freshDir("dev-src-full");
+  await run(["init", "."], capture(root).env);
+  // A project src/ directory registers the src watcher; changes there must
+  // always take the full-rebuild path so fresh modules load in the child.
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  fs.writeFileSync(path.join(root, "src/helper.js"), "export const x = 1;\n");
+
+  const c = capture(root);
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["dev"], c.env);
+    const origin = originOf(handle.server);
+
+    const reloadPromise = waitForSseEvent(origin, "/__wd/dev-events", "reload");
+    await new Promise((r) => setTimeout(r, 50));
+
+    fs.writeFileSync(path.join(root, "src/helper.js"), "export const x = 2;\n");
+
+    const data = await reloadPromise;
+    assert.match(data, /event: reload/);
+    assert.match(c.stdout(), /Built \d+ routes/, "a src/ change runs the full rebuild");
+    assert.doesNotMatch(c.stdout(), /Rebuilt \d+ of/, "the incremental path is never taken");
   } finally {
     if (prevPort === undefined) delete process.env.PORT;
     else process.env.PORT = prevPort;

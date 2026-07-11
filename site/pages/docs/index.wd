@@ -31,6 +31,8 @@ npm run dev
 
 Or add Darkmown to an existing project with `npm install -D @zvndev/darkmown`. The package is scoped; the command it installs is plain `darkmown`.
 
+`darkmown dev` rebuilds incrementally: it tracks which routes depend on each file (includes, colocated assets, loop data, collections), so editing one page or include recompiles only the routes it affects — and falls back to a full rebuild whenever a file is added, removed, or renamed. `routes.json`, the sitemap, and the RSS feed are regenerated on every rebuild, so they always describe the whole site.
+
 ## The two formats
 
 - `.md` is strict CommonMark. Directives, includes, and `{ bindings }` stay plain text, and the build prints a hint if it spots `.wd` syntax in a `.md` file.

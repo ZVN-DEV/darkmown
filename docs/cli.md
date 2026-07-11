@@ -55,6 +55,10 @@ Runs a live compiler:
 - injects `/__wd/dev-client.js`
 - reloads the browser through `/__wd/dev-events`
 
+Rebuilds are **incremental** for `site/` content changes. Every dev build writes a per-route dependency map to `dist/.wd-dev-deps.json` — the route's source file, every resolved `@include`, colocated `.skin`/`.js` assets, `@loop` JSON data files, and the collections it loops. A change then rebuilds only the routes whose dependency graph contains the changed file (a collection entry or its `_schema.wd` also rebuilds the collection's listing and paginated pages), and `routes.json`, `_headers`, and the sitemap/rss feeds are re-emitted globally every time so partial rebuilds stay whole-site consistent. The log reports what happened: `Rebuilt 2 of 29 routes (/blog/, /blog/hello/) into dist`.
+
+Correctness beats speed: **any uncertainty runs a full rebuild** — a new, deleted, or renamed file; a file no dependency graph accounts for; a change to the site-wide feed link; a missing or stale map. A change under `src/` (the framework's own code) always runs a full rebuild in a child process so fresh modules load. Production `darkmown build` writes no map and is unaffected.
+
 ### `darkmown build [--target cloudflare]`
 
 Compiles `site/pages` into `dist`. The output is always 100% static HTML.
