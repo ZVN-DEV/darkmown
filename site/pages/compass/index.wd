@@ -1,4 +1,5 @@
 ---
+html: true
 title: Compass — find your match
 description: A guided product-finder quiz built in one Markdown file. Four questions advance a state machine with :if branching, accumulate scores with :button actions, and a :computed recommendation lands the perfect pick. Zero hand-written JavaScript.
 image: https://darkmown.com/__wd/media/og-compass.png

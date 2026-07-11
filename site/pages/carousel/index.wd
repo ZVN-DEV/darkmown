@@ -1,4 +1,5 @@
 ---
+html: true
 title: Swiper — a draggable carousel wired to wd.subscribe
 description: An image carousel with arrow-key nav, pointer drag / swipe, and a sliding transition — the things a deliberately tiny framework leaves to you. Darkmown owns the reactive slide state, the dots, and the readout declaratively; a colocated index.js adds the gestures through window.wd.subscribe and window.wd.set.
 image: https://darkmown.com/__wd/media/og-showcase.png

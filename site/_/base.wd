@@ -1,3 +1,7 @@
+---
+html: true
+---
+
 <!-- Shared design-system carrier. Including this file injects base.skin (the
      refreshed Darkmown brand foundation: tokens, typography, components, dark
      mode) into the page. It renders no markup of its own. Pair with /nav.wd at

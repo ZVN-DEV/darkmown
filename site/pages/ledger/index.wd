@@ -1,4 +1,5 @@
 ---
+html: true
 title: Ledger — a sortable expense table in Markdown
 description: A real data table written as one Markdown file — clickable-header sorting, a live filter, running totals, and a light/dark toggle. Format pipes (| money, | date), aggregates (sum, avg, max), reactive sort, and :theme — all declarative, no hand-written JavaScript.
 image: https://darkmown.com/__wd/media/og-showcase.png

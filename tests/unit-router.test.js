@@ -55,6 +55,19 @@ test("outputPathForRoute maps named routes to nested index.html files", () => {
   );
 });
 
+test("outputPathForRoute rejects a route that resolves outside distRoot", () => {
+  assert.throws(() => outputPathForRoute("/dist", "/../escape/"), /outside the build output/);
+  assert.throws(
+    () => outputPathForRoute("/dist", "/blog/../../escape/"),
+    /outside the build output/
+  );
+  // A dot-dot that stays inside the root is contained, not rejected.
+  assert.equal(
+    outputPathForRoute("/dist", "/blog/../about/"),
+    path.join("/dist", "about", "index.html")
+  );
+});
+
 // --- discoverRoutes ---------------------------------------------------------
 
 test("discoverRoutes returns an empty list for a missing root", () => {

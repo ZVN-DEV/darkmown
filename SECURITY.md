@@ -15,10 +15,10 @@ You can expect an initial response within 72 hours. If the report is accepted, a
 Darkmown is a **trusted-author** static site generator. The threat model assumes you compile content you wrote yourself, the same way you trust your own source code — it does not assume the content is hostile. Within that boundary the guarantees below hold; three assumptions define the boundary itself:
 
 1. **Compile only trusted, author-written content.** Do not compile `.md`/`.wd` files you did not write — user-generated content, third-party docs, or form input — without applying your own sanitization first.
-2. **Raw HTML passes through by default.** `markdown-it` runs with `html: true`, so raw HTML in content is emitted verbatim. There is no built-in sanitizer, so a raw `<script>` or event-handler attribute in untrusted content would execute in the visitor's browser. A page can opt into strict mode with `html: false` frontmatter, which strips raw HTML.
+2. **Raw HTML is escaped by default; `html: true` re-opens the boundary per page.** `markdown-it` runs with `html: false`, so raw HTML in content renders as inert escaped text — a `<script>` or `onerror=` attribute in a contributed markdown file cannot execute. A page opts back into verbatim raw HTML with `html: true` frontmatter; on such a page there is no built-in sanitizer and untrusted content would execute in the visitor's browser, so reserve the opt-in for pages whose HTML you wrote yourself.
 3. **`:fetch` and `:form action=` have no host allowlist, and reactive pages require `unsafe-eval`.** A `:fetch`, `refresh=`, or `:form action=` URL is read directly from the page source; the compiler rejects non-http(s) schemes (`file:`, `data:`, `javascript:`, protocol-relative `//host`) but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Reactive pages also need `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions through `new Function`; a strict CSP without `unsafe-eval` breaks reactive pages (static pages are unaffected).
 
-This is the same trust posture as every Markdown SSG: the framework is safe for the trusted-author use case it targets, and unsafe content is the author's responsibility to sanitize before it reaches the compiler.
+The default is deliberately stricter than most Markdown SSGs: with content collections making multi-author markdown a first-class input, escaped-by-default is the only default that is safe when one of those authors isn't you. Unsafe content on an `html: true` page remains the author's responsibility to sanitize before it reaches the compiler.
 
 ## Security model
 
@@ -31,45 +31,48 @@ Things Darkmown deliberately guards at compile time and runtime:
 - **Output escaping.** Interpolated values are HTML-escaped; state scripts escape `<` to prevent script-tag breakout.
 - **Static server path containment.** The dev/preview servers resolve requests strictly inside `dist`.
 
-## The #1 footgun: raw HTML passthrough (`html: true`)
+## The #1 footgun: the raw HTML opt-in (`html: true`)
 
-This is the single most important thing to understand about Darkmown's security model. **Read this before pointing Darkmown at anything you did not write yourself.**
+This is the single most important thing to understand about Darkmown's security model. **Read this before putting `html: true` on a page.**
 
-Darkmown configures markdown-it with `html: true`, so **raw HTML in `.md`/`.wd` files is passed through verbatim** — by design, like every Markdown site generator. A raw `<script>` or an `onerror=` attribute in your content reaches the visitor's browser and runs.
+Since 1.5.1, Darkmown configures markdown-it with `html: false` by default: **raw HTML in `.md`/`.wd` files is escaped**, so a `<script>` or an `onerror=` attribute in content renders as visible inert text instead of executing. This makes multi-author content — blog collections, contributed docs, anything you merge from a PR — stored-XSS-safe without any per-page setting.
 
-- **Treat every content file as trusted input**, the same way you trust your own source code.
-- **Never compile untrusted or user-submitted Markdown** (comments, form input, third-party docs, scraped content) without sanitizing it first. Darkmown ships **no built-in sanitizer**.
-- If you must render untrusted content, sanitize it (for example with a library like DOMPurify) before it reaches the compiler.
+### The `html: true` per-page opt-in
 
-### The `html: false` per-page opt-out
-
-The built-in mitigation is per-page strict mode. Add `html: false` to a page's frontmatter and that page's Markdown renders through a strict renderer that **escapes raw HTML entirely** — a stray `<script>` becomes inert text instead of executing.
+A page whose author writes their own HTML opts back into verbatim passthrough:
 
 ```wd
 ---
-title: User comments
-html: false
+title: Landing page
+html: true
 ---
 ```
 
-Use it for any page whose content is even partly out of your hands. The default stays `html: true` because the framework targets trusted authors; `html: false` is the switch for the pages where that assumption doesn't hold.
+On an `html: true` page the pre-1.5.1 rules apply in full:
 
-> **Note:** `html: false` is a *per-page* frontmatter key — there is no global/site-wide `html: false` default today (no config loader exists yet). Flipping the global default to strict-by-default is a deliberate future option, not a shipped setting; until then, set `html: false` on each page that needs it.
+- **Treat that page's content as trusted input**, the same way you trust your own source code.
+- **Never compile untrusted or user-submitted Markdown** (comments, form input, third-party docs, scraped content) into an `html: true` page without sanitizing it first. Darkmown ships **no built-in sanitizer**.
+- If you must render untrusted content, sanitize it (for example with a library like DOMPurify) before it reaches the compiler — or simply leave the page on the default strict renderer.
+
+> **Note:** `html:` is a *per-page* (and per-include — every `.wd`/`.md` file carries its own frontmatter) key — there is no global/site-wide toggle today (no config loader exists yet). The safe default means that's the right shape: opt individual hand-written pages in, never a whole site of contributed content.
 
 ## Deploying with a Content-Security-Policy
 
 Builds emit security response headers so a deployed site is hardened by default rather than relying on hand-written config. The build writes a `dist/_headers` file (Cloudflare Pages format) and the Vercel and local `serve` paths apply the equivalent. Every page gets:
 
-- **`Content-Security-Policy`** — **static pages** (no runtime) get a tight policy. **Reactive pages** (those that ship `/__wd/runtime.js`) additionally need `script-src 'unsafe-eval' 'unsafe-inline'`, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function`. A strict CSP without `unsafe-eval` breaks reactive pages; static pages are unaffected and stay strict.
+- **`Content-Security-Policy`** — **no `'unsafe-inline'` on `script-src`, for any page.** The inline state seed is a `<script type="application/json">` data block, which is non-executable and therefore not gated by `script-src` at all; the one inline script CSP does gate — the fixed `<script type="speculationrules">` block a `transitions: true` page emits — is authorized by a build-time `'sha256-…'` hash source (plus the `'inline-speculation-rules'` keyword for browsers that check that instead). **Static pages** (no runtime) get a tight, eval-free policy. **Reactive pages** (those that ship `/__wd/runtime.js`) additionally need `script-src 'unsafe-eval'`, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function` — `'unsafe-eval'` gates the eval-family APIs, not inline script elements, so it cannot be replaced by a hash. A strict CSP without `unsafe-eval` breaks reactive pages; static pages are unaffected and stay strict.
 - **`X-Content-Type-Options: nosniff`** — stops MIME-type sniffing.
 - **`Referrer-Policy`** — limits referrer leakage.
 - **`frame-ancestors`** — clickjacking protection (controls who may frame the page).
+
+A consequence of dropping `'unsafe-inline'`: a raw inline `<script>` you write into an `html: true` page is **blocked by the shipped CSP**. Put page behavior in a colocated `.js` file instead — it is served same-origin and allowed by `script-src 'self'` — or widen `script-src` in your deploy config as a deliberate decision. (`style-src` keeps `'unsafe-inline'` for the view-transition inline `<style>`.)
 
 ### Tightening the policy
 
 The shipped CSP is a sensible default, not a finished policy for every site. Tighten or widen it for your deployment:
 
 - **`:fetch` / `:form action=` to another host needs a wider `connect-src`.** The default CSP permits same-origin connections; a call to a third-party API is otherwise blocked. Add each external host to `connect-src` explicitly — it is **not** auto-derived from your page sources.
-- **Remote images, fonts, or embeds** need their hosts added to `img-src` / `font-src` / `frame-src`.
+- **`img-src` / `media-src` default to any `https:` host** — remote images and media in markdown are legitimate on most sites, so the default keeps them working. If your site only serves its own assets, tighten both in your deploy config (`vercel.json`, `dist/_headers`, or your server): `img-src 'self' data:` (keep `data:` — the default favicon is a `data:` SVG) and `media-src 'self'`. If you hotlink from known hosts, list them instead: `img-src 'self' data: https://images.example.com`.
+- **Remote fonts or extra embed hosts** need their hosts added to `font-src` / `frame-src` (the default `frame-src` pre-authorizes exactly the YouTube no-cookie and Vimeo player origins `:embed` rewrites to).
 - **Reactive pages** require `unsafe-eval` in `script-src`; do not remove it on a page that ships the runtime. If you can keep a page static, it can run under a stricter policy.
 - The CSP is **defense-in-depth** — it limits the blast radius of a mistake but does **not** replace the trust-boundary rules above. It is not a substitute for sanitizing untrusted content, and it does not add a host allowlist to `:fetch`/`:form` (SSRF/exfiltration protection remains the author's responsibility).

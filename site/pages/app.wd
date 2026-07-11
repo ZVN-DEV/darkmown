@@ -1,4 +1,5 @@
 ---
+html: true
 title: A live app in one Markdown file
 description: One .wd file — static prose, fetched data, looped results with nested conditionals, a persistent counter, and a form that round-trips to a real server. No JavaScript written, no components, no build config.
 ---

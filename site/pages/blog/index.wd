@@ -1,4 +1,5 @@
 ---
+html: true
 title: The Darkmown Blog
 description: Notes on shipping Markdown that runs — collections, feeds, drafts, and zero-JS releases. This whole index is one @loop over a folder.
 image: https://darkmown.com/__wd/media/og.png

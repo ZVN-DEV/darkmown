@@ -26,6 +26,13 @@ import { selectMd } from "./markdown.js";
  * @typedef {import("./context.js").CompiledPage} CompiledPage
  */
 
+// Skip-to-content link: the first focusable element on every page, visually
+// hidden until keyboard focus reveals it. Styled inline (not via a skin) so it
+// behaves on pages with no stylesheet at all; it rides ahead of page skins in
+// the head, so a project skin can restyle `.wd-skip-link` freely.
+const SKIP_LINK_STYLE =
+  "<style>.wd-skip-link{position:absolute;top:0;left:0;z-index:100;padding:.55rem 1.1rem;background:#18221d;color:#f7f3ea;font:600 .9rem/1.2 system-ui,sans-serif;text-decoration:none;border-radius:0 0 8px 0;transform:translateY(-150%)}.wd-skip-link:focus{transform:none}</style>";
+
 /**
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
@@ -42,6 +49,12 @@ export function compilePage(file, context, options = {}) {
   const compiled = compileDocument(file, context, [], options.vars, options.collections);
   const title = compiled.meta.title || "Darkmown";
   const description = compiled.meta.description || "";
+  // Per-page document language for the `<html lang>` attribute (`lang: fr` in
+  // frontmatter). Defaults to English.
+  const lang =
+    typeof compiled.meta.lang === "string" && compiled.meta.lang.trim()
+      ? compiled.meta.lang.trim()
+      : "en";
   // Optional `image:` frontmatter sets the social-share preview (absolute URL).
   const image = typeof compiled.meta.image === "string" ? compiled.meta.image : "";
   /** @type {string[]} */
@@ -141,20 +154,23 @@ export function compilePage(file, context, options = {}) {
   const stamped =
     scopedSkin && scopedSkin.scoped ? stampScope(compiled.html, scopedSkin.scopeId) : compiled.html;
   const body = enhanceImages(stamped, context);
+  const { content, target } = ensureMainLandmark(body);
 
   return {
     meta: compiled.meta,
     html: `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(lang)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>${descriptionTag}
   <link rel="icon" href="${favicon}">${feedLink}
+  ${SKIP_LINK_STYLE}
   ${cssLinks}${transitions}${speculation}
 </head>
 <body>
-${body}
+<a class="wd-skip-link" href="#${escapeHtml(target)}">Skip to content</a>
+${content}
 ${scripts}
 </body>
 </html>`,
@@ -162,6 +178,23 @@ ${scripts}
     warnings: compiled.warnings,
     pagination: compiled.pagination
   };
+}
+
+/**
+ * Guarantee the page body exposes a main-content landmark the skip link can
+ * target. A body that already has a `<main>` keeps it: an author-supplied id
+ * wins as the skip target; a `<main>` without one gets `id="main"` stamped on.
+ * A body with no `<main>` at all is wrapped whole. Pure compile-time string
+ * pass (like {@link enhanceImages}) — a static page stays static.
+ * @param {string} html Assembled page body HTML.
+ * @returns {{ content: string, target: string }}
+ */
+function ensureMainLandmark(html) {
+  const open = html.match(/<main\b[^>]*>/i);
+  if (!open) return { content: `<main id="main">\n${html}\n</main>`, target: "main" };
+  const id = open[0].match(/\bid\s*=\s*["']([^"']*)["']/i);
+  if (id) return { content: html, target: id[1] || "main" };
+  return { content: html.replace(open[0], `${open[0].slice(0, -1)} id="main">`), target: "main" };
 }
 
 /**

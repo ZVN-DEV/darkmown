@@ -1,4 +1,5 @@
 ---
+html: true
 title: Darkmown docs
 description: Learn Darkmown routing, directives, state, loops, forms, and the static-to-reactive model.
 transitions: true
@@ -225,6 +226,8 @@ tags: [sales, revenue, "q1, q2"]
 
 `{ meta.title }` prints a scalar and `{ meta.tags }` joins an array with `, `. You can loop a frontmatter array at build time — `@loop meta.tags into tag` — and the page stays static. Arrays are inline flow only (`[a, b]`); quoted items keep their commas.
 
+`lang:` sets the document language on `<html lang>` per page (`lang: fr`, `lang: pt-BR`, …); it defaults to `en`. Every page also ships a visually-hidden-until-focused **skip-to-content link** targeting the main landmark — your own `<main>` is reused (an existing `id` wins as the target; an id-less one gets `id="main"`), and a page without one is wrapped in `<main id="main">`. Restyle it via `.wd-skip-link` in a skin. All compile-time — static pages stay zero-JS.
+
 ## SEO & feeds
 
 `darkmown build` writes `sitemap.xml`, `rss.xml`, and `robots.txt` — all build-time, zero client JS. There's no config file: the **home page** frontmatter carries the site's identity. Add `site_url` (absolute origin, no trailing slash) and the sitemap and feed switch on, prefixed with that origin and titled with the home `title`/`description`.
@@ -390,6 +393,8 @@ No team members yet.
 :endif
 ```
 
+The lifecycle regions announce themselves to assistive tech: a bare `:if name_loading` compiles with `role="status" aria-live="polite"` and `:if name_error` with `role="alert"` — compile-time attributes, no extra runtime JS. Write your own `role`/`aria-live` inside a region and nothing is added.
+
 Options after the URL: `method=` (default `GET`), `when=load|visible`, `timeout=<ms>`, `retry=<N>`, `headers=<key>`, and `body=<key>` (the last two name a `:state`/`:store` key). A URL can interpolate state (`"/api/users/{ userId }"`) and re-fetches automatically when that state changes; trigger a reload by hand with `:button "Reload" -> team refetch`. Loop a sub-path of fetched data with a dotted source — `@loop team.members into member`. URLs must be relative, `http(s)://`, or a leading `{ state }` interpolation — other schemes are rejected at compile time.
 
 ### Authenticated requests
@@ -532,7 +537,7 @@ The framework ships a small default `$code-*` set, so highlighting looks right o
 Darkmown is a trusted-author site generator: you compile content you wrote, the way you trust your own source. Three things define that boundary.
 
 - **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
-- **Raw HTML passes through by default.** Markdown renders with `html: true`, so raw HTML is emitted verbatim and there is no built-in sanitizer. Set `html: false` in a page's frontmatter to drop raw HTML for untrusted content.
+- **Raw HTML is escaped by default.** Markdown renders with `html: false`, so a stray `<script>` in content becomes inert text — safe for multi-author collections out of the box. Set `html: true` in a page's frontmatter to pass your own raw HTML through verbatim; there is no built-in sanitizer, so keep it off pages with content you didn't write.
 - **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. The runtime compiles `:computed` / `@loop … where` / `.class when` expressions via `new Function`, so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
 
 See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/main/SECURITY.md) in the package for the full security model.

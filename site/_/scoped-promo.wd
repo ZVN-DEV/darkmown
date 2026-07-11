@@ -1,3 +1,7 @@
+---
+html: true
+---
+
 <!-- Scoped component A. Its colocated scoped-promo.skin opts into scoping, so the
      `.card` here gets its OWN look — a warm, accent-bordered promo — without
      clashing with the identically-named `.card` in scoped-stat.wd. handleInclude

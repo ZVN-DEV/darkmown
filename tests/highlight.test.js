@@ -115,13 +115,13 @@ test("plain .md pages highlight fenced code too and flag hasCode", () => {
   assert.match(doc.html, /class="hljs/);
 });
 
-// --- html: false (strict, no-raw-HTML) instance ----------------------------
+// --- html: true (raw-HTML opt-in) instance ----------------------------------
 
-test("html: false pages still highlight (the strict instance shares the option)", () => {
+test("html: true pages still highlight (the raw-HTML instance shares the option)", () => {
   const page = compilePageWith(fixture(), [
     "---",
     "title: S",
-    "html: false",
+    "html: true",
     "---",
     "",
     "```python",

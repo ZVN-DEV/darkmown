@@ -58,6 +58,9 @@
  * @property {Assets} assets
  * @property {Map<string, unknown>} state Declared state keys → initial values.
  * @property {Set<string>} stores Page-global store names (a subset of state keys).
+ * @property {Set<string>} fetchKeys Base state keys declared by `:fetch`, so
+ *   bare `:if <key>_loading` / `:if <key>_error` regions get compile-time
+ *   `role`/`aria-live` announcements.
  * @property {string[]} warnings Non-fatal authoring hints.
  * @property {number} sectionCounter Counter for auto-generated section ids.
  * @property {Map<string, number>} headingSlugs Heading-slug occurrence counts,
@@ -182,6 +185,7 @@ export function createCompilation() {
     },
     state: new Map(),
     stores: new Set(),
+    fetchKeys: new Set(),
     warnings: [],
     sectionCounter: 0,
     headingSlugs: new Map(),

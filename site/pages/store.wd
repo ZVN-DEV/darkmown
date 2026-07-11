@@ -1,4 +1,5 @@
 ---
+html: true
 title: Global store
 transitions: true
 ---

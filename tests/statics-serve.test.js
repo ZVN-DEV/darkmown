@@ -71,7 +71,8 @@ test("serve sets security headers (incl. CSP) on a 200 HTML response", async () 
     assert.equal(res.headers["x-frame-options"], "SAMEORIGIN");
     const csp = res.headers["content-security-policy"];
     assert.match(csp, /default-src 'self'/);
-    assert.match(csp, /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
+    assert.match(csp, /script-src 'self' 'sha256-[^']+' 'inline-speculation-rules' 'unsafe-eval'/);
+    assert.doesNotMatch(csp.split("; ")[0], /'unsafe-inline'/);
     assert.match(csp, /frame-ancestors 'self'/);
     assert.match(csp, /object-src 'none'/);
     assert.equal(res.body, "<h1>Home</h1>");

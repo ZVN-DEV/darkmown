@@ -1,4 +1,5 @@
 ---
+html: true
 title: My Blog
 description: A markdown-native blog built with Darkmown.
 site_url: https://example.com

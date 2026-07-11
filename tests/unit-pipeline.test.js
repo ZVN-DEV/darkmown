@@ -337,12 +337,14 @@ test("state JSON containing < is escaped to \\u003c so it can't break out of the
   assert.match(page.html, /\\u003c\/script>/);
 });
 
-// --- html:false opt-out on .wd ----------------------------------------------
+// --- raw HTML escaped by default on .wd ---------------------------------------
 
-test("frontmatter html:false escapes raw HTML in a .wd prose body", () => {
-  const page = compile(["---", "html: false", "---", '<div class="raw">hi</div>']);
-  assert.doesNotMatch(page.html, /<div class="raw">hi<\/div>/);
-  assert.match(page.html, /&lt;div/);
+test("raw HTML in a .wd prose body is escaped by default (and with explicit html: false)", () => {
+  for (const header of [[], ["---", "html: false", "---"]]) {
+    const page = compile([...header, '<div class="raw">hi</div>']);
+    assert.doesNotMatch(page.html, /<div class="raw">hi<\/div>/);
+    assert.match(page.html, /&lt;div/);
+  }
 });
 
 test("page title and description from frontmatter populate head meta tags", () => {

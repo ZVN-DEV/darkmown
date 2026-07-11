@@ -333,6 +333,7 @@ export function handleFetch(line, ctx, index) {
   // Auto-declare the four lifecycle keys. `name` is declared via declareState
   // (collision-checked); the derived keys are seeded directly.
   const key = declareState(name, null, ctx);
+  ctx.comp.fetchKeys.add(key);
   /** @type {Record<string, unknown>} */
   const seeds = { [key]: null };
   for (const [suffix, seed] of [
@@ -1133,6 +1134,25 @@ function resolveEmbed(raw, ctx) {
 }
 
 /**
+ * Compile-time announcements for `:fetch` lifecycle regions: a bare
+ * `:if <key>_loading` over a fetch-declared key becomes a `role="status"`
+ * (polite) live region and `:if <key>_error` a `role="alert"` one, so the
+ * runtime's existing show/hide flip is read by assistive tech with zero extra
+ * runtime JS. Author-supplied `role`/`aria-live` inside the region always wins
+ * (see handleInput) — nothing is added over it.
+ * @param {string} key Resolved state key of the `:if` region.
+ * @param {string} branches Compiled truthy + falsy branch HTML.
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function fetchLiveAttr(key, branches, ctx) {
+  const match = key.match(/^(.*)_(loading|error)$/);
+  if (!match || !ctx.comp.fetchKeys.has(match[1])) return "";
+  if (/\b(?:role|aria-live)\s*=/.test(branches)) return "";
+  return match[2] === "loading" ? ' role="status" aria-live="polite"' : ' role="alert"';
+}
+
+/**
  * @param {string} line
  * @param {string[]} truthyLines
  * @param {string[]} falsyLines
@@ -1189,9 +1209,10 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index) {
     const falsy = compileBody(falsyLines, ctx).trim();
     const restPath = segs.slice(1).join(".");
     const pathAttr = restPath ? ` data-wd-path="${escapeHtml(restPath)}"` : "";
+    const liveAttr = restPath ? "" : fetchLiveAttr(key, truthy + falsy, ctx);
     const initialTruthy = Boolean(getPath(ctx.comp.state.get(key), segs.slice(1)));
     const active = initialTruthy ? truthy : falsy;
-    return `<div data-wd-if="${key}"${pathAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
+    return `<div data-wd-if="${key}"${pathAttr}${liveAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
   }
 
   // Predicate path: a comparison / logical condition. Compiles through the same

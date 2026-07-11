@@ -1,4 +1,5 @@
 ---
+html: true
 title: Pulse — service status
 description: A calm, dark observability panel built in one Markdown file — a live :fetch board, build-time rollups, and a keyed services table, all with zero hand-written JavaScript.
 image: https://darkmown.com/__wd/media/og-pulse.png

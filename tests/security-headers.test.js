@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,8 @@ import { buildSite, renderCloudflareHeaders } from "../src/builder.js";
 import {
   BASE_SECURITY_HEADERS,
   REACTIVE_CSP,
+  SPECULATION_RULES_HASH,
+  SPECULATION_RULES_JSON,
   STATIC_CSP,
   securityHeaders
 } from "../src/headers.js";
@@ -15,8 +18,13 @@ import {
 // Header constants — the CSP the framework's own output actually satisfies.
 // ---------------------------------------------------------------------------
 
-test("reactive CSP allows unsafe-eval (new Function) and unsafe-inline", () => {
-  assert.match(REACTIVE_CSP, /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
+test("reactive CSP allows unsafe-eval (new Function) but not unsafe-inline", () => {
+  assert.match(
+    REACTIVE_CSP,
+    new RegExp(
+      `script-src 'self' ${escapeRe(SPECULATION_RULES_HASH)} 'inline-speculation-rules' 'unsafe-eval'`
+    )
+  );
   assert.match(REACTIVE_CSP, /style-src 'self' 'unsafe-inline'/);
   assert.match(REACTIVE_CSP, /img-src 'self' data: https:/);
   assert.match(REACTIVE_CSP, /default-src 'self'/);
@@ -24,6 +32,19 @@ test("reactive CSP allows unsafe-eval (new Function) and unsafe-inline", () => {
   assert.match(REACTIVE_CSP, /base-uri 'self'/);
   assert.match(REACTIVE_CSP, /form-action 'self'/);
   assert.match(REACTIVE_CSP, /frame-ancestors 'self'/);
+});
+
+test("neither CSP variant grants unsafe-inline on script-src", () => {
+  // The state seed is a non-executable application/json data block (script-src
+  // does not gate it) and the only inline script — speculationrules — is
+  // authorized by its build-time sha256 hash, so unsafe-inline is gone. It must
+  // only ever appear on style-src (view-transition inline <style>).
+  for (const csp of [REACTIVE_CSP, STATIC_CSP]) {
+    const scriptSrc = csp.split("; ").find((d) => d.startsWith("script-src "));
+    assert.doesNotMatch(scriptSrc, /'unsafe-inline'/);
+    assert.match(scriptSrc, new RegExp(escapeRe(SPECULATION_RULES_HASH)));
+    assert.match(scriptSrc, /'inline-speculation-rules'/);
+  }
 });
 
 test("CSP pre-authorizes exactly the media/embed targets the framework emits", () => {
@@ -40,10 +61,58 @@ test("CSP pre-authorizes exactly the media/embed targets the framework emits", (
   }
 });
 
-test("static CSP drops unsafe-eval but keeps inline script/style for speculationrules and view-transition styles", () => {
-  assert.match(STATIC_CSP, /script-src 'self' 'unsafe-inline'(?!.*unsafe-eval)/);
+test("static CSP drops unsafe-eval and keeps inline style for view-transition styles", () => {
   assert.doesNotMatch(STATIC_CSP, /unsafe-eval/);
   assert.match(STATIC_CSP, /style-src 'self' 'unsafe-inline'/);
+});
+
+// ---------------------------------------------------------------------------
+// Drift guard: the hash source must match the speculationrules block the page
+// compiler actually emits. If page.js changes the rules, this fails before the
+// deployed CSP silently starts blocking prerender.
+// ---------------------------------------------------------------------------
+
+test("the CSP hash matches the inline speculationrules script a built page emits", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "---\ntransitions: true\n---\n\n# Hi\n");
+  buildSite(root);
+  const html = fs.readFileSync(path.join(root, "dist/index.html"), "utf8");
+  const m = /<script type="speculationrules">([\s\S]*?)<\/script>/.exec(html);
+  assert.ok(m, "expected a transitions: true page to emit a speculationrules script");
+  assert.equal(m[1], SPECULATION_RULES_JSON);
+  const hash = createHash("sha256").update(m[1]).digest("base64");
+  assert.equal(SPECULATION_RULES_HASH, `'sha256-${hash}'`);
+});
+
+test("every inline script a reactive page emits is CSP-safe without unsafe-inline", () => {
+  // Inventory check: inline <script> elements must be either non-executable
+  // application/json data blocks (not gated by script-src) or the hashed
+  // speculationrules constant. Anything else would be blocked by the shipped CSP.
+  const root = fixture();
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      "---",
+      "transitions: true",
+      "---",
+      "",
+      ":state count = 0",
+      ':store theme = "auto"',
+      ":computed double = count * 2",
+      "Count: { count }",
+      ':button "Add" -> count++'
+    ].join("\n")
+  );
+  buildSite(root);
+  const html = fs.readFileSync(path.join(root, "dist/index.html"), "utf8");
+  const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)];
+  assert.ok(inline.length > 0, "expected inline scripts to audit");
+  for (const [, attrs, content] of inline) {
+    if (/type="application\/json"/.test(attrs)) continue;
+    assert.match(attrs, /type="speculationrules"/, `unexpected inline script: <script${attrs}>`);
+    assert.equal(content, SPECULATION_RULES_JSON);
+  }
 });
 
 test("securityHeaders bundles the baseline headers with the right CSP per route kind", () => {

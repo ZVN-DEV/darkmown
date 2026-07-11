@@ -101,11 +101,22 @@ export function routeFromFile(routesRoot, file) {
 
 /**
  * Map a public route to the `index.html` output path under `distRoot`.
+ *
+ * Defense in depth: routes come from `routeFromFile` walking `site/pages`, so
+ * they can't normally carry traversal segments — but any future caller passing
+ * an unvetted route must not be able to write outside the build output. The
+ * resolved path is asserted to stay inside `distRoot`.
  * @param {string} distRoot Absolute path to the build output directory.
  * @param {string} route Public route path.
  * @returns {string}
  */
 export function outputPathForRoute(distRoot, route) {
   const clean = route === "/" ? "" : route.replace(/^\/|\/$/g, "");
-  return path.join(distRoot, clean, "index.html");
+  const out = path.join(distRoot, clean, "index.html");
+  if (!path.resolve(out).startsWith(path.resolve(distRoot) + path.sep)) {
+    throw new Error(
+      `Route "${route}" resolves outside the build output directory ${distRoot} — routes must not contain traversal segments`
+    );
+  }
+  return out;
 }

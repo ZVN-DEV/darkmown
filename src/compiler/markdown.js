@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
-// Markdown layer: the shared markdown-it instances (raw-HTML default + a lazy
-// `html: false` strict variant), the `wd_binding` inline plugin and `wd_attrs`
+// Markdown layer: the shared markdown-it instances (strict default + a lazy
+// `html: true` raw-HTML variant), the `wd_binding` inline plugin and `wd_attrs`
 // core plugin, and prose rendering with `{ name.path }` interpolation resolved
 // against the loop item / static scope / declared state.
 // ---------------------------------------------------------------------------
@@ -26,31 +26,33 @@ import {
 // with a known language. The callback returns escaped token HTML or `""` to let
 // markdown-it render a plain escaped `<code>` (graceful degradation). Both
 // instances share it so `html: false` pages highlight too.
-const md = new MarkdownIt({ html: true, highlight: highlightCode });
+const md = new MarkdownIt({ html: false, highlight: highlightCode });
 md.use(bindingPlugin);
 md.use(attrsPlugin);
 md.use(anchorPlugin);
 
-// Raw HTML in markdown passes through by default (a documented design choice).
-// Pages can opt out with frontmatter `html: false` for untrusted content; the
-// stricter instance is built lazily so the default path stays a single instance.
+// Raw HTML in markdown is escaped by default: a stray `<script>` or `onerror=`
+// attribute in content renders as inert text, so multi-author content (blog
+// collections, contributed docs) is stored-XSS-safe out of the box. A page
+// whose author writes their own HTML opts in with frontmatter `html: true`;
+// that instance is built lazily so the default path stays a single instance.
 /** @type {MarkdownIt | null} */
-let mdNoHtml = null;
+let mdRawHtml = null;
 /**
- * Pick the markdown-it instance for a page (raw HTML on by default, off with `html: false`).
+ * Pick the markdown-it instance for a page (raw HTML off by default, on with `html: true`).
  * @param {Meta} [meta]
  * @returns {MarkdownIt}
  */
 export function selectMd(meta) {
   // Frontmatter scalars stay strings (no coercion), so accept both forms.
-  if (meta?.html !== false && meta?.html !== "false") return md;
-  if (!mdNoHtml) {
-    mdNoHtml = new MarkdownIt({ html: false, highlight: highlightCode });
-    mdNoHtml.use(bindingPlugin);
-    mdNoHtml.use(attrsPlugin);
-    mdNoHtml.use(anchorPlugin);
+  if (meta?.html !== true && meta?.html !== "true") return md;
+  if (!mdRawHtml) {
+    mdRawHtml = new MarkdownIt({ html: true, highlight: highlightCode });
+    mdRawHtml.use(bindingPlugin);
+    mdRawHtml.use(attrsPlugin);
+    mdRawHtml.use(anchorPlugin);
   }
-  return mdNoHtml;
+  return mdRawHtml;
 }
 
 /**

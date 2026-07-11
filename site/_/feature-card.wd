@@ -1,3 +1,7 @@
+---
+html: true
+---
+
 <section class="feature-card">
 
 **{ card.title }**
