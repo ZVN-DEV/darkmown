@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Darkmown is pre-1.0. Only the latest published minor version receives security fixes.
+Only the latest published minor version receives security fixes.
 
 ## Reporting a vulnerability
 
@@ -35,7 +35,7 @@ Things Darkmown deliberately guards at compile time and runtime:
 
 This is the single most important thing to understand about Darkmown's security model. **Read this before putting `html: true` on a page.**
 
-Since 1.5.1, Darkmown configures markdown-it with `html: false` by default: **raw HTML in `.md`/`.wd` files is escaped**, so a `<script>` or an `onerror=` attribute in content renders as visible inert text instead of executing. This makes multi-author content — blog collections, contributed docs, anything you merge from a PR — stored-XSS-safe without any per-page setting.
+Since 2.0.0, Darkmown configures markdown-it with `html: false` by default: **raw HTML in `.md`/`.wd` files is escaped**, so a `<script>` or an `onerror=` attribute in content renders as visible inert text instead of executing. This makes multi-author content — blog collections, contributed docs, anything you merge from a PR — stored-XSS-safe without any per-page setting.
 
 ### The `html: true` per-page opt-in
 
@@ -48,7 +48,7 @@ html: true
 ---
 ```
 
-On an `html: true` page the pre-1.5.1 rules apply in full:
+On an `html: true` page the pre-2.0.0 rules apply in full:
 
 - **Treat that page's content as trusted input**, the same way you trust your own source code.
 - **Never compile untrusted or user-submitted Markdown** (comments, form input, third-party docs, scraped content) into an `html: true` page without sanitizing it first. Darkmown ships **no built-in sanitizer**.

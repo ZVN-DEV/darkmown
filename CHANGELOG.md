@@ -2,9 +2,9 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
-## 1.5.1 (Unreleased)
+## 2.0.0 — 2026-07-11
 
-Fixes and security hardening from a product review — all build-time and dev-server; the runtime is unchanged (still 7459 B gzipped). Contains one deliberate breaking change (the raw-HTML default).
+The raw-HTML markdown default flips to escaped (`html: false` — the breaking change that makes this a major), alongside security hardening and a DX pass from a product review: incremental dev rebuilds, true error line numbers, a docs table of contents, and styled templates. All build-time and dev-server; the runtime is unchanged (still 7459 B gzipped).
 
 - **BREAKING: raw HTML in markdown is now escaped by default.** markdown-it runs with `html: false`, so a raw `<script>` or `onerror=` attribute in a `.md`/`.wd` body renders as inert text instead of executing — with 1.5.0 collections making multi-author markdown first-class, passthrough-by-default was a stored-XSS default. **Migration:** add `html: true` to the frontmatter of each page or include that intentionally uses raw inline HTML (every file carries its own frontmatter; the demo site and all five scaffold templates were updated this way). `{ name }` interpolation, fenced/inline code, and highlighting are unaffected.
 - **CSP hardening: `'unsafe-inline'` removed from `script-src` on every page.** The inline state seed is a non-executable JSON data block that `script-src` never gated; the one gated inline script — the fixed `transitions: true` speculationrules block — is now authorized by a build-time `'sha256-…'` hash source (plus `'inline-speculation-rules'`), computed in `src/headers.js` and drift-guarded against the page compiler's real output. Reactive pages keep `'unsafe-eval'` (the runtime's `new Function` needs it; a hash cannot replace it). Applies to `dist/_headers`, `vercel.json`, and the local `serve`/preview server alike. A raw inline `<script>` on an `html: true` page is now blocked by the shipped CSP — use a colocated `.js` file (allowed by `'self'`) or widen `script-src` deliberately. `img-src`/`media-src` keep their `https:`-wide default; SECURITY.md documents the tightening path for self-hosted-assets sites.

@@ -801,6 +801,8 @@ A trailing `{.class .class #id}` attaches classes / an id to the inline element 
 
 The block must follow the element with no space, and works on links, images, emphasis, and inline code. It never collides with `{ name }` interpolation — an interpolation always starts with a name, never a `.` or `#`.
 
+**Headings get anchors for free.** Every markdown heading carries a stable, GitHub-style slug `id` at build time (lowercased, punctuation stripped, whitespace → hyphens; duplicates dedupe with `-1`/`-2` suffixes across the whole document), so any section of any page is deep-linkable with a plain `#the-slug` fragment — zero JS. The [docs page's](https://darkmown.com/docs/) "On this page" table of contents is just markdown links to those anchors.
+
 ## Media — `:video`, `:audio`, `:embed`
 
 *New in 1.0.* Three one-line directives replace hand-written `<video>` / `<iframe>` markup. They are **compile-time only** — they emit no `data-wd-*`, so a media-only page still ships **zero** framework JavaScript.
