@@ -82,17 +82,21 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 
 Shape a value for display with a pipe, Liquid/Angular style: `{ price | money }`, `{ joinedAt | date:"medium" }`, `{ ratio | percent }`. Pipes **chain** left to right (`{ name | trim | capitalize }`) and take literal arguments (`{ total | money:"EUR" }`, `{ bio | truncate:80 }`). They work in static prose (folded at build time, zero-JS) and on live `:state`/`:store` bindings (re-applied on every render) — identical syntax either way. The pipe list is a fixed whitelist compiled to safe calls; there is no custom-function hook and nothing is `eval`'d.
 
+A pipe shapes a value that is **in scope** — a loop variable, `:state`/`:store`, an include argument, or `meta`. The examples below read a field off a loop row `p` (e.g. inside `@loop products into p`, with `p.price == 89`, `p.joined == "2026-06-22"`, …). A bare literal like `{ 89 | money }` is **not** a name in scope, so — like any unresolved `{ … }` — it is left as literal text, braces and all; pipes only transform a value the page can resolve.
+
 | Pipe | Example | Result |
 |---|---|---|
-| `money[:currency[:locale]]` | `{ 89 \| money }` | `$89.00` |
-| `number[:decimals]` | `{ 1234.5 \| number }` | `1,234.5` |
-| `percent[:decimals]` | `{ 0.082 \| percent }` | `8%` |
-| `round[:decimals]` | `{ 3.14159 \| round:2 }` | `3.14` |
-| `date` / `time` / `datetime` `[:style]` | `{ "2026-06-22" \| date:"medium" }` | `Jun 22, 2026` |
-| `upper` / `lower` / `capitalize` | `{ "draft" \| capitalize }` | `Draft` |
-| `truncate:n` / `trim` | `{ bio \| truncate:80 }` | `…the first 80 chars…` |
-| `pluralize:"item"[:"plural"]` | `{ 3 \| pluralize:"item" }` | `3 items` |
-| `default:"—"` | `{ missing \| default:"—" }` | `—` |
+| `money[:currency[:locale]]` | `{ p.price \| money }` | `$89.00` |
+| `number[:decimals]` | `{ p.units \| number }` | `1,234.5` |
+| `percent[:decimals]` | `{ p.ratio \| percent }` | `8%` |
+| `round[:decimals]` | `{ p.pi \| round:2 }` | `3.14` |
+| `date` / `time` / `datetime` `[:style]` | `{ p.joined \| date:"medium" }` | `Jun 22, 2026` |
+| `upper` / `lower` / `capitalize` | `{ p.status \| capitalize }` | `Draft` |
+| `truncate:n` / `trim` | `{ p.bio \| truncate:80 }` | `…the first 80 chars…` |
+| `pluralize:"item"[:"plural"]` | `{ p.qty \| pluralize:"item" }` | `3 items` |
+| `default:"—"` | `{ p.nickname \| default:"—" }` | `—` |
+
+(A date-only value like `p.joined == "2026-06-22"` formats in UTC, so `date:"medium"` renders the written calendar date on any build machine.)
 
 The five **aggregates** double as pipes over a list — `{ cart \| count }`, `{ cart \| sum:"price" \| money }`, plus `avg` / `min` / `max` — and `join:", ":"name"` flattens a list of rows to a string. `date`/`time`/`datetime` are `Intl`-backed (`short` / `medium` / `long`); there is deliberately **no relative "time ago"** formatter, so builds stay byte-for-byte reproducible. An unknown pipe name is a compile error with the valid list.
 

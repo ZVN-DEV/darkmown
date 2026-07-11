@@ -71,7 +71,7 @@ const moduleDir = path.dirname(fileURLToPath(import.meta.url));
  * `/api/*` to those same functions and serves everything else as a static asset.
  *
  * @param {string} [cwd] Project working directory (defaults to `process.cwd()`).
- * @param {{ target?: string, includeDrafts?: boolean, depMap?: boolean, changed?: string[] }} [options]
+ * @param {{ target?: string, includeDrafts?: boolean, depMap?: boolean, changed?: string[], quietFeedHints?: boolean }} [options]
  *   `target: "cloudflare"` emits the Pages worker. `includeDrafts: true` keeps
  *   `draft: true` pages in the build + feeds (dev / `build --drafts`); default
  *   excludes them at route discovery so feeds never see a draft. `depMap: true`
@@ -108,7 +108,7 @@ export function buildSite(cwd = process.cwd(), options = {}) {
  * The full site build: wipe `dist`, compile every route, emit every global file.
  * @param {string} cwd
  * @param {Paths} paths
- * @param {{ target?: string, includeDrafts?: boolean, depMap?: boolean }} options
+ * @param {{ target?: string, includeDrafts?: boolean, depMap?: boolean, quietFeedHints?: boolean }} options
  * @returns {BuildResult}
  */
 function buildFull(cwd, paths, options) {
@@ -168,7 +168,7 @@ function buildFull(cwd, paths, options) {
   // already filtered out of `routes`, so neither feed can ever see one. The
   // paginated 2+ routes are indexable HTML too, so they join the sitemap (RSS is
   // dated-posts-only, which they are not, so it's unaffected).
-  const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths);
+  const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths, options.quietFeedHints);
 
   // Page-colocated static assets (images, SVG, fonts, …) copy last, so the guard
   // sees every emitted route/framework file already on disk.
@@ -200,7 +200,7 @@ function buildFull(cwd, paths, options) {
  * time so a partial rebuild can never leave them inconsistent.
  * @param {string} cwd
  * @param {Paths} paths
- * @param {{ target?: string, includeDrafts?: boolean }} options
+ * @param {{ target?: string, includeDrafts?: boolean, quietFeedHints?: boolean }} options
  * @param {string[]} changed Project-relative POSIX paths of the changed files.
  * @returns {BuildResult | null} null → caller runs the full build.
  */
@@ -276,7 +276,7 @@ function buildIncremental(cwd, paths, options, changed) {
     }
   }
   emitGlobalFiles(manifest, paths);
-  const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths);
+  const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths, options.quietFeedHints);
   writeDepMap(paths, feedLink, map.routes);
 
   return {
@@ -661,17 +661,33 @@ function hasDatedPost(routes) {
  * @param {Route[]} routes Emitted (post-draft-filter) routes.
  * @param {{ siteUrl: string, title: string, description: string }} identity
  * @param {Paths} paths
+ * @param {boolean} [quietHints] Suppress the site_url/placeholder feed hints — set
+ *   on dev-server rebuilds so they print once per session (at the initial build)
+ *   instead of on every incremental rebuild. A production `darkmown build` never
+ *   sets it, so the hints always show there.
  * @returns {{ sitemap: number | null, rss: number | null }}
  */
-function emitFeeds(routes, identity, paths) {
+function emitFeeds(routes, identity, paths, quietHints = false) {
   fs.writeFileSync(path.join(paths.distRoot, "robots.txt"), buildRobots(identity.siteUrl));
 
   if (!identity.siteUrl) {
-    console.warn(
-      "hint: set site_url in site/pages/index frontmatter to emit sitemap.xml + rss.xml " +
-        "(e.g. `site_url: https://example.com`). robots.txt was still written."
-    );
+    if (!quietHints) {
+      console.warn(
+        "hint: set site_url in site/pages/index frontmatter to emit sitemap.xml + rss.xml " +
+          "(e.g. `site_url: https://example.com`). robots.txt was still written."
+      );
+    }
     return { sitemap: null, rss: null };
+  }
+
+  // The blog template ships `site_url: https://example.com` as a placeholder — a
+  // real build against it would point every feed/sitemap URL at example.com.
+  // Flag it so the author swaps in their real origin before deploying.
+  if (identity.siteUrl === "https://example.com" && !quietHints) {
+    console.warn(
+      "hint: site_url is the placeholder https://example.com — sitemap.xml and rss.xml will " +
+        "point at example.com. Set it to your real origin before deploying."
+    );
   }
 
   // The `/404/` route is never a feed entry — it's not an indexable page and

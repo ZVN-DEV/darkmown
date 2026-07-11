@@ -82,7 +82,10 @@ export async function run(argv, env = {}) {
     // uncertainty. Not part of the public CLI surface.
     const changed = flagValues(argv, "--changed");
     const depMap = argv.includes("--dep-map") || changed.length > 0;
-    const result = buildSite(cwd, { target, includeDrafts, changed, depMap });
+    // Dev rebuilds pass this so the site_url/placeholder feed hints print once per
+    // session (from the initial in-process build) instead of on every rebuild.
+    const quietFeedHints = argv.includes("--quiet-feed-hints");
+    const result = buildSite(cwd, { target, includeDrafts, changed, depMap, quietFeedHints });
     log(buildSummary(result, path.relative(cwd, result.distRoot)));
     if (target === "cloudflare")
       log("Emitted dist/_worker.js for Cloudflare Pages api/* functions");
@@ -169,7 +172,7 @@ function startDevServer({ cwd, log, warn, error }) {
   // silently stop rebuilding affected routes.
   const runBuild = (/** @type {string[]} */ changed) =>
     new Promise((/** @type {(value?: void) => void} */ done) => {
-      const args = [cliPath, "build", "--drafts", "--dep-map"];
+      const args = [cliPath, "build", "--drafts", "--dep-map", "--quiet-feed-hints"];
       for (const file of changed) args.push("--changed", file);
       const started = performance.now();
       execFile(process.execPath, args, { cwd }, (err, stdout, stderr) => {

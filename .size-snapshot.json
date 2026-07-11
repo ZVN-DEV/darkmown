@@ -1,7 +1,7 @@
 {
   "runtime": {
     "file": "dist/__wd/runtime.js",
-    "gzip": 7459,
+    "gzip": 7518,
     "budget": 8192
   },
   "behaviors": {

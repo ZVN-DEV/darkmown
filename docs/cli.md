@@ -25,7 +25,7 @@ Prints the installed package version.
 Scaffolds a Darkmown site from a template (default: `starter`). Available templates:
 
 - **`starter`** — the minimal counter + todo-loop site.
-- **`blog`** — markdown posts + a `.wd` index that loops a JSON manifest.
+- **`blog`** — markdown posts as a typed content collection: `site/pages/posts/` holds the `.md` posts, a `_schema.wd` type-checks each one's frontmatter at build time, and the `.wd` index is one `@loop posts into post sort by post.date desc` over the folder. Adding a post is dropping a `.md` file — no manifest to maintain.
 - **`store`** — product grid, a shared `:store` cart, and a checkout that posts to `api/checkout.js`.
 - **`dashboard`** — stat cards that `:fetch` from `api/metrics.js`.
 - **`landing`** — a marketing one-pager with a `:carousel`.

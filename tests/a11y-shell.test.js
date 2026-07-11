@@ -196,6 +196,35 @@ test("a _loading state key not declared by :fetch gets no live-region attributes
   assert.doesNotMatch(html, /role="status"/);
 });
 
+// The documented four-state pattern: the loading region's falsy branch compiles
+// to include the nested error region (which itself carries a framework-added
+// role="alert"). The guard must not read that descendant HTML as author aria and
+// suppress the loading region's own role="status".
+const CHAINED_FETCH_PAGE = [
+  ':fetch roster from "/__wd/data/team.json"',
+  "",
+  ":if roster_loading",
+  "Loading…",
+  ":else if roster_error",
+  "Something broke.",
+  ":else",
+  "Loaded.",
+  ":endif"
+];
+
+test("chained loading region keeps role=status aria-live=polite (nested error not mistaken for author aria)", () => {
+  const { html } = compileWd(CHAINED_FETCH_PAGE);
+  assert.match(
+    html,
+    /<div data-wd-if="roster_loading" role="status" aria-live="polite" data-wd-if-active="false">/
+  );
+});
+
+test("chained error region gets role=alert", () => {
+  const { html } = compileWd(CHAINED_FETCH_PAGE);
+  assert.match(html, /<div data-wd-if="roster_error" role="alert" data-wd-if-active="false">/);
+});
+
 test("a dotted path under a fetch lifecycle key stays unannounced", () => {
   const { html } = compileWd([
     ':fetch posts from "/api/posts.json"',

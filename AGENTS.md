@@ -9,6 +9,19 @@ Darkmown is a Markdown-native web framework. You build sites by writing `.md` an
 - To make a `.md` page interactive, **rename it to `.wd`**. ⚠️ Renaming means the old `.md` is **gone** — never leave both `index.md` and `index.wd`, that is a fatal `Duplicate route` build error. Upgrade = delete the `.md`, create the `.wd`.
 - Static pages ship **zero** JavaScript; a page loads the ~7.4 KB gzipped runtime (CI-enforced under 8 KB) only if it declares reactive behavior.
 
+### ⚠️ Raw HTML is escaped by default (since 2.0.0)
+
+Raw HTML you write in a `.md`/`.wd` body is **escaped by default** — a `<div>`, `<a class="btn">`, or `<main class="hero">` renders as *literal text*, not markup, unless you opt the page in. **To use any raw HTML on a page, add `html: true` to that file's frontmatter** (every page — and every `@include` — carries its own frontmatter, so opt each in). Rule of thumb: **if a page contains a raw HTML tag, it needs `html: true`.**
+
+```wd
+---
+title: My page
+html: true          ← required for the raw <main>/<div>/<a> below to render as HTML
+---
+```
+
+`{ name }` interpolation, directives, and Markdown never needed `html: true` — only literal HTML tags do. One thing `html: true` does **not** unlock: an inline `<script>` is still blocked by the shipped Content-Security-Policy — put behavior in a colocated `.js` file instead.
+
 ## Project layout & routing
 
 ```
@@ -44,7 +57,7 @@ Count: { count }
 :button "Add item" -> cart += {"id": 1, "name": "Sticker"}
 :button "Reset" -> count = 0
 ```
-Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list += <json>`, `x = <json>`. Target must be declared `:state`. Literal values are JSON. **`:button` is for state actions only** — for a link styled as a button, write raw HTML `<a class="btn" href="…">`.
+Button actions are a **fixed whitelist**: `x++`, `x--`, `x += <number>`, `list += <json>`, `x = <json>`. Target must be declared `:state`. Literal values are JSON. **`:button` is for state actions only** — for a link styled as a button, write raw HTML `<a class="btn" href="…">` (raw HTML needs `html: true` in the page frontmatter — see the raw-HTML note above; or use a trailing `[label](/url){.btn}` inline-attribute, which needs no `html:` opt-in).
 
 **Per-row actions (inside a reactive `@loop … into item`):** two actions reference the current row instead of a JSON literal —
 ```wd
@@ -255,7 +268,7 @@ Always include: a tokens block, a real type scale, generous spacing, a `max-widt
 
 **Scoped styles — opt in with `scoped`.** A `.skin` is **global** by default (style site-wide; the right default for your design system). To stop a reusable component's classes from clashing with the rest of the page, make the **first line** of its `.skin` the word `scoped` — its selectors then only match the component it's colocated with (a page skin scopes that page; an include skin scopes just that include's subtree). You still write `class="card"`; the build stamps a `data-wd-scope` attribute and rewrites the selectors — zero runtime, a static page stays static. **Tokens stay global** (a `tokens`/`tokens dark` block still emits `:root` vars, so `$accent` and dark mode keep working). Escape a single rule with `:global(.x)` (whole-selector only). `page`/`*`/`html`/`body`/`::selection` are a compile error in a scoped skin — those belong in a global skin.
 
-**Layout gotcha — CTAs and link rows.** Markdown wraps adjacent links/buttons on consecutive lines into a single `<p>`, so putting `display:flex` on their container won't space them. To lay out a row of buttons or nav links, wrap them in explicit raw HTML and style that:
+**Layout gotcha — CTAs and link rows.** Markdown wraps adjacent links/buttons on consecutive lines into a single `<p>`, so putting `display:flex` on their container won't space them. To lay out a row of buttons or nav links, wrap them in explicit raw HTML and style that (the page needs `html: true` in its frontmatter for the raw `<div>`/`<a>` to render — see the raw-HTML note above):
 ```wd
 <div class="actions">
 <a class="btn" href="/signup">Start free</a>
@@ -274,7 +287,7 @@ Always include: a tokens block, a real type scale, generous spacing, a `max-widt
 
 Directives are narrow on purpose. For real logic (filtering, custom interactions), use a colocated `.js` with `window.wd` (`wd.get`, `wd.set`, `wd.state`, `wd.render`). Section state is keyed `sectionId:name`.
 
-**Canonical "filter a list" pattern** (filtering is not a directive). Keep the fetched/source list intact and filter the rendered DOM — do not overwrite the source state, do not poll with setInterval:
+**Canonical "filter a list" pattern** (filtering is not a directive). Keep the fetched/source list intact and filter the rendered DOM — do not overwrite the source state, do not poll with setInterval (the raw `<input>` needs `html: true` in the page frontmatter, or use `:bind q` which needs no opt-in):
 ```wd
 <input id="q" placeholder="Search" autocomplete="off">
 
@@ -313,6 +326,7 @@ This visual DOM filter is fine for a static fetched list. (Note: a `wd.render()`
 ```wd
 ---
 title: Hello
+html: true          ← the raw <main class="hero"> below needs this
 ---
 
 @include /nav.wd

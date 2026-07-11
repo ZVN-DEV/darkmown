@@ -39,6 +39,8 @@ That loop also proves `:if` over loop items: the lead badge is decided per row.
 
 Every `:fetch` tracks the whole lifecycle — `loading`, `error`, `empty`, and data — so a page can answer each one. Here the same primitive shows an **error** (a missing URL 404s) and an **empty** result (a file that is just `[]`):
 
+*(Heads up: the browser console will log a `404` for `intentionally-missing.json` on this page — that failure is deliberate, so the error branch below has something real to show.)*
+
 :fetch broken from "/__wd/data/intentionally-missing.json"
 
 :if broken_error

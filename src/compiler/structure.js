@@ -203,15 +203,22 @@ export function handleCarousel(line, bodyLines, ctx, index) {
  * runtime's existing show/hide flip is read by assistive tech with zero extra
  * runtime JS. Author-supplied `role`/`aria-live` inside the region always wins
  * (see handleInput) — nothing is added over it.
+ *
+ * The author-aria check reads the region's own RAW SOURCE lines, not its compiled
+ * branch HTML: in the documented chained pattern (`:if x_loading` / `:else if
+ * x_error` / `:else`) the loading region's falsy branch *contains* the nested
+ * error region's framework-added `role="alert"`, and matching that would falsely
+ * suppress the loading region's own `role="status"`. Framework-added attributes
+ * never appear in source, so only genuine author `role`/`aria-live` can match.
  * @param {string} key Resolved state key of the `:if` region.
- * @param {string} branches Compiled truthy + falsy branch HTML.
+ * @param {string[]} sourceLines The region's own truthy + falsy source lines.
  * @param {Ctx} ctx
  * @returns {string}
  */
-function fetchLiveAttr(key, branches, ctx) {
+function fetchLiveAttr(key, sourceLines, ctx) {
   const match = key.match(/^(.*)_(loading|error)$/);
   if (!match || !ctx.comp.fetchKeys.has(match[1])) return "";
-  if (/\b(?:role|aria-live)\s*=/.test(branches)) return "";
+  if (/\b(?:role|aria-live)\s*=/.test(sourceLines.join("\n"))) return "";
   return match[2] === "loading" ? ' role="status" aria-live="polite"' : ' role="alert"';
 }
 
@@ -276,7 +283,7 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
     const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
     const restPath = segs.slice(1).join(".");
     const pathAttr = restPath ? ` data-wd-path="${escapeHtml(restPath)}"` : "";
-    const liveAttr = restPath ? "" : fetchLiveAttr(key, truthy + falsy, ctx);
+    const liveAttr = restPath ? "" : fetchLiveAttr(key, [...truthyLines, ...falsyLines], ctx);
     const initialTruthy = Boolean(getPath(ctx.comp.state.get(key), segs.slice(1)));
     const active = initialTruthy ? truthy : falsy;
     return `<div data-wd-if="${key}"${pathAttr}${liveAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
