@@ -45,6 +45,29 @@ test("the repo's own site builds with --drafts (staging) and includes the draft"
   assert.ok(fs.existsSync(path.join(root, "dist/blog/unfinished-thoughts/index.html")));
 });
 
+test("every demo blog post links a stylesheet and stays static (zero JS)", () => {
+  const root = siteCopy();
+  const result = buildSite(root, { includeDrafts: true });
+
+  // The posts are plain .md — they can't @include /base.wd, so each carries a
+  // colocated .skin. Without it darkmown.com posts render unstyled (bare HTML).
+  const posts = result.routes.filter(
+    (route) => route.file.endsWith(".md") && /^\/blog\/[^/]+\/$/.test(route.route)
+  );
+  assert.ok(posts.length >= 5, `expected the demo blog posts (saw ${posts.length})`);
+
+  for (const post of posts) {
+    assert.ok(post.assets.skins.length > 0, `${post.route} links no stylesheet`);
+    assert.equal(post.assets.runtime, false, `${post.route} must stay static`);
+    assert.deepEqual(post.assets.scripts, [], `${post.route} must ship no scripts`);
+    const html = fs.readFileSync(
+      path.join(root, "dist", post.route.slice(1), "index.html"),
+      "utf8"
+    );
+    assert.match(html, /<link rel="stylesheet"/, `${post.route} HTML lacks the stylesheet link`);
+  }
+});
+
 test("the docs table of contents is honest: every #fragment link targets a real heading id, statically", () => {
   const root = siteCopy();
   const result = buildSite(root, { includeDrafts: true });
