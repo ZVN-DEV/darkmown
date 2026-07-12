@@ -59,6 +59,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - `darkmown build [--target cloudflare] [--drafts]` writes static output to `dist` (plus `sitemap.xml`/`rss.xml`/`robots.txt`); `--drafts` includes `draft: true` pages for staging.
 - `darkmown deploy <vercel|cloudflare> [--prod]` builds and deploys via the platform CLI.
 - `darkmown serve` previews the built `dist` locally.
+- `darkmown catalog [--llms]` prints the machine-readable directive catalog (JSON), or with `--llms` a compact cheatsheet — see [AI authoring](#ai-authoring).
 - `darkmown version` prints the installed package version.
 - `darkmown help` prints CLI usage.
 
@@ -983,6 +984,38 @@ const { html, assets } = compileFromMemory(
 ```
 
 Includes, colocated `.skin`/`.js` detection, and `@loop` JSON-data reads all resolve against the map (anything not in it is simply "absent"), and it throws the **same `file:line` compile errors** as the CLI — the error DX is identical. This is exactly the entry point the [browser playground](https://darkmown.com/playground/) is built on: markdown-it and the compiler bundled to one asset, compiling `.wd`/`.md` on every keystroke and rendering the result into an iframe. On disk, `compilePage(file, paths)` is the same compile with a filesystem reader injected for you.
+
+### Structured compile errors — `err.wd`
+
+Every compile error is still a plain `Error` with the same `file:line` message, but it now also carries a machine-readable mirror on `err.wd` — so an AI edit loop (or an editor) gets the facts without re-parsing the prose:
+
+```js
+import { compileFromMemory } from "@zvndev/darkmown";
+
+try {
+  compileFromMemory({ "site/pages/index.wd": ":state x" }, "site/pages/index.wd");
+} catch (err) {
+  err.message; // "Malformed :state in …/index.wd:1: :state x. Use: :state name = value [persist] — e.g. :state count = 0"
+  err.wd;      // { file: "…/index.wd", line: 1, hint: ":state name = value [persist] — e.g. …", example: ":state count = 0" }
+}
+```
+
+`example` is always a concrete, **compilable** line (never a `[placeholder]`), and every corrective `Use:` hint that contains bracket-placeholders ends with a matching `— e.g. <valid line>`. This is a deliberate affordance for small local models, which otherwise copy `[optional]`-style placeholders into source verbatim.
+
+## AI authoring
+
+Darkmown ships its own description of the `.wd` language — the same tables the compiler validates against — so a tool can teach a model to write `.wd` and constrain its output to what compiles.
+
+- **Directive catalog** — `darkmown catalog` prints structured JSON: every directive, `@loop` clause, loop variable, button action, format pipe, and predicate operator, each with a syntax template, a one-line description, one concrete example, and whether it needs the reactive runtime. Importable too: `import { directiveCatalog } from "@zvndev/darkmown/catalog"`.
+- **Cheatsheet (`llms.txt`)** — `darkmown catalog --llms` prints a compact (~90-line) markdown cheatsheet generated from the same data — the artifact you stuff into a model's system prompt. Every build also writes it to `dist/llms.txt`.
+- **GBNF grammar** — [`grammar/wd-directives.gbnf`](grammar/wd-directives.gbnf) is a generated [GBNF](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md) grammar for `.wd` directive lines. Point llama.cpp (or any grammar-constrained decoder) at it to make invalid directive lines — JS idioms like `cart.filter(...)`, HTML muscle-memory like `::: card class="…"` — literally unrepresentable during generation. Regenerate with `node scripts/gen-grammar.mjs`.
+
+```sh
+darkmown catalog --llms > system-prompt.md   # paste into a model's context
+darkmown build                               # also emits dist/llms.txt
+```
+
+Because the catalog, cheatsheet, grammar, and error `example`s are all generated from the compiler's own tables, they cannot drift from what actually compiles (enforced by tests).
 
 ## Editor support
 

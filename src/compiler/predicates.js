@@ -5,6 +5,7 @@
 // readers — no identifier survives un-mapped, so no raw user content is eval'd.
 // ---------------------------------------------------------------------------
 
+import { wdError } from "./context.js";
 import { astOf, evalAst } from "./expr-ast.js";
 import { getPath, lookupVar, resolveStateKey } from "./interpolation.js";
 
@@ -12,6 +13,20 @@ import { getPath, lookupVar, resolveStateKey } from "./interpolation.js";
  * @typedef {import("./context.js").Ctx} Ctx
  * @typedef {import("./context.js").Predicate} Predicate
  */
+
+// The comparison operators a `where` / `.class when` / `:if` / `:computed`
+// condition may use, longest-match first so `>=` wins over `>`. The single
+// source of truth: the operator regex is built from this list, and the directive
+// catalog + GBNF grammar enumerate the same array (drift-guarded in tests).
+export const PREDICATE_OPS = ["contains", "==", "!=", ">=", "<=", ">", "<"];
+
+// The logical joiners between conditions (`and`/`or`), plus a leading `not` the
+// `.class when` / `:if` paths accept. Catalogued alongside the operators.
+export const PREDICATE_JOINERS = ["and", "or", "not"];
+
+// `left <op> right` where <op> is one of PREDICATE_OPS. Built from the array so
+// adding an operator in one place updates the parser and the catalog together.
+const CONDITION_RE = new RegExp(`^(.+?)\\s+(${PREDICATE_OPS.join("|")})\\s+(.+)$`, "i");
 
 // Compile a `where` predicate to a safe JS boolean expression over I()/S()/C().
 // Conditions (operand <op> operand) join with `and`/`or`; operands are loop-item
@@ -46,11 +61,15 @@ export function compilePredicate(raw, itemName, ctx) {
  * @returns {{ expr: string, usesState: boolean }}
  */
 function compileCondition(cond, itemName, ctx) {
-  const m = cond.match(/^(.+?)\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
-  if (!m)
-    throw new Error(
-      `Malformed where-condition "${cond}" in ${ctx.file}. Use: ${itemName}.field contains state, or ${itemName}.field <op> value.`
-    );
+  const m = cond.match(CONDITION_RE);
+  if (!m) {
+    const hint = `${itemName}.field contains state, or ${itemName}.field <op> value — e.g. ${itemName}.price < 50`;
+    throw wdError(`Malformed where-condition "${cond}" in ${ctx.file}. Use: ${hint}`, {
+      file: ctx.file,
+      hint,
+      example: `${itemName}.price < 50`
+    });
+  }
   const left = compileOperand(m[1].trim(), itemName, ctx);
   const right = compileOperand(m[3].trim(), itemName, ctx);
   const usesState = left.usesState || right.usesState;
@@ -189,7 +208,7 @@ export function compileWhen(raw, ctx, what = '"::: … when"') {
       negate = true;
       seg = seg.replace(/^not\s+/i, "").trim();
     }
-    const opMatch = seg.match(/^(.+?)\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
+    const opMatch = seg.match(CONDITION_RE);
     let expr;
     if (opMatch) {
       const left = compileWhenOperand(opMatch[1].trim(), ctx, what);

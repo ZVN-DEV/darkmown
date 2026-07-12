@@ -604,6 +604,20 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/master/SECURITY.md) i
 - Both work for included fragments too, by basename.
 - Any other file under `site/pages/` (an image, font, PDF — anything that isn't a `.md`/`.wd` route or a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type. So `site/pages/logo.svg` is served at `/logo.svg`. Assets below hidden path segments (`.`, `-`, or `_`) and symlinked page assets are skipped, matching the routing privacy rule. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
 
+## AI authoring
+
+Darkmown ships a machine-readable description of its own language, so an AI tool can learn `.wd` and be constrained to output that compiles. It is all generated from the compiler's own tables, so it never drifts from the real grammar.
+
+- **`darkmown catalog`** prints structured JSON: every directive, `@loop` clause, loop variable, button action, format pipe, and predicate operator — each with a syntax template, a one-line description, one concrete example, and whether it needs the reactive runtime. Import it too: `import { directiveCatalog } from "@zvndev/darkmown/catalog"`.
+- **`darkmown catalog --llms`** prints a compact (~90-line) cheatsheet — the artifact you paste into a model's system prompt. Every build also writes it to `dist/llms.txt`.
+- **`grammar/wd-directives.gbnf`** is a generated GBNF grammar for `.wd` directive lines. Point a grammar-constrained decoder (llama.cpp and friends) at it to make invalid directive lines — JS idioms, HTML muscle-memory — impossible to generate.
+
+```sh
+darkmown catalog --llms > system-prompt.md
+```
+
+Compile errors help here too: every corrective `Use:` hint ends with a concrete `— e.g. <valid line>`, and each thrown error carries a structured `err.wd = { file, line, hint, example }` mirror alongside its message — so an edit-and-retry loop gets the fix without parsing prose.
+
 ## CLI reference
 
 The `darkmown` command (installed by `npx @zvndev/darkmown`) is the whole tool — every command is one word:
@@ -612,6 +626,7 @@ The `darkmown` command (installed by `npx @zvndev/darkmown`) is the whole tool �
 - `darkmown dev` — the live compiler: browser reload, an in-browser error overlay, incremental rebuilds, and a local runner for `api/*` functions.
 - `darkmown build [--target cloudflare] [--drafts]` — write 100% static output to `dist/` (plus `sitemap.xml` / `rss.xml` / `robots.txt`); `--drafts` includes `draft: true` pages for a staging deploy.
 - `darkmown serve` — preview the built `dist/` locally (static only; use `dev` to exercise `api/*`).
+- `darkmown catalog [--llms]` — print the `.wd` directive catalog as JSON, or with `--llms` a compact cheatsheet for priming an AI model (see [AI authoring](#ai-authoring)).
 - `darkmown deploy <vercel|cloudflare> [--prod]` — build (target-aware) and deploy through the platform CLI, printing your URL; an unauthenticated CLI surfaces the login to run first.
 - `darkmown version` / `darkmown help` — print the installed version, or the full command summary and directive syntax.
 
