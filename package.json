@@ -35,7 +35,8 @@
     "prepare": "husky || true",
     "prepublish:check": "npm run typecheck && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
     "prepublishOnly": "npm run prepublish:check",
-    "og": "node scripts/og-image.mjs"
+    "og": "node scripts/og-image.mjs",
+    "bench:build": "node scripts/bench-build.mjs"
   },
   "lint-staged": {
     "*.{js,json}": "biome check --no-errors-on-unmatched --files-ignore-unknown=true"
