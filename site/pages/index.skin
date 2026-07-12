@@ -29,7 +29,32 @@
 .hero-cta
   display flex
   flex-wrap wrap
-  margin-bottom 2rem
+  margin-bottom 1.5rem
+
+.hero-install
+  display inline-flex
+  align-items center
+  gap .55rem
+  max-width 100%
+  margin 0 0 2rem
+  padding .7rem 1rem
+  border 1px solid $line
+  radius 10px
+  bg $sunk
+  font-family ui-monospace, SFMono-Regular, Menlo, monospace
+  overflow-x auto
+
+.hero-install::before
+  content "$"
+  color $accent
+  font-weight 700
+  flex-shrink 0
+
+.hero-install code
+  font-family inherit
+  font-size .95rem
+  color $ink
+  white-space nowrap
 
 .hero-stats
   display grid
