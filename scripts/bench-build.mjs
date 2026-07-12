@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // Build throughput benchmark. Generates a synthetic-but-realistic site in a
 // temp dir (default 1000 pages: ~80% `.md` posts in a collection folder with
 // frontmatter + headings/lists/links/fenced code, ~20% `.wd` pages with a
@@ -26,12 +27,12 @@
 // count. In-process reads slightly slower than the spawn because it runs second
 // and its full-build dist wipe removes the spawn run's 1000-route output.
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const cliPath = path.join(repoRoot, "src", "cli.js");
@@ -55,8 +56,18 @@ const cleanup = !userDir;
 // Deterministic pseudo-variation so every post differs without a dependency.
 const TOPICS = ["routing", "collections", "feeds", "includes", "loops", "skins", "state", "forms"];
 const WORDS = [
-  "static", "reactive", "compile", "manifest", "directive", "frontmatter",
-  "sitemap", "runtime", "keyed", "scoped", "paginated", "hardened"
+  "static",
+  "reactive",
+  "compile",
+  "manifest",
+  "directive",
+  "frontmatter",
+  "sitemap",
+  "runtime",
+  "keyed",
+  "scoped",
+  "paginated",
+  "hardened"
 ];
 const pick = (arr, i) => arr[i % arr.length];
 
@@ -158,10 +169,7 @@ function generateSite(dir, total) {
       2
     )
   );
-  fs.writeFileSync(
-    path.join(shelfDir, "bench-card.wd"),
-    "**{ item.title }**\n\n{ item.body }\n"
-  );
+  fs.writeFileSync(path.join(shelfDir, "bench-card.wd"), "**{ item.title }**\n\n{ item.body }\n");
   fs.writeFileSync(
     path.join(shelfDir, "bench-header.wd"),
     "Shared header include — same file on every `.wd` page.\n"
@@ -204,7 +212,9 @@ let exitCode = 0;
 try {
   const { mdCount, wdCount } = generateSite(siteDir, pageCount);
   console.log(`bench:build — ${pageCount} pages (${mdCount + 1} .md incl. home, ${wdCount} .wd)`);
-  console.log(`host: ${os.cpus()[0]?.model ?? "unknown CPU"} x${os.cpus().length}, node ${process.version}`);
+  console.log(
+    `host: ${os.cpus()[0]?.model ?? "unknown CPU"} x${os.cpus().length}, node ${process.version}`
+  );
   console.log(`site: ${siteDir}`);
 
   // Cold spawn — what a real `darkmown build` costs, process startup included.
