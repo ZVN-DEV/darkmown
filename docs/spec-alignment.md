@@ -6,10 +6,11 @@ This audit compares the current Darkmown implementation with the original MARROW
 
 - **Markdown-first authoring:** `.md` is strict CommonMark rendered by a real parser (markdown-it); `.wd` is the same Markdown plus first-party directives. Renaming the file is the upgrade path — extensions genuinely gate functionality.
 - **Content tree over components:** routing, includes, and repeated fragments are file/document based instead of React-style components.
-- **Tiered output:** static routes emit HTML/CSS and no Darkmown runtime; reactive routes opt into `/__wd/runtime.js` (~7.4 KB gzipped, CI-enforced below the 8 KB target).
+- **Tiered output:** static routes emit HTML/CSS and no Darkmown runtime; reactive routes opt into `/__wd/runtime.js` (~7.5 KB gzipped, CI-enforced below the 8 KB target).
 - **No virtual DOM:** state changes patch direct DOM bindings, conditional regions, and keyed loop regions.
 - **Keyed list patching:** reactive loops reconcile by item key (`id`/`key`/value) instead of re-rendering the region.
 - **Sections with scoped state:** `::: section #id .class` containers scope `:state`; bindings and actions resolve through the nearest scope chain.
+- **Semantic landmark containers:** `::: nav` / `::: main` emit the real `<nav>`/`<main>` element (keeping the name as a class for styling); other container names stay `<div>`s. Keeps skip links and landmarks intact without raw HTML.
 - **`.skin` language:** indentation-based token styling compiles to CSS.
 - **Folder router:** `site/pages` maps to routes, and `.`, `-`, `_` prefixes hide pages.
 - **Colocation:** matching `.skin` and `.js` files attach to the page by basename, for includes too.

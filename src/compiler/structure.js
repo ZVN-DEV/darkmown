@@ -27,6 +27,14 @@ import { compileWhen, evalPredicate } from "./predicates.js";
  * @typedef {import("./context.js").Ctx} Ctx
  */
 
+// Container names that emit their own semantic landmark element instead of a
+// `<div>`, so scaffolds get real `<nav>`/`<main>` landmarks (accessibility: the
+// skip link targets a genuine main-content region and navigation chrome sits in
+// its own landmark). The name is still added as a class, so existing `.nav`/
+// `.main` skin selectors keep working. Fixed compiler-owned constants — never
+// author-supplied — so no tag-injection surface; classes/ids still escape.
+const SEMANTIC_CONTAINER_TAGS = new Set(["nav", "main"]);
+
 /**
  * @param {string} line
  * @param {Ctx} ctx
@@ -36,9 +44,13 @@ import { compileWhen, evalPredicate } from "./predicates.js";
 export function handleInclude(line, ctx, index) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
   if (!match) throw new Error(`Malformed @include in ${at(ctx, index)}: ${line}`);
-  const target = resolveInclude(match[1], ctx.file, ctx.context);
+  const target = resolveInclude(match[1], ctx.file, ctx.context, false, at(ctx, index));
   const args = parseIncludeArgs(match[2] || "", ctx);
   const childScope = createScope(ctx.scope, args);
+  // Thread the reactive-nesting depth (and the enclosing loop opener, so a depth
+  // error names the right opener) into the include, exactly as `loopItem` is —
+  // otherwise a reactive @loop inside the include would start counting from zero
+  // and could open a THIRD nested `data-wd-loop` level that silently paints empty.
   const child = ctx.compileFile(
     target,
     ctx.context,
@@ -46,7 +58,9 @@ export function handleInclude(line, ctx, index) {
     childScope,
     ctx.comp,
     ctx.sections,
-    ctx.loopItem
+    ctx.loopItem,
+    ctx.reactiveDepth ?? 0,
+    ctx.loopOpener ?? null
   );
   // An include with its OWN scoped colocated skin stamps just its returned
   // subtree — so a scoped `.card` in the include can't collide with a `.card`
@@ -102,14 +116,22 @@ export function handleContainer(header, bodyLines, ctx, index) {
   const stateClasses = [];
   let id = "";
   // Leading tag/name token (anything not starting with . or #). "section" keeps
-  // the <section> tag; any other name becomes a <div> and also a class.
+  // the <section> tag; a whitelisted semantic landmark (`nav`/`main`) emits that
+  // real element AND keeps the name as a class hook (so `.nav`/`.main` skins
+  // still cascade); any other name becomes a <div> and also a class. The tag is
+  // always one of these fixed constants — never author text — so it can't inject.
   const lead = rest.match(/^([^\s.#]\S*)/);
   let nameToken = "section";
   if (lead) {
     nameToken = lead[1];
     rest = rest.slice(lead[0].length).trim();
   }
-  if (nameToken !== "section") {
+  if (nameToken === "section") {
+    // default tag, no class
+  } else if (SEMANTIC_CONTAINER_TAGS.has(nameToken)) {
+    tag = nameToken;
+    extraClass.push(nameToken);
+  } else {
     tag = "div";
     extraClass.push(nameToken);
   }

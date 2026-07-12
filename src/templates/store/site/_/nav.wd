@@ -1,10 +1,7 @@
----
-html: true
----
+::: nav
+**Shop**
 
-<nav>
-  <strong>Shop</strong>
-  <span class="links">
-    <a href="/">Catalog</a>
-  </span>
-</nav>
+::: links
+[Catalog](/)
+:::
+:::

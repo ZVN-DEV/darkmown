@@ -7,7 +7,7 @@
 
 **[darkmown.com](https://darkmown.com)** · Markdown that runs.
 
-Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~7.4 KB gzipped, CI-enforced under 8 KB.
+Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~7.5 KB gzipped, CI-enforced under 8 KB.
 
 ## Showcase
 
@@ -65,7 +65,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~7.4 KB gzipped, CI-enforced under 8 KB).
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~7.5 KB gzipped, CI-enforced under 8 KB).
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Interpolation
@@ -353,7 +353,7 @@ That is a full add-to-cart / remove-line flow — and a to-do list with delete �
 - Interpolation inside the inner body resolves the inner item first, then the outer item — `{ line.qty }` and `{ order.ref }` are both in scope.
 - Build-time loops over JSON/frontmatter already nest freely (the "loops nest" behavior above); what's new is **reactive-inside-reactive** over a `:state`/`:store`/`:fetch` row field.
 
-> **Honest caveat:** nesting is **one level only** — an inner reactive loop may not itself contain a third reactive loop. Build-time loop nesting is unaffected by this limit.
+> **Honest caveat:** nesting is **one level only** — an inner reactive loop that itself contains a third reactive loop is a **compile error** with a corrective message, not a silent runtime failure. Build-time loop nesting is unaffected by this limit.
 >
 > **Per-row actions inside an inner loop:** `cart += member` (append-row) works from an inner loop — it carries the inner item into a top-level `:state`/`:store` list. But a per-row **`remove`** needs a top-level list as its source, and an inner loop's source is a path off the outer row (`team.members`), so deleting an inner row in place is **not** supported — the compiler rejects it with a corrective message. Carry the row into a top-level list and remove it there.
 
@@ -439,6 +439,8 @@ Cart has { count } items.
 ```
 
 State declared inside a section is scoped to it — two sections can both own a `count`. Bindings and actions resolve to the nearest scope.
+
+A container named `nav` or `main` emits the real landmark element (`<nav class="nav">`, `<main class="main">`) instead of a `<div>`, so scaffolded pages keep proper landmarks — a skip link skips a `::: nav`, and `::: main` becomes the page's `<main id="main">`. Any other name stays a `<div>` with that class.
 
 ### Reactive classes — `.class when <predicate>`
 

@@ -1,5 +1,4 @@
 ---
-html: true
 title: Dashboard — built with Darkmown
 description: A live dashboard — stat cards fetched from a serverless function, on an otherwise static page.
 transitions: true
@@ -7,7 +6,7 @@ transitions: true
 
 @include /nav.wd
 
-<main>
+::: main
 
 ::: section #dash
 
@@ -73,4 +72,4 @@ The numbers come from `api/metrics.js` — a serverless function that runs in
 
 :::
 
-</main>
+:::

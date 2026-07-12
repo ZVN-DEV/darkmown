@@ -6,7 +6,7 @@ html: true
   <div class="foot-inner">
     <div>
       <strong>Darkmown</strong> — Markdown that runs.
-      <div class="small">Zero JS on static pages · one ~7.4&nbsp;KB runtime when reactive.</div>
+      <div class="small">Zero JS on static pages · one ~7.5&nbsp;KB runtime when reactive.</div>
     </div>
     <nav class="foot-links">
       <a href="/docs/">Docs</a>

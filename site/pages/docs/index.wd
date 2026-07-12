@@ -47,6 +47,7 @@ Darkmown is a Markdown-native framework for mostly-static sites with tiny reacti
 - [Syntax highlighting](#syntax-highlighting)
 - [Trust boundary](#trust-boundary)
 - [Colocation](#colocation)
+- [CLI reference](#cli-reference)
 - [Spec status](#spec-status)
 </nav>
 
@@ -308,9 +309,11 @@ You don't size images by hand. Every `<img>` the compiler emits gets its intrins
 
 `::: section #id .class` opens a container and `:::` closes it. Sections scope state: a `:state` declared inside a section belongs to that section, so two sections can both declare `count` without colliding. Bindings and buttons resolve to the nearest scope.
 
+A container named `nav` or `main` emits the real landmark element (`<nav class="nav">`, `<main class="main">`) so pages keep proper landmarks without raw HTML. Any other name stays a `<div>` with that class.
+
 ## Reactive directives
 
-Reactive pages opt into `/__wd/runtime.js` (~7.4 KB gzipped, under a CI-enforced 8 KB budget). Static pages do not.
+Reactive pages opt into `/__wd/runtime.js` (~7.5 KB gzipped, under a CI-enforced 8 KB budget). Static pages do not.
 
 ```wd
 :state count = 0
@@ -598,6 +601,17 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/master/SECURITY.md) i
 - A matching `.js` file attaches page behavior. It loads **after** the runtime, so `window.wd` is ready: `wd.get(key)`, `wd.set(key, value)`, and `wd.subscribe(key, cb)` (runs now and on every settled change) bridge declarative state to imperative widgets — the gestures the framework leaves out (keyboard, drag/touch, canvas). The [Swiper demo](/carousel/) is a draggable carousel built this way.
 - Both work for included fragments too, by basename.
 - Any other file under `site/pages/` (an image, font, PDF — anything that isn't a `.md`/`.wd` route or a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type. So `site/pages/logo.svg` is served at `/logo.svg`. Assets below hidden path segments (`.`, `-`, or `_`) and symlinked page assets are skipped, matching the routing privacy rule. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
+
+## CLI reference
+
+The `darkmown` command (installed by `npx @zvndev/darkmown`) is the whole tool — every command is one word:
+
+- `darkmown init [dir] [--template <name>]` — scaffold a new site from a template (`starter`, `blog`, `store`, `dashboard`, `landing`). Existing files are never overwritten.
+- `darkmown dev` — the live compiler: browser reload, an in-browser error overlay, incremental rebuilds, and a local runner for `api/*` functions.
+- `darkmown build [--target cloudflare] [--drafts]` — write 100% static output to `dist/` (plus `sitemap.xml` / `rss.xml` / `robots.txt`); `--drafts` includes `draft: true` pages for a staging deploy.
+- `darkmown serve` — preview the built `dist/` locally (static only; use `dev` to exercise `api/*`).
+- `darkmown deploy <vercel|cloudflare> [--prod]` — build (target-aware) and deploy through the platform CLI, printing your URL; an unauthenticated CLI surfaces the login to run first.
+- `darkmown version` / `darkmown help` — print the installed version, or the full command summary and directive syntax.
 
 ## Spec status
 

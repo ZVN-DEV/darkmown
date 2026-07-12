@@ -2,6 +2,18 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 2.0.1 — 2026-07-11
+
+A tightening pass from a post-2.0 product review: a silent reactive-loop failure becomes a loud compile error, scaffolds stop shipping the raw-HTML footgun, and every scaffolded page gets real landmarks back. All compile-time — the runtime is byte-identical (7518 B gzipped).
+
+- **A third reactive `@loop` level is now a compile error.** The runtime supports one level of reactive nesting; a third reactive level previously compiled clean and painted the inner region empty at runtime. It now fails the build with `file:line`, the offending opener quoted, and a corrective suggestion — including when the third level arrives through an `@include` (nesting depth threads across the include boundary). Static (build-unrolled) nesting is unaffected at any depth.
+- **`::: nav` and `::: main` containers emit real landmark elements.** A container named `nav` or `main` now compiles to `<nav class="nav">` / `<main class="main">` instead of a `<div>` (the name stays as a class, so existing `.nav`/`.main` skin selectors match unchanged; every other name still emits a `<div>`). With that, the shell reuses the container's `<main>` for its `id="main"` skip-link target instead of wrapping the whole body — nav chrome sits outside `<main>` and "Skip to content" actually skips it.
+- **Scaffold templates no longer set `html: true`.** 2.0.0 made escaped markdown the default and called raw-HTML mode the #1 footgun — while every template scaffolded with the flag on. All five templates now express their nav/layout/CTAs with container directives and `{.class}` inline attributes instead of raw HTML (zero `html: true` anywhere in a fresh scaffold), and with the landmark containers above they keep proper `<nav>`/`<main>` structure. The starter's `about.md` becomes pure CommonMark with a "Back home" link — a `.md` page can't include the shared nav, and the page now says so instead of duplicating raw markup.
+- **`file:line` on the remaining compile errors.** Malformed `@loop` headers and include-resolution failures (unresolvable path, sandbox escape) reported only the file; they now report `file:line` like every other directive error, and the unresolvable-include message gained a hint ("Looked in site/pages and site/_ — check the path and leading slash").
+- **Size prose is drift-guarded.** Docs and site copy quoting the runtime size (now "~7.5 KB" everywhere current-tense) are asserted against `.size-snapshot.json` by a new test, so the number in the prose can never silently diverge from the shipped bytes again.
+- **darkmown.com hero: install one-liner with a copy button.** The landing page now puts `npx @zvndev/darkmown init my-site` (click-to-copy) directly under the CTAs, and the site docs gained a CLI reference section covering all six commands.
+- **Internal: a build-throughput benchmark.** `npm run bench:build` generates a synthetic site (collections, includes, static loops, highlighted code) and reports pages/sec; it refuses to touch a `site/` directory it didn't generate itself.
+
 ## 2.0.0 — 2026-07-11
 
 The raw-HTML markdown default flips to escaped (`html: false` — the breaking change that makes this a major), alongside security hardening and a DX pass from a product review: incremental dev rebuilds, true error line numbers, a docs table of contents, and styled templates. Nearly all build-time and dev-server; the one runtime change — deterministic UTC date pipes — nudges the runtime to 7518 B gzipped, still well under the 8 KB budget.

@@ -27,12 +27,12 @@ page
   line-height 1.55
   -webkit-font-smoothing antialiased
 
-main
+.main
   max-width 860px
   margin 0 auto
   padding 2rem 1.5rem
 
-nav
+.nav
   display flex
   align-items center
   justify-content space-between
@@ -40,10 +40,13 @@ nav
   margin 0 auto
   padding 1.25rem 1.5rem
 
-nav strong
+.nav p
+  margin 0
+
+.nav strong
   font-size 1.1rem
 
-nav a
+.nav a
   color $accent
   text-decoration none
 

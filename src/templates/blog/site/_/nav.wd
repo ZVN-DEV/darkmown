@@ -1,10 +1,7 @@
----
-html: true
----
+::: nav
+**My Blog**
 
-<nav>
-  <strong>My Blog</strong>
-  <span class="links">
-    <a href="/">Posts</a>
-  </span>
-</nav>
+::: links
+[Posts](/)
+:::
+:::

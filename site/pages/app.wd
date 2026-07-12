@@ -20,7 +20,7 @@ This whole section is plain Markdown. The list below is unrolled **at build time
 - **{ feature.title }** — { feature.body }
 @endloop
 
-<aside class="boundary">If you deleted everything below this line, this page would ship <strong>zero</strong> bytes of JavaScript. Everything above is static HTML. Below is where the one ~7.4&nbsp;KB gzipped runtime loads (CI-enforced under 8 KB) — and only because the document asks for it.</aside>
+<aside class="boundary">If you deleted everything below this line, this page would ship <strong>zero</strong> bytes of JavaScript. Everything above is static HTML. Below is where the one ~7.5&nbsp;KB gzipped runtime loads (CI-enforced under 8 KB) — and only because the document asks for it.</aside>
 
 ## Fetched data, looped, with nested conditions
 
