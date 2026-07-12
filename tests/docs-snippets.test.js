@@ -8,7 +8,15 @@ import { compilePage } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
 
 const docsFiles = ["README.md", "docs/cli.md", "site/pages/docs/index.wd"];
-const supportedCliCommands = new Set(["init", "dev", "build", "serve", "version", "help"]);
+const supportedCliCommands = new Set([
+  "init",
+  "dev",
+  "build",
+  "serve",
+  "catalog",
+  "version",
+  "help"
+]);
 
 test("documented shell snippets reference real npm scripts and CLI commands", () => {
   const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));

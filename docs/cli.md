@@ -82,6 +82,14 @@ The deploy URL is printed when the CLI reports it. If the platform CLI isn't sig
 
 Serves the already-built `dist` directory for local preview (static only — use `darkmown dev` to exercise `api/*` locally). Run `darkmown build` first.
 
+### `darkmown catalog [--llms]`
+
+Prints the machine-readable `.wd` directive catalog as JSON — every directive, `@loop` clause, loop variable, button action, format pipe, and predicate operator, each with a syntax template, description, and concrete example. With `--llms` it prints a compact (~90-line) markdown cheatsheet instead — the artifact to paste into an AI model's system prompt. Every `darkmown build` also writes the cheatsheet to `dist/llms.txt`, and Darkmown ships a generated GBNF grammar (`grammar/wd-directives.gbnf`) for constrained decoding.
+
+```sh
+darkmown catalog --llms > system-prompt.md
+```
+
 ## Smoke checks
 
 From this repository, run:

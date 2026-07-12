@@ -153,6 +153,20 @@
  */
 
 /**
+ * Structured, machine-readable companion to a compile error's string message.
+ * The string `message` contract is unchanged; `wd` gives an AI edit-loop (or an
+ * editor) the same facts without re-parsing the prose: which file/line, the
+ * corrective `Use:` template, and one concrete compilable example line.
+ * @typedef {object} WdErrorInfo
+ * @property {string} file Absolute path of the source file the error is in.
+ * @property {number} [line] 1-based file line the error points at, when known
+ *   (some errors — e.g. a bad `where` operand — are file-scoped only, matching
+ *   the string message, which likewise omits the line there).
+ * @property {string} [hint] The corrective `Use:` template (without the `Use: ` prefix).
+ * @property {string} [example] One concrete, compilable directive line.
+ */
+
+/**
  * A compiled `@loop … where` predicate.
  * @typedef {object} Predicate
  * @property {string} body Safe JS boolean expression over `I()`/`S()`/`C()`.
@@ -257,7 +271,33 @@ export function createScope(parent, vars = {}) {
  * @returns {string}
  */
 export function at(ctx, index) {
-  return `${ctx.file}:${index + 1 + (ctx.bodyLine ?? 0) + (ctx.lineOffset ?? 0)}`;
+  return `${ctx.file}:${lineOf(ctx, index)}`;
+}
+
+/**
+ * The 1-based true file line for a body-slice `index` — the numeric half of
+ * {@link at}, exposed so {@link wdError} can populate the structured `wd.line`.
+ * @param {Pick<Ctx, "bodyLine" | "lineOffset">} ctx
+ * @param {number} index 0-based line index into the current body slice.
+ * @returns {number}
+ */
+export function lineOf(ctx, index) {
+  return index + 1 + (ctx.bodyLine ?? 0) + (ctx.lineOffset ?? 0);
+}
+
+/**
+ * Build a compile `Error` whose string `message` is unchanged but which also
+ * carries a structured {@link WdErrorInfo} on `err.wd` — so an AI edit-loop (or
+ * an editor) gets file/line/hint/example without re-parsing the prose. The
+ * string contract is the source of truth; `wd` is a strictly additive mirror.
+ * @param {string} message The full user-facing error string (unchanged contract).
+ * @param {WdErrorInfo} wd The structured mirror.
+ * @returns {Error & { wd: WdErrorInfo }}
+ */
+export function wdError(message, wd) {
+  const err = /** @type {Error & { wd: WdErrorInfo }} */ (new Error(message));
+  err.wd = wd;
+  return err;
 }
 
 /**

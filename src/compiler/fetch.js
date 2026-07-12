@@ -7,7 +7,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at } from "./context.js";
+import { at, lineOf, wdError } from "./context.js";
 import {
   escapeHtml,
   resolveStateKey,
@@ -21,8 +21,10 @@ import { declareState } from "./state.js";
  * @typedef {import("./context.js").Ctx} Ctx
  */
 
-const FETCH_USE =
-  'Use: :fetch name from "url" [method=…] [timeout=ms] [retry=N] [when=visible] [headers=key] [body=key] [refresh=url]';
+// A concrete, compilable :fetch line for the hint tail + the directive catalog.
+export const FETCH_EXAMPLE = ':fetch todos from "/api/todos.json" when=visible';
+
+const FETCH_USE = `Use: :fetch name from "url" [method=…] [timeout=ms] [retry=N] [when=visible] [headers=key] [body=key] [refresh=url] — e.g. ${FETCH_EXAMPLE}`;
 
 /**
  * Parse a keyword-arg `:fetch` directive into a lifecycle-aware marker.
@@ -36,7 +38,13 @@ const FETCH_USE =
  */
 export function handleFetch(line, ctx, index) {
   const head = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+)\s*(.*)$/);
-  if (!head) throw new Error(`Malformed :fetch in ${at(ctx, index)}: ${line}. ${FETCH_USE}`);
+  if (!head)
+    throw wdError(`Malformed :fetch in ${at(ctx, index)}: ${line}. ${FETCH_USE}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint: FETCH_USE.slice("Use: ".length),
+      example: FETCH_EXAMPLE
+    });
   const name = head[1];
   const url = validateFetchUrl(stripQuotes(head[2]), ctx);
   /** @type {Record<string, string>} */

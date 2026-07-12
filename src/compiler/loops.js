@@ -6,7 +6,7 @@
 // string fill used for the initial paint (text binds, per-row `:if`, meta).
 // ---------------------------------------------------------------------------
 
-import { at, createScope, nestedCtx } from "./context.js";
+import { at, createScope, lineOf, nestedCtx, wdError } from "./context.js";
 import { serializeExpr } from "./expr-ast.js";
 import { applyPipeline, stagesFromAttr } from "./format.js";
 import { resolveInclude } from "./includes.js";
@@ -28,9 +28,14 @@ import { compilePredicate, evalPredicate } from "./predicates.js";
  * @typedef {import("./context.js").LoopOpts} LoopOpts
  */
 
+// One concrete, compilable @loop line, appended to the schematic hint so a small
+// model copies a real line instead of echoing the `[…]` placeholders literally
+// (the on-device finding: bracket-placeholders get pasted into source verbatim).
+// Also the canonical @loop example the directive catalog + grammar draw from.
+export const LOOP_EXAMPLE = "@loop /products.json into p where p.price < 50 sort by p.price asc";
+
 // The fixed corrective suggestion shown for any malformed @loop header.
-const LOOP_USAGE =
-  "Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N] [paginate N] [sortable]";
+const LOOP_USAGE = `Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N] [paginate N] [sortable] — e.g. ${LOOP_EXAMPLE}`;
 
 /**
  * Parse the optional clause tail of a `@loop` header in FIXED order:
@@ -219,7 +224,13 @@ function numArgAttr(arg) {
  */
 export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart = 0) {
   const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(\s+.+?)?\s*$/);
-  if (!match) throw new Error(`Malformed @loop in ${at(ctx, index)}: ${line}. ${LOOP_USAGE}`);
+  if (!match)
+    throw wdError(`Malformed @loop in ${at(ctx, index)}: ${line}. ${LOOP_USAGE}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint: LOOP_USAGE.slice("Use: ".length),
+      example: LOOP_EXAMPLE
+    });
   const source = stripQuotes(match[1].trim());
   const itemName = match[2];
   const clauses = match[3]

@@ -11,7 +11,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, createScope, LOOP_META, nestedCtx } from "./context.js";
+import { at, createScope, LOOP_META, lineOf, nestedCtx, wdError } from "./context.js";
 import { astOf, serializeExpr } from "./expr-ast.js";
 import { resolveInclude, scopedSkinFor, stampScope } from "./includes.js";
 import {
@@ -27,6 +27,13 @@ import { compileWhen, evalPredicate } from "./predicates.js";
 /**
  * @typedef {import("./context.js").Ctx} Ctx
  */
+
+// Concrete, compilable structure examples for the hint tails + the catalog.
+export const INCLUDE_EXAMPLE = "@include /header.wd";
+export const CONTAINER_EXAMPLE = "::: card .featured";
+export const IF_EXAMPLE = ":if count > 0";
+export const CAROUSEL_EXAMPLE = ":carousel autoplay=3000";
+const INCLUDE_USE = `Use: @include /partial.wd [with key="value"] — e.g. ${INCLUDE_EXAMPLE}`;
 
 // Container names that emit their own semantic landmark element instead of a
 // `<div>`, so scaffolds get real `<nav>`/`<main>` landmarks (accessibility: the
@@ -44,7 +51,13 @@ const SEMANTIC_CONTAINER_TAGS = new Set(["nav", "main"]);
  */
 export function handleInclude(line, ctx, index) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
-  if (!match) throw new Error(`Malformed @include in ${at(ctx, index)}: ${line}`);
+  if (!match)
+    throw wdError(`Malformed @include in ${at(ctx, index)}: ${line}. ${INCLUDE_USE}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint: INCLUDE_USE.slice("Use: ".length),
+      example: INCLUDE_EXAMPLE
+    });
   const target = resolveInclude(
     match[1],
     ctx.file,
@@ -215,10 +228,15 @@ export function handleCarousel(line, bodyLines, ctx, index) {
   let autoplayAttr = "";
   if (rest) {
     const auto = rest.match(/^autoplay=(\d+)$/);
-    if (!auto)
-      throw new Error(
-        `Malformed :carousel in ${at(ctx, index)}: ${line}. Use: :carousel [autoplay=3000] … :endcarousel`
-      );
+    if (!auto) {
+      const hint = `:carousel [autoplay=3000] … :endcarousel — e.g. ${CAROUSEL_EXAMPLE}`;
+      throw wdError(`Malformed :carousel in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+        file: ctx.file,
+        line: lineOf(ctx, index),
+        hint,
+        example: CAROUSEL_EXAMPLE
+      });
+    }
     autoplayAttr = ` data-wd-carousel-autoplay="${auto[1]}"`;
   }
   ctx.comp.assets.behaviors.add("carousel");
@@ -323,10 +341,15 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
   // whitelist as `@loop … where` / `.class when` (with `not`), so it folds at
   // build when static, drives a per-row each-if when it reads the loop item, and
   // a global if-region (evaluated each render) when it reads state. No raw eval.
-  if (!condition)
-    throw new Error(
-      `Malformed :if in ${at(ctx, index)}: ${line}. Use ":if name" or ":if a <op> b [and|or|not …]".`
-    );
+  if (!condition) {
+    const hint = `":if name" or ":if a <op> b [and|or|not …]" — e.g. ${IF_EXAMPLE}`;
+    throw wdError(`Malformed :if in ${at(ctx, index)}: ${line}. Use ${hint}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint,
+      example: IF_EXAMPLE
+    });
+  }
   const compiled = compileWhen(condition, ctx, '":if"');
   if (compiled.static)
     return ctx.compileBody(
