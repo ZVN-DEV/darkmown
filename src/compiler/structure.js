@@ -36,7 +36,7 @@ import { compileWhen, evalPredicate } from "./predicates.js";
 export function handleInclude(line, ctx, index) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
   if (!match) throw new Error(`Malformed @include in ${at(ctx, index)}: ${line}`);
-  const target = resolveInclude(match[1], ctx.file, ctx.context);
+  const target = resolveInclude(match[1], ctx.file, ctx.context, false, at(ctx, index));
   const args = parseIncludeArgs(match[2] || "", ctx);
   const childScope = createScope(ctx.scope, args);
   const child = ctx.compileFile(

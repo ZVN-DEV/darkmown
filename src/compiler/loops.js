@@ -219,7 +219,7 @@ function numArgAttr(arg) {
  */
 export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart = 0) {
   const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(\s+.+?)?\s*$/);
-  if (!match) throw new Error(`Malformed @loop in ${ctx.file}: ${line}. ${LOOP_USAGE}`);
+  if (!match) throw new Error(`Malformed @loop in ${at(ctx, index)}: ${line}. ${LOOP_USAGE}`);
   const source = stripQuotes(match[1].trim());
   const itemName = match[2];
   const clauses = match[3]
@@ -273,8 +273,13 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
     paginate: clauses.paginate
   };
   // The loop body starts on the line after the opener; nested errors in it (and
-  // in the empty branch, via `opts.emptyStart`) report the true file line.
-  const bodyCtx = nestedCtx(ctx, index + 1);
+  // in the empty branch, via `opts.emptyStart`) report the true file line. The
+  // opener's location rides on the body ctx so a reactive loop nested inside this
+  // one can point the depth error back at its own opener line.
+  const bodyCtx = {
+    ...nestedCtx(ctx, index + 1),
+    loopOpener: { at: at(ctx, index), line: line.trim() }
+  };
 
   if (
     source.startsWith("/") ||
@@ -283,7 +288,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
     source.endsWith(".json")
   ) {
     if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
-    const dataFile = resolveInclude(source, ctx.file, ctx.context, true);
+    const dataFile = resolveInclude(source, ctx.file, ctx.context, true, at(ctx, index));
     ctx.comp.deps.add(dataFile);
     const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
@@ -370,6 +375,27 @@ function unresolvedSourceError(source, ctx) {
  */
 function paginateOnlyCollections(ctx) {
   return `@loop paginate requires a collection source (a site/pages/<name>/ subdirectory) in ${ctx.file}. ${LOOP_USAGE}`;
+}
+
+/**
+ * Reject a reactive `@loop` that would open a THIRD reactive nesting level. The
+ * runtime reconciles at most two nested `data-wd-loop` levels (an outer loop and
+ * one inner loop); a third level's `data-wd-loop-out` paints empty. This guards
+ * every reactive-region entry point ({@link reactiveLoop}, {@link itemRelativeLoop}),
+ * so a state-key, item-relative, or state-filtered source is all covered. Static
+ * (build-unrolled) loops carry the depth through without incrementing it, so an
+ * interleaved static level neither triggers nor masks the limit.
+ * `ctx.reactiveDepth` is the number of reactive loops already enclosing this one.
+ * @param {Ctx} ctx
+ * @returns {void}
+ */
+function assertReactiveDepth(ctx) {
+  if ((ctx.reactiveDepth ?? 0) < 2) return;
+  const opener = ctx.loopOpener ?? { at: ctx.file, line: "" };
+  throw new Error(
+    `Reactive @loop nesting is limited to one inner level in ${opener.at}: "${opener.line}". ` +
+      `Unroll the outer data at build time (JSON/frontmatter source) or restructure with an include.`
+  );
 }
 
 /**
@@ -540,6 +566,7 @@ function staticUnroll(rows, itemName, bodyLines, ctx, empty = null, emptyStart =
  * @returns {string}
  */
 function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
+  assertReactiveDepth(ctx);
   ctx.comp.assets.runtime = true;
   /** @type {Ctx} */
   const templateCtx = {
@@ -547,6 +574,7 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
     loopItem: itemName,
     loopKey: key ?? undefined,
     loopMeta: true,
+    reactiveDepth: (ctx.reactiveDepth ?? 0) + 1,
     scope: createScope(ctx.scope)
   };
   const templateHtml = ctx.compileBody(bodyLines, templateCtx).trim();
@@ -689,6 +717,7 @@ function loopClauseAttrs(c) {
  * @returns {string}
  */
 function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
+  assertReactiveDepth(ctx);
   /** @type {Ctx} */
   // loopKey: undefined — an item-relative loop's source is a path off the outer
   // row, not a top-level state key, so a per-row `remove` inside it has no valid
@@ -698,6 +727,7 @@ function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
     loopItem: itemName,
     loopKey: undefined,
     loopMeta: true,
+    reactiveDepth: (ctx.reactiveDepth ?? 0) + 1,
     scope: createScope(ctx.scope)
   };
   const templateHtml = ctx.compileBody(bodyLines, templateCtx).trim();

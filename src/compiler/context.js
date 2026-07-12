@@ -102,6 +102,14 @@
  * @property {string[]} sections Active section-id scope chain.
  * @property {string | null} loopItem Name of the current reactive loop item, if any.
  * @property {string} [loopKey] State key of the list being looped, if any.
+ * @property {number} [reactiveDepth] Number of enclosing REACTIVE `@loop` levels
+ *   (0 at top level). The runtime reconciles at most two nested `data-wd-loop`
+ *   levels — a third paints empty — so a third reactive level is rejected at
+ *   compile time. Static (build-unrolled) loops flatten to markup and don't add
+ *   a level, so they carry the count through without incrementing it.
+ * @property {{ at: string, line: string }} [loopOpener] The current `@loop`
+ *   opener's `file:line` + raw text, set when descending into a loop body so the
+ *   reactive-nesting-depth error can point at the offending opener.
  * @property {boolean} [loopMeta] Inside a loop body, so `$index`/`$first`/… are valid.
  * @property {import("markdown-it").default} [md] Markdown-it instance selected for this file.
  * @property {(lines: string[], ctx: Ctx) => string} compileBody The body

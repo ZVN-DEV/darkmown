@@ -158,9 +158,13 @@ export function collectColocatedAssets(file, context, assets) {
  * @param {string} fromFile File requesting the include.
  * @param {Paths} context
  * @param {boolean} [allowAny] Allow non-page extensions (e.g. JSON for `@loop`).
+ * @param {string} [loc] Source location (`file:line`) for the error messages, so
+ *   an unresolved/out-of-sandbox include reports the directive's line. Callers
+ *   with a line index pass `at(ctx, index)`; it defaults to `fromFile` (the bare
+ *   path) for any caller without one, preserving the file-only message.
  * @returns {string}
  */
-export function resolveInclude(spec, fromFile, context, allowAny = false) {
+export function resolveInclude(spec, fromFile, context, allowAny = false, loc = fromFile) {
   const clean = stripQuotes(spec);
   const candidates = [];
   if (clean.startsWith("/")) {
@@ -172,13 +176,13 @@ export function resolveInclude(spec, fromFile, context, allowAny = false) {
   for (const candidate of candidates) {
     const resolved = path.resolve(candidate);
     if (!isAllowedInclude(resolved, context)) {
-      throw new Error(`Include "${spec}" from ${fromFile} resolves outside site/pages or site/_`);
+      throw new Error(`Include "${spec}" from ${loc} resolves outside site/pages or site/_`);
     }
     if (!fs.existsSync(resolved)) continue;
     if (!allowAny && !pageIncludeExtensions.includes(path.extname(resolved))) continue;
     return resolved;
   }
-  throw new Error(`Could not resolve include "${spec}" from ${fromFile}`);
+  throw new Error(`Could not resolve include "${spec}" from ${loc}`);
 }
 
 /**
