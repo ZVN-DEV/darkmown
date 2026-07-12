@@ -2,6 +2,15 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 2.2.0 — 2026-07-12
+
+AI authoring becomes a first-class framework surface: a machine-readable directive catalog, a generated prompt cheatsheet, a shipped GBNF grammar for constrained decoding, and compile errors that teach by example — all generated from the compiler's own whitelist tables, so none of it can drift from what actually compiles. Zero runtime impact (7654 B, unchanged).
+
+- **`darkmown catalog` — the language, as data.** `directiveCatalog()` (also `import '@zvndev/darkmown/catalog'`) returns every directive, loop clause, action op, format pipe, and predicate operator with syntax, description, a concrete example, and whether it makes a page reactive — 25 directives, 13 action ops, 20 pipes, sourced from the compiler's real tables with drift-guard tests in both directions. `darkmown catalog --llms` renders the same data as a ~92-line cheatsheet, and every build emits it as `dist/llms.txt` — the exact artifact to hand an LLM (or stuff into a small on-device model's system prompt).
+- **A shipped GBNF grammar (`grammar/wd-directives.gbnf`).** Generated from the same tables: directive-line shape, clause order, and the closed op/pipe/action vocabularies as literal alternations, with free-form values left permissive. Point llama.cpp's `grammar` field at it and a local model becomes structurally unable to emit JS/HTML muscle-memory syntax inside `.wd` directives. Kept in sync by test; regenerate with `scripts/gen-grammar.mjs`.
+- **Compile errors now teach by example.** All 24 corrective `Use:` hints with bracket-placeholders gained a trailing concrete line — `… Use: @loop src into item [where …] — e.g. @loop /products.json into p where p.price < 50` — and a test extracts every example from the real thrown error strings and compiles it, so the examples can never rot. Empirically motivated: small local models copy error-message examples verbatim, brackets and all.
+- **Structured error metadata.** Compile errors carry `err.wd = { file, line, hint, example }` alongside the unchanged message string — no more parsing error text in tooling (the playground, editors, agent harnesses).
+
 ## 2.1.0 — 2026-07-11
 
 Two headlines. Reactive pages now run under the **same strict, eval-free CSP as static pages** — the runtime interprets validated expressions instead of building functions, so `'unsafe-eval'` is gone from every page the framework ships. And darkmown.com gained a **browser playground**: the real compiler, bundled, compiling `.wd` live on every keystroke — built on a new fs-free `compileFromMemory` API.
