@@ -4,6 +4,7 @@
 // `exports` map; individual modules stay importable by their own path too.
 
 export { buildSite } from "./builder.js";
+export { directiveCatalog, llmsText } from "./catalog.js";
 
 export {
   compileDocument,

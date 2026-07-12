@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverApiRoutes } from "./api-runner.js";
+import { llmsText } from "./catalog.js";
 import { buildCollections } from "./compiler/collections.js";
 import { compilePage, parseFrontmatter } from "./compiler.js";
 import { createPaths, routesDir, shelfDir } from "./config.js";
@@ -364,6 +365,10 @@ function buildRoute(route, cwd, paths, collections, feedLink, warned) {
 function emitGlobalFiles(manifest, paths) {
   fs.writeFileSync(path.join(paths.distRoot, "routes.json"), JSON.stringify(manifest, null, 2));
   fs.writeFileSync(path.join(paths.distRoot, "_headers"), renderCloudflareHeaders(manifest));
+  // `llms.txt` is the compact `.wd` cheatsheet an AI authoring tool fetches to
+  // prime a small model. It depends only on the framework version, so it re-emits
+  // identically on every build — cheap, and always present next to the site.
+  fs.writeFileSync(path.join(paths.distRoot, "llms.txt"), llmsText());
 }
 
 /**

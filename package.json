@@ -1,6 +1,6 @@
 {
   "name": "@zvndev/darkmown",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -13,6 +13,7 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
+    "./catalog": "./src/catalog.js",
     "./package.json": "./package.json"
   },
   "types": "./types/index.d.ts",
@@ -45,6 +46,7 @@
   "files": [
     "src",
     "types",
+    "grammar",
     "site",
     "!site/_/og*.png",
     "docs/cli.md",

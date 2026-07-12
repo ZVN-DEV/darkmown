@@ -8,7 +8,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at } from "./context.js";
+import { at, lineOf, wdError } from "./context.js";
 import { astOf, evalAst } from "./expr-ast.js";
 import { escapeHtml, parseStateValue, safeScriptJson } from "./interpolation.js";
 import { compileComputedExpr } from "./predicates.js";
@@ -16,6 +16,13 @@ import { compileComputedExpr } from "./predicates.js";
 /**
  * @typedef {import("./context.js").Ctx} Ctx
  */
+
+// Concrete, compilable one-liners for the state-family hint tails + the catalog.
+export const STATE_EXAMPLE = ":state count = 0";
+export const STORE_EXAMPLE = ":store cart = []";
+export const COMPUTED_EXAMPLE = ":computed total = items.length * 4";
+export const THEME_EXAMPLE = ":theme";
+const STATE_USE = `Use: :state name = value [persist] — e.g. ${STATE_EXAMPLE}`;
 
 /**
  * @param {string} line
@@ -25,7 +32,13 @@ import { compileComputedExpr } from "./predicates.js";
  */
 export function handleState(line, ctx, index) {
   const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+persist)?$/);
-  if (!match) throw new Error(`Malformed :state in ${at(ctx, index)}: ${line}`);
+  if (!match)
+    throw wdError(`Malformed :state in ${at(ctx, index)}: ${line}. ${STATE_USE}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint: STATE_USE.slice("Use: ".length),
+      example: STATE_EXAMPLE
+    });
   const value = parseStateValue(match[2], at(ctx, index));
   const key = declareState(match[1], value, ctx);
   const persistAttr = match[3] ? ` data-wd-persist="${key}"` : "";
@@ -43,8 +56,13 @@ export function declareState(name, value, ctx) {
   if (ctx.loopItem)
     throw new Error(`State cannot be declared inside a reactive @loop body (${ctx.file})`);
   if (ctx.comp.stores.has(name))
-    throw new Error(
-      `State "${name}" collides with a :store of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`
+    throw wdError(
+      `State "${name}" collides with a :store of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one — e.g. ${STORE_EXAMPLE}`,
+      {
+        file: ctx.file,
+        hint: `:store name = value for the global, or rename one — e.g. ${STORE_EXAMPLE}`,
+        example: STORE_EXAMPLE
+      }
     );
   const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${name}` : name;
   if (ctx.comp.state.has(key))
@@ -63,8 +81,14 @@ export function declareState(name, value, ctx) {
 export function handleStore(line, ctx, index) {
   const match = line.match(/^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+ephemeral)?$/);
   if (!match)
-    throw new Error(
-      `Malformed :store in ${at(ctx, index)}: ${line}. Use: :store name = value [ephemeral]`
+    throw wdError(
+      `Malformed :store in ${at(ctx, index)}: ${line}. Use: :store name = value [ephemeral] — e.g. ${STORE_EXAMPLE}`,
+      {
+        file: ctx.file,
+        line: lineOf(ctx, index),
+        hint: `:store name = value [ephemeral] — e.g. ${STORE_EXAMPLE}`,
+        example: STORE_EXAMPLE
+      }
     );
   const value = parseStateValue(match[2], at(ctx, index));
   const name = declareStore(match[1], value, ctx);
@@ -83,10 +107,22 @@ export function handleStore(line, ctx, index) {
  */
 export function declareStore(name, value, ctx) {
   if (ctx.comp.stores.has(name))
-    throw new Error(`Store "${name}" is declared twice in ${ctx.file}. Use: :store name = value`);
+    throw wdError(
+      `Store "${name}" is declared twice in ${ctx.file}. Use: :store name = value — e.g. ${STORE_EXAMPLE}`,
+      {
+        file: ctx.file,
+        hint: `:store name = value — e.g. ${STORE_EXAMPLE}`,
+        example: STORE_EXAMPLE
+      }
+    );
   if (ctx.comp.state.has(name))
-    throw new Error(
-      `Store "${name}" collides with a :state of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one.`
+    throw wdError(
+      `Store "${name}" collides with a :state of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one — e.g. ${STORE_EXAMPLE}`,
+      {
+        file: ctx.file,
+        hint: `:store name = value for the global, or rename one — e.g. ${STORE_EXAMPLE}`,
+        example: STORE_EXAMPLE
+      }
     );
   ctx.comp.stores.add(name);
   ctx.comp.state.set(name, value);
@@ -115,9 +151,12 @@ export function declareErrorState(key, ctx) {
 export function handleComputed(line, ctx, index) {
   const match = line.match(/^:computed\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
   if (!match)
-    throw new Error(
-      `Malformed :computed in ${at(ctx, index)}: ${line}. Use: :computed total = items.length * 4`
-    );
+    throw wdError(`Malformed :computed in ${at(ctx, index)}: ${line}. Use: ${COMPUTED_EXAMPLE}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint: COMPUTED_EXAMPLE,
+      example: COMPUTED_EXAMPLE
+    });
   const expr = compileComputedExpr(match[2].trim(), ctx);
   // Parse the validated expression to the compact AST the runtime walks. A parse
   // failure means the RHS is syntactically malformed (e.g. `|| <`) — a compile
@@ -127,8 +166,14 @@ export function handleComputed(line, ctx, index) {
   try {
     ast = astOf(expr);
   } catch {
-    throw new Error(
-      `Malformed :computed expression in ${at(ctx, index)}: ${line}. Use: :computed total = items.length * 4`
+    throw wdError(
+      `Malformed :computed expression in ${at(ctx, index)}: ${line}. Use: ${COMPUTED_EXAMPLE}`,
+      {
+        file: ctx.file,
+        line: lineOf(ctx, index),
+        hint: COMPUTED_EXAMPLE,
+        example: COMPUTED_EXAMPLE
+      }
     );
   }
   // Build-time mirror of the runtime: walk the AST (no eval) so `:computed total =
@@ -155,8 +200,14 @@ export function handleComputed(line, ctx, index) {
 export function handleTheme(line, ctx, index) {
   const match = line.match(/^:theme(?:\s+([A-Za-z_$][\w$]*))?(?:\s*=\s*(.+))?$/);
   if (!match) {
-    throw new Error(
-      `Malformed :theme in ${at(ctx, index)}: ${line}. Use: :theme  (or  :theme name = "auto")`
+    throw wdError(
+      `Malformed :theme in ${at(ctx, index)}: ${line}. Use: :theme  (or  :theme name = "auto") — e.g. ${THEME_EXAMPLE}`,
+      {
+        file: ctx.file,
+        line: lineOf(ctx, index),
+        hint: `:theme  (or  :theme name = "auto") — e.g. ${THEME_EXAMPLE}`,
+        example: THEME_EXAMPLE
+      }
     );
   }
   const name = match[1] || "theme";

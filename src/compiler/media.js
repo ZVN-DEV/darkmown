@@ -8,13 +8,18 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at } from "./context.js";
+import { at, lineOf, wdError } from "./context.js";
 import { validateFetchUrl } from "./fetch.js";
 import { escapeHtml, stripQuotes } from "./interpolation.js";
 
 /**
  * @typedef {import("./context.js").Ctx} Ctx
  */
+
+// Concrete, compilable media examples for the hint tails + the directive catalog.
+export const VIDEO_EXAMPLE = ":video /demo.mp4 controls";
+export const AUDIO_EXAMPLE = ":audio /theme.mp3 controls";
+export const EMBED_EXAMPLE = ':embed https://youtu.be/dQw4w9WgXcQ title="Demo"';
 
 /** @type {Record<"video" | "audio", { flags: string[], attrs: string[] }>} */
 const MEDIA_SPEC = {
@@ -41,9 +46,14 @@ const MEDIA_SPEC = {
 export function handleMedia(line, kind, ctx, index) {
   const match = line.match(new RegExp(`^:${kind}\\s+(\\S+)\\s*(.*)$`));
   if (!match) {
-    throw new Error(
-      `Malformed :${kind} in ${at(ctx, index)}: ${line}. Use: :${kind} /clip [controls] [autoplay] [loop] [muted]`
-    );
+    const example = kind === "video" ? VIDEO_EXAMPLE : AUDIO_EXAMPLE;
+    const hint = `:${kind} /clip [controls] [autoplay] [loop] [muted] — e.g. ${example}`;
+    throw wdError(`Malformed :${kind} in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint,
+      example
+    });
   }
   const src = validateFetchUrl(stripQuotes(match[1]), ctx, `:${kind}`);
   const spec = MEDIA_SPEC[kind];
@@ -93,9 +103,13 @@ export function handleMedia(line, kind, ctx, index) {
 export function handleEmbed(line, ctx, index) {
   const match = line.match(/^:embed\s+(\S+)\s*(.*)$/);
   if (!match) {
-    throw new Error(
-      `Malformed :embed in ${at(ctx, index)}: ${line}. Use: :embed https://youtu.be/ID [title="…"]`
-    );
+    const hint = `:embed https://youtu.be/ID [title="…"] — e.g. ${EMBED_EXAMPLE}`;
+    throw wdError(`Malformed :embed in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint,
+      example: EMBED_EXAMPLE
+    });
   }
   const raw = stripQuotes(match[1]);
   let title = "";

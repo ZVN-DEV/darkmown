@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleApiRequest } from "./api-runner.js";
 import { buildSite } from "./builder.js";
+import { directiveCatalog, llmsText } from "./catalog.js";
 import { createPaths } from "./config.js";
 import { DEPLOY_TARGETS, deploy } from "./deploy.js";
 import {
@@ -61,6 +62,12 @@ export async function run(argv, env = {}) {
     const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
     log(pkg.version);
     return { command: "version" };
+  }
+  if (command === "catalog") {
+    // `catalog` prints the machine-readable directive catalog as JSON; `--llms`
+    // prints the compact llms.txt cheatsheet an app pastes into a model prompt.
+    log(argv.includes("--llms") ? llmsText() : JSON.stringify(directiveCatalog(), null, 2));
+    return { command: "catalog" };
   }
   if (command === "init") {
     const target = argv.slice(1).find((arg) => !arg.startsWith("-")) || ".";
@@ -385,6 +392,7 @@ Usage:
             [--drafts]                      Include draft: true pages (staging)
   darkmown deploy <${DEPLOY_TARGETS.join("|")}> [--prod]    Build + deploy to a platform
   darkmown serve                            Preview the built dist locally
+  darkmown catalog [--llms]                 Print the .wd directive catalog (JSON, or --llms cheatsheet)
   darkmown version                          Print the installed Darkmown version
   darkmown help                             Show this help
 

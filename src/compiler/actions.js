@@ -9,7 +9,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at } from "./context.js";
+import { at, lineOf, wdError } from "./context.js";
 import {
   escapeHtml,
   resolveStateKey,
@@ -23,6 +23,10 @@ import {
  * @typedef {import("./context.js").Action} Action
  */
 
+// A concrete, compilable :button line for the malformed hint + directive catalog.
+export const BUTTON_EXAMPLE = ':button "Add one" -> count++';
+const BUTTON_USE = `Use: :button "Label" -> action — e.g. ${BUTTON_EXAMPLE}`;
+
 /**
  * @param {string} line
  * @param {Ctx} ctx
@@ -31,7 +35,13 @@ import {
  */
 export function handleButton(line, ctx, index) {
   const match = line.match(/^:button\s+"([^"]+)"\s*->\s*(.+)$/);
-  if (!match) throw new Error(`Malformed :button in ${at(ctx, index)}: ${line}`);
+  if (!match)
+    throw wdError(`Malformed :button in ${at(ctx, index)}: ${line}. ${BUTTON_USE}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint: BUTTON_USE.slice("Use: ".length),
+      example: BUTTON_EXAMPLE
+    });
   ctx.comp.assets.runtime = true;
   const action = parseAction(match[2], ctx);
   if (Array.isArray(action)) {
@@ -44,8 +54,11 @@ export function handleButton(line, ctx, index) {
   return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${valueAttr}>${escapeHtml(match[1])}</button>`;
 }
 
-const EFFECT_USE =
-  "Use: :effect watchedState -> action[; action…] (actions use the :button vocabulary).";
+// Concrete, compilable examples for the effect / every hint tails + catalog.
+// (Effects run the :button action vocabulary — mutations, not expressions; use
+// :computed for derived values. `searches++` is the canonical watch-and-act.)
+export const EFFECT_EXAMPLE = ":effect query -> searches++";
+const EFFECT_USE = `Use: :effect watchedState -> action[; action…] (actions use the :button vocabulary) — e.g. ${EFFECT_EXAMPLE}`;
 
 /**
  * Parse `:effect <watched> -> <actions>` into a zero-output marker the runtime
@@ -59,7 +72,13 @@ const EFFECT_USE =
  */
 export function handleEffect(line, ctx, index) {
   const match = line.match(/^:effect\s+([A-Za-z_$][\w$.]*)\s*->\s*(.+)$/);
-  if (!match) throw new Error(`Malformed :effect in ${at(ctx, index)}: ${line}. ${EFFECT_USE}`);
+  if (!match)
+    throw wdError(`Malformed :effect in ${at(ctx, index)}: ${line}. ${EFFECT_USE}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint: EFFECT_USE.slice("Use: ".length),
+      example: EFFECT_EXAMPLE
+    });
   const segs = validatePath(match[1], ctx, EFFECT_USE);
   const key = resolveStateKey(segs[0], ctx);
   if (!key)
@@ -73,8 +92,8 @@ export function handleEffect(line, ctx, index) {
   return `<script type="application/json" data-wd-effect>${safeScriptJson({ watch, actions })}</script>`;
 }
 
-const EVERY_USE =
-  "Use: :every <duration> -> action[; action…] — duration like 5s, 500ms, or 2m (actions use the :button vocabulary).";
+export const EVERY_EXAMPLE = ":every 5s -> seconds++";
+const EVERY_USE = `Use: :every <duration> -> action[; action…] — duration like 5s, 500ms, or 2m (actions use the :button vocabulary) — e.g. ${EVERY_EXAMPLE}`;
 
 /**
  * Parse a duration token into milliseconds: `<int>[ms|s|m]`, defaulting to ms.
@@ -101,7 +120,13 @@ function parseDuration(raw) {
  */
 export function handleEvery(line, ctx, index) {
   const match = line.match(/^:every\s+(\S+)\s*->\s*(.+)$/);
-  if (!match) throw new Error(`Malformed :every in ${at(ctx, index)}: ${line}. ${EVERY_USE}`);
+  if (!match)
+    throw wdError(`Malformed :every in ${at(ctx, index)}: ${line}. ${EVERY_USE}`, {
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint: EVERY_USE.slice("Use: ".length),
+      example: EVERY_EXAMPLE
+    });
   const ms = parseDuration(match[1]);
   if (ms == null || ms <= 0) {
     throw new Error(
@@ -114,8 +139,11 @@ export function handleEvery(line, ctx, index) {
   return `<script type="application/json" data-wd-every>${safeScriptJson({ ms, actions })}</script>`;
 }
 
-const ACTION_USE =
-  'Use: name++, name--, n += k, n -= k, name = v, flag toggle, list append/prepend v, list toggle v, list remove v, x clear, obj merge other, obj delete key, name reset — chain with ";".';
+// One concrete action expression, appended so a model copies `count++` rather
+// than the schematic `name++`. The action vocabulary the directive catalog draws
+// from lives here (the parser branches below), mirrored compactly in ACTION_USE.
+export const ACTION_EXAMPLE = "count++";
+export const ACTION_USE = `Use: name++, name--, n += k, n -= k, name = v, flag toggle, list append/prepend v, list toggle v, list remove v, x clear, obj merge other, obj delete key, name reset — chain with ";" — e.g. ${ACTION_EXAMPLE}`;
 
 /**
  * Parse a `:button` action expression into a validated `{ op, target, value }`,
@@ -271,8 +299,13 @@ function parseMergeOperand(raw, ctx) {
   }
   const parsed = parseActionLiteral(value, ctx);
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-  throw new Error(
-    `Unsupported merge operand "${raw}" in ${ctx.file}. Use: obj merge other (a state key or an inline {…} object).`
+  throw wdError(
+    `Unsupported merge operand "${raw}" in ${ctx.file}. Use: obj merge other (a state key or an inline {…} object) — e.g. settings merge patch`,
+    {
+      file: ctx.file,
+      hint: "obj merge other (a state key or an inline {…} object) — e.g. settings merge patch",
+      example: "settings merge patch"
+    }
   );
 }
 
