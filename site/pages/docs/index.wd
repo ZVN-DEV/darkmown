@@ -66,6 +66,8 @@ npm run dev
 
 Or add Darkmown to an existing project with `npm install -D @zvndev/darkmown`. The package is scoped; the command it installs is plain `darkmown`.
 
+Want to try the syntax before installing anything? The [playground](/playground/) compiles `.wd` and `.md` live in your browser — the same compiler the CLI ships — and shows the real `file:line` error when you break something.
+
 For editing, a [VS Code extension](https://github.com/ZVN-DEV/darkmown/tree/master/editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — install it from a `.vsix` built out of the framework repo (see its `editors/vscode` README; a Marketplace listing is pending).
 
 `darkmown dev` rebuilds incrementally: it tracks which routes depend on each file (includes, colocated assets, loop data, collections), so editing one page or include recompiles only the routes it affects — and falls back to a full rebuild whenever a file is added, removed, or renamed. `routes.json`, the sitemap, and the RSS feed are regenerated on every rebuild, so they always describe the whole site.

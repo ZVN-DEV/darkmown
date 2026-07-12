@@ -6,7 +6,6 @@
 // string fill used for the initial paint (text binds, per-row `:if`, meta).
 // ---------------------------------------------------------------------------
 
-import fs from "node:fs";
 import { at, createScope, nestedCtx } from "./context.js";
 import { serializeExpr } from "./expr-ast.js";
 import { applyPipeline, stagesFromAttr } from "./format.js";
@@ -289,9 +288,16 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
     source.endsWith(".json")
   ) {
     if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
-    const dataFile = resolveInclude(source, ctx.file, ctx.context, true, at(ctx, index));
+    const dataFile = resolveInclude(
+      source,
+      ctx.file,
+      ctx.context,
+      true,
+      at(ctx, index),
+      ctx.comp.reader
+    );
     ctx.comp.deps.add(dataFile);
-    const rows = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+    const rows = JSON.parse(ctx.comp.reader.readText(dataFile));
     if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
     return loopOverData(rows, itemName, bodyLines, bodyCtx, opts);
   }

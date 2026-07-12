@@ -8,6 +8,7 @@ export type { RouteManifestEntry, Paths, Assets } from "./builder.js";
 export {
   compilePage,
   compileDocument,
+  compileFromMemory,
   parseFrontmatter,
   escapeHtml,
   loopKeyOf

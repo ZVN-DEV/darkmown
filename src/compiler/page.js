@@ -5,9 +5,9 @@
 // per-file compile (frontmatter + colocated assets + body / `.md` passthrough).
 // ---------------------------------------------------------------------------
 
-import fs from "node:fs";
 import path from "node:path";
 import { imageSize } from "image-size";
+import { createPaths } from "../config.js";
 import { htmlHasHighlight } from "../highlight.js";
 import { compileBody } from "./body.js";
 import { createCompilation, createScope } from "./context.js";
@@ -20,6 +20,7 @@ import {
 } from "./includes.js";
 import { escapeHtml } from "./interpolation.js";
 import { selectMd } from "./markdown.js";
+import { memoryReader } from "./reader.js";
 
 /**
  * @typedef {import("./context.js").Paths} Paths
@@ -42,16 +43,20 @@ const SKIP_LINK_STYLE =
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown> }} [options]
+ * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader }} [options]
  *   When a site-wide RSS feed is emitted (the home page set `site_url` and the
  *   site has dated posts), `feed` carries its absolute href + title so every page
  *   links it. `collections` is the build-time collection index a bare-name
  *   `@loop` resolves against; `vars` seeds the document scope (the pager `page`
- *   object on a paginated route).
+ *   object on a paginated route). `reader` is the source reader (fs-backed by
+ *   default via `src/compiler.js`; in-memory for `compileFromMemory`).
  * @returns {CompiledPage}
  */
 export function compilePage(file, context, options = {}) {
-  const compiled = compileDocument(file, context, [], options.vars, options.collections);
+  // The raw entry point requires a reader — the Node barrel (`src/compiler.js`)
+  // injects `fsReader()`, and `compileFromMemory` injects a `memoryReader`.
+  const reader = /** @type {import("./reader.js").Reader} */ (options.reader);
+  const compiled = compileDocument(file, context, [], options.vars, options.collections, reader);
   const title = compiled.meta.title || "Darkmown";
   const description = compiled.meta.description || "";
   // Per-page document language for the `<html lang>` attribute (`lang: fr` in
@@ -155,10 +160,10 @@ export function compilePage(file, context, options = {}) {
   // body so its scoped selectors match. Pure compile-time string post-pass (like
   // enhanceImages) — no runtime, no `data-wd-*` marker, so a static page stays
   // static. Include-scoped skins are stamped earlier, in handleInclude.
-  const scopedSkin = scopedSkinFor(file, context);
+  const scopedSkin = scopedSkinFor(file, context, reader);
   const stamped =
     scopedSkin && scopedSkin.scoped ? stampScope(compiled.html, scopedSkin.scopeId) : compiled.html;
-  const body = enhanceImages(stamped, context);
+  const body = enhanceImages(stamped, context, reader);
   const { content, target } = ensureMainLandmark(body);
 
   return {
@@ -216,9 +221,10 @@ function ensureMainLandmark(html) {
  * lazy-load. Author-set attributes are never overwritten.
  * @param {string} html Assembled page body HTML.
  * @param {Paths} paths Resolved project paths.
+ * @param {import("./reader.js").Reader} reader Source reader for the image bytes.
  * @returns {string}
  */
-export function enhanceImages(html, paths) {
+export function enhanceImages(html, paths, reader) {
   let index = 0;
   return html.replace(/<img\b[^>]*?\/?>/g, (tag) => {
     const i = index++;
@@ -228,7 +234,7 @@ export function enhanceImages(html, paths) {
     // Dimensions only when the author hasn't sized it — adding one axis to a
     // manually-sized image would distort its aspect ratio.
     if (!has("width") && !has("height")) {
-      const dim = measureImage(srcOf(tag), paths);
+      const dim = measureImage(srcOf(tag), paths, reader);
       if (dim) add.push(`width="${dim.width}"`, `height="${dim.height}"`);
     }
     if (!has("decoding")) add.push(`decoding="async"`);
@@ -259,9 +265,10 @@ function srcOf(tag) {
  * comes from the shelf (`site/_`), other absolute paths from `site/pages`.
  * @param {string} src
  * @param {Paths} paths
+ * @param {import("./reader.js").Reader} reader
  * @returns {{ width: number, height: number } | null}
  */
-function measureImage(src, paths) {
+function measureImage(src, paths, reader) {
   if (!src || /^(https?:)?\/\//i.test(src) || src.startsWith("data:")) return null;
   let filePath;
   if (src.startsWith("/__wd/media/")) {
@@ -272,7 +279,7 @@ function measureImage(src, paths) {
     return null; // page-relative: the source directory is lost after assembly
   }
   try {
-    const { width, height } = imageSize(fs.readFileSync(filePath));
+    const { width, height } = imageSize(reader.readBinary(filePath));
     if (typeof width === "number" && typeof height === "number") return { width, height };
   } catch {
     /* missing or unreadable — degrade to no dimensions */
@@ -288,10 +295,22 @@ function measureImage(src, paths) {
  * @param {Record<string, unknown>} [vars] Initial static scope variables.
  * @param {Map<string, import("./collections.js").CollectionRow[]>} [collections]
  *   Build-time collection index a bare-name `@loop` resolves against.
+ * @param {import("./reader.js").Reader} [reader] Source reader (fs-backed when
+ *   omitted via `src/compiler.js`; in-memory for `compileFromMemory`).
  * @returns {CompiledDocument}
  */
-export function compileDocument(file, context, stack = [], vars = {}, collections = new Map()) {
-  const comp = createCompilation();
+export function compileDocument(
+  file,
+  context,
+  stack = [],
+  vars = {},
+  collections = new Map(),
+  reader
+) {
+  // reader is injected by every caller (the Node barrel's `fsReader()` or
+  // `compileFromMemory`'s `memoryReader`); it is only trailing-optional here so
+  // the defaulted `vars`/`collections` params can precede it.
+  const comp = createCompilation(/** @type {import("./reader.js").Reader} */ (reader));
   comp.collections = collections;
   const result = compileFile(
     file,
@@ -342,18 +361,18 @@ export function compileFile(
   reactiveDepth = 0,
   loopOpener = null
 ) {
-  const real = fs.realpathSync(file);
+  const real = comp.reader.realpath(file);
   if (stack.includes(real)) {
     throw new Error(
       `Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`
     );
   }
 
-  const raw = fs.readFileSync(file, "utf8");
+  const raw = comp.reader.readText(file);
   const { meta, body, bodyLine } = parseFrontmatter(raw, file);
   warnLikelyFrontmatter(raw, file, comp);
   comp.deps.add(file);
-  collectColocatedAssets(file, context, comp.assets);
+  collectColocatedAssets(file, context, comp.assets, comp.reader);
 
   if (path.extname(file) === ".md") {
     scanMarkdownHints(body, file, comp);
@@ -385,4 +404,38 @@ export function compileFile(
   const html = compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx);
   if (htmlHasHighlight(html)) comp.assets.hasCode = true;
   return { meta, html };
+}
+
+/**
+ * Compile a page entirely from an in-memory file map — no filesystem, no
+ * `node:fs`. `files` maps PROJECT-RELATIVE POSIX paths (`site/pages/index.wd`,
+ * `site/_/nav.wd`) to their source strings; `entryPath` is the project-relative
+ * path of the page to compile. Includes, colocated `.skin`/`.js` detection, and
+ * `@loop` JSON-data reads all resolve against the same map (anything not in it
+ * is simply "absent"), so `@include`s work as long as their targets are present.
+ *
+ * This is the strategic fs-free entry point the browser playground and a planned
+ * mobile host use: the entire module graph reachable from here is free of
+ * `node:fs`, so it bundles for the browser. It returns the same
+ * {@link CompiledPage} shape as {@link compilePage} and throws the same
+ * `file:line` compile errors, so the error DX is identical in-browser.
+ * @param {Record<string, string> | Map<string, string>} files Project-relative
+ *   path → source content.
+ * @param {string} entryPath Project-relative path of the page to compile.
+ * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
+ *   Same shell options as {@link compilePage}; `cwd` overrides the virtual
+ *   project root the relative keys resolve against (defaults to `/`).
+ * @returns {CompiledPage}
+ */
+export function compileFromMemory(files, entryPath, options = {}) {
+  const cwd = options.cwd ?? "/";
+  const reader = memoryReader(files, cwd);
+  const context = createPaths(cwd);
+  const abs = path.resolve(cwd, entryPath);
+  return compilePage(abs, context, {
+    feed: options.feed,
+    collections: options.collections,
+    vars: options.vars,
+    reader
+  });
 }
