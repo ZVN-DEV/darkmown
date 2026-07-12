@@ -7,14 +7,15 @@ import { compilePage } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
 
 // ---------------------------------------------------------------------------
-// Reactive @loop nesting depth (TASK-01) + file:line on @loop/include errors
-// (TASK-02/03).
+// Reactive @loop nesting depth, plus file:line on @loop/include errors.
 //
 // The runtime reconciles at most TWO nested `data-wd-loop` levels (an outer loop
 // and one inner loop); a third level's `data-wd-loop-out` paints empty. The
-// compiler rejects that third REACTIVE level up front. Static (build-unrolled)
-// loops flatten to concrete markup and nest freely; a static level interleaved
-// with reactive ones neither triggers nor masks the limit.
+// compiler rejects that third REACTIVE level up front — including when the third
+// level lives inside an @include, since the nesting depth is threaded across the
+// include boundary. Static (build-unrolled) loops flatten to concrete markup and
+// nest freely; a static level interleaved with reactive ones neither triggers nor
+// masks the limit.
 // ---------------------------------------------------------------------------
 
 function fixture() {
@@ -31,7 +32,7 @@ function compile(root) {
   return compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
 }
 
-// --- TASK-01: third reactive level is rejected -----------------------------
+// --- third reactive level is rejected --------------------------------------
 
 test("three stacked REACTIVE loops throw with file:line and a corrective suggestion", () => {
   const root = fixture();
@@ -58,11 +59,14 @@ test("three stacked REACTIVE loops throw with file:line and a corrective suggest
       assert.match(err.message, /Reactive @loop nesting is limited to one inner level/);
       // Points at the third opener's true file line, and quotes that opener.
       assert.match(err.message, /index\.wd:5: "@loop team\.members into member"/);
-      // Names the limit AND gives an actionable way out.
+      // Names the limit AND gives an actionable, TRUE way out (an include does
+      // NOT lift the runtime's two-level limit — the depth threads through it —
+      // so the hint must not suggest one).
       assert.match(
         err.message,
-        /Unroll the outer data at build time \(JSON\/frontmatter source\) or restructure with an include\./
+        /Unroll the outer data at build time \(JSON\/frontmatter source\) or move the innermost list into build-time data\./
       );
+      assert.doesNotMatch(err.message, /restructure with an include/);
       return true;
     }
   );
@@ -146,7 +150,71 @@ test("a static OUTER loop wrapping two reactive inner levels is two reactive lev
   assert.match(page.html, /data-wd-loop-item="members"/);
 });
 
-// --- TASK-02: malformed @loop header reports file:line ---------------------
+// --- the depth guard holds across the @include boundary --------------------
+
+test("a third reactive level inside an @include is rejected (depth threads through the include)", () => {
+  const root = fixture();
+  // Two nested reactive loops on the page; the inner body includes a file that
+  // opens a THIRD reactive (item-relative) loop. Without threading the depth
+  // across the include boundary this compiled clean and painted empty — the
+  // exact bug the guard exists to stop. `/members.wd` resolves to site/_.
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state orgs = [{"id":1,"teams":[{"id":"t1","members":[{"id":"m1"}]}]}]',
+      "",
+      "@loop orgs into org",
+      "@loop org.teams into team",
+      "@include /members.wd",
+      "@endloop",
+      "@endloop"
+    ].join("\n")
+  );
+  write(
+    root,
+    "site/_/members.wd",
+    ["@loop team.members into member", "- { member.id }", "@endloop"].join("\n")
+  );
+  assert.throws(
+    () => compile(root),
+    (err) => {
+      assert.match(err.message, /Reactive @loop nesting is limited to one inner level/);
+      // The error names the offending opener — the third loop, living in the include.
+      assert.match(err.message, /members\.wd:1: "@loop team\.members into member"/);
+      return true;
+    }
+  );
+});
+
+test("a SECOND reactive level supplied by an @include still compiles (guard doesn't over-block)", () => {
+  const root = fixture();
+  // Level 1 (the state loop) on the page, level 2 (item-relative) inside the
+  // include — two reactive levels total, within the limit. Threading the depth
+  // must not push a legitimate second level over the edge.
+  write(
+    root,
+    "site/pages/index.wd",
+    [
+      ':state orgs = [{"id":1,"teams":[{"id":"t1","name":"Core"}]}]',
+      "",
+      "@loop orgs into org",
+      "@include /teams.wd",
+      "@endloop"
+    ].join("\n")
+  );
+  write(
+    root,
+    "site/_/teams.wd",
+    ["@loop org.teams into team", "- { team.name }", "@endloop"].join("\n")
+  );
+  const page = compile(root);
+  assert.equal(page.assets.runtime, true, "two reactive levels pull in the runtime");
+  assert.match(page.html, /data-wd-loop="orgs"/);
+  assert.match(page.html, /data-wd-loop-item="teams"/);
+});
+
+// --- malformed @loop header reports file:line ------------------------------
 
 test("a malformed @loop header reports the directive's line as file:line", () => {
   const root = fixture();
@@ -166,7 +234,7 @@ test("a malformed @loop header reports the directive's line as file:line", () =>
   );
 });
 
-// --- TASK-03: include-resolution errors report file:line -------------------
+// --- include-resolution errors report file:line ----------------------------
 
 test("an unresolvable @include reports the directive's line as file:line", () => {
   const root = fixture();

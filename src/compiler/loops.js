@@ -394,7 +394,7 @@ function assertReactiveDepth(ctx) {
   const opener = ctx.loopOpener ?? { at: ctx.file, line: "" };
   throw new Error(
     `Reactive @loop nesting is limited to one inner level in ${opener.at}: "${opener.line}". ` +
-      `Unroll the outer data at build time (JSON/frontmatter source) or restructure with an include.`
+      `Unroll the outer data at build time (JSON/frontmatter source) or move the innermost list into build-time data.`
   );
 }
 

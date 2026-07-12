@@ -182,7 +182,9 @@ export function resolveInclude(spec, fromFile, context, allowAny = false, loc = 
     if (!allowAny && !pageIncludeExtensions.includes(path.extname(resolved))) continue;
     return resolved;
   }
-  throw new Error(`Could not resolve include "${spec}" from ${loc}`);
+  throw new Error(
+    `Could not resolve include "${spec}" from ${loc}. Looked in site/pages and site/_ — check the path and leading slash.`
+  );
 }
 
 /**

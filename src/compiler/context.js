@@ -116,9 +116,10 @@
  *   dispatcher, threaded through the context so block handlers (`:if`, `:::`,
  *   `:form`, `@loop`, …) recurse into nested bodies without importing the
  *   dispatcher back — the module graph stays an import-cycle-free DAG.
- * @property {(file: string, context: Paths, stack: string[], scope: Scope, comp: Compilation, sections: string[], loopItem: string | null) => { meta: Meta, html: string }} compileFile
+ * @property {(file: string, context: Paths, stack: string[], scope: Scope, comp: Compilation, sections: string[], loopItem: string | null, reactiveDepth?: number, loopOpener?: { at: string, line: string } | null) => { meta: Meta, html: string }} compileFile
  *   The per-file compile, threaded for the same reason so `@include` can
- *   compile its target file.
+ *   compile its target file. `reactiveDepth`/`loopOpener` carry the enclosing
+ *   reactive-loop nesting across the include boundary so the depth guard holds.
  */
 
 /**

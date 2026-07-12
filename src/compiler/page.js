@@ -293,7 +293,17 @@ function measureImage(src, paths) {
 export function compileDocument(file, context, stack = [], vars = {}, collections = new Map()) {
   const comp = createCompilation();
   comp.collections = collections;
-  const result = compileFile(file, context, stack, createScope(null, vars), comp, [], null);
+  const result = compileFile(
+    file,
+    context,
+    stack,
+    createScope(null, vars),
+    comp,
+    [],
+    null,
+    0,
+    null
+  );
   return {
     meta: result.meta,
     html: result.html,
@@ -314,9 +324,24 @@ export function compileDocument(file, context, stack = [], vars = {}, collection
  * @param {Compilation} comp
  * @param {string[]} sections
  * @param {string | null} loopItem
+ * @param {number} [reactiveDepth] Enclosing REACTIVE `@loop` levels, threaded in
+ *   from the including page so an include's body can't bypass the two-level
+ *   reactive-nesting limit at the `@include` boundary.
+ * @param {{ at: string, line: string } | null} [loopOpener] The enclosing `@loop`
+ *   opener, threaded in so a depth error inside the include names the right opener.
  * @returns {{ meta: Meta, html: string }}
  */
-export function compileFile(file, context, stack, scope, comp, sections, loopItem) {
+export function compileFile(
+  file,
+  context,
+  stack,
+  scope,
+  comp,
+  sections,
+  loopItem,
+  reactiveDepth = 0,
+  loopOpener = null
+) {
   const real = fs.realpathSync(file);
   if (stack.includes(real)) {
     throw new Error(
@@ -351,6 +376,8 @@ export function compileFile(file, context, stack, scope, comp, sections, loopIte
     comp,
     sections,
     loopItem,
+    reactiveDepth,
+    ...(loopOpener ? { loopOpener } : {}),
     md: selectMd(meta),
     compileBody,
     compileFile
