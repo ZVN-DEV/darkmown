@@ -1,5 +1,4 @@
 ---
-html: true
 title: Shop — built with Darkmown
 description: A storefront in Markdown — live search, a shared cart, and a checkout that posts to a serverless function.
 transitions: true
@@ -7,7 +6,7 @@ transitions: true
 
 @include /nav.wd
 
-<main>
+::: main
 
 ::: section #shop
 
@@ -81,4 +80,4 @@ to { receipt.received.email }. Order { receipt.orderId }.
 
 :::
 
-</main>
+:::

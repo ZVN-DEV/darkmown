@@ -32,31 +32,6 @@ main
   margin 0 auto
   padding 3rem 1.5rem
 
-nav
-  display flex
-  align-items center
-  justify-content space-between
-  gap 1rem
-  max-width 760px
-  margin 0 auto
-  padding 1.25rem 1.5rem
-
-nav strong
-  font-size 1.1rem
-
-nav .links
-  display flex
-  gap 1.25rem
-
-nav a
-  color $ink
-  text-decoration none
-  opacity .8
-
-nav a:hover
-  opacity 1
-  color $accent
-
 a
   color $accent
 

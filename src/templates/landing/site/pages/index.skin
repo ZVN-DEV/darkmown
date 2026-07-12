@@ -27,12 +27,12 @@ page
   line-height 1.6
   -webkit-font-smoothing antialiased
 
-main
+.main
   max-width 900px
   margin 0 auto
   padding 1rem 1.5rem 4rem
 
-nav
+.nav
   display flex
   align-items center
   justify-content space-between
@@ -40,10 +40,13 @@ nav
   margin 0 auto
   padding 1.25rem 1.5rem
 
-nav strong
+.nav p
+  margin 0
+
+.nav strong
   font-size 1.15rem
 
-nav a
+.nav a
   color $accent
   text-decoration none
 
@@ -59,6 +62,9 @@ nav a
   font-size 1.2rem
   color $muted
   margin 0 0 1.5rem
+
+.lede p
+  margin 0
 
 .cta
   display inline-flex
@@ -185,6 +191,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible
   margin .5rem 0 0
   color $muted
   font-size .95rem
+
+.quote .who p
+  margin 0
 
 .wd-carousel-prev
   position absolute
