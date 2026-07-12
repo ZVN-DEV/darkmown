@@ -1,6 +1,6 @@
 # Darkmown — AI contributor guide
 
-Darkmown is a markdown-native web framework: `.md` files are strict CommonMark, `.wd` files add first-party directives (loops, state, includes, sections, fetch, forms). Static pages ship **zero** framework JavaScript; reactive pages share one runtime (currently ~7.4 KB gzipped) that must stay **under 8 KB gzipped** (CI-enforced).
+Darkmown is a markdown-native web framework: `.md` files are strict CommonMark, `.wd` files add first-party directives (loops, state, includes, sections, fetch, forms). Static pages ship **zero** framework JavaScript; reactive pages share one runtime (currently ~7.5 KB gzipped) that must stay **under 8 KB gzipped** (CI-enforced).
 
 ## Architecture in one pass
 

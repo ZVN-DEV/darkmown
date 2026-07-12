@@ -15,7 +15,7 @@ none of them pay for it.
 
 That is the whole bargain. A `.md` file is plain CommonMark. Rename it to `.wd`
 and you unlock directives — state, loops, conditionals — but you only ship the
-~7.4 KB runtime on the pages that actually use them. A listing built from a
+~7.5 KB runtime on the pages that actually use them. A listing built from a
 collection loop resolves entirely at build time, so it stays static HTML.
 
 ## The extension is the feature gate

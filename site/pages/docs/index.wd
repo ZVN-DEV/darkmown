@@ -309,6 +309,8 @@ You don't size images by hand. Every `<img>` the compiler emits gets its intrins
 
 `::: section #id .class` opens a container and `:::` closes it. Sections scope state: a `:state` declared inside a section belongs to that section, so two sections can both declare `count` without colliding. Bindings and buttons resolve to the nearest scope.
 
+A container named `nav` or `main` emits the real landmark element (`<nav class="nav">`, `<main class="main">`) so pages keep proper landmarks without raw HTML. Any other name stays a `<div>` with that class.
+
 ## Reactive directives
 
 Reactive pages opt into `/__wd/runtime.js` (~7.5 KB gzipped, under a CI-enforced 8 KB budget). Static pages do not.

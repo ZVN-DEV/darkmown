@@ -440,6 +440,8 @@ Cart has { count } items.
 
 State declared inside a section is scoped to it — two sections can both own a `count`. Bindings and actions resolve to the nearest scope.
 
+A container named `nav` or `main` emits the real landmark element (`<nav class="nav">`, `<main class="main">`) instead of a `<div>`, so scaffolded pages keep proper landmarks — a skip link skips a `::: nav`, and `::: main` becomes the page's `<main id="main">`. Any other name stays a `<div>` with that class.
+
 ### Reactive classes — `.class when <predicate>`
 
 A container class can be toggled by a predicate. Static `.class` tokens are unchanged; add `when <predicate>` to make one reactive:

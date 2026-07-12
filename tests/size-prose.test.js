@@ -19,11 +19,18 @@ const FILES = [
   "README.md",
   "docs/spec-alignment.md",
   "site/pages/index.wd",
-  "site/pages/docs/index.wd"
+  "site/pages/docs/index.wd",
+  "site/pages/app.wd",
+  "site/pages/showcase/index.wd",
+  "site/pages/blog/zero-js-by-default.md",
+  "site/_/footer.wd",
+  "AGENTS.md",
+  "CLAUDE.md"
 ];
 
-// Any `~N.N KB` token — matches both the current figure and any stale/historical one.
-const SIZE_CLAIM = /~\d+\.\d+\s?KB/g;
+// Any `~N.N KB` token — matches both the current figure and any stale/historical
+// one, including the `&nbsp;` spelling used in inline-HTML prose.
+const SIZE_CLAIM = /~\d+\.\d+(?:\s|&nbsp;)?KB/g;
 
 // HISTORICAL lines: version-history / changelog-style prose that deliberately records
 // an OLD runtime size (e.g. "the runtime moved from ~5.8 KB to ~7.4 KB"). These are a
@@ -57,7 +64,7 @@ test("every present-tense runtime-size claim in docs matches .size-snapshot.json
       for (const claim of matches) {
         checked += 1;
         assert.equal(
-          claim.replace(/\s/g, " "),
+          claim.replace(/&nbsp;/g, " ").replace(/\s/g, " "),
           EXPECTED,
           `${file}:${i + 1} — size claim "${claim}" drifted from the snapshot (${gzip} B ⇒ "${EXPECTED}"). ` +
             `Update the prose, or if this is version history, allowlist its line in size-prose.test.js.\n  ${line.trim()}`
