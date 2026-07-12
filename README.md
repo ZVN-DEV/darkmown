@@ -7,7 +7,7 @@
 
 **[darkmown.com](https://darkmown.com)** · Markdown that runs.
 
-Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~7.5 KB gzipped, CI-enforced under 8 KB.
+Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~7.7 KB gzipped, CI-enforced under 8 KB.
 
 ## Showcase
 
@@ -69,7 +69,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~7.5 KB gzipped, CI-enforced under 8 KB).
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~7.7 KB gzipped, CI-enforced under 8 KB).
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Interpolation
