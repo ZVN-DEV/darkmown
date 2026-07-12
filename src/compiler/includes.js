@@ -5,7 +5,6 @@
 // and warn when a plain `.md` file uses `.wd`-only syntax.
 // ---------------------------------------------------------------------------
 
-import fs from "node:fs";
 import path from "node:path";
 import { scopeIdFor } from "../skin.js";
 import { pageIncludeExtensions } from "./context.js";
@@ -27,12 +26,13 @@ import { stripQuotes } from "./interpolation.js";
  * (page/include) always agree on both.
  * @param {string} skinPath Absolute path to the colocated `.skin` file.
  * @param {string} cwd Project root, for the path-based scope id.
+ * @param {import("./reader.js").Reader} reader Source reader for the skin file.
  * @returns {{ scoped: boolean, scopeId: string }}
  */
-export function scopeInfoForSkin(skinPath, cwd) {
+export function scopeInfoForSkin(skinPath, cwd, reader) {
   const rel = path.relative(cwd, skinPath).replaceAll(path.sep, "/");
   const scopeId = scopeIdFor(rel);
-  const src = fs.readFileSync(skinPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const src = reader.readText(skinPath).replace(/\/\*[\s\S]*?\*\//g, "");
   for (const raw of src.split("\n")) {
     const t = raw.trim();
     if (!t || t.startsWith("//") || !/[A-Za-z0-9]/.test(t)) continue;
@@ -49,13 +49,14 @@ export function scopeInfoForSkin(skinPath, cwd) {
  * `.skin` extension).
  * @param {string} file Absolute path to the page/include source file.
  * @param {Paths} context
+ * @param {import("./reader.js").Reader} reader Source reader for the skin file.
  * @returns {{ scoped: boolean, scopeId: string } | null}
  */
-export function scopedSkinFor(file, context) {
+export function scopedSkinFor(file, context, reader) {
   const ext = path.extname(file);
   const candidate = `${file.slice(0, -ext.length)}.skin`;
-  if (!fs.existsSync(candidate)) return null;
-  return scopeInfoForSkin(candidate, context.cwd);
+  if (!reader.exists(candidate)) return null;
+  return scopeInfoForSkin(candidate, context.cwd, reader);
 }
 
 /**
@@ -127,9 +128,10 @@ export function stampScope(html, scopeId) {
  * @param {string} file
  * @param {Paths} context
  * @param {Assets} assets
+ * @param {import("./reader.js").Reader} reader Source reader for sibling probing.
  * @returns {void}
  */
-export function collectColocatedAssets(file, context, assets) {
+export function collectColocatedAssets(file, context, assets, reader) {
   const ext = path.extname(file);
   const stem = file.slice(0, -ext.length);
   for (const [assetExt, folder] of [
@@ -137,7 +139,7 @@ export function collectColocatedAssets(file, context, assets) {
     [".js", "scripts"]
   ]) {
     const candidate = `${stem}${assetExt}`;
-    if (!fs.existsSync(candidate)) continue;
+    if (!reader.exists(candidate)) continue;
     const rel = path.relative(context.cwd, candidate).replaceAll(path.sep, "/");
     const outputExt = assetExt === ".skin" ? ".css" : ".js";
     const publicPath = `/__wd/${folder}/${rel.slice(0, -assetExt.length).replace(/[/.]/g, "_")}${outputExt}`;
@@ -146,7 +148,8 @@ export function collectColocatedAssets(file, context, assets) {
       assets.skins.add(publicPath);
       // Surface "this skin is scoped" so the warning pass (builder) and the HTML
       // stamp can find the scoped skins among all colocated ones by source path.
-      if (scopeInfoForSkin(candidate, context.cwd).scoped) assets.scopedSkins.add(candidate);
+      if (scopeInfoForSkin(candidate, context.cwd, reader).scoped)
+        assets.scopedSkins.add(candidate);
     }
     if (assetExt === ".js") assets.scripts.add(publicPath);
   }
@@ -157,14 +160,16 @@ export function collectColocatedAssets(file, context, assets) {
  * @param {string} spec Include target (may be quoted).
  * @param {string} fromFile File requesting the include.
  * @param {Paths} context
- * @param {boolean} [allowAny] Allow non-page extensions (e.g. JSON for `@loop`).
- * @param {string} [loc] Source location (`file:line`) for the error messages, so
+ * @param {boolean} allowAny Allow non-page extensions (e.g. JSON for `@loop`).
+ * @param {string} loc Source location (`file:line`) for the error messages, so
  *   an unresolved/out-of-sandbox include reports the directive's line. Callers
- *   with a line index pass `at(ctx, index)`; it defaults to `fromFile` (the bare
- *   path) for any caller without one, preserving the file-only message.
+ *   with a line index pass `at(ctx, index)`; pass `fromFile` for the file-only
+ *   message.
+ * @param {import("./reader.js").Reader} reader Source reader for existence
+ *   probing, threaded from `ctx.comp.reader`.
  * @returns {string}
  */
-export function resolveInclude(spec, fromFile, context, allowAny = false, loc = fromFile) {
+export function resolveInclude(spec, fromFile, context, allowAny, loc, reader) {
   const clean = stripQuotes(spec);
   const candidates = [];
   if (clean.startsWith("/")) {
@@ -178,7 +183,7 @@ export function resolveInclude(spec, fromFile, context, allowAny = false, loc = 
     if (!isAllowedInclude(resolved, context)) {
       throw new Error(`Include "${spec}" from ${loc} resolves outside site/pages or site/_`);
     }
-    if (!fs.existsSync(resolved)) continue;
+    if (!reader.exists(resolved)) continue;
     if (!allowAny && !pageIncludeExtensions.includes(path.extname(resolved))) continue;
     return resolved;
   }

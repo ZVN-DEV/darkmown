@@ -44,7 +44,14 @@ const SEMANTIC_CONTAINER_TAGS = new Set(["nav", "main"]);
 export function handleInclude(line, ctx, index) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
   if (!match) throw new Error(`Malformed @include in ${at(ctx, index)}: ${line}`);
-  const target = resolveInclude(match[1], ctx.file, ctx.context, false, at(ctx, index));
+  const target = resolveInclude(
+    match[1],
+    ctx.file,
+    ctx.context,
+    false,
+    at(ctx, index),
+    ctx.comp.reader
+  );
   const args = parseIncludeArgs(match[2] || "", ctx);
   const childScope = createScope(ctx.scope, args);
   // Thread the reactive-nesting depth (and the enclosing loop opener, so a depth
@@ -67,7 +74,7 @@ export function handleInclude(line, ctx, index) {
   // anywhere else on the page, and the scope never leaks to the include's
   // siblings (only this child HTML is stamped). The CSS rewrite (builder) uses
   // the same path-derived id, so attribute and stylesheet line up.
-  const scopedSkin = scopedSkinFor(target, ctx.context);
+  const scopedSkin = scopedSkinFor(target, ctx.context, ctx.comp.reader);
   return scopedSkin && scopedSkin.scoped ? stampScope(child.html, scopedSkin.scopeId) : child.html;
 }
 

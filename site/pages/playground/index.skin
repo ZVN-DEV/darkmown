@@ -1,0 +1,128 @@
+tokens
+  pgink #eef2e6
+  pgbg #10160c
+  pgpanel #18210f
+  pgline #2c3a20
+  pgaccent #8fd694
+  pgmuted #9db089
+  pgradius 10px
+
+page
+  margin 0
+  font system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
+  color $pgink
+  bg $pgbg
+  line-height 1.6
+
+main
+  max-width 1100px
+  margin 0 auto
+  padding 2.5rem 1.5rem 4rem
+
+.pg-intro h1
+  font-size 2.6rem
+  line-height 1.05
+  margin 0 0 .6rem
+  color $pgink
+
+.pg-intro p
+  color $pgmuted
+  max-width 46rem
+
+.pg-intro a
+  color $pgaccent
+
+.pg-picker
+  display flex
+  flex-wrap wrap
+  gap .5rem
+  margin 1.4rem 0 1rem
+
+.pg-picker button
+  font inherit
+  font-size .92rem
+  font-weight 560
+  padding .5rem 1rem
+  color $pgink
+  bg $pgpanel
+  border 1px solid $pgline
+  radius 999px
+  cursor pointer
+  transition background .14s ease, border-color .14s ease, transform .14s ease
+
+.pg-picker button:hover
+  border-color $pgaccent
+  transform translateY(-1px)
+
+.pg-picker button:focus-visible
+  outline 2px solid $pgaccent
+  outline-offset 2px
+
+.pg-workbench
+  display grid
+  grid-template-columns 1fr 1fr
+  gap 1rem
+  margin-top 1.5rem
+  align-items stretch
+
+.pg-pane
+  display flex
+  flex-direction column
+  min-width 0
+
+.pg-label
+  font-size .78rem
+  font-weight 600
+  letter-spacing .04em
+  text-transform uppercase
+  color $pgmuted
+  margin-bottom .5rem
+
+.pg-editor
+  width 100%
+  min-height 30rem
+  flex 1
+  resize vertical
+  padding 1rem 1.1rem
+  color $pgink
+  bg $pgpanel
+  border 1px solid $pgline
+  radius $pgradius
+  font ui-monospace, "SF Mono", Menlo, Consolas, monospace
+  font-size .9rem
+  line-height 1.55
+  tab-size 2
+
+.pg-editor:focus-visible
+  outline none
+  border-color $pgaccent
+  box-shadow 0 0 0 3px rgba(143,214,148,.16)
+
+.pg-preview
+  width 100%
+  min-height 30rem
+  flex 1
+  border 1px solid $pgline
+  radius $pgradius
+  bg #12190f
+
+.pg-error
+  margin .75rem 0 0
+  padding .9rem 1.1rem
+  color #ffd9d0
+  bg #2a1712
+  border 1px solid #6b2c1e
+  radius $pgradius
+  font ui-monospace, "SF Mono", Menlo, Consolas, monospace
+  font-size .82rem
+  line-height 1.5
+  white-space pre-wrap
+  word-break break-word
+
+@media (max-width: 820px)
+  .pg-workbench
+    grid-template-columns 1fr
+  .pg-editor
+    min-height 18rem
+  .pg-preview
+    min-height 22rem

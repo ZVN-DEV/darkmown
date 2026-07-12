@@ -39,6 +39,10 @@ npx darkmown dev
 
 The package is `@zvndev/darkmown`; the command it installs is plain `darkmown`.
 
+Prefer to see it run before you install? The [browser playground](https://darkmown.com/playground/)
+compiles `.wd`/`.md` live in your browser — the same compiler the CLI ships — with
+no install and no build step.
+
 ## Working from this repo
 
 ```sh
@@ -961,6 +965,24 @@ document.querySelector("[data-next]")
 That is the whole contract: the framework reconciles state, text, classes, and loops; your behavior owns the gestures; they meet at one shared key. (See the [Swiper demo](https://darkmown.com/carousel/) — a draggable, keyboard-navigable carousel built exactly this way.)
 
 Set `window.wd.debug = true` (it defaults to `false`) to log any `:computed` or `@loop … where` expression that fails to evaluate to the console — useful while authoring reactive pages.
+
+## Programmatic compile — `compileFromMemory`
+
+`darkmown build` reads from disk, but the compiler itself is filesystem-free. `compileFromMemory(files, entryPath, options)` compiles a page from an **in-memory map** of project-relative path → source — no `node:fs`, so the whole compile path bundles for the browser (or any non-Node host):
+
+```js
+import { compileFromMemory } from "@zvndev/darkmown";
+
+const { html, assets } = compileFromMemory(
+  {
+    "site/pages/index.wd": "---\ntitle: Hi\nhtml: true\n---\n<main>\n\n:state n = 0\n\nN is { n }.\n\n:button \"+\" -> n++\n\n</main>\n",
+    "site/_/nav.wd": "..."   // @include targets resolve from the same map
+  },
+  "site/pages/index.wd"
+);
+```
+
+Includes, colocated `.skin`/`.js` detection, and `@loop` JSON-data reads all resolve against the map (anything not in it is simply "absent"), and it throws the **same `file:line` compile errors** as the CLI — the error DX is identical. This is exactly the entry point the [browser playground](https://darkmown.com/playground/) is built on: markdown-it and the compiler bundled to one asset, compiling `.wd`/`.md` on every keystroke and rendering the result into an iframe. On disk, `compilePage(file, paths)` is the same compile with a filesystem reader injected for you.
 
 ## Editor support
 

@@ -26,6 +26,8 @@ The left file is Markdown. It is also a running app — a live search filter, ad
 
 <div class="hero-install"><code>npx @zvndev/darkmown init my-site</code><button type="button" class="copy-cmd" data-copy-cmd aria-label="Copy install command">Copy</button></div>
 
+<p class="hero-try"><a href="/playground/">or try it in your browser →</a></p>
+
 <ul class="hero-stats">
   <li><strong>0 KB</strong><span>framework JS on static pages</span></li>
   <li><strong>~7.5 KB</strong><span>one runtime, CI-enforced &lt; 8 KB</span></li>

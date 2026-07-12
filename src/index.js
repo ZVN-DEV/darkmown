@@ -7,6 +7,7 @@ export { buildSite } from "./builder.js";
 
 export {
   compileDocument,
+  compileFromMemory,
   compilePage,
   escapeHtml,
   loopKeyOf,

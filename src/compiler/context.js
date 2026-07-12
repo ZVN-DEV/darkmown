@@ -77,6 +77,10 @@
  *   dependency map that drives incremental rebuilds.
  * @property {Set<string>} collectionsUsed Names of the collections this compile
  *   looped, so a change to any entry of a collection rebuilds its consumers.
+ * @property {import("./reader.js").Reader} reader The file reader every source
+ *   read threads through — the real filesystem by default, or an in-memory map
+ *   for `compileFromMemory`. Set once by `createCompilation` and reached via
+ *   `ctx.comp.reader` in the directive handlers (includes, loop data).
  */
 
 /**
@@ -202,9 +206,14 @@ export const LOOP_META = {
   $count: "count"
 };
 
-/** @returns {Compilation} */
-export function createCompilation() {
+/**
+ * @param {import("./reader.js").Reader} reader The source reader for this
+ *   compile (fs-backed by default; in-memory for `compileFromMemory`).
+ * @returns {Compilation}
+ */
+export function createCompilation(reader) {
   return {
+    reader,
     assets: {
       skins: new Set(),
       scripts: new Set(),

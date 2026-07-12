@@ -15,10 +15,10 @@
 // `scoped`/`draft`).
 // ---------------------------------------------------------------------------
 
-import fs from "node:fs";
 import path from "node:path";
 import { firstParagraph } from "../feeds.js";
 import { parseFrontmatter } from "./frontmatter.js";
+import { fsReader } from "./fs-reader.js";
 
 /**
  * @typedef {import("./context.js").Paths} Paths
@@ -47,20 +47,22 @@ const SCHEMA_TYPES = new Set(["string", "number", "boolean", "date", "string[]"]
  *
  * @param {Route[]} routes Post-draft-filter routes from `discoverRoutes`.
  * @param {Paths} paths Resolved project paths (`routesRoot` for `_schema.wd`).
+ * @param {import("./reader.js").Reader} [reader] Source reader (fs-backed by
+ *   default; pass an in-memory reader to build collections without a filesystem).
  * @returns {Map<string, CollectionRow[]>} Collection name → entry rows.
  */
-export function buildCollections(routes, paths) {
+export function buildCollections(routes, paths, reader = fsReader()) {
   /** @type {Map<string, CollectionRow[]>} */
   const collections = new Map();
   for (const route of routes) {
     const name = collectionNameOf(route.route);
     if (!name) continue;
     const rows = collections.get(name) || [];
-    rows.push(rowFor(route));
+    rows.push(rowFor(route, reader));
     collections.set(name, rows);
   }
   for (const [name, rows] of collections) {
-    const schema = readSchema(name, paths);
+    const schema = readSchema(name, paths, reader);
     if (schema) validateRows(rows, schema, name);
   }
   return collections;
@@ -87,9 +89,10 @@ function collectionNameOf(route) {
  * are added AFTER the spread so a stray frontmatter `url:`/`slug:` can't shadow
  * the real route data the loop relies on.
  * @param {Route} route
+ * @param {import("./reader.js").Reader} reader Source reader for the excerpt body.
  * @returns {CollectionRow}
  */
-function rowFor(route) {
+function rowFor(route, reader) {
   const slug = path.basename(route.file, path.extname(route.file));
   /** @type {Record<string, unknown>} */
   const fields = {};
@@ -98,7 +101,7 @@ function rowFor(route) {
     ...fields,
     url: route.route,
     slug: slug === "index" ? path.basename(path.dirname(route.file)) : slug,
-    excerpt: excerptFor(route)
+    excerpt: excerptFor(route, reader)
   };
 }
 
@@ -126,13 +129,14 @@ function coerceScalar(value) {
  * (plain `.md` only) the first paragraph of its body, else "". Mirrors the RSS
  * description fallback so a collection card and the feed read the same snippet.
  * @param {Route} route
+ * @param {import("./reader.js").Reader} reader Source reader for the `.md` body.
  * @returns {string}
  */
-function excerptFor(route) {
+function excerptFor(route, reader) {
   const fromMeta = route.meta.excerpt;
   if (typeof fromMeta === "string" && fromMeta.trim()) return fromMeta.trim();
   if (path.extname(route.file) !== ".md") return "";
-  const { body } = parseFrontmatter(fs.readFileSync(route.file, "utf8"), route.file);
+  const { body } = parseFrontmatter(reader.readText(route.file), route.file);
   return firstParagraph(body);
 }
 
@@ -153,12 +157,13 @@ function excerptFor(route) {
  * schema file itself, pointing at the offending line.
  * @param {string} name Collection name.
  * @param {Paths} paths
+ * @param {import("./reader.js").Reader} [reader] Source reader (fs-backed by default).
  * @returns {SchemaField[] | null}
  */
-export function readSchema(name, paths) {
+export function readSchema(name, paths, reader = fsReader()) {
   const file = path.join(paths.routesRoot, name, "_schema.wd");
-  if (!fs.existsSync(file)) return null;
-  const raw = fs.readFileSync(file, "utf8");
+  if (!reader.exists(file)) return null;
+  const raw = reader.readText(file);
   return parseSchema(raw, file);
 }
 
