@@ -1,5 +1,4 @@
 ---
-html: true
 title: My Blog
 description: A markdown-native blog built with Darkmown.
 site_url: https://example.com
@@ -8,7 +7,7 @@ transitions: true
 
 @include /nav.wd
 
-<main>
+::: main
 
 # My Blog
 
@@ -28,4 +27,4 @@ config, zero JavaScript; each post's frontmatter is the data.
 No posts yet — add a `.md` file to `site/pages/posts/`.
 @endloop
 
-</main>
+:::

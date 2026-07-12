@@ -1,10 +1,7 @@
----
-html: true
----
+::: nav
+**Dashboard**
 
-<nav>
-  <strong>Dashboard</strong>
-  <span class="links">
-    <a href="/">Overview</a>
-  </span>
-</nav>
+::: links
+[Overview](/)
+:::
+:::

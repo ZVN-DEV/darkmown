@@ -1,11 +1,10 @@
 ---
-html: true
 title: My Darkmown site
 ---
 
 @include /nav.wd
 
-<main>
+::: main
 
 # My Darkmown site
 
@@ -25,4 +24,4 @@ Count: { count }
 
 :button "Add" -> todos += "Add a loop"
 
-</main>
+:::

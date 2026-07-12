@@ -1,10 +1,7 @@
----
-html: true
----
+::: nav
+**Acme**
 
-<nav>
-  <strong>Acme</strong>
-  <span class="links">
-    <a href="#start">Get started</a>
-  </span>
-</nav>
+::: links
+[Get started](#start)
+:::
+:::

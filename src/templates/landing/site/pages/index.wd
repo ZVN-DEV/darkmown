@@ -1,5 +1,4 @@
 ---
-html: true
 title: Acme — ship faster
 description: A marketing one-pager built with Darkmown. Zero framework JS on the static parts, with a testimonials carousel.
 transitions: true
@@ -7,12 +6,16 @@ transitions: true
 
 @include /nav.wd
 
-<main>
+::: main
 
 ::: hero
 # Ship faster with *Acme*
-<p class="lede">The all-in-one toolkit your team actually enjoys using.</p>
-<a class="cta" href="#start">Get started</a>
+
+::: lede
+The all-in-one toolkit your team actually enjoys using.
+:::
+
+[Get started](#start){.cta}
 :::
 
 ::: features
@@ -35,21 +38,31 @@ One command to Vercel or Cloudflare — your API comes along for free.
 :carousel
 ::: quote
 > "Acme cut our launch time in half."
-<p class="who">— Riley, Head of Product</p>
+
+::: who
+— Riley, Head of Product
+:::
 :::
 ::: quote
 > "The simplest stack we've ever shipped on."
-<p class="who">— Sam, CTO</p>
+
+::: who
+— Sam, CTO
+:::
 :::
 ::: quote
 > "Our marketing pages load instantly now."
-<p class="who">— Jordan, Growth</p>
+
+::: who
+— Jordan, Growth
+:::
 :::
 :endcarousel
 
 ::: cta-band #start
 ## Ready to build?
-<a class="cta" href="/">Start now</a>
+
+[Start now](/){.cta}
 :::
 
-</main>
+:::
