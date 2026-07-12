@@ -4,8 +4,31 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildSite } from "../src/builder.js";
-import { compilePage } from "../src/compiler.js";
+import { compilePage, escapeHtml } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
+
+// Since 2.1 the compiler emits a serialized expression AST (see expr-ast.js) into
+// the `data-wd-*` attributes so the runtime walks it with no eval. This asserts a
+// given attribute carries the expected AST (HTML-escaped, as it appears in output).
+function hasExprAttr(html, attr, ast) {
+  return html.includes(`${attr}="${escapeHtml(JSON.stringify(ast))}"`);
+}
+// True if the serialized AST of any `attr` occurrence contains `sub` as a subtree.
+function attrAstIncludes(html, attr, sub) {
+  const re = new RegExp(`${attr}="([^"]*)"`, "g");
+  const needle = JSON.stringify(sub);
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const decoded = m[1]
+      .replaceAll("&amp;", "&")
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&quot;", '"')
+      .replaceAll("&#39;", "'");
+    if (decoded.includes(needle)) return true;
+  }
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Formats: .md strict, .wd full
@@ -431,10 +454,7 @@ test(".class when <state> emits a global data-wd-class binding", () => {
   );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
-  assert.match(
-    page.html,
-    /data-wd-class="\[\[&quot;sale&quot;,&quot;\(S\(\\&quot;hot\\&quot;\)\)&quot;\]\]"/
-  );
+  assert.ok(hasExprAttr(page.html, "data-wd-class", [["sale", ["S", "hot"]]]));
 });
 
 test(".class when <item.field> inside a reactive loop emits data-wd-each-class", () => {
@@ -453,7 +473,7 @@ test(".class when <item.field> inside a reactive loop emits data-wd-each-class",
   );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /data-wd-each-class=/);
-  assert.match(page.html, /I\(\\&quot;onSale\\&quot;\)/);
+  assert.ok(attrAstIncludes(page.html, "data-wd-each-class", ["I", "onSale"]));
 });
 
 test(".class when <static value> folds at build time (no binding emitted)", () => {
@@ -607,7 +627,7 @@ test(":if with a comparison emits a predicate-driven region with the right initi
   );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
-  assert.match(page.html, /data-wd-if-expr="[^"]*S\(&quot;n&quot;\) &gt; 5/);
+  assert.ok(attrAstIncludes(page.html, "data-wd-if-expr", [">", ["S", "n"], ["L", 5]]));
   // n=3 → false branch is the initial active one.
   assert.match(page.html, /data-wd-if-active="false"/);
   assert.match(page.html, /<div data-wd-if-out><p>Small<\/p><\/div>/);
@@ -628,10 +648,14 @@ test(":if supports ==, and/or, and not over state", () => {
   );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /data-wd-if-expr=/);
-  // == comparison, && join, and a negated operand.
-  assert.match(page.html, /S\(&quot;plan&quot;\) == &quot;pro&quot;/);
-  assert.match(page.html, /&amp;&amp;/);
-  assert.match(page.html, /!\(S\(&quot;banned&quot;\)\)/);
+  // == comparison, && join, and a negated operand — as a single AST tree.
+  assert.ok(
+    hasExprAttr(page.html, "data-wd-if-expr", [
+      "&&",
+      ["==", ["S", "plan"], ["L", "pro"]],
+      ["!", ["S", "banned"]]
+    ])
+  );
   // plan=="pro" && !false → true → Welcome is the initial branch.
   assert.match(page.html, /data-wd-if-active="true"/);
 });
@@ -667,10 +691,8 @@ test(":if comparison over a loop item emits a per-row each-if predicate", () => 
     ].join("\n")
   );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(
-    page.html,
-    /<span data-wd-each-if data-wd-if-expr="[^"]*I\(&quot;price&quot;\) &gt; 50/
-  );
+  assert.match(page.html, /<span data-wd-each-if data-wd-if-expr="/);
+  assert.ok(attrAstIncludes(page.html, "data-wd-if-expr", [">", ["I", "price"], ["L", 50]]));
 });
 
 test(":else if chain with comparisons selects the matching branch statically", () => {
@@ -1373,9 +1395,12 @@ test(":computed compiles a safe expression, seeds the initial value, and scopes 
   );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.match(page.html, /data-wd-computed-key="cart:total"/);
-  assert.match(
-    page.html,
-    /data-wd-computed-expr="S\(&quot;cart:items&quot;,&quot;length&quot;\) \* 4 \+ 1"/
+  assert.ok(
+    hasExprAttr(page.html, "data-wd-computed-expr", [
+      "+",
+      ["*", ["S", "cart:items", "length"], ["L", 4]],
+      ["L", 1]
+    ])
   );
   assert.match(page.html, /<span data-wd-bind="cart:total">9<\/span>/);
 });

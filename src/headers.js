@@ -23,10 +23,9 @@
  *     raw `<script>` an author writes into `html: true` markdown is therefore
  *     blocked by the shipped CSP — use a colocated `.js` file (same-origin,
  *     covered by `'self'`) or widen `script-src` deliberately.
- *   - The reactive runtime compiles validated expressions via `new Function`,
- *     so reactive pages additionally need `script-src 'unsafe-eval'`. That
- *     keyword cannot be hashed away: it gates eval-family APIs, not inline
- *     script elements.
+ *   - The reactive runtime WALKS a compile-time-validated expression AST (see
+ *     src/compiler/expr-ast.js) rather than building a `new Function`, so reactive
+ *     pages need NO `'unsafe-eval'`: their CSP is identical to the static one.
  *   - Inline `<style>` for view transitions — `style-src 'unsafe-inline'`.
  *   - `data:` favicon and remote images — `img-src 'self' data: https:`.
  *   - `:video`/`:audio` allow relative or `http(s)` sources — `media-src 'self' https:`.
@@ -36,8 +35,8 @@
  *     authorizes it (and blocks a form exfiltrating to a third-party origin). Apps
  *     posting to a remote backend widen this alongside `connect-src`.
  *
- * Static pages (zero framework JS) share the same hash-based `script-src` but
- * never call `new Function`, so their CSP drops `'unsafe-eval'`.
+ * Static pages (zero framework JS) and reactive pages now share the same
+ * eval-free `script-src` — no page needs `'unsafe-eval'`.
  */
 
 import { createHash } from "node:crypto";
@@ -102,17 +101,20 @@ const COMMON_CSP_DIRECTIVES = [
 ];
 
 /**
- * Relaxed CSP for reactive pages: `new Function` needs `'unsafe-eval'`; the
- * inline speculationrules block rides on the shared hash source, so no
- * `'unsafe-inline'`.
+ * CSP for reactive pages. Since 2.1 the runtime WALKS a compile-time-validated
+ * expression AST instead of building a `new Function`, so reactive pages no longer
+ * need `'unsafe-eval'` — this policy is byte-identical to the static one. The only
+ * script source is same-origin `/__wd/runtime.js` (plus the hashed speculationrules
+ * block); no `'unsafe-inline'`, no `'unsafe-eval'`.
  * @type {string}
  */
-export const REACTIVE_CSP = [`${SCRIPT_SRC} 'unsafe-eval'`, ...COMMON_CSP_DIRECTIVES].join("; ");
+export const REACTIVE_CSP = [SCRIPT_SRC, ...COMMON_CSP_DIRECTIVES].join("; ");
 
 /**
- * Stricter CSP for static pages: no runtime means no `new Function`, so
- * `'unsafe-eval'` is dropped too. Inline `<style>` (view transitions) keeps
- * `'unsafe-inline'` on style-src only.
+ * CSP for static pages (zero framework JS). Identical to the reactive policy now
+ * that neither variant evals — kept as a distinct export so the per-route emit and
+ * the `securityHeaders()` callers stay explicit about intent. Inline `<style>`
+ * (view transitions) keeps `'unsafe-inline'` on style-src only.
  * @type {string}
  */
 export const STATIC_CSP = [SCRIPT_SRC, ...COMMON_CSP_DIRECTIVES].join("; ");

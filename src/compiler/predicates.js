@@ -5,6 +5,7 @@
 // readers — no identifier survives un-mapped, so no raw user content is eval'd.
 // ---------------------------------------------------------------------------
 
+import { astOf, evalAst } from "./expr-ast.js";
 import { getPath, lookupVar, resolveStateKey } from "./interpolation.js";
 
 /**
@@ -93,14 +94,9 @@ function compileOperand(tok, itemName, ctx) {
   };
 }
 
-/** @param {unknown} a @param {unknown} b @returns {boolean} */
-const containsHelper = (a, b) =>
-  String(a ?? "")
-    .toLowerCase()
-    .includes(String(b ?? "").toLowerCase());
-
 /**
- * Evaluate a compiled predicate against a row at build time.
+ * Evaluate a compiled predicate against a row at build time by walking its AST —
+ * the same closed evaluator the runtime uses, so the fold matches. No eval.
  * @param {string} body
  * @param {unknown} item
  * @param {Ctx} ctx
@@ -108,11 +104,7 @@ const containsHelper = (a, b) =>
  */
 export function evalPredicate(body, item, ctx) {
   try {
-    /** @param {string} [p] */
-    const I = (p) => getPath(item, p ? p.split(".") : []);
-    /** @param {string} k @param {string} [r] */
-    const S = (k, r) => getPath(ctx.comp.state.get(k), r ? r.split(".") : []);
-    return Boolean(new Function("I", "S", "C", `return (${body});`)(I, S, containsHelper));
+    return Boolean(evalAst(astOf(body), item, ctx.comp));
   } catch {
     console.warn(
       `@loop where predicate "${body}" in ${ctx.file} could not be evaluated at build time; treating the row as excluded. Check the condition.`

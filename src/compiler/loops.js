@@ -8,6 +8,7 @@
 
 import fs from "node:fs";
 import { at, createScope, nestedCtx } from "./context.js";
+import { serializeExpr } from "./expr-ast.js";
 import { applyPipeline, stagesFromAttr } from "./format.js";
 import { resolveInclude } from "./includes.js";
 import {
@@ -692,7 +693,7 @@ function loopEmptyTemplate(emptyLines, ctx, emptyStart = 0) {
  */
 function loopClauseAttrs(c) {
   return (
-    (c.where ? ` data-wd-loop-where="${escapeHtml(c.where.body)}"` : "") +
+    (c.where ? ` data-wd-loop-where="${escapeHtml(serializeExpr(c.where.body))}"` : "") +
     (c.sort
       ? ` data-wd-loop-sort="${escapeHtml(c.sort.keyKind === "key" ? `key:${c.sort.key}` : c.sort.key)}" data-wd-loop-sort-dir="${escapeHtml(c.sort.dirKind === "key" ? `key:${c.sort.dir}` : c.sort.dir)}"`
       : "") +

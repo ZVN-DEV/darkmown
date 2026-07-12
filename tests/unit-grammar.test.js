@@ -28,6 +28,29 @@ function compile(lines) {
   return compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
 }
 
+// Decode an HTML-attribute value back to text.
+function decode(s) {
+  return s
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'");
+}
+
+// Extract + JSON-parse every occurrence of an AST-bearing `data-wd-*` attribute.
+// Since 2.1 the compiler emits a serialized expression AST (see expr-ast.js) into
+// these attributes instead of a JS string, so the runtime can walk it with no eval.
+function asts(html, attr) {
+  const re = new RegExp(`${attr}="([^"]*)"`, "g");
+  const out = [];
+  let m;
+  while ((m = re.exec(html)) !== null) out.push(JSON.parse(decode(m[1])));
+  return out;
+}
+const hasAst = (html, attr, expected) =>
+  asts(html, attr).some((a) => JSON.stringify(a) === JSON.stringify(expected));
+
 function compileThrows(lines, re) {
   const root = fixture();
   write(root, "site/pages/index.wd", Array.isArray(lines) ? lines.join("\n") : lines);
@@ -48,10 +71,10 @@ test(":computed compiles arithmetic, comparisons, and boolean operators safely",
     ":computed cmp = a > b && b < a || a == 10",
     ":computed neg = !cmp"
   ]);
-  // Every state reference is mapped to S("key"); no bare identifiers survive.
-  assert.match(page.html, /data-wd-computed-expr="S\(&quot;a&quot;\) \+ S\(&quot;b&quot;\)"/);
-  assert.match(page.html, /data-wd-computed-expr="S\(&quot;a&quot;\) % S\(&quot;b&quot;\)"/);
-  assert.match(page.html, /data-wd-computed-expr="!S\(&quot;cmp&quot;\)"/);
+  // Every state reference is mapped to an ["S", key] node; no bare identifiers survive.
+  assert.ok(hasAst(page.html, "data-wd-computed-expr", ["+", ["S", "a"], ["S", "b"]]));
+  assert.ok(hasAst(page.html, "data-wd-computed-expr", ["%", ["S", "a"], ["S", "b"]]));
+  assert.ok(hasAst(page.html, "data-wd-computed-expr", ["!", ["S", "cmp"]]));
   // Build-time seed: 10 + 3 = 13 baked into the bound span.
   assert.match(page.html, /data-wd-computed-key="sum"[\s\S]*?"sum":13/);
   assert.equal(page.assets.runtime, true);
@@ -59,14 +82,14 @@ test(":computed compiles arithmetic, comparisons, and boolean operators safely",
 
 test(":computed allows string literals as a safe operand", () => {
   const page = compile([':state name = "Kirby"', ':computed greet = name == "Kirby"']);
-  // The quoted literal is preserved and the identifier is mapped to S().
-  assert.match(page.html, /data-wd-computed-expr="S\(&quot;name&quot;\) == &quot;Kirby&quot;"/);
+  // The quoted literal is preserved (as a ["L", …] node) and the identifier maps to S().
+  assert.ok(hasAst(page.html, "data-wd-computed-expr", ["==", ["S", "name"], ["L", "Kirby"]]));
   assert.match(page.html, /"greet":true/);
 });
 
 test(":computed resolves dotted state paths through S(key, rest)", () => {
   const page = compile([':state cart = {"count": 4}', ":computed double = cart.count * 2"]);
-  assert.match(page.html, /data-wd-computed-expr="S\(&quot;cart&quot;,&quot;count&quot;\) \* 2"/);
+  assert.ok(hasAst(page.html, "data-wd-computed-expr", ["*", ["S", "cart", "count"], ["L", 2]]));
   assert.match(page.html, /"double":8/);
 });
 
@@ -90,9 +113,8 @@ test(":computed rejects a method call on real state (x.valueOf())", () => {
 
 test(":computed still allows grouping parens around arithmetic", () => {
   const page = compile([":state a = 2", ":state b = 3", ":computed grouped = (a + b) * 2"]);
-  assert.match(
-    page.html,
-    /data-wd-computed-expr="\(S\(&quot;a&quot;\) \+ S\(&quot;b&quot;\)\) \* 2"/
+  assert.ok(
+    hasAst(page.html, "data-wd-computed-expr", ["*", ["+", ["S", "a"], ["S", "b"]], ["L", 2]])
   );
   assert.match(page.html, /"grouped":10/);
 });
@@ -114,6 +136,15 @@ test(":computed with no '=' is a malformed-directive error with a Use: hint", ()
   compileThrows(":computed total", /Malformed :computed[\s\S]*Use: :computed/);
 });
 
+test(":computed whose RHS is operator-soup (parses the whitelist but not as an expression) errors", () => {
+  // `|| <` passes the char-level whitelist but is not a real expression — the AST
+  // parser rejects it, so it is a compile error (not a silently-broken binding).
+  compileThrows(
+    [":state a = 1", ":computed x = || <"],
+    /Malformed :computed expression[\s\S]*Use: :computed/
+  );
+});
+
 // --- @loop where predicate — SAFE forms -------------------------------------
 
 test("@loop where compiles every comparison operator to a safe I()/S() expression", () => {
@@ -132,9 +163,12 @@ test("@loop where compiles every comparison operator to a safe I()/S() expressio
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   // references :state (limit) → reactive, predicate baked into the data attr.
   assert.equal(page.assets.runtime, true);
-  assert.match(page.html, /I\(&quot;price&quot;\) &gt;= 1/);
-  assert.match(page.html, /I\(&quot;price&quot;\) &lt;= S\(&quot;limit&quot;\)/);
-  assert.match(page.html, /I\(&quot;id&quot;\) != 9/);
+  // The compiled `where` AST maps each operand to an I()/S() node — no bare
+  // identifiers survive. Assert each comparison sub-tree appears in the serialized AST.
+  const where = JSON.stringify(asts(page.html, "data-wd-loop-where")[0]);
+  assert.ok(where.includes(JSON.stringify([">=", ["I", "price"], ["L", 1]])));
+  assert.ok(where.includes(JSON.stringify(["<=", ["I", "price"], ["S", "limit"]])));
+  assert.ok(where.includes(JSON.stringify(["!=", ["I", "id"], ["L", 9]])));
 });
 
 test("@loop where 'contains' compiles to the C() helper", () => {
@@ -151,10 +185,7 @@ test("@loop where 'contains' compiles to the C() helper", () => {
     ].join("\n")
   );
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
-  assert.match(
-    page.html,
-    /data-wd-loop-where="\(C\(I\(&quot;name&quot;\), S\(&quot;q&quot;\)\)\)"/
-  );
+  assert.ok(hasAst(page.html, "data-wd-loop-where", ["C", ["I", "name"], ["S", "q"]]));
 });
 
 // --- @loop where predicate — DANGEROUS forms --------------------------------

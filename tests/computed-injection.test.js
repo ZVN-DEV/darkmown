@@ -7,20 +7,23 @@
 // code re-wrapped the literal's inner text in double quotes WITHOUT escaping, so a
 // single-quoted literal containing a `"` (e.g. `'"+(7*7)+"'`) had its quotes
 // stripped and re-wrapped unescaped — the inner `"` terminated the string and the
-// rest (`+(7*7)+`) became live JS that ran via `new Function` at BUILD time (full
-// Node access) AND in the browser. The fix re-inserts via JSON.stringify so the
+// rest (`+(7*7)+`) became live JS. The fix re-inserts via JSON.stringify so the
 // literal round-trips as an inert string.
 //
-// These tests decode the emitted `data-wd-computed-expr` attribute and EVALUATE it
-// in a trapped sandbox: if the payload were live code, evaluating it would compute
-// 7*7 (=> 49) or reference a global. We assert it does neither — the payload must
-// round-trip as the literal string it was written as.
+// Since 2.1 the runtime no longer builds a `new Function`: the compiler emits a
+// serialized expression AST (see src/compiler/expr-ast.js) into
+// `data-wd-computed-expr`, and the runtime WALKS it. That makes the A1 class even
+// harder to hit — a string literal becomes a pure DATA node `["L", "…"]`, never
+// code. These tests decode the emitted AST and assert the payload survives ONLY as
+// an inert literal node, and that walking the AST computes a boolean comparison
+// (never the arithmetic `7*7 => 49`, never a global).
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { evalAst } from "../src/compiler/expr-ast.js";
 import { compileDocument } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
 
@@ -41,76 +44,62 @@ function compileWd(body) {
   }
 }
 
-// Pull the decoded `data-wd-computed-expr` artifact out of compiled HTML — the
-// exact string that runtime.js feeds to `new Function`.
-function extractComputedExpr(html) {
+// Pull the decoded `data-wd-computed-expr` artifact out of compiled HTML and
+// JSON-parse it — the exact serialized AST the runtime walks.
+function extractComputedAst(html) {
   const m = html.match(/data-wd-computed-expr="([^"]*)"/);
   assert.ok(m, "expected a data-wd-computed-expr attribute in the output");
-  return m[1]
+  const decoded = m[1]
     .replaceAll("&amp;", "&")
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")
     .replaceAll("&quot;", '"')
     .replaceAll("&#39;", "'");
+  return JSON.parse(decoded);
 }
 
-// Evaluate a compiled expr exactly as runtime.js does: `new Function("S", ...)`.
-// `S` is the only injected reader. A breakout would compute arithmetic or reach a
-// global; a correctly-escaped literal evaluates to itself.
-function evalExpr(expr, read = () => "X") {
-  return new Function("S", `return (${expr});`)(read);
+// Walk the AST exactly as runtime.js does (evalAst is the shared closed evaluator),
+// reading state through a supplied map. No `new Function`, no eval.
+function walk(ast, state = {}) {
+  return evalAst(ast, undefined, { state: new Map(Object.entries(state)) });
 }
 
 test("A1: single-quoted literal with embedded double-quote does NOT execute (7*7 stays inert)", () => {
   const html = compileWd([':state x = "X"', ":computed pwned = x == '\"+(7*7)+\"'"].join("\n"));
-  const expr = extractComputedExpr(html);
+  const ast = extractComputedAst(html);
 
-  // The payload must round-trip as the literal STRING `"+(7*7)+"`, never as code.
-  // If it were live, `S("x")` ("X") == ... would evaluate the arithmetic; with the
-  // fix it is a plain string comparison that is simply false.
-  assert.doesNotMatch(
-    expr,
-    /\bS\("x"\)\s*==\s*""\s*\+\s*\(7\s*\*\s*7\)/,
-    "the literal must not have re-wrapped into live arithmetic"
+  // The AST is a comparison whose RHS is a pure literal DATA node — the payload can
+  // never be code. Shape: ["==", ["S","x"], ["L", '"+(7*7)+"']].
+  assert.equal(ast[0], "==");
+  assert.deepEqual(ast[1], ["S", "x"]);
+  assert.deepEqual(
+    ast[2],
+    ["L", '"+(7*7)+"'],
+    "literal must round-trip exactly, no arithmetic folded"
   );
 
-  // Evaluating the whole expr must not yield 49 (or any number) — it's a boolean
-  // string compare. And the right-hand operand, isolated, must equal the literal.
-  const result = evalExpr(expr, (key) => (key === "x" ? "X" : undefined));
+  // Walking the whole AST yields a boolean comparison, never the number 49.
+  const result = walk(ast, { x: "X" });
   assert.equal(
     typeof result,
     "boolean",
-    "compiled expr must evaluate to a boolean comparison, not run arithmetic"
+    "must evaluate to a boolean comparison, not run arithmetic"
   );
   assert.equal(result, false, 'S("x") ("X") never equals the literal string');
-
-  // Directly evaluate the right-hand literal in isolation to prove it is the
-  // inert string '"+(7*7)+"' and not the number 49.
-  const rhs = expr.replace(/^.*==\s*/, "");
-  const literalValue = evalExpr(rhs);
-  assert.equal(
-    literalValue,
-    '"+(7*7)+"',
-    "literal must round-trip exactly, with no arithmetic folded"
-  );
-  assert.notEqual(literalValue, 49, "arithmetic in the payload must never execute");
+  assert.notEqual(walk(ast[2]), 49, "arithmetic in the payload must never execute");
 });
 
 test("A1: a '\"+globalThis+\"' payload does not reference any global when evaluated", () => {
   const html = compileWd(
     [':state x = "X"', ":computed pwned = x == '\"+globalThis+\"'"].join("\n")
   );
-  const expr = extractComputedExpr(html);
+  const ast = extractComputedAst(html);
 
-  // The compiled artifact is `S("x") == "\"+globalThis+\""` — `globalThis` lives
-  // inside the escaped string literal. Evaluating the isolated RHS literal must
-  // yield the inert STRING, not the global object. A `globalThis` reference would
-  // evaluate to an object; the trapped reader proves nothing outside `S` is reached.
-  const rhs = expr.replace(/^.*==\s*/, "");
-  const literalValue = evalExpr(rhs, () => {
-    throw new Error("the compiled expr must not call S for an inert literal RHS");
-  });
-  assert.equal(literalValue, '"+globalThis+"', "globalThis payload must stay an inert string");
+  // `globalThis` lives inside a ["L", …] literal node — inert data. Evaluating the
+  // isolated RHS yields the STRING, never the global object.
+  assert.deepEqual(ast[2], ["L", '"+globalThis+"'], "globalThis payload must stay an inert string");
+  const literalValue = walk(ast[2]);
+  assert.equal(literalValue, '"+globalThis+"');
   assert.equal(
     typeof literalValue,
     "string",
@@ -118,12 +107,11 @@ test("A1: a '\"+globalThis+\"' payload does not reference any global when evalua
   );
 });
 
-test("A1: a backslash-bearing payload is REJECTED (never compiled to live code)", () => {
+test("A1: a backslash-bearing payload is REJECTED (never compiled)", () => {
   // A single-quoted literal whose inner text contains a backslash. The literal
-  // matcher (`'[^'\\]*'`) deliberately excludes `\`, so the backslash survives
-  // into the validated expression and trips the `["'\\\`]` guard — the expression
-  // is rejected at compile time rather than re-wrapped into something live. That
-  // rejection IS the safe outcome: a backslash must never reach `new Function`.
+  // matcher (`'[^'\\]*'`) deliberately excludes `\`, so the backslash survives into
+  // the validated expression and trips the `["'\\\`]` guard — the expression is
+  // rejected at compile time. Validation is unchanged by the AST switch.
   assert.throws(
     () => compileWd([':state x = "X"', ":computed pwned = x == '\\\\\"+1+\"'"].join("\n")),
     /Unsupported string syntax in :computed/
@@ -132,25 +120,27 @@ test("A1: a backslash-bearing payload is REJECTED (never compiled to live code)"
 
 test("A1: ordinary double-quoted literals still compile unchanged", () => {
   const html = compileWd([':state label = "hi"', ':computed shown = label == "hi"'].join("\n"));
-  const expr = extractComputedExpr(html);
-  // Matches the pre-existing unit-grammar expectation: S("label") == "hi".
-  assert.equal(expr, 'S("label") == "hi"');
-  const result = evalExpr(expr, (key) => (key === "label" ? "hi" : undefined));
-  assert.equal(result, true, "double-quoted literal comparison must still work");
+  const ast = extractComputedAst(html);
+  // Compiles to the comparison AST ["==", ["S","label"], ["L","hi"]].
+  assert.deepEqual(ast, ["==", ["S", "label"], ["L", "hi"]]);
+  assert.equal(
+    walk(ast, { label: "hi" }),
+    true,
+    "double-quoted literal comparison must still work"
+  );
 });
 
 test("A1: a plain string literal :computed evaluates to that string", () => {
   const html = compileWd([":state on = true", ':computed badge = "sale"'].join("\n"));
-  const expr = extractComputedExpr(html);
-  assert.equal(evalExpr(expr), "sale");
+  const ast = extractComputedAst(html);
+  assert.deepEqual(ast, ["L", "sale"]);
+  assert.equal(walk(ast), "sale");
 });
 
-test("A2: a method call on state (x.valueOf()) is REJECTED, never compiled to S(...)()", () => {
+test("A2: a method call on state (x.valueOf()) is REJECTED, never compiled", () => {
   // Before the function-call guard, `x.valueOf()` compiled to `S("x","valueOf")()`
-  // — a live invocation reaching `new Function`. It is inert under the JSON-state
-  // model (S returns data, not functions), but SECURITY.md guarantees function
-  // calls are compile errors. Assert the rejection so the artifact can never carry
-  // a trailing `()`.
+  // — a live invocation. SECURITY.md guarantees function calls are compile errors.
+  // Validation is unchanged; the rejection still fires before any AST is built.
   assert.throws(
     () => compileWd([":state x = 1", ":computed pwned = x.valueOf()"].join("\n")),
     /Function calls are not allowed in :computed/

@@ -591,7 +591,7 @@ Darkmown is a trusted-author site generator: you compile content you wrote, the 
 
 - **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
 - **Raw HTML is escaped by default.** Markdown renders with `html: false`, so a stray `<script>` in content becomes inert text — safe for multi-author collections out of the box. Set `html: true` in a page's frontmatter to pass your own raw HTML through verbatim; there is no built-in sanitizer, so keep it off pages with content you didn't write.
-- **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. The runtime compiles `:computed` / `@loop … where` / `.class when` expressions via `new Function`, so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
+- **`:fetch` and `:form action=` have no host allowlist.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Since 2.1 the runtime **interprets** validated `:computed` / `@loop … where` / `.class when` expressions from a compact AST instead of building a `new Function`, so **reactive pages need no `'unsafe-eval'`** — they run under the same strict, eval-free CSP as static pages.
 
 See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/master/SECURITY.md) in the package for the full security model.
 

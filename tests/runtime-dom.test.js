@@ -4,6 +4,11 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { astOf } from "../src/compiler/expr-ast.js";
+
+// Compile a validated expression string to the serialized AST the runtime reads
+// from `data-wd-*` attributes (the compiler emits this; the runtime walks it).
+const ast = (code) => JSON.stringify(astOf(code));
 
 // ---------------------------------------------------------------------------
 // First browser-side tests for src/runtime.js.
@@ -588,8 +593,8 @@ test("failing computed expressions stay SILENT in production (no wd.debug)", () 
   console.warn = (...args) => warnings.push(args);
   try {
     const h = makeSandbox((root, El) => {
-      // Expression throws: reads a method off undefined.
-      computedRegion(root, El, { key: "total", expr: "S('missing').nope.boom()", initial: {} });
+      // AST with an unknown op tag: the walker throws, exercising the safe fallback.
+      computedRegion(root, El, { key: "total", expr: JSON.stringify(["boomOp"]), initial: {} });
     });
     // production: no debug flag set -> no console noise, safe fallback applies.
     assert.equal(warnings.length, 0, "no warnings emitted in production mode");
@@ -605,15 +610,15 @@ test("failing computed expressions warn (with expression text) when wd.debug is 
   console.warn = (...args) => warnings.push(args);
   try {
     const h = makeSandbox((root, El) => {
-      computedRegion(root, El, { key: "total", expr: "S('missing').nope.boom()", initial: {} });
+      computedRegion(root, El, { key: "total", expr: JSON.stringify(["boomOp"]), initial: {} });
     });
     warnings.length = 0; // ignore the load-time render
     h.sandbox.wd.debug = true;
     h.sandbox.wd.render();
     assert.ok(warnings.length >= 1, "a warning was emitted when debug is on");
     assert.ok(
-      warnings.some((w) => String(w[0]).includes("S('missing').nope.boom()")),
-      "warning includes the offending expression text"
+      warnings.some((w) => String(w[0]).includes("boomOp")),
+      "warning includes the offending expression (serialized AST) text"
     );
     assert.equal(h.sandbox.wd.get("total"), undefined, "safe fallback still applies under debug");
   } finally {
@@ -1008,7 +1013,7 @@ test("data-wd-class toggles a global state-driven class on render", () => {
     s.textContent = JSON.stringify({ hot: false });
     root.appendChild(s);
     el = new El("div");
-    el.setAttribute("data-wd-class", JSON.stringify([["sale", '(S("hot"))']]));
+    el.setAttribute("data-wd-class", JSON.stringify([["sale", astOf('(S("hot"))')]]));
     root.appendChild(el);
   });
 
@@ -1038,7 +1043,7 @@ test("loop-row data-wd-each-class reacts to item fields", () => {
     const template = new El("template");
     template.setAttribute("data-wd-loop-template", "");
     const proto = new El("div");
-    proto.setAttribute("data-wd-each-class", JSON.stringify([["sale", 'I("onSale")']]));
+    proto.setAttribute("data-wd-each-class", JSON.stringify([["sale", astOf('I("onSale")')]]));
     const span = new El("span");
     span.setAttribute("data-wd-each", "");
     span.setAttribute("data-wd-path", "name");
@@ -1154,7 +1159,7 @@ test("expression :if toggles its active branch as watched state crosses the pred
     root.appendChild(s);
     node = new El("div");
     node.setAttribute("data-wd-if", "");
-    node.setAttribute("data-wd-if-expr", '(S("n") > 5)');
+    node.setAttribute("data-wd-if-expr", ast('(S("n") > 5)'));
     node.setAttribute("data-wd-if-active", "false");
     const tTrue = new El("template");
     tTrue.setAttribute("data-wd-true", "");
@@ -1186,7 +1191,7 @@ test("expression :if supports == and a negated operand", () => {
     root.appendChild(s);
     node = new El("div");
     node.setAttribute("data-wd-if", "");
-    node.setAttribute("data-wd-if-expr", '(S("plan") == "pro") && (!(S("banned")))');
+    node.setAttribute("data-wd-if-expr", ast('(S("plan") == "pro") && (!(S("banned")))'));
     node.setAttribute("data-wd-if-active", "false");
     const out = new El("div");
     out.setAttribute("data-wd-if-out", "");
@@ -1638,7 +1643,7 @@ test(":computed aggregate recomputes through the A() helper", () => {
     const c = new El("span");
     c.setAttribute("data-wd-computed", "");
     c.setAttribute("data-wd-computed-key", "total");
-    c.setAttribute("data-wd-computed-expr", 'A("sum",S("cart"),"price")');
+    c.setAttribute("data-wd-computed-expr", ast('A("sum",S("cart"),"price")'));
     root.appendChild(c);
   }, fmtGlobals);
   assert.equal(h.sandbox.wd.state.total, 5, "initial aggregate");

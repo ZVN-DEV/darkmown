@@ -9,8 +9,8 @@
 // ---------------------------------------------------------------------------
 
 import { at } from "./context.js";
-import { FORMATTERS } from "./format.js";
-import { escapeHtml, getPath, parseStateValue, safeScriptJson } from "./interpolation.js";
+import { astOf, evalAst } from "./expr-ast.js";
+import { escapeHtml, parseStateValue, safeScriptJson } from "./interpolation.js";
 import { compileComputedExpr } from "./predicates.js";
 
 /**
@@ -119,27 +119,25 @@ export function handleComputed(line, ctx, index) {
       `Malformed :computed in ${at(ctx, index)}: ${line}. Use: :computed total = items.length * 4`
     );
   const expr = compileComputedExpr(match[2].trim(), ctx);
-  /** @type {unknown} */
-  let initial;
+  // Parse the validated expression to the compact AST the runtime walks. A parse
+  // failure means the RHS is syntactically malformed (e.g. `|| <`) — a compile
+  // error, not a silently-broken binding.
+  /** @type {any[]} */
+  let ast;
   try {
-    /** @param {string} key @param {string} [path] */
-    const read = (key, path) => getPath(ctx.comp.state.get(key), path ? path.split(".") : []);
-    // Build-time mirror of the runtime's AGG helper, so a `:computed total = sum(...)`
-    // has the same initial value the runtime will recompute to.
-    const agg = (
-      /** @type {string} */ name,
-      /** @type {any} */ list,
-      /** @type {string} */ field
-    ) => (FORMATTERS[name] ? FORMATTERS[name](list, field == null ? [] : [field]) : undefined);
-    initial = new Function("S", "A", `return (${expr});`)(read, agg);
+    ast = astOf(expr);
   } catch {
-    console.warn(
-      `:computed "${match[2].trim()}" in ${ctx.file} could not be evaluated at build time; falling back to null. Check the expression.`
+    throw new Error(
+      `Malformed :computed expression in ${at(ctx, index)}: ${line}. Use: :computed total = items.length * 4`
     );
-    initial = null;
   }
+  // Build-time mirror of the runtime: walk the AST (no eval) so `:computed total =
+  // sum(...)` seeds the value the runtime recomputes. The walker is total over a
+  // validated AST — state that isn't known at build time resolves to undefined and
+  // folds to null, never throws — so parse-failure above is the only error path.
+  const initial = evalAst(ast, undefined, ctx.comp);
   const key = declareState(match[1], initial ?? null, ctx);
-  return `<span data-wd-computed data-wd-computed-key="${key}" data-wd-computed-expr="${escapeHtml(expr)}"></span><script type="application/json" data-wd-state>${safeScriptJson({ [key]: initial ?? null })}</script>`;
+  return `<span data-wd-computed data-wd-computed-key="${key}" data-wd-computed-expr="${escapeHtml(JSON.stringify(ast))}"></span><script type="application/json" data-wd-state>${safeScriptJson({ [key]: initial ?? null })}</script>`;
 }
 
 /**

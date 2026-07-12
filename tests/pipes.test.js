@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { compileDocument } from "../src/compiler.js";
+import { compileDocument, escapeHtml } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
 
 /** Write a page (+ optional shelf files) and compile it. Returns { html, assets }. */
@@ -89,10 +89,11 @@ test(":computed aggregate sum(list, field) drives a derived total", () => {
   const m = doc.html.match(/<span data-wd-bind="total" data-wd-fmt="[^"]*">([^<]*)<\/span>/);
   assert.ok(m);
   assert.equal(m[1], "$150.00");
-  // the compiled expression uses the whitelisted A() aggregate helper, not a raw call
-  assert.match(
-    doc.html,
-    /data-wd-computed-expr="A\(&quot;sum&quot;,S\(&quot;cart&quot;\),&quot;price&quot;\)"/
+  // the compiled expression uses the whitelisted A() aggregate node, not a raw call
+  assert.ok(
+    doc.html.includes(
+      `data-wd-computed-expr="${escapeHtml(JSON.stringify(["A", "sum", ["S", "cart"], "price"]))}"`
+    )
   );
 });
 
