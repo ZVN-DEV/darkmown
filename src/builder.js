@@ -352,9 +352,11 @@ function buildRoute(route, cwd, paths, collections, feedLink, warned) {
  * incremental builds keeps them consistent by construction.
  *
  * Cloudflare Pages reads dist/_headers for security headers (Vercel reads
- * vercel.json; the local server adds them in src/statics.js). Static routes get
- * the stricter CSP (no 'unsafe-eval'); reactive routes get the relaxed one. A
- * catch-all keeps assets and any future path covered.
+ * vercel.json; the local server adds them in src/statics.js). Since 2.1 both CSP
+ * variants are eval-free (the reactive runtime walks a validated AST, not
+ * `new Function`), so static and reactive routes resolve to the same policy; the
+ * per-route static override is kept as defense-in-depth. A catch-all keeps assets
+ * and any future path covered.
  * @param {RouteManifestEntry[]} manifest
  * @param {Paths} paths
  * @returns {void}
@@ -924,10 +926,10 @@ export function stripRuntimeComments(source) {
  *
  * Cloudflare applies every matching block in order; when blocks set the same
  * header, the later block wins. So we emit the catch-all `/*` first (baseline
- * security headers + the relaxed reactive CSP that satisfies every page), then
- * one block per static route that overrides `Content-Security-Policy` with the
- * stricter, eval-free CSP. Reactive routes need no override — the catch-all
- * already carries the relaxed CSP.
+ * security headers + the reactive CSP, which since 2.1 is eval-free and satisfies
+ * every page), then one block per static route that re-states the same eval-free
+ * CSP as defense-in-depth. Reactive routes need no override — the catch-all
+ * already carries the eval-free CSP.
  *
  * Clean URLs mean a route like `/docs/` is served at both `/docs` and `/docs/`,
  * so each static route emits a path glob (`/docs`, `/docs/*`) that covers both.
@@ -941,7 +943,7 @@ export function renderCloudflareHeaders(manifest) {
   const blocks = [["/*", [...baseLines, `  Content-Security-Policy: ${REACTIVE_CSP}`]]];
 
   for (const entry of manifest) {
-    if (entry.assets.runtime) continue; // reactive routes keep the catch-all (relaxed) CSP
+    if (entry.assets.runtime) continue; // reactive routes keep the catch-all (eval-free) CSP
     for (const pattern of cloudflarePathPatterns(entry.route)) {
       blocks.push([pattern, [`  Content-Security-Policy: ${STATIC_CSP}`]]);
     }

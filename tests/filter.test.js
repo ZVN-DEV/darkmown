@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { compilePage } from "../src/compiler.js";
+import { compilePage, escapeHtml } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
 
 // ---------------------------------------------------------------------------
@@ -152,9 +152,11 @@ test("@loop where over :state with a state-referencing predicate is reactive", (
   const page = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
   assert.equal(page.assets.runtime, true);
   assert.match(page.html, /data-wd-loop="products"/);
-  assert.match(
-    page.html,
-    /data-wd-loop-where="\(C\(I\(&quot;name&quot;\), S\(&quot;q&quot;\)\)\)"/
+  // The `where` predicate compiles to a serialized C() AST (walked, not eval'd).
+  assert.ok(
+    page.html.includes(
+      `data-wd-loop-where="${escapeHtml(JSON.stringify(["C", ["I", "name"], ["S", "q"]]))}"`
+    )
   );
   // q is "" so contains matches all → both rendered initially
   assert.match(page.html, /Aurora Lamp/);

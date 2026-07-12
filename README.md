@@ -7,7 +7,7 @@
 
 **[darkmown.com](https://darkmown.com)** · Markdown that runs.
 
-Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~7.5 KB gzipped, CI-enforced under 8 KB.
+Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~7.7 KB gzipped, CI-enforced under 8 KB.
 
 ## Showcase
 
@@ -39,6 +39,10 @@ npx darkmown dev
 
 The package is `@zvndev/darkmown`; the command it installs is plain `darkmown`.
 
+Prefer to see it run before you install? The [browser playground](https://darkmown.com/playground/)
+compiles `.wd`/`.md` live in your browser — the same compiler the CLI ships — with
+no install and no build step.
+
 ## Working from this repo
 
 ```sh
@@ -65,7 +69,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~7.5 KB gzipped, CI-enforced under 8 KB).
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~7.7 KB gzipped, CI-enforced under 8 KB).
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Interpolation
@@ -220,7 +224,7 @@ Add `where <predicate>` to filter a loop. Conditions compare a loop-item field a
 @endloop
 ```
 
-Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive substring match. The predicate is a compile-time-validated whitelist — only item paths, declared `:state`, numbers, and `"strings"` are allowed (no arbitrary expressions). Raw user content is never evaluated; the validated predicate compiles to a whitelisted grammar that runs via `new Function`.
+Operators: `==` `!=` `<` `<=` `>` `>=`, plus `contains` for case-insensitive substring match. The predicate is a compile-time-validated whitelist — only item paths, declared `:state`, numbers, and `"strings"` are allowed (no arbitrary expressions). Raw user content is never evaluated; the validated predicate compiles to a compact AST that the runtime interprets — no `eval`, no `new Function`.
 
 **The source decides reactivity, just like the loop itself.** If the predicate only reads the row, the filter runs at build time and the page stays **zero-JS**. If the predicate reads a `:state` value, the loop becomes reactive and re-filters live as that state changes — a live search in pure Markdown:
 
@@ -962,6 +966,24 @@ That is the whole contract: the framework reconciles state, text, classes, and l
 
 Set `window.wd.debug = true` (it defaults to `false`) to log any `:computed` or `@loop … where` expression that fails to evaluate to the console — useful while authoring reactive pages.
 
+## Programmatic compile — `compileFromMemory`
+
+`darkmown build` reads from disk, but the compiler itself is filesystem-free. `compileFromMemory(files, entryPath, options)` compiles a page from an **in-memory map** of project-relative path → source — no `node:fs`, so the whole compile path bundles for the browser (or any non-Node host):
+
+```js
+import { compileFromMemory } from "@zvndev/darkmown";
+
+const { html, assets } = compileFromMemory(
+  {
+    "site/pages/index.wd": "---\ntitle: Hi\nhtml: true\n---\n<main>\n\n:state n = 0\n\nN is { n }.\n\n:button \"+\" -> n++\n\n</main>\n",
+    "site/_/nav.wd": "..."   // @include targets resolve from the same map
+  },
+  "site/pages/index.wd"
+);
+```
+
+Includes, colocated `.skin`/`.js` detection, and `@loop` JSON-data reads all resolve against the map (anything not in it is simply "absent"), and it throws the **same `file:line` compile errors** as the CLI — the error DX is identical. This is exactly the entry point the [browser playground](https://darkmown.com/playground/) is built on: markdown-it and the compiler bundled to one asset, compiling `.wd`/`.md` on every keystroke and rendering the result into an iframe. On disk, `compilePage(file, paths)` is the same compile with a filesystem reader injected for you.
+
 ## Editor support
 
 A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown.
@@ -992,17 +1014,17 @@ Darkmown is a **trusted-author** site generator: you compile content you wrote, 
 
 - **Compile only trusted, author-written content.** Do not compile `.md`/`.wd` files you did not write — user-generated content, third-party docs, form input — without sanitizing it first.
 - **Raw HTML is escaped by default; `html: true` opts a page back in.** Darkmown runs `markdown-it` with `html: false`, so a raw `<script>` or event-handler attribute in content renders as inert escaped text instead of executing — multi-author content (blog collections, contributed docs) is stored-XSS-safe out of the box. A page whose author writes their own HTML sets `html: true` in its frontmatter to pass raw HTML through verbatim. There is still no built-in sanitizer: on an `html: true` page, untrusted content executes in the visitor's browser.
-- **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** A fetch/form URL is taken straight from the page source; the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Reactive pages also require `script-src 'unsafe-eval'` in your Content-Security-Policy, because the runtime compiles validated `:computed` / `@loop … where` / `.class when` expressions via `new Function` — a strict CSP without `unsafe-eval` will break reactive pages (static pages are unaffected).
+- **`:fetch` and `:form action=` have no host allowlist.** A fetch/form URL is taken straight from the page source; the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. *(Since 2.1, reactive pages no longer need `'unsafe-eval'`: the runtime interprets a validated expression AST instead of building a `new Function`, so reactive and static pages share the same strict, eval-free CSP.)*
 
 > **The single biggest footgun:** do not put `html: true` on a page whose content is even partly out of your hands, and do not compile untrusted or user-submitted Markdown without sanitizing it first — there is no built-in sanitizer (see [SECURITY.md](SECURITY.md)).
 
-Directive actions and `:computed`/`@loop … where` expressions are never `eval`'d as raw user content — they compile to a whitelisted grammar (item paths, declared `:state`, numbers, strings) that runs via `new Function`. See [SECURITY.md](SECURITY.md) for the full security model.
+Directive actions and `:computed`/`@loop … where` expressions are never `eval`'d as raw user content — they compile to a whitelisted grammar (item paths, declared `:state`, numbers, strings), serialized to a compact AST that the runtime **interprets with a closed evaluator (no `eval`, no `new Function`)**. That is why reactive pages ship under a strict CSP with **no `'unsafe-eval'`**. See [SECURITY.md](SECURITY.md) for the full security model.
 
 ### Shipped security headers
 
 Builds emit security response headers so a deployed site gets sane defaults without hand-writing a config. The build writes a `dist/_headers` file (Cloudflare Pages format), and the Vercel/local `serve` paths apply the equivalent. On every page:
 
-- **`Content-Security-Policy`** — no `'unsafe-inline'` on `script-src` for any page: the only inline script the framework emits that CSP gates (the `transitions: true` speculationrules block) is authorized by a build-time `'sha256-…'` hash, and the inline state seed is a non-executable JSON data block CSP does not gate. Static pages get a tight, eval-free policy; **reactive pages** (those that ship `/__wd/runtime.js`) add `script-src 'unsafe-eval'`, which the runtime needs to compile validated `:computed` / `@loop … where` / `.class when` expressions via `new Function`. A raw inline `<script>` you write into an `html: true` page is blocked by the shipped CSP — put it in a colocated `.js` file (same-origin, allowed by `'self'`) or widen `script-src` deliberately.
+- **`Content-Security-Policy`** — no `'unsafe-inline'` and **no `'unsafe-eval'`** on `script-src` for any page: the only inline script the framework emits that CSP gates (the `transitions: true` speculationrules block) is authorized by a build-time `'sha256-…'` hash, and the inline state seed is a non-executable JSON data block CSP does not gate. Since 2.1, **static and reactive pages get the same strict, eval-free policy** — the runtime interprets validated `:computed` / `@loop … where` / `.class when` expressions from a compact AST instead of building a `new Function`, so it needs no `'unsafe-eval'`. A raw inline `<script>` you write into an `html: true` page is blocked by the shipped CSP — put it in a colocated `.js` file (same-origin, allowed by `'self'`) or widen `script-src` deliberately.
 - **`X-Content-Type-Options: nosniff`**, **`Referrer-Policy`**, and a **`frame-ancestors`** directive (clickjacking protection) on every page.
 
 **If you use `:fetch` or `:form action=` against another host, widen `connect-src`.** The shipped CSP allows same-origin connections; calling a third-party API is otherwise blocked by the policy. Add the host to `connect-src` in your deploy config (it is not auto-derived from your page sources). The CSP is a defense-in-depth layer — it does not replace the trust-boundary rules above; see [SECURITY.md](SECURITY.md) for tightening guidance.

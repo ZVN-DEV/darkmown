@@ -29,8 +29,61 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { evalAst } from "../src/compiler/expr-ast.js";
 import { compileDocument, compilePage } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
+
+// The closed AST op vocabulary the runtime walker accepts (src/compiler/expr-ast.js
+// + src/runtime.js). Dangerous text can only ever appear as INERT DATA inside an
+// ["L", …] literal node — never as an op tag — so an accepted expression can carry
+// no code. Any tag outside this set is a hard error.
+const ALLOWED_OPS = new Set([
+  "L",
+  "S",
+  "I",
+  "C",
+  "A",
+  "!",
+  "u-",
+  "&&",
+  "||",
+  "==",
+  "!=",
+  ">",
+  "<",
+  ">=",
+  "<=",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%"
+]);
+
+// Recursively assert every node tag in an AST is from the closed vocabulary.
+function assertClosedOps(node, repro) {
+  assert.ok(Array.isArray(node), repro(`AST node is not an array: ${JSON.stringify(node)}`));
+  const tag = node[0];
+  assert.ok(
+    ALLOWED_OPS.has(tag),
+    repro(`AST carried an op outside the closed vocabulary: "${tag}"`)
+  );
+  if (tag === "L" || tag === "S" || tag === "I") return; // pure data leaves
+  if (tag === "A") return assertClosedOps(node[2], repro); // name/field are data; list is the only child node
+  for (let k = 1; k < node.length; k++) assertClosedOps(node[k], repro);
+}
+
+// Walk the AST exactly as the runtime does. evalAst never resolves a free
+// identifier or reads a global — the only inputs are the closed op set and a state
+// map — so there is no eval surface to break out of. `S(…)` returns a sentinel.
+function runAst(ast) {
+  const sentinel = new Map([
+    ["x", "SENTINEL"],
+    ["count", "SENTINEL"],
+    ["items", "SENTINEL"]
+  ]);
+  return evalAst(ast, undefined, { state: sentinel });
+}
 
 // ---------------------------------------------------------------------------
 // Seeded PRNG — mulberry32. Deterministic & reproducible. The base seed is
@@ -333,38 +386,6 @@ function randInjectionExpr(rng) {
   return `${lhs} ${op} ${literal}`;
 }
 
-// Execute a compiled `:computed` expr exactly as runtime.js does — `new Function`
-// with `S` as the only injected name — but inside a hard sandbox: a Proxy that
-// traps EVERY property access on the global and throws. `S` returns a fixed
-// scalar. If any breakout reached live code (a global read, a call, arithmetic on
-// a smuggled operand), the proxy trips or the literal fails to round-trip.
-function runTrapped(expr) {
-  const trap = new Proxy(
-    {},
-    {
-      // `has` decides which free identifiers `with` captures. We let ONLY the
-      // legitimate reader `S` (and the unscopables probe) fall through to the real
-      // function parameter; every OTHER free identifier (a leaked `globalThis`,
-      // `process`, `this`, etc.) is captured by the trap so its `get` throws.
-      has(_t, prop) {
-        if (prop === "S" || prop === Symbol.unscopables) return false;
-        return true;
-      },
-      get(_t, prop) {
-        // The `with` machinery reads `Symbol.unscopables` while resolving; that
-        // probe is internal and must not count as a breakout.
-        if (prop === Symbol.unscopables) return undefined;
-        throw new Error(`sandbox breakout: accessed global property "${String(prop)}"`);
-      }
-    }
-  );
-  // Wrap the body in `with(__trap__)` so any free identifier other than `S`
-  // resolves to the trap and throws instead of reaching the real global.
-  const fn = new Function("S", "__trap__", `with (__trap__) { return (${expr}); }`);
-  const read = () => "SENTINEL";
-  return fn(read, trap);
-}
-
 // ---------------------------------------------------------------------------
 // Invariant helpers.
 // ---------------------------------------------------------------------------
@@ -562,6 +583,7 @@ test("fuzz: :computed string literals cannot smuggle live code past escaping (A1
       fs.writeFileSync(pageFile, doc);
 
       let artifact;
+      let ast;
       try {
         const result = compileDocument(pageFile, context);
         [artifact] = extractComputedExprs(result.html);
@@ -569,6 +591,7 @@ test("fuzz: :computed string literals cannot smuggle live code past escaping (A1
           typeof artifact === "string" && artifact.length > 0,
           repro("accepted but emitted no computed expr")
         );
+        ast = JSON.parse(artifact);
       } catch (err) {
         // A compile-time rejection is a fully acceptable (safe) outcome.
         assert.ok(err instanceof Error, repro(`rejection was a non-Error: ${String(err)}`));
@@ -577,22 +600,26 @@ test("fuzz: :computed string literals cannot smuggle live code past escaping (A1
         continue;
       }
 
-      // NOTE: we deliberately do NOT apply the `DANGEROUS_ARTIFACT` raw-token regex
-      // here. The whole A1 class is that danger-LOOKING text (`globalThis`, `+`,
-      // `(7*7)`) may legitimately appear INSIDE an escaped string literal and is
-      // inert there — e.g. `S("count") == "'+globalThis+'"`. A purely textual screen
-      // gives false positives. The authoritative invariant is behavioral: execute
-      // the artifact in a hard sandbox and prove it has no side effects.
+      // Structural invariant: the emitted AST carries ONLY closed op tags. Any
+      // danger-looking text (`globalThis`, `+`, `(7*7)`) can only survive as inert
+      // data inside an ["L", …] node, never as an op — so the payload cannot be code.
+      assertClosedOps(ast, repro);
 
-      // Execute the accepted artifact under a hard sandbox. It must complete with a
-      // pure value and never touch a trapped global.
+      // NOTE: we deliberately do NOT apply the `DANGEROUS_ARTIFACT` raw-token regex
+      // to the serialized AST — a literal like ["L", "'+globalThis+'"] legitimately
+      // contains that text as data. The authoritative invariant is behavioral: walk
+      // the AST with the runtime evaluator and prove it yields a pure value.
+
+      // Walk the accepted artifact exactly as the runtime does. evalAst has no eval
+      // surface — it never resolves a free identifier or touches a global — so a
+      // broken-out payload cannot execute; it can only fail to round-trip as a value.
       let value;
       try {
-        value = runTrapped(artifact);
+        value = runAst(ast);
       } catch (err) {
         assert.fail(
           repro(
-            `compiled expr had a SIDE EFFECT when executed (sandbox tripped):\n  artifact: ${artifact}\n  error: ${err && err.message}`
+            `walking the compiled AST threw (a literal may have broken out of its node):\n  artifact: ${artifact}\n  error: ${err && err.message}`
           )
         );
       }

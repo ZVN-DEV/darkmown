@@ -5,6 +5,7 @@ html: true
 <nav class="topnav">
   <a class="brand" href="/">Darkmown</a>
   <span class="nav-links">
+    <a href="/playground/">Playground</a>
     <a href="/docs/">Docs</a>
     <a href="/blog/">Blog</a>
     <a href="/showcase/">Showcase</a>

@@ -66,6 +66,8 @@ npm run dev
 
 Or add Darkmown to an existing project with `npm install -D @zvndev/darkmown`. The package is scoped; the command it installs is plain `darkmown`.
 
+Want to try the syntax before installing anything? The [playground](/playground/) compiles `.wd` and `.md` live in your browser — the same compiler the CLI ships — and shows the real `file:line` error when you break something.
+
 For editing, a [VS Code extension](https://github.com/ZVN-DEV/darkmown/tree/master/editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — install it from a `.vsix` built out of the framework repo (see its `editors/vscode` README; a Marketplace listing is pending).
 
 `darkmown dev` rebuilds incrementally: it tracks which routes depend on each file (includes, colocated assets, loop data, collections), so editing one page or include recompiles only the routes it affects — and falls back to a full rebuild whenever a file is added, removed, or renamed. `routes.json`, the sitemap, and the RSS feed are regenerated on every rebuild, so they always describe the whole site.
@@ -313,7 +315,7 @@ A container named `nav` or `main` emits the real landmark element (`<nav class="
 
 ## Reactive directives
 
-Reactive pages opt into `/__wd/runtime.js` (~7.5 KB gzipped, under a CI-enforced 8 KB budget). Static pages do not.
+Reactive pages opt into `/__wd/runtime.js` (~7.7 KB gzipped, under a CI-enforced 8 KB budget). Static pages do not.
 
 ```wd
 :state count = 0
@@ -591,7 +593,7 @@ Darkmown is a trusted-author site generator: you compile content you wrote, the 
 
 - **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
 - **Raw HTML is escaped by default.** Markdown renders with `html: false`, so a stray `<script>` in content becomes inert text — safe for multi-author collections out of the box. Set `html: true` in a page's frontmatter to pass your own raw HTML through verbatim; there is no built-in sanitizer, so keep it off pages with content you didn't write.
-- **`:fetch` and `:form action=` have no host allowlist, and reactive pages need `unsafe-eval`.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. The runtime compiles `:computed` / `@loop … where` / `.class when` expressions via `new Function`, so a reactive page needs `script-src 'unsafe-eval'` in your CSP. Static pages need neither.
+- **`:fetch` and `:form action=` have no host allowlist.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Since 2.1 the runtime **interprets** validated `:computed` / `@loop … where` / `.class when` expressions from a compact AST instead of building a `new Function`, so **reactive pages need no `'unsafe-eval'`** — they run under the same strict, eval-free CSP as static pages.
 
 See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/master/SECURITY.md) in the package for the full security model.
 

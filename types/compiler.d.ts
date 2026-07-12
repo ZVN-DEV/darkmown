@@ -15,6 +15,19 @@ export function compilePage(file: string, context: Paths): CompiledPage;
  */
 export function compileDocument(file: string, context: Paths, stack?: string[], vars?: Record<string, unknown>): CompiledDocument;
 /**
+ * Compile a page from an in-memory map of project-relative path → source, with
+ * no filesystem access. `entryPath` is the project-relative path of the page to
+ * compile; includes and `@loop` data resolve against the same map.
+ * @param {Record<string, string> | Map<string, string>} files
+ * @param {string} entryPath
+ * @param {{ vars?: Record<string, unknown>, cwd?: string }} [options]
+ * @returns {CompiledPage}
+ */
+export function compileFromMemory(files: Record<string, string> | Map<string, string>, entryPath: string, options?: {
+    vars?: Record<string, unknown>;
+    cwd?: string;
+}): CompiledPage;
+/**
  * Split a raw file into its frontmatter `meta` and `body`.
  * @param {string} raw Full file contents.
  * @param {string} [file] Source path, used only for error messages.

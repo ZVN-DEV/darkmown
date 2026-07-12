@@ -1,6 +1,6 @@
 # Darkmown — AI contributor guide
 
-Darkmown is a markdown-native web framework: `.md` files are strict CommonMark, `.wd` files add first-party directives (loops, state, includes, sections, fetch, forms). Static pages ship **zero** framework JavaScript; reactive pages share one runtime (currently ~7.5 KB gzipped) that must stay **under 8 KB gzipped** (CI-enforced).
+Darkmown is a markdown-native web framework: `.md` files are strict CommonMark, `.wd` files add first-party directives (loops, state, includes, sections, fetch, forms). Static pages ship **zero** framework JavaScript; reactive pages share one runtime (currently ~7.7 KB gzipped) that must stay **under 8 KB gzipped** (CI-enforced).
 
 ## Architecture in one pass
 
@@ -33,7 +33,7 @@ Styling: `src/skin.js`'s `compileSkin` turns an indentation-structural `.skin` i
 
 - `.md` never gets directive behavior. The extension is the feature gate.
 - One loop (`@loop … into … @endloop`), one interpolation syntax (`{ name }`). Never add alternates.
-- Directive actions and `:computed`/`@loop … where` expressions are compile-time-validated whitelists. No eval of raw user content, but validated expressions compile to a whitelisted grammar and run via `new Function` (`src/runtime.js`). `constructor`/`prototype`/`__proto__` path segments are rejected in compiler AND runtime (`getPath`).
+- Directive actions and `:computed`/`@loop … where` expressions are compile-time-validated whitelists. No eval of raw user content: the validated expression is compiled to a compact serialized AST (`src/compiler/expr-ast.js`) and **interpreted by a closed evaluator** in `src/runtime.js` — **no `new Function`, no eval**, so reactive pages run under a strict CSP with **no `'unsafe-eval'`**. The interpreter's op vocabulary is closed (readers `L`/`S`/`I`/`C`/`A`, unary `!`/`u-`, and the fixed arithmetic/comparison/logical operators); an unknown op tag is a hard error, never a fallthrough. `constructor`/`prototype`/`__proto__` path segments are rejected in compiler AND runtime (`getPath`).
 - Includes resolve only inside `site/pages` and `site/_` (traversal + cycle checks in `resolveInclude`/`compileFile`).
 - Scoping is opt-in via the `scoped` first line and pure compile-time. Never scope the token/`:root` path; never touch `src/runtime.js` for it. A non-`scoped` `.skin` must stay byte-identical (golden-tested against `base.skin`).
 - Static pages must emit `runtime: false` in `dist/routes.json`. Adding a feature that flips static pages reactive is a regression.

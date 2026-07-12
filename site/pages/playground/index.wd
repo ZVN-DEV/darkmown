@@ -1,0 +1,51 @@
+---
+title: Playground — run Markdown in your browser
+description: Edit a .wd file and watch it compile and run in your browser — the same compiler the Darkmown CLI uses, no install required.
+html: true
+transitions: true
+---
+
+@include /nav.wd
+
+<main>
+
+:state activeExample = "store"
+
+::: section .pg-intro
+
+# Playground
+
+Edit the Markdown on the left. It compiles **in your browser** — the exact same
+compiler the CLI ships — and runs live on the right. No install, no build step.
+
+::: div .pg-picker
+:button "Store + cart" -> activeExample = "store"
+:button "Counter" -> activeExample = "counter"
+:button "Plain Markdown" -> activeExample = "markdown"
+:::
+
+Now editing the **{ activeExample }** example. Change any text and the preview
+re-renders as you type. Break the syntax on purpose — the real compiler error,
+with `file:line` and a fix hint, shows up in the preview pane.
+
+:::
+
+::: section .pg-workbench
+
+::: div .pg-pane .pg-pane-source
+<label class="pg-label" for="pg-editor">Source</label>
+
+<textarea id="pg-editor" class="pg-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Markdown source"></textarea>
+:::
+
+::: div .pg-pane .pg-pane-preview
+<label class="pg-label" for="pg-preview">Preview</label>
+
+<iframe id="pg-preview" class="pg-preview" title="Live preview" sandbox="allow-scripts allow-same-origin"></iframe>
+
+<pre id="pg-error" class="pg-error" role="alert" hidden></pre>
+:::
+
+:::
+
+</main>

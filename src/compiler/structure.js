@@ -12,6 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { at, createScope, LOOP_META, nestedCtx } from "./context.js";
+import { astOf, serializeExpr } from "./expr-ast.js";
 import { resolveInclude, scopedSkinFor, stampScope } from "./includes.js";
 import {
   escapeHtml,
@@ -44,7 +45,14 @@ const SEMANTIC_CONTAINER_TAGS = new Set(["nav", "main"]);
 export function handleInclude(line, ctx, index) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
   if (!match) throw new Error(`Malformed @include in ${at(ctx, index)}: ${line}`);
-  const target = resolveInclude(match[1], ctx.file, ctx.context, false, at(ctx, index));
+  const target = resolveInclude(
+    match[1],
+    ctx.file,
+    ctx.context,
+    false,
+    at(ctx, index),
+    ctx.comp.reader
+  );
   const args = parseIncludeArgs(match[2] || "", ctx);
   const childScope = createScope(ctx.scope, args);
   // Thread the reactive-nesting depth (and the enclosing loop opener, so a depth
@@ -67,7 +75,7 @@ export function handleInclude(line, ctx, index) {
   // anywhere else on the page, and the scope never leaks to the include's
   // siblings (only this child HTML is stamped). The CSS rewrite (builder) uses
   // the same path-derived id, so attribute and stylesheet line up.
-  const scopedSkin = scopedSkinFor(target, ctx.context);
+  const scopedSkin = scopedSkinFor(target, ctx.context, ctx.comp.reader);
   return scopedSkin && scopedSkin.scoped ? stampScope(child.html, scopedSkin.scopeId) : child.html;
 }
 
@@ -110,9 +118,9 @@ export function handleContainer(header, bodyLines, ctx, index) {
   let tag = "section";
   /** @type {string[]} Static classes baked into class="". */
   const extraClass = [];
-  /** @type {[string, string][]} Reactive loop-item class bindings (data-wd-each-class). */
+  /** @type {[string, any[]][]} Reactive loop-item class bindings (data-wd-each-class): [class, exprAST]. */
   const eachClasses = [];
-  /** @type {[string, string][]} Global state-driven class bindings (data-wd-class). */
+  /** @type {[string, any[]][]} Global state-driven class bindings (data-wd-class): [class, exprAST]. */
   const stateClasses = [];
   let id = "";
   // Leading tag/name token (anything not starting with . or #). "section" keeps
@@ -157,8 +165,8 @@ export function handleContainer(header, bodyLines, ctx, index) {
       const compiled = compileWhen(whenMatch[1].trim(), ctx);
       if (compiled.static) {
         if (compiled.value) extraClass.push(cls);
-      } else if (compiled.item) eachClasses.push([cls, compiled.body]);
-      else stateClasses.push([cls, compiled.body]);
+      } else if (compiled.item) eachClasses.push([cls, astOf(compiled.body)]);
+      else stateClasses.push([cls, astOf(compiled.body)]);
     } else {
       extraClass.push(cls);
     }
@@ -328,7 +336,7 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
   ctx.comp.assets.runtime = true;
   const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
   const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
-  const exprAttr = ` data-wd-if-expr="${escapeHtml(compiled.body)}"`;
+  const exprAttr = ` data-wd-if-expr="${escapeHtml(serializeExpr(compiled.body))}"`;
   if (compiled.item) {
     return `<span data-wd-each-if${exprAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
   }
