@@ -5,13 +5,12 @@ import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
 
 /**
  * The security headers (including the right CSP variant) for an HTML response.
- * Mirrors what production ships: a route the build marked reactive gets the
- * relaxed CSP (`'unsafe-eval'` for `new Function`); a static route gets the
- * stricter, eval-free CSP — so a local preview matches the per-route `_headers`
- * / `vercel.json` the same build writes instead of blanket-relaxing every page.
- * Anything not found in `routes.json` (an unknown route, a 404, a missing
- * manifest) falls back to the reactive CSP, exactly like the production
- * `_headers` catch-all block.
+ * Mirrors what production ships. Since 2.1 both variants are eval-free (the
+ * reactive runtime walks a validated AST, not `new Function`), so a reactive and a
+ * static route resolve to the same CSP — the per-route selection is kept for parity
+ * with the `_headers` / `vercel.json` structure the same build writes. Anything not
+ * found in `routes.json` (an unknown route, a 404, a missing manifest) falls back
+ * to the reactive CSP, exactly like the production `_headers` catch-all block.
  * @param {string} distRoot Absolute path to the build output directory.
  * @param {string} url Request URL (may include a query string).
  * @returns {Record<string, string>}

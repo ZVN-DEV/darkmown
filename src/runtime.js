@@ -213,12 +213,12 @@ async function httpJson(url, init) {
 const computedDefs = [...document.querySelectorAll("[data-wd-computed]")].map((node) => ({
   key: node.getAttribute("data-wd-computed-key") || "",
   expr: node.getAttribute("data-wd-computed-expr") || "",
-  evaluate: new Function("S", "A", `return (${node.getAttribute("data-wd-computed-expr")});`)
+  ast: JSON.parse(node.getAttribute("data-wd-computed-expr") || "null")
 }));
 
 /**
  * Log an expression failure when `window.wd.debug` is enabled.
- * @param {string} expr
+ * @param {unknown} expr
  * @param {unknown} error
  * @returns {void}
  */
@@ -232,11 +232,9 @@ function warn(expr, error) {
  * @returns {void}
  */
 function recompute() {
-  /** @param {string} key @param {string | null} [path] */
-  const read = (key, path) => getPath(state[key], path ?? null);
   for (const def of computedDefs) {
     try {
-      state[def.key] = def.evaluate(read, AGG);
+      state[def.key] = evalAst(def.ast, undefined);
     } catch (error) {
       state[def.key] = undefined;
       warn(def.expr, error);
@@ -246,26 +244,80 @@ function recompute() {
 
 /** @param {unknown} a @param {unknown} b @returns {boolean} */
 const containsFn = (a, b) => String(a ?? "").toLowerCase().includes(String(b ?? "").toLowerCase());
-/** @type {Map<string, Function>} */
-const predicateCache = new Map();
+
 /**
- * @param {string} body
- * @returns {Function}
+ * Evaluate a compact expression AST (see src/compiler/expr-ast.js) against the
+ * live state and an optional loop `item`. The compiler emits this serialized AST
+ * into the `data-wd-*` attributes; the runtime WALKS it — no `new Function`, so
+ * reactive pages run under a strict CSP with no `'unsafe-eval'`. The op vocabulary
+ * is closed: every node tag is one of the readers (L/S/I/C/A), a unary (!/u-), or
+ * a binary operator, and an unknown tag is a hard error, never a fallthrough.
+ * Prototype-pollution segments are rejected by getPath, exactly as before.
+ * @param {any[]} node
+ * @param {any} item Loop row for I(); undefined otherwise.
+ * @returns {any}
  */
-function loopPredicate(body) {
-  let fn = predicateCache.get(body);
-  if (!fn) {
-    fn = new Function("I", "S", "C", `return (${body});`);
-    predicateCache.set(body, fn);
-  }
-  return fn;
+function evalAst(node, item) {
+  /** @param {any[]} n @returns {any} */
+  const ev = (n) => {
+    switch (n[0]) {
+      case "L": return n[1];
+      case "S": return getPath(state[n[1]], n[2] ?? null);
+      case "I": return getPath(item, n[1] ?? null);
+      case "C": return containsFn(ev(n[1]), ev(n[2]));
+      case "A": return AGG(n[1], ev(n[2]), n[3]);
+      case "!": return !ev(n[1]);
+      case "u-": return -ev(n[1]);
+      case "&&": return ev(n[1]) && ev(n[2]);
+      case "||": return ev(n[1]) || ev(n[2]);
+      // biome-ignore lint/suspicious/noDoubleEquals: loose equality preserves prior `new Function` semantics exactly.
+      case "==": return ev(n[1]) == ev(n[2]);
+      // biome-ignore lint/suspicious/noDoubleEquals: loose inequality preserves prior `new Function` semantics exactly.
+      case "!=": return ev(n[1]) != ev(n[2]);
+      case ">": return ev(n[1]) > ev(n[2]);
+      case "<": return ev(n[1]) < ev(n[2]);
+      case ">=": return ev(n[1]) >= ev(n[2]);
+      case "<=": return ev(n[1]) <= ev(n[2]);
+      case "+": return ev(n[1]) + ev(n[2]);
+      case "-": return ev(n[1]) - ev(n[2]);
+      case "*": return ev(n[1]) * ev(n[2]);
+      case "/": return ev(n[1]) / ev(n[2]);
+      case "%": return ev(n[1]) % ev(n[2]);
+    }
+    throw new Error(`wd: unknown op ${n[0]}`);
+  };
+  return ev(node);
+}
+
+/** @type {Map<string, any[]>} Parsed-AST cache keyed by the raw attribute JSON. */
+const astCache = new Map();
+/** @param {string} raw @returns {any[]} */
+function parseAst(raw) {
+  const cached = astCache.get(raw);
+  if (cached) return cached;
+  const ast = JSON.parse(raw);
+  astCache.set(raw, ast);
+  return ast;
+}
+
+/**
+ * Evaluate an expression AST to a boolean, swallowing failures (logs under
+ * `wd.debug`). Shared by reactive classes (`.class when`), loop `where`, and
+ * expression conditionals (`:if a > b`).
+ * @param {any[]} ast
+ * @param {any} item Loop row for per-row predicates, else undefined.
+ * @returns {boolean}
+ */
+function evalPredicate(ast, item) {
+  try { return Boolean(evalAst(ast, item)); }
+  catch (error) { warn(ast, error); return false; }
 }
 
 /**
  * Toggle reactive `.class when <predicate>` bindings on an element. `raw` is the
- * JSON `[[name, body], …]` from data-wd-class (global, item undefined) or
- * data-wd-each-class (per loop row); each body is the same I()/S()/C()
- * expression the loop `where` uses.
+ * JSON `[[name, ast], …]` from data-wd-class (global, item undefined) or
+ * data-wd-each-class (per loop row); each ast is the same expression AST the loop
+ * `where` uses.
  * @param {Element} el
  * @param {string | null} raw
  * @param {any} item Loop item for each-class; undefined for a global class.
@@ -273,23 +325,10 @@ function loopPredicate(body) {
  */
 function classToggle(el, raw, item) {
   if (!raw) return;
-  /** @type {[string, string][]} */
+  /** @type {[string, any[]][]} */
   let pairs;
   try { pairs = JSON.parse(raw); } catch { return; }
-  for (const [name, body] of pairs) el.classList.toggle(name, evalPredicate(body, item));
-}
-
-/**
- * Evaluate a compiled whitelist predicate body (over I()/S()/C()) to a boolean.
- * Shared by reactive classes (`.class when`) and expression conditionals
- * (`:if a > b`). `item` is the loop row for per-row predicates, else undefined.
- * @param {string} body
- * @param {any} item
- * @returns {boolean}
- */
-function evalPredicate(body, item) {
-  try { return Boolean(loopPredicate(body)((/** @type {string} */ p) => getPath(item, p), (/** @type {string} */ k, /** @type {string} */ r) => getPath(state[k], r || ""), containsFn)); }
-  catch (error) { warn(body, error); return false; }
+  for (const [name, ast] of pairs) el.classList.toggle(name, evalPredicate(ast, item));
 }
 
 /**
@@ -328,7 +367,7 @@ function fillItem(node, item, meta = {}) {
     if (skip(region)) continue;
     const expr = region.getAttribute("data-wd-if-expr");
     const m = region.getAttribute("data-wd-meta");
-    const value = expr ? evalPredicate(expr, item) : (m ? meta[m] : getPath(item, region.getAttribute("data-wd-path")));
+    const value = expr ? evalPredicate(parseAst(expr), item) : (m ? meta[m] : getPath(item, region.getAttribute("data-wd-path")));
     const output = region.querySelector("[data-wd-each-if-out]");
     if (!output) continue;
     const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector(value ? "template[data-wd-if-true]" : "template[data-wd-if-false]"));
@@ -414,7 +453,7 @@ function pipeline(list, region) {
  */
 function renderIf(node) {
   const expr = node.getAttribute("data-wd-if-expr");
-  const value = expr ? evalPredicate(expr, undefined) : getPath(state[node.getAttribute("data-wd-if") || ""], node.getAttribute("data-wd-path"));
+  const value = expr ? evalPredicate(parseAst(expr), undefined) : getPath(state[node.getAttribute("data-wd-if") || ""], node.getAttribute("data-wd-path"));
   const active = String(Boolean(value));
   if (node.getAttribute("data-wd-if-active") === active) return;
   node.setAttribute("data-wd-if-active", active);
@@ -441,15 +480,8 @@ function reconcile(region, rows) {
   let list = Array.isArray(rows) ? rows.slice() : [];
   const where = region.getAttribute("data-wd-loop-where");
   if (where) {
-    const predicate = loopPredicate(where);
-    list = list.filter((/** @type {any} */ item) => {
-      try {
-        return predicate((/** @type {string | null} */ path) => getPath(item, path), (/** @type {string} */ k, /** @type {string} */ r) => getPath(state[k], r || ""), containsFn);
-      } catch (error) {
-        warn(where, error);
-        return false;
-      }
-    });
+    const ast = parseAst(where);
+    list = list.filter((/** @type {any} */ item) => evalPredicate(ast, item));
   }
   list = pipeline(list, region);
 

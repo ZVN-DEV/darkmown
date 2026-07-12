@@ -18,13 +18,18 @@ import {
 // Header constants — the CSP the framework's own output actually satisfies.
 // ---------------------------------------------------------------------------
 
-test("reactive CSP allows unsafe-eval (new Function) but not unsafe-inline", () => {
+test("reactive CSP is eval-free (no unsafe-eval, no unsafe-inline on script-src) — identical to static", () => {
+  // Since 2.1 the runtime walks a validated expression AST instead of building a
+  // `new Function`, so the reactive policy needs no 'unsafe-eval' and is byte-for-
+  // byte identical to the static one.
   assert.match(
     REACTIVE_CSP,
     new RegExp(
-      `script-src 'self' ${escapeRe(SPECULATION_RULES_HASH)} 'inline-speculation-rules' 'unsafe-eval'`
+      `script-src 'self' ${escapeRe(SPECULATION_RULES_HASH)} 'inline-speculation-rules'(?:;| )`
     )
   );
+  assert.doesNotMatch(REACTIVE_CSP, /'unsafe-eval'/);
+  assert.equal(REACTIVE_CSP, STATIC_CSP, "reactive and static CSP are the same eval-free policy");
   assert.match(REACTIVE_CSP, /style-src 'self' 'unsafe-inline'/);
   assert.match(REACTIVE_CSP, /img-src 'self' data: https:/);
   assert.match(REACTIVE_CSP, /default-src 'self'/);
@@ -179,13 +184,14 @@ test("npm run build writes dist/_headers with the CSP for static and reactive ro
   assert.equal(fs.existsSync(headersPath), true);
   const headers = fs.readFileSync(headersPath, "utf8");
 
-  // Catch-all baseline + relaxed CSP.
+  // Catch-all baseline + the (now eval-free) reactive CSP.
   assert.match(headers, /^\/\*\n/);
   assert.match(headers, /X-Content-Type-Options: nosniff/);
-  assert.match(headers, /Content-Security-Policy:.*'unsafe-eval'/);
+  assert.match(headers, /Content-Security-Policy:/);
+  assert.doesNotMatch(headers, /'unsafe-eval'/);
 
-  // The static /about route gets a dedicated eval-free override; the reactive
-  // root does not (it inherits the relaxed catch-all CSP).
+  // The static /about route still gets a dedicated CSP override block; the reactive
+  // root does not (it inherits the catch-all CSP — now identical and eval-free).
   assert.match(headers, /^\/about\n/m);
   assert.doesNotMatch(headers, /^\/\n/m);
 });
@@ -253,7 +259,7 @@ function resolveVercelCsp(rules, urlPath) {
   return csp;
 }
 
-test("vercel.json applies the strict CSP to EVERY static route — incl. nested — and relaxed to reactive", () => {
+test("vercel.json resolves EVERY route — static (incl. nested) and reactive — to the eval-free CSP", () => {
   const repoRoot = process.cwd();
   const vercel = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
   const rules = vercel.headers || [];
@@ -292,18 +298,20 @@ test("vercel.json applies the strict CSP to EVERY static route — incl. nested 
     assert.equal(
       csp,
       REACTIVE_CSP,
-      `reactive route ${r.route} (served at ${servedPath(r.route)}) must keep the relaxed CSP — a strict CSP breaks its runtime new Function().`
+      `reactive route ${r.route} (served at ${servedPath(r.route)}) resolves to the wrong CSP — since 2.1 the runtime walks a validated AST (no eval), so its CSP is the same eval-free policy as static routes.`
     );
   }
 });
 
-// Why the static-route rule exists: static routes ship zero framework JS, so they
-// never call `new Function`; this second, more-specific rule drops 'unsafe-eval'
-// for them. Vercel applies all matching header rules and the last match wins per
-// key, so it overrides the catch-all CSP. (`connect-src 'self'` fits same-origin
-// :fetch — widen it if your :fetch targets a remote host.) This note lives HERE,
-// not in vercel.json: Vercel validates vercel.json against a strict schema and
-// REJECTS unknown properties (a stray `"comment"` key once broke every deploy).
+// The static-route rules are now defense-in-depth: since 2.1 no page evals (the
+// reactive runtime walks a validated AST), so the catch-all CSP is already eval-
+// free and these per-route overrides carry the same policy — they stay as a guard
+// so statics remain strict even if someone re-widens the catch-all. Vercel applies
+// all matching header rules and the last match wins per key. (`connect-src 'self'`
+// fits same-origin :fetch — widen it if your :fetch targets a remote host.) This
+// note lives HERE, not in vercel.json: Vercel validates vercel.json against a
+// strict schema and REJECTS unknown properties (a stray `"comment"` key once broke
+// every deploy).
 test("vercel.json header rules contain only Vercel-allowed properties", () => {
   // Guards the deploy-breaking class: Vercel rejects unknown keys in a headers[]
   // entry (e.g. a `comment`), failing the build before it starts. Keep this green.

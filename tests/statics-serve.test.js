@@ -71,7 +71,8 @@ test("serve sets security headers (incl. CSP) on a 200 HTML response", async () 
     assert.equal(res.headers["x-frame-options"], "SAMEORIGIN");
     const csp = res.headers["content-security-policy"];
     assert.match(csp, /default-src 'self'/);
-    assert.match(csp, /script-src 'self' 'sha256-[^']+' 'inline-speculation-rules' 'unsafe-eval'/);
+    assert.match(csp, /script-src 'self' 'sha256-[^']+' 'inline-speculation-rules'/);
+    assert.doesNotMatch(csp, /'unsafe-eval'/);
     assert.doesNotMatch(csp.split("; ")[0], /'unsafe-inline'/);
     assert.match(csp, /frame-ancestors 'self'/);
     assert.match(csp, /object-src 'none'/);
@@ -112,10 +113,11 @@ test("serve picks the per-route CSP from routes.json — static route has no 'un
     assert.match(staticCsp, /script-src 'self' 'sha256-[^']+' 'inline-speculation-rules'/);
     assert.doesNotMatch(staticCsp, /'unsafe-eval'/);
 
-    // Reactive route: keeps the relaxed policy (the runtime's new Function needs it).
+    // Reactive route: the runtime walks a validated AST (no eval), so its CSP is the
+    // same eval-free policy as a static route.
     const reactiveRes = await request(dist, "/app/");
     assert.equal(reactiveRes.statusCode, 200);
-    assert.match(reactiveRes.headers["content-security-policy"], /'unsafe-eval'/);
+    assert.doesNotMatch(reactiveRes.headers["content-security-policy"], /'unsafe-eval'/);
   } finally {
     fs.rmSync(dist, { recursive: true, force: true });
   }

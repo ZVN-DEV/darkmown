@@ -12,6 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { at, createScope, LOOP_META, nestedCtx } from "./context.js";
+import { astOf, serializeExpr } from "./expr-ast.js";
 import { resolveInclude, scopedSkinFor, stampScope } from "./includes.js";
 import {
   escapeHtml,
@@ -96,9 +97,9 @@ export function handleContainer(header, bodyLines, ctx, index) {
   let tag = "section";
   /** @type {string[]} Static classes baked into class="". */
   const extraClass = [];
-  /** @type {[string, string][]} Reactive loop-item class bindings (data-wd-each-class). */
+  /** @type {[string, any[]][]} Reactive loop-item class bindings (data-wd-each-class): [class, exprAST]. */
   const eachClasses = [];
-  /** @type {[string, string][]} Global state-driven class bindings (data-wd-class). */
+  /** @type {[string, any[]][]} Global state-driven class bindings (data-wd-class): [class, exprAST]. */
   const stateClasses = [];
   let id = "";
   // Leading tag/name token (anything not starting with . or #). "section" keeps
@@ -135,8 +136,8 @@ export function handleContainer(header, bodyLines, ctx, index) {
       const compiled = compileWhen(whenMatch[1].trim(), ctx);
       if (compiled.static) {
         if (compiled.value) extraClass.push(cls);
-      } else if (compiled.item) eachClasses.push([cls, compiled.body]);
-      else stateClasses.push([cls, compiled.body]);
+      } else if (compiled.item) eachClasses.push([cls, astOf(compiled.body)]);
+      else stateClasses.push([cls, astOf(compiled.body)]);
     } else {
       extraClass.push(cls);
     }
@@ -306,7 +307,7 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
   ctx.comp.assets.runtime = true;
   const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
   const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
-  const exprAttr = ` data-wd-if-expr="${escapeHtml(compiled.body)}"`;
+  const exprAttr = ` data-wd-if-expr="${escapeHtml(serializeExpr(compiled.body))}"`;
   if (compiled.item) {
     return `<span data-wd-each-if${exprAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
   }
