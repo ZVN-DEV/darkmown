@@ -53,6 +53,7 @@ export function handleInclude(line, ctx, index) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
   if (!match)
     throw wdError(`Malformed @include in ${at(ctx, index)}: ${line}. ${INCLUDE_USE}`, {
+      code: "WD603",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: INCLUDE_USE.slice("Use: ".length),
@@ -107,8 +108,9 @@ function parseIncludeArgs(raw, ctx) {
       const expr = value.slice(1, -1).trim();
       const resolved = lookupPath(expr, ctx);
       if (!resolved.found) {
-        throw new Error(
-          `@include argument ${match[1]}={ ${expr} } in ${ctx.file} does not match any value in scope`
+        throw wdError(
+          `@include argument ${match[1]}={ ${expr} } in ${ctx.file} does not match any value in scope`,
+          { code: "WD604", file: ctx.file }
         );
       }
       args[match[1]] = resolved.value;
@@ -165,8 +167,9 @@ export function handleContainer(header, bodyLines, ctx, index) {
     }
     const cm = rest.match(/^\.([A-Za-z_][\w-]*)/);
     if (!cm)
-      throw new Error(
-        `Unexpected token "${rest.split(/\s+/)[0]}" in container "::: ${header}" in ${at(ctx, index)}`
+      throw wdError(
+        `Unexpected token "${rest.split(/\s+/)[0]}" in container "::: ${header}" in ${at(ctx, index)}`,
+        { code: "WD605", file: ctx.file, line: lineOf(ctx, index) }
       );
     const cls = cm[1];
     rest = rest.slice(cm[0].length).trim();
@@ -231,6 +234,7 @@ export function handleCarousel(line, bodyLines, ctx, index) {
     if (!auto) {
       const hint = `:carousel [autoplay=3000] … :endcarousel — e.g. ${CAROUSEL_EXAMPLE}`;
       throw wdError(`Malformed :carousel in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+        code: "WD606",
         file: ctx.file,
         line: lineOf(ctx, index),
         hint,
@@ -295,8 +299,9 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
     // Per-row meta vars in :if — only valid inside a loop.
     if (LOOP_META[head]) {
       if (!ctx.loopMeta)
-        throw new Error(
-          `":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`
+        throw wdError(
+          `":if ${match[1]}" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Use it inside a loop body.`,
+          { code: "WD607", file: ctx.file }
         );
       if (ctx.loopItem) {
         const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
@@ -322,8 +327,9 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
 
     const key = resolveStateKey(head, ctx);
     if (!key) {
-      throw new Error(
-        `:if ${match[1]} in ${ctx.file} does not match a :state or in-scope value. Declare it first.`
+      throw wdError(
+        `:if ${match[1]} in ${ctx.file} does not match a :state or in-scope value. Declare it first.`,
+        { code: "WD608", file: ctx.file }
       );
     }
     ctx.comp.assets.runtime = true;
@@ -344,6 +350,7 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
   if (!condition) {
     const hint = `":if name" or ":if a <op> b [and|or|not …]" — e.g. ${IF_EXAMPLE}`;
     throw wdError(`Malformed :if in ${at(ctx, index)}: ${line}. Use ${hint}`, {
+      code: "WD609",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint,
@@ -403,13 +410,15 @@ function validateDemoHref(href, ctx) {
   const value = href.trim();
   // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejects control characters in URLs/hrefs.
   if (value !== href || /[\u0000-\u001F\u007F]/.test(value)) {
-    throw new Error(
-      `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`
+    throw wdError(
+      `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`,
+      { code: "WD610", file: ctx.file }
     );
   }
   if (value.startsWith("//")) {
-    throw new Error(
-      `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http: or https: explicitly.`
+    throw wdError(
+      `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http: or https: explicitly.`,
+      { code: "WD611", file: ctx.file }
     );
   }
   if (
@@ -424,7 +433,8 @@ function validateDemoHref(href, ctx) {
   if (scheme && ["http", "https", "mailto"].includes(scheme[1].toLowerCase())) {
     return value;
   }
-  throw new Error(
-    `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`
+  throw wdError(
+    `Unsafe :try href "${escapeHtml(href)}" in ${ctx.file}. Use a relative URL starting with /, ./, ../, or #, or an http:, https:, or mailto: URL.`,
+    { code: "WD610", file: ctx.file }
   );
 }

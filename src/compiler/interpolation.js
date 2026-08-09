@@ -1,9 +1,11 @@
 // ---------------------------------------------------------------------------
 // Interpolation primitives: path/value resolution, state-key lookup, scalar
 // parsing, and HTML escaping. These are the leaf utilities the directive
-// handlers, loops, predicates, and markdown layer all build on — this module
-// imports only the shared typedefs, so it sits near the root of the DAG.
+// handlers, loops, predicates, and markdown layer all build on — it imports
+// only `context.js` (which imports nothing), so it sits at the root of the DAG.
 // ---------------------------------------------------------------------------
+
+import { wdError } from "./context.js";
 
 /**
  * @typedef {import("./context.js").Scope} Scope
@@ -66,7 +68,11 @@ export function getPath(value, segments) {
 export function validatePath(path, ctx, use) {
   const segs = path.split(".");
   if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
-    throw new Error(`Path segment in "${path}" is not allowed in ${ctx.file}. Use: ${use}`);
+    throw wdError(`Path segment in "${path}" is not allowed in ${ctx.file}. Use: ${use}`, {
+      code: "WD002",
+      file: ctx.file,
+      hint: use
+    });
   }
   return segs;
 }
@@ -98,8 +104,9 @@ export function interpolateLeaf(value, expr, ctx) {
   if (value === null || value === undefined) return "";
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "object") {
-    throw new Error(
-      `Cannot interpolate the object value "{ ${expr} }" in ${ctx.file}. Interpolate a field instead — e.g. { ${expr}.title } — or iterate it with @loop ${expr} into item.`
+    throw wdError(
+      `Cannot interpolate the object value "{ ${expr} }" in ${ctx.file}. Interpolate a field instead — e.g. { ${expr}.title } — or iterate it with @loop ${expr} into item.`,
+      { code: "WD003", file: ctx.file }
     );
   }
   return String(value);
@@ -143,11 +150,12 @@ export function parseStateValue(raw, where) {
       const open = value[0];
       const close = open === "[" ? "]" : "}";
       const shown = value.length > 60 ? `${value.slice(0, 57)}…` : value;
-      throw new Error(
+      throw wdError(
         `Unbalanced JSON value "${shown}"${where ? ` in ${where}` : ""}: this opens "${open}" but ` +
           `never closes it. :state/:store/:theme accept a multi-line array/object, but the literal ` +
           `must balance (a "${close}" is missing) with no blank lines inside it. ` +
-          `Quote it for literal bracket text (e.g. = "[draft]").`
+          `Quote it for literal bracket text (e.g. = "[draft]").`,
+        { code: "WD004" }
       );
     }
     return value;

@@ -7,7 +7,7 @@
 
 import path from "node:path";
 import { scopeIdFor } from "../skin.js";
-import { pageIncludeExtensions } from "./context.js";
+import { pageIncludeExtensions, wdError } from "./context.js";
 import { stripQuotes } from "./interpolation.js";
 
 /**
@@ -181,14 +181,18 @@ export function resolveInclude(spec, fromFile, context, allowAny, loc, reader) {
   for (const candidate of candidates) {
     const resolved = path.resolve(candidate);
     if (!isAllowedInclude(resolved, context)) {
-      throw new Error(`Include "${spec}" from ${loc} resolves outside site/pages or site/_`);
+      throw wdError(`Include "${spec}" from ${loc} resolves outside site/pages or site/_`, {
+        code: "WD601",
+        file: fromFile
+      });
     }
     if (!reader.exists(resolved)) continue;
     if (!allowAny && !pageIncludeExtensions.includes(path.extname(resolved))) continue;
     return resolved;
   }
-  throw new Error(
-    `Could not resolve include "${spec}" from ${loc}. Looked in site/pages and site/_ — check the path and leading slash.`
+  throw wdError(
+    `Could not resolve include "${spec}" from ${loc}. Looked in site/pages and site/_ — check the path and leading slash.`,
+    { code: "WD602", file: fromFile }
   );
 }
 

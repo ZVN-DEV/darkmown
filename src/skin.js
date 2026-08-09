@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { wdError } from "./compiler/context.js";
 
 const aliases = new Map([
   ["radius", "border-radius"],
@@ -96,7 +97,7 @@ export function compileSkin(source, opts = {}) {
   }
   for (let i = start; i < lines.length; i++) {
     if (lines[i].text === "scoped" && lines[i].indent === 0) {
-      throw new Error('"scoped" must be the first line of a .skin file');
+      throw wdError('"scoped" must be the first line of a .skin file', { code: "WD801" });
     }
   }
 
@@ -184,8 +185,9 @@ export function compileSkin(source, opts = {}) {
     // place a filtered bare `*`/`page` reset would otherwise leak through to), so
     // it errors with the same hint instead of emitting a never-matching rule.
     if (scope && current === ":root") {
-      throw new Error(
-        `page-level declaration "${text}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`
+      throw wdError(
+        `page-level declaration "${text}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`,
+        { code: "WD802" }
       );
     }
     const media = stack.find((frame) => frame.media)?.media;
@@ -235,8 +237,9 @@ function guardPageLevel(text, parent) {
   for (const part of text.split(",")) {
     const clean = part.trim();
     if (PAGE_LEVEL_SELECTORS.has(clean)) {
-      throw new Error(
-        `page-level selector "${clean}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`
+      throw wdError(
+        `page-level selector "${clean}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`,
+        { code: "WD803" }
       );
     }
   }
