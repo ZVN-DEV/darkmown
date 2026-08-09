@@ -61,7 +61,10 @@ function parseLoopClauses(tail, itemName, ctx) {
   /** @type {number|null} */ let paginate = null;
   /** @returns {never} */
   const bad = () => {
-    throw new Error(`Malformed @loop clause in ${ctx.file}: "${tail.trim()}". ${LOOP_USAGE}`);
+    throw wdError(`Malformed @loop clause in ${ctx.file}: "${tail.trim()}". ${LOOP_USAGE}`, {
+      code: "WD102",
+      file: ctx.file
+    });
   };
 
   // `sortable` is a position-independent flag (drag-reorder); peel it wherever it
@@ -152,20 +155,25 @@ function parseSortClause(fieldTok, dirTok, itemName, ctx) {
   if (fieldState) {
     const resolved = resolveStateKey(fieldState[1], ctx);
     if (!resolved)
-      throw new Error(
-        `@loop sort by { ${fieldState[1]} } references unknown :state/:store in ${ctx.file}. ${LOOP_USAGE}`
+      throw wdError(
+        `@loop sort by { ${fieldState[1]} } references unknown :state/:store in ${ctx.file}. ${LOOP_USAGE}`,
+        { code: "WD103", file: ctx.file }
       );
     key = resolved;
     keyKind = "key";
   } else {
     const segs = fieldTok.split(".");
     if (segs[0] !== itemName)
-      throw new Error(
-        `@loop sort key "${fieldTok}" must start with the loop item "${itemName}" in ${ctx.file}. ${LOOP_USAGE}`
+      throw wdError(
+        `@loop sort key "${fieldTok}" must start with the loop item "${itemName}" in ${ctx.file}. ${LOOP_USAGE}`,
+        { code: "WD104", file: ctx.file }
       );
     const rest = segs.slice(1);
     if (rest.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg)))
-      throw new Error(`Sort key "${fieldTok}" is not allowed in @loop (${ctx.file})`);
+      throw wdError(`Sort key "${fieldTok}" is not allowed in @loop (${ctx.file})`, {
+        code: "WD105",
+        file: ctx.file
+      });
     key = rest.join(".");
     keyKind = "literal";
   }
@@ -177,8 +185,9 @@ function parseSortClause(fieldTok, dirTok, itemName, ctx) {
     if (dirState) {
       const resolved = resolveStateKey(dirState[1], ctx);
       if (!resolved)
-        throw new Error(
-          `@loop sort direction { ${dirState[1]} } references unknown :state/:store in ${ctx.file}. ${LOOP_USAGE}`
+        throw wdError(
+          `@loop sort direction { ${dirState[1]} } references unknown :state/:store in ${ctx.file}. ${LOOP_USAGE}`,
+          { code: "WD106", file: ctx.file }
         );
       dir = resolved;
       dirKind = "key";
@@ -201,8 +210,9 @@ function parseNumArg(tok, ctx) {
   if (/^\d+$/.test(tok)) return { kind: "literal", value: Number(tok) };
   const key = resolveStateKey(tok, ctx);
   if (!key)
-    throw new Error(
-      `@loop offset/limit "${tok}" in ${ctx.file} is neither a non-negative integer nor a declared :state. ${LOOP_USAGE}`
+    throw wdError(
+      `@loop offset/limit "${tok}" in ${ctx.file} is neither a non-negative integer nor a declared :state. ${LOOP_USAGE}`,
+      { code: "WD107", file: ctx.file }
     );
   return { kind: "key", value: key };
 }
@@ -226,6 +236,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
   const match = line.match(/^@loop\s+(.+?)\s+into\s+([A-Za-z_$][\w$]*)(\s+.+?)?\s*$/);
   if (!match)
     throw wdError(`Malformed @loop in ${at(ctx, index)}: ${line}. ${LOOP_USAGE}`, {
+      code: "WD101",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: LOOP_USAGE.slice("Use: ".length),
@@ -258,16 +269,18 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
       clauses.limit ||
       clauses.paginate)
   ) {
-    throw new Error(
-      `@loop sortable cannot combine with where/sort/reverse/offset/limit/paginate in ${ctx.file}. ${LOOP_USAGE}`
+    throw wdError(
+      `@loop sortable cannot combine with where/sort/reverse/offset/limit/paginate in ${ctx.file}. ${LOOP_USAGE}`,
+      { code: "WD108", file: ctx.file }
     );
   }
   // `paginate N` OWNS the page slice, so an explicit offset/limit alongside it is
   // a conflict (which one wins?). Reject it with a clear hint rather than silently
   // letting one override the other.
   if (clauses.paginate && (clauses.offset || clauses.limit)) {
-    throw new Error(
-      `@loop paginate cannot combine with offset/limit in ${ctx.file} — paginate already slices each page. ${LOOP_USAGE}`
+    throw wdError(
+      `@loop paginate cannot combine with offset/limit in ${ctx.file} — paginate already slices each page. ${LOOP_USAGE}`,
+      { code: "WD109", file: ctx.file }
     );
   }
   /** @type {LoopOpts} */
@@ -298,7 +311,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
     source.startsWith("../") ||
     source.endsWith(".json")
   ) {
-    if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
+    if (opts.paginate) throw paginateOnlyCollections(ctx);
     const dataFile = resolveInclude(
       source,
       ctx.file,
@@ -309,23 +322,28 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
     );
     ctx.comp.deps.add(dataFile);
     const rows = JSON.parse(ctx.comp.reader.readText(dataFile));
-    if (!Array.isArray(rows)) throw new Error(`@loop data must be a JSON array: ${dataFile}`);
+    if (!Array.isArray(rows))
+      throw wdError(`@loop data must be a JSON array: ${dataFile}`, {
+        code: "WD111",
+        file: ctx.file
+      });
     return loopOverData(rows, itemName, bodyLines, bodyCtx, opts);
   }
 
   const resolved = lookupPath(source, ctx);
   if (resolved.found) {
-    if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
+    if (opts.paginate) throw paginateOnlyCollections(ctx);
     // A missing/unset field (e.g. an optional frontmatter key) is an EMPTY
     // list, not an error — the `@empty` branch renders, matching the runtime.
     if (resolved.value === null || resolved.value === undefined) {
       return loopOverData([], itemName, bodyLines, bodyCtx, opts);
     }
     if (!Array.isArray(resolved.value)) {
-      throw new Error(
+      throw wdError(
         `@loop ${source} in ${at(ctx, index)} found an in-scope value, but it is not a list ` +
           `(got ${typeof resolved.value}). Use: a list value (e.g. \`tags: [a, b]\` in frontmatter) — ` +
-          `or leave the field out entirely, which loops zero rows and renders the @empty branch.`
+          `or leave the field out entirely, which loops zero rows and renders the @empty branch.`,
+        { code: "WD112", file: ctx.file, line: lineOf(ctx, index) }
       );
     }
     return loopOverData(resolved.value, itemName, bodyLines, bodyCtx, opts);
@@ -335,11 +353,14 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
   const segs = source.split(".");
   if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(source)) {
     if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
-      throw new Error(`@loop source "${source}" is not allowed in ${ctx.file}`);
+      throw wdError(`@loop source "${source}" is not allowed in ${ctx.file}`, {
+        code: "WD113",
+        file: ctx.file
+      });
     }
     const key = resolveStateKey(segs[0], ctx);
     if (key) {
-      if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
+      if (opts.paginate) throw paginateOnlyCollections(ctx);
       const fullKey = segs.length > 1 ? `${key}.${segs.slice(1).join(".")}` : key;
       return reactiveLoop(fullKey, itemName, bodyLines, bodyCtx, opts);
     }
@@ -355,16 +376,17 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
     // the enclosing row item — an ITEM-RELATIVE loop the runtime fills per row.
     if (ctx.loopItem && segs[0] === ctx.loopItem && segs.length > 1) {
       if (opts.sortable) {
-        throw new Error(
-          `@loop sortable is not supported on a nested (item-relative) loop in ${ctx.file}. ${LOOP_USAGE}`
+        throw wdError(
+          `@loop sortable is not supported on a nested (item-relative) loop in ${ctx.file}. ${LOOP_USAGE}`,
+          { code: "WD114", file: ctx.file }
         );
       }
-      if (opts.paginate) throw new Error(paginateOnlyCollections(ctx));
+      if (opts.paginate) throw paginateOnlyCollections(ctx);
       return itemRelativeLoop(segs.slice(1).join("."), itemName, bodyLines, bodyCtx, opts);
     }
   }
 
-  throw new Error(unresolvedSourceError(source, ctx));
+  throw unresolvedSourceError(source, ctx);
 }
 
 /**
@@ -373,15 +395,16 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
  * collection reference is immediately actionable.
  * @param {string} source
  * @param {Ctx} ctx
- * @returns {string}
+ * @returns {Error}
  */
 function unresolvedSourceError(source, ctx) {
   const names = [...ctx.comp.collections.keys()].sort();
   const collectionsHint = names.length ? ` Available collections: ${names.join(", ")}.` : "";
-  return (
+  return wdError(
     `@loop source "${source}" in ${ctx.file} was not found. Loop over a collection ` +
-    `(a site/pages/<name>/ subdirectory, by its bare name), a JSON file ` +
-    `(@loop /data.json into row), an in-scope value, or a :state list.${collectionsHint}`
+      `(a site/pages/<name>/ subdirectory, by its bare name), a JSON file ` +
+      `(@loop /data.json into row), an in-scope value, or a :state list.${collectionsHint}`,
+    { code: "WD115", file: ctx.file }
   );
 }
 
@@ -389,10 +412,13 @@ function unresolvedSourceError(source, ctx) {
  * The error for `paginate` on a non-collection source: pagination multiplies
  * static routes, which only makes sense for a build-time collection listing.
  * @param {Ctx} ctx
- * @returns {string}
+ * @returns {Error}
  */
 function paginateOnlyCollections(ctx) {
-  return `@loop paginate requires a collection source (a site/pages/<name>/ subdirectory) in ${ctx.file}. ${LOOP_USAGE}`;
+  return wdError(
+    `@loop paginate requires a collection source (a site/pages/<name>/ subdirectory) in ${ctx.file}. ${LOOP_USAGE}`,
+    { code: "WD110", file: ctx.file }
+  );
 }
 
 /**
@@ -410,9 +436,10 @@ function paginateOnlyCollections(ctx) {
 function assertReactiveDepth(ctx) {
   if ((ctx.reactiveDepth ?? 0) < 2) return;
   const opener = ctx.loopOpener ?? { at: ctx.file, line: "" };
-  throw new Error(
+  throw wdError(
     `Reactive @loop nesting is limited to one inner level in ${opener.at}: "${opener.line}". ` +
-      `Unroll the outer data at build time (JSON/frontmatter source) or move the innermost list into build-time data.`
+      `Unroll the outer data at build time (JSON/frontmatter source) or move the innermost list into build-time data.`,
+    { code: "WD116", file: ctx.file }
   );
 }
 
@@ -522,8 +549,9 @@ function pipelineRows(rows, where, opts, ctx) {
  */
 function loopOverData(rows, itemName, bodyLines, ctx, opts) {
   if (opts.sortable) {
-    throw new Error(
-      `@loop sortable requires a :state or :store list to reorder, not a JSON file or in-scope value, in ${ctx.file}. ${LOOP_USAGE}`
+    throw wdError(
+      `@loop sortable requires a :state or :store list to reorder, not a JSON file or in-scope value, in ${ctx.file}. ${LOOP_USAGE}`,
+      { code: "WD117", file: ctx.file }
     );
   }
   // Reactive when the where reads state OR an offset/limit references a state key.

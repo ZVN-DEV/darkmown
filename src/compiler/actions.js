@@ -37,6 +37,7 @@ export function handleButton(line, ctx, index) {
   const match = line.match(/^:button\s+"([^"]+)"\s*->\s*(.+)$/);
   if (!match)
     throw wdError(`Malformed :button in ${at(ctx, index)}: ${line}. ${BUTTON_USE}`, {
+      code: "WD301",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: BUTTON_USE.slice("Use: ".length),
@@ -74,6 +75,7 @@ export function handleEffect(line, ctx, index) {
   const match = line.match(/^:effect\s+([A-Za-z_$][\w$.]*)\s*->\s*(.+)$/);
   if (!match)
     throw wdError(`Malformed :effect in ${at(ctx, index)}: ${line}. ${EFFECT_USE}`, {
+      code: "WD302",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: EFFECT_USE.slice("Use: ".length),
@@ -82,8 +84,9 @@ export function handleEffect(line, ctx, index) {
   const segs = validatePath(match[1], ctx, EFFECT_USE);
   const key = resolveStateKey(segs[0], ctx);
   if (!key)
-    throw new Error(
-      `:effect watches unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`
+    throw wdError(
+      `:effect watches unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`,
+      { code: "WD303", file: ctx.file }
     );
   ctx.comp.assets.runtime = true;
   const watch = [key, ...segs.slice(1)].join(".");
@@ -122,6 +125,7 @@ export function handleEvery(line, ctx, index) {
   const match = line.match(/^:every\s+(\S+)\s*->\s*(.+)$/);
   if (!match)
     throw wdError(`Malformed :every in ${at(ctx, index)}: ${line}. ${EVERY_USE}`, {
+      code: "WD304",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: EVERY_USE.slice("Use: ".length),
@@ -129,9 +133,11 @@ export function handleEvery(line, ctx, index) {
     });
   const ms = parseDuration(match[1]);
   if (ms == null || ms <= 0) {
-    throw new Error(
-      `:every duration "${match[1]}" is not valid in ${at(ctx, index)}. ${EVERY_USE}`
-    );
+    throw wdError(`:every duration "${match[1]}" is not valid in ${at(ctx, index)}. ${EVERY_USE}`, {
+      code: "WD305",
+      file: ctx.file,
+      line: lineOf(ctx, index)
+    });
   }
   ctx.comp.assets.runtime = true;
   const action = parseAction(match[2], ctx);
@@ -176,8 +182,9 @@ function parseSingleAction(expression, raw, ctx) {
     const segs = validatePath(name, ctx, ACTION_USE);
     const key = resolveStateKey(segs[0], ctx);
     if (!key) {
-      throw new Error(
-        `Button action targets unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`
+      throw wdError(
+        `Button action targets unknown state "${segs[0]}" in ${ctx.file}. Declare it first with :state ${segs[0]} = ...`,
+        { code: "WD306", file: ctx.file }
       );
     }
     return [key, ...segs.slice(1)].join(".");
@@ -198,8 +205,9 @@ function parseSingleAction(expression, raw, ctx) {
     if (ctx.loopItem && rhs === ctx.loopItem) {
       const target = resolveTarget(add[1]);
       if (!Array.isArray(ctx.comp.state.get(target))) {
-        throw new Error(
-          `Button action "${raw}" needs ${add[1]} to be a :state list (declare it "${add[1]} = []") in ${ctx.file}.`
+        throw wdError(
+          `Button action "${raw}" needs ${add[1]} to be a :state list (declare it "${add[1]} = []") in ${ctx.file}.`,
+          { code: "WD307", file: ctx.file }
         );
       }
       return { op: "append-row", target };
@@ -208,8 +216,9 @@ function parseSingleAction(expression, raw, ctx) {
     const value = parseActionLiteral(rhs, ctx);
     if (Array.isArray(ctx.comp.state.get(target))) return { op: "append", target, value };
     if (typeof value === "number") return { op: "add", target, value };
-    throw new Error(
-      `Unsupported button action "${raw}" in ${ctx.file}. += with non-number values requires a list state target — declare it "${add[1]} = []".`
+    throw wdError(
+      `Unsupported button action "${raw}" in ${ctx.file}. += with non-number values requires a list state target — declare it "${add[1]} = []".`,
+      { code: "WD308", file: ctx.file }
     );
   }
   // `flag toggle` (no operand) → boolean flip; `list toggle v` → member-toggle.
@@ -235,13 +244,15 @@ function parseSingleAction(expression, raw, ctx) {
       // its source is a path off the outer row, which the runtime's row-remove
       // can't target. Fail loud with the honest workaround.
       if (!ctx.loopKey) {
-        throw new Error(
-          `Button action "${raw}" can't delete a row of a nested (item-relative) loop in ${ctx.file}. Per-row "remove" needs a top-level :state/:store list; carry the row into one (cart += ${ctx.loopItem}) and remove it there.`
+        throw wdError(
+          `Button action "${raw}" can't delete a row of a nested (item-relative) loop in ${ctx.file}. Per-row "remove" needs a top-level :state/:store list; carry the row into one (cart += ${ctx.loopItem}) and remove it there.`,
+          { code: "WD309", file: ctx.file }
         );
       }
       if (resolveStateKey(remove[1], ctx) !== ctx.loopKey) {
-        throw new Error(
-          `Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`
+        throw wdError(
+          `Button action "${raw}" must target the :state list being looped (@loop ${remove[1]} into ${ctx.loopItem}) in ${ctx.file}.`,
+          { code: "WD310", file: ctx.file }
         );
       }
       return { op: "remove", target: ctx.loopKey };
@@ -277,7 +288,12 @@ function parseSingleAction(expression, raw, ctx) {
       target: resolveTarget(assign[1]),
       value: parseActionLiteral(assign[2], ctx)
     };
-  throw new Error(`Unsupported button action "${raw}" in ${ctx.file}. ${ACTION_USE}`);
+  throw wdError(`Unsupported button action "${raw}" in ${ctx.file}. ${ACTION_USE}`, {
+    code: "WD311",
+    file: ctx.file,
+    hint: ACTION_USE.slice("Use: ".length),
+    example: ACTION_EXAMPLE
+  });
 }
 
 /**
@@ -292,8 +308,9 @@ function parseMergeOperand(raw, ctx) {
   if (/^[A-Za-z_$][\w$]*$/.test(value)) {
     const key = resolveStateKey(value, ctx);
     if (!key)
-      throw new Error(
-        `Button action merge targets unknown state "${value}" in ${ctx.file}. Declare it first with :state ${value} = ...`
+      throw wdError(
+        `Button action merge targets unknown state "${value}" in ${ctx.file}. Declare it first with :state ${value} = ...`,
+        { code: "WD312", file: ctx.file }
       );
     return key;
   }
@@ -302,6 +319,7 @@ function parseMergeOperand(raw, ctx) {
   throw wdError(
     `Unsupported merge operand "${raw}" in ${ctx.file}. Use: obj merge other (a state key or an inline {…} object) — e.g. settings merge patch`,
     {
+      code: "WD313",
       file: ctx.file,
       hint: "obj merge other (a state key or an inline {…} object) — e.g. settings merge patch",
       example: "settings merge patch"
@@ -325,12 +343,14 @@ function parseActionLiteral(raw, ctx) {
     try {
       return JSON.parse(value);
     } catch {
-      throw new Error(
-        `Unsupported action literal "${raw}" in ${ctx.file}. Use: a quoted string, number, boolean, null, or valid JSON.`
+      throw wdError(
+        `Unsupported action literal "${raw}" in ${ctx.file}. Use: a quoted string, number, boolean, null, or valid JSON.`,
+        { code: "WD314", file: ctx.file }
       );
     }
   }
-  throw new Error(
-    `Unsupported action literal "${raw}" in ${ctx.file}. Use: a quoted string, number, boolean, null, or valid JSON.`
+  throw wdError(
+    `Unsupported action literal "${raw}" in ${ctx.file}. Use: a quoted string, number, boolean, null, or valid JSON.`,
+    { code: "WD314", file: ctx.file }
   );
 }

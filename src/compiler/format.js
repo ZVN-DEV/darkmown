@@ -11,6 +11,8 @@
 // reads :state/:store emits `data-wd-fmt` and re-formats in the runtime.
 // ---------------------------------------------------------------------------
 
+import { wdError } from "./context.js";
+
 /**
  * @typedef {import("./context.js").Ctx} Ctx
  * @typedef {{ name: string, args: Array<string | number | boolean | null> }} Stage
@@ -221,8 +223,9 @@ export function validatePipes(inner, ctx) {
   const parsed = parsePipes(inner);
   for (const stage of parsed.stages) {
     if (!Object.hasOwn(FORMATTERS, stage.name)) {
-      throw new Error(
-        `Unknown formatter "${stage.name}" in { ${inner} } (${ctx.file}). Available: ${FORMATTER_NAMES.join(", ")}.`
+      throw wdError(
+        `Unknown formatter "${stage.name}" in { ${inner} } (${ctx.file}). Available: ${FORMATTER_NAMES.join(", ")}.`,
+        { code: "WD006", file: ctx.file }
       );
     }
   }

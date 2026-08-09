@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { wdError } from "./compiler/context.js";
 import { parseFrontmatter } from "./compiler.js";
 import { isHiddenName, pageExtensions } from "./config.js";
 
@@ -64,8 +65,9 @@ export function discoverRoutes(routesRoot, options = {}) {
   const seen = new Map();
   for (const route of routes) {
     if (seen.has(route.route)) {
-      throw new Error(
-        `Duplicate route "${route.route}" from ${seen.get(route.route)} and ${route.file}`
+      throw wdError(
+        `Duplicate route "${route.route}" from ${seen.get(route.route)} and ${route.file}`,
+        { code: "WD901", file: route.file }
       );
     }
     seen.set(route.route, route.file);
@@ -114,8 +116,9 @@ export function outputPathForRoute(distRoot, route) {
   const clean = route === "/" ? "" : route.replace(/^\/|\/$/g, "");
   const out = path.join(distRoot, clean, "index.html");
   if (!path.resolve(out).startsWith(path.resolve(distRoot) + path.sep)) {
-    throw new Error(
-      `Route "${route}" resolves outside the build output directory ${distRoot} — routes must not contain traversal segments`
+    throw wdError(
+      `Route "${route}" resolves outside the build output directory ${distRoot} — routes must not contain traversal segments`,
+      { code: "WD902" }
     );
   }
   return out;

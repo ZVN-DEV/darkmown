@@ -3,6 +3,7 @@
 // values, and warn when a file looks like it forgot the opening `---`.
 // ---------------------------------------------------------------------------
 
+import { wdError } from "./context.js";
 import { stripQuotes } from "./interpolation.js";
 
 /**
@@ -24,8 +25,9 @@ export function parseFrontmatter(raw, file) {
   const end = raw.indexOf("\n---", 3);
   if (end === -1) {
     const where = file ? ` in ${file}` : "";
-    throw new Error(
-      `Unterminated frontmatter${where}: opening "---" has no closing "---". Use: --- on its own line to open and another --- to close, then the page body.`
+    throw wdError(
+      `Unterminated frontmatter${where}: opening "---" has no closing "---". Use: --- on its own line to open and another --- to close, then the page body.`,
+      { code: "WD001", file }
     );
   }
   const front = raw.slice(4, end).trim();

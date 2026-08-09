@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { buildSite } from "./builder.js";
+import { wdError } from "./compiler/context.js";
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP } from "./headers.js";
 
 /** The platforms `darkmown deploy` knows how to drive. */
@@ -25,7 +26,9 @@ export const DEPLOY_TARGETS = ["vercel", "cloudflare"];
  */
 export async function deploy({ cwd, target, prod = false, log, run = spawnProcess, projectName }) {
   if (!DEPLOY_TARGETS.includes(target)) {
-    throw new Error(`Unknown deploy target "${target}". Use one of: ${DEPLOY_TARGETS.join(", ")}.`);
+    throw wdError(`Unknown deploy target "${target}". Use one of: ${DEPLOY_TARGETS.join(", ")}.`, {
+      code: "WD904"
+    });
   }
 
   ensurePlatformConfig(cwd, target);
@@ -46,11 +49,12 @@ export async function deploy({ cwd, target, prod = false, log, run = spawnProces
         output
       )
     ) {
-      throw new Error(
-        `The ${target} CLI is not signed in. Run \`${plan.loginHint}\` (try \`! ${plan.loginHint}\` in this session), then re-run \`darkmown deploy ${target}\`.`
+      throw wdError(
+        `The ${target} CLI is not signed in. Run \`${plan.loginHint}\` (try \`! ${plan.loginHint}\` in this session), then re-run \`darkmown deploy ${target}\`.`,
+        { code: "WD905" }
       );
     }
-    throw new Error(`${target} deploy failed (exit ${result.code}).`);
+    throw wdError(`${target} deploy failed (exit ${result.code}).`, { code: "WD906" });
   }
 
   const url = plan.parseUrl(output);

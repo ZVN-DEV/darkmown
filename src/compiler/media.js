@@ -49,6 +49,7 @@ export function handleMedia(line, kind, ctx, index) {
     const example = kind === "video" ? VIDEO_EXAMPLE : AUDIO_EXAMPLE;
     const hint = `:${kind} /clip [controls] [autoplay] [loop] [muted] — e.g. ${example}`;
     throw wdError(`Malformed :${kind} in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+      code: "WD701",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint,
@@ -65,11 +66,19 @@ export function handleMedia(line, kind, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!spec.flags.includes(token[3]))
-        throw new Error(`Unknown :${kind} flag "${token[3]}" in ${at(ctx, index)}`);
+        throw wdError(`Unknown :${kind} flag "${token[3]}" in ${at(ctx, index)}`, {
+          code: "WD702",
+          file: ctx.file,
+          line: lineOf(ctx, index)
+        });
       flags.add(token[3]);
     } else {
       if (!spec.attrs.includes(token[1]))
-        throw new Error(`Unknown :${kind} attribute "${token[1]}" in ${at(ctx, index)}`);
+        throw wdError(`Unknown :${kind} attribute "${token[1]}" in ${at(ctx, index)}`, {
+          code: "WD703",
+          file: ctx.file,
+          line: lineOf(ctx, index)
+        });
       attrs.set(token[1], stripQuotes(token[2]));
     }
   }
@@ -105,6 +114,7 @@ export function handleEmbed(line, ctx, index) {
   if (!match) {
     const hint = `:embed https://youtu.be/ID [title="…"] — e.g. ${EMBED_EXAMPLE}`;
     throw wdError(`Malformed :embed in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+      code: "WD704",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint,
@@ -116,7 +126,11 @@ export function handleEmbed(line, ctx, index) {
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)/g;
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[1] !== "title")
-      throw new Error(`Unknown :embed attribute "${token[1]}" in ${at(ctx, index)}`);
+      throw wdError(`Unknown :embed attribute "${token[1]}" in ${at(ctx, index)}`, {
+        code: "WD705",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
     title = stripQuotes(token[2]);
   }
   const { url, label } = resolveEmbed(raw, ctx);

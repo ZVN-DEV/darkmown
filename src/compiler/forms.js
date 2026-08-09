@@ -59,6 +59,7 @@ export function handleForm(line, bodyLines, ctx, index) {
   if ((!rawAction && !into) || leftover) {
     const hint = `':form into name' (client state), ':form action="/url"' (native post), or both (fetch round-trip into state) — e.g. ${FORM_EXAMPLE}`;
     throw wdError(`Malformed :form in ${at(ctx, index)}: ${line}. Use ${hint}`, {
+      code: "WD401",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint,
@@ -88,6 +89,7 @@ export function handleInput(line, ctx, index) {
   const match = line.match(/^:input\s+([A-Za-z_][\w-]*)\s*(.*)$/);
   if (!match)
     throw wdError(`Malformed :input in ${at(ctx, index)}: ${line}. ${INPUT_USE}`, {
+      code: "WD402",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: INPUT_USE.slice("Use: ".length),
@@ -101,7 +103,11 @@ export function handleInput(line, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "autofocus", "disabled", "readonly"].includes(token[3])) {
-        throw new Error(`Unknown :input flag "${token[3]}" in ${at(ctx, index)}`);
+        throw wdError(`Unknown :input flag "${token[3]}" in ${at(ctx, index)}`, {
+          code: "WD403",
+          file: ctx.file,
+          line: lineOf(ctx, index)
+        });
       }
       attrs.push(token[3]);
       continue;
@@ -124,7 +130,11 @@ export function handleInput(line, ctx, index) {
         "aria-describedby"
       ].includes(token[1])
     ) {
-      throw new Error(`Unknown :input attribute "${token[1]}" in ${at(ctx, index)}`);
+      throw wdError(`Unknown :input attribute "${token[1]}" in ${at(ctx, index)}`, {
+        code: "WD404",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
     }
     if (token[1] === "placeholder") placeholder = value;
     if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
@@ -152,6 +162,7 @@ export function handleBind(line, ctx, index) {
   const match = line.match(/^:bind\s+([A-Za-z_$][\w$]*)\s*(.*)$/);
   if (!match)
     throw wdError(`Malformed :bind in ${at(ctx, index)}: ${line}. Use: ${BIND_EXAMPLE}`, {
+      code: "WD405",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: BIND_EXAMPLE,
@@ -159,8 +170,9 @@ export function handleBind(line, ctx, index) {
     });
   const key = resolveStateKey(match[1], ctx);
   if (!key) {
-    throw new Error(
-      `:bind ${match[1]} in ${ctx.file} has no matching state. Declare it first: :state ${match[1]} = ""`
+    throw wdError(
+      `:bind ${match[1]} in ${ctx.file} has no matching state. Declare it first: :state ${match[1]} = ""`,
+      { code: "WD406", file: ctx.file }
     );
   }
   ctx.comp.assets.runtime = true;
@@ -172,7 +184,11 @@ export function handleBind(line, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "autofocus"].includes(token[3]))
-        throw new Error(`Unknown :bind flag "${token[3]}" in ${at(ctx, index)}`);
+        throw wdError(`Unknown :bind flag "${token[3]}" in ${at(ctx, index)}`, {
+          code: "WD407",
+          file: ctx.file,
+          line: lineOf(ctx, index)
+        });
       attrs.push(token[3]);
       continue;
     }
@@ -182,7 +198,11 @@ export function handleBind(line, ctx, index) {
       continue;
     }
     if (!["placeholder", "autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
-      throw new Error(`Unknown :bind attribute "${token[1]}" in ${at(ctx, index)}`);
+      throw wdError(`Unknown :bind attribute "${token[1]}" in ${at(ctx, index)}`, {
+        code: "WD408",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
     }
     if (token[1] === "placeholder") placeholder = value;
     if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
@@ -215,6 +235,7 @@ export function handleSlider(line, ctx, index) {
   const head = line.match(/^:slider\s+([A-Za-z_$][\w$]*)\s*(.*)$/);
   if (!head)
     throw wdError(`Malformed :slider in ${at(ctx, index)}: ${line}. Use: ${SLIDER_EXAMPLE}`, {
+      code: "WD409",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: SLIDER_EXAMPLE,
@@ -228,8 +249,9 @@ export function handleSlider(line, ctx, index) {
   if (rest.startsWith("=")) {
     const valueMatch = rest.match(/^=\s*(\S+)\s*(.*)$/);
     if (!valueMatch)
-      throw new Error(
-        `Malformed :slider initial value in ${at(ctx, index)}: ${line}. Use: :slider ${name} = 50`
+      throw wdError(
+        `Malformed :slider initial value in ${at(ctx, index)}: ${line}. Use: :slider ${name} = 50`,
+        { code: "WD410", file: ctx.file, line: lineOf(ctx, index) }
       );
     initialRaw = valueMatch[1];
     rest = valueMatch[2].trim();
@@ -251,7 +273,12 @@ export function handleSlider(line, ctx, index) {
     else if (token[1] === "max") max = value;
     else if (token[1] === "step") step = value;
     else if (token[1] === "aria-label") ariaLabel = value;
-    else throw new Error(`Unknown :slider attribute "${token[1]}" in ${at(ctx, index)}`);
+    else
+      throw wdError(`Unknown :slider attribute "${token[1]}" in ${at(ctx, index)}`, {
+        code: "WD411",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
   }
   for (const [label, raw] of [
     ["min", min],
@@ -259,7 +286,11 @@ export function handleSlider(line, ctx, index) {
     ["step", step]
   ]) {
     if (!/^-?\d+(?:\.\d+)?$/.test(raw))
-      throw new Error(`:slider ${label} must be a number in ${at(ctx, index)}: ${raw}`);
+      throw wdError(`:slider ${label} must be a number in ${at(ctx, index)}: ${raw}`, {
+        code: "WD412",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
   }
 
   ctx.comp.assets.runtime = true;
@@ -269,21 +300,24 @@ export function handleSlider(line, ctx, index) {
   if (initialRaw !== undefined) {
     const value = parseStateValue(initialRaw, at(ctx, index));
     if (typeof value !== "number")
-      throw new Error(
-        `:slider ${name} initial value must be a number in ${at(ctx, index)}: ${initialRaw}`
+      throw wdError(
+        `:slider ${name} initial value must be a number in ${at(ctx, index)}: ${initialRaw}`,
+        { code: "WD413", file: ctx.file, line: lineOf(ctx, index) }
       );
     key = declareState(name, value, ctx);
     const persistAttr = persist ? ` data-wd-persist="${key}"` : "";
     seed = `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
   } else {
     if (persist)
-      throw new Error(
-        `:slider persist only applies when declaring state inline (:slider ${name} = 0 … persist) in ${at(ctx, index)}`
+      throw wdError(
+        `:slider persist only applies when declaring state inline (:slider ${name} = 0 … persist) in ${at(ctx, index)}`,
+        { code: "WD414", file: ctx.file, line: lineOf(ctx, index) }
       );
     const resolved = resolveStateKey(name, ctx);
     if (!resolved)
-      throw new Error(
-        `:slider ${name} in ${ctx.file} has no matching state. Declare it: :slider ${name} = 0 min=0 max=100`
+      throw wdError(
+        `:slider ${name} in ${ctx.file} has no matching state. Declare it: :slider ${name} = 0 min=0 max=100`,
+        { code: "WD415", file: ctx.file }
       );
     key = resolved;
   }
@@ -307,6 +341,7 @@ export function handleSubmit(line, ctx, index) {
     throw wdError(
       `Malformed :submit in ${at(ctx, index)}: ${line}. Use: :submit "Label" — e.g. ${SUBMIT_EXAMPLE}`,
       {
+        code: "WD416",
         file: ctx.file,
         line: lineOf(ctx, index),
         hint: `:submit "Label" — e.g. ${SUBMIT_EXAMPLE}`,
@@ -331,6 +366,7 @@ export function handleTextarea(line, ctx, index) {
   if (!match) {
     const hint = `:textarea name [placeholder="…"] [rows=N] [required] — e.g. ${TEXTAREA_EXAMPLE}`;
     throw wdError(`Malformed :textarea in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+      code: "WD417",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint,
@@ -344,7 +380,11 @@ export function handleTextarea(line, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "autofocus", "disabled", "readonly"].includes(token[3])) {
-        throw new Error(`Unknown :textarea flag "${token[3]}" in ${at(ctx, index)}`);
+        throw wdError(`Unknown :textarea flag "${token[3]}" in ${at(ctx, index)}`, {
+          code: "WD418",
+          file: ctx.file,
+          line: lineOf(ctx, index)
+        });
       }
       attrs.push(token[3]);
       continue;
@@ -362,7 +402,11 @@ export function handleTextarea(line, ctx, index) {
         "aria-describedby"
       ].includes(token[1])
     ) {
-      throw new Error(`Unknown :textarea attribute "${token[1]}" in ${at(ctx, index)}`);
+      throw wdError(`Unknown :textarea attribute "${token[1]}" in ${at(ctx, index)}`, {
+        code: "WD419",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
     }
     if (token[1] === "placeholder") placeholder = value;
     if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
@@ -389,6 +433,7 @@ export function handleSelect(line, optionLines, ctx, index) {
   if (!match) {
     const hint = `:select name [required] then "- Label" lines — e.g. ${SELECT_EXAMPLE}`;
     throw wdError(`Malformed :select in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+      code: "WD420",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint,
@@ -401,14 +446,22 @@ export function handleSelect(line, optionLines, ctx, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "disabled", "autofocus"].includes(token[3])) {
-        throw new Error(`Unknown :select flag "${token[3]}" in ${at(ctx, index)}`);
+        throw wdError(`Unknown :select flag "${token[3]}" in ${at(ctx, index)}`, {
+          code: "WD421",
+          file: ctx.file,
+          line: lineOf(ctx, index)
+        });
       }
       attrs.push(token[3]);
       continue;
     }
     const value = stripQuotes(token[2]);
     if (!["autocomplete", "aria-label", "aria-describedby"].includes(token[1])) {
-      throw new Error(`Unknown :select attribute "${token[1]}" in ${at(ctx, index)}`);
+      throw wdError(`Unknown :select attribute "${token[1]}" in ${at(ctx, index)}`, {
+        code: "WD422",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
     }
     if (token[1] === "aria-label" || token[1] === "aria-describedby") hasAria = true;
     attrs.push(`${token[1]}="${escapeHtml(value)}"`);
@@ -418,8 +471,9 @@ export function handleSelect(line, optionLines, ctx, index) {
   }
   const options = optionLines.map((l) => l.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
   if (!options.length) {
-    throw new Error(
-      `:select "${match[1]}" in ${at(ctx, index)} has no options. Add "- Label" lines beneath it.`
+    throw wdError(
+      `:select "${match[1]}" in ${at(ctx, index)} has no options. Add "- Label" lines beneath it.`,
+      { code: "WD423", file: ctx.file, line: lineOf(ctx, index) }
     );
   }
   const opts = options
@@ -456,6 +510,7 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
     const example = kind === "checkbox" ? CHECKBOX_EXAMPLE : RADIO_EXAMPLE;
     const hint = `${directive} name [required] then "- Label" lines — e.g. ${example}`;
     throw wdError(`Malformed ${directive} in ${at(ctx, index)}: ${line}. Use: ${hint}`, {
+      code: "WD424",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint,
@@ -470,7 +525,11 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
   for (const token of (match[2] || "").matchAll(re)) {
     if (token[3]) {
       if (!["required", "disabled", "autofocus"].includes(token[3])) {
-        throw new Error(`Unknown ${directive} flag "${token[3]}" in ${at(ctx, index)}`);
+        throw wdError(`Unknown ${directive} flag "${token[3]}" in ${at(ctx, index)}`, {
+          code: "WD425",
+          file: ctx.file,
+          line: lineOf(ctx, index)
+        });
       }
       flags.push(token[3]);
       continue;
@@ -478,12 +537,18 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
     const value = stripQuotes(token[2]);
     if (token[1] === "aria-label") ariaLabel = value;
     else if (token[1] === "aria-describedby") ariaDescribedby = value;
-    else throw new Error(`Unknown ${directive} attribute "${token[1]}" in ${at(ctx, index)}`);
+    else
+      throw wdError(`Unknown ${directive} attribute "${token[1]}" in ${at(ctx, index)}`, {
+        code: "WD426",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
   }
   const options = optionLines.map((l) => l.replace(/^\s*-\s+/, "").trim()).filter(Boolean);
   if (!options.length) {
-    throw new Error(
-      `${directive} "${name}" in ${at(ctx, index)} has no options. Add "- Label" lines beneath it.`
+    throw wdError(
+      `${directive} "${name}" in ${at(ctx, index)} has no options. Add "- Label" lines beneath it.`,
+      { code: "WD427", file: ctx.file, line: lineOf(ctx, index) }
     );
   }
   const isCheckbox = kind === "checkbox";

@@ -7,7 +7,7 @@
 // multi-line directive bodies with nesting + fence awareness.
 // ---------------------------------------------------------------------------
 
-import { at } from "./context.js";
+import { at, lineOf, wdError } from "./context.js";
 import {
   handleBind,
   handleButton,
@@ -92,7 +92,10 @@ export function compileBody(lines, ctx) {
     if (container) {
       flush();
       if (!container[1].trim())
-        throw new Error(`Stray ::: close with no open container in ${ctx.file}`);
+        throw wdError(`Stray ::: close with no open container in ${ctx.file}`, {
+          code: "WD007",
+          file: ctx.file
+        });
       const block = scanContainer(lines, i, ctx);
       out.push(handleContainer(container[1].trim(), block.body, ctx, i));
       i = block.end;
@@ -235,17 +238,22 @@ export function compileBody(lines, ctx) {
       continue;
     }
     if (/^@repeat\b/.test(line)) {
-      throw new Error(
-        `@repeat was replaced by @loop in ${ctx.file}. Use: @loop /data.json into item ... @endloop`
+      throw wdError(
+        `@repeat was replaced by @loop in ${ctx.file}. Use: @loop /data.json into item ... @endloop`,
+        { code: "WD008", file: ctx.file, hint: "@loop /data.json into item ... @endloop" }
       );
     }
     if (/^:for\b/.test(line)) {
-      throw new Error(
-        `:for was replaced by @loop in ${ctx.file}. Use: @loop items into item ... @endloop`
+      throw wdError(
+        `:for was replaced by @loop in ${ctx.file}. Use: @loop items into item ... @endloop`,
+        { code: "WD009", file: ctx.file, hint: "@loop items into item ... @endloop" }
       );
     }
     if (/^(@endloop|:endif|:endfor|:endform|:else)\s*$/.test(line)) {
-      throw new Error(`Stray "${line.trim()}" with no matching opener in ${ctx.file}`);
+      throw wdError(`Stray "${line.trim()}" with no matching opener in ${ctx.file}`, {
+        code: "WD010",
+        file: ctx.file
+      });
     }
     warnUnknownDirective(line, ctx);
     prose.push(line);
@@ -371,7 +379,11 @@ function scanBlock(lines, start, openRe, endToken, ctx) {
     }
     body.push(line);
   }
-  throw new Error(`Missing ${endToken} for "${lines[start]}" in ${at(ctx, start)}`);
+  throw wdError(`Missing ${endToken} for "${lines[start]}" in ${at(ctx, start)}`, {
+    code: "WD011",
+    file: ctx.file,
+    line: lineOf(ctx, start)
+  });
 }
 
 /**
@@ -457,7 +469,11 @@ function scanContainer(lines, start, ctx) {
     }
     body.push(line);
   }
-  throw new Error(`Missing closing ::: for "${lines[start]}" in ${at(ctx, start)}`);
+  throw wdError(`Missing closing ::: for "${lines[start]}" in ${at(ctx, start)}`, {
+    code: "WD012",
+    file: ctx.file,
+    line: lineOf(ctx, start)
+  });
 }
 
 /**
@@ -518,8 +534,9 @@ function scanConditional(lines, start, ctx) {
       const elseIf = t.match(/^:else if\s+(.+?)\s*$/);
       if (elseIf) {
         if (mode === "else")
-          throw new Error(
-            `":else if" after ":else" in ${ctx.file}. ":else" must be the last branch — order the "else if" conditions before the bare ":else".`
+          throw wdError(
+            `":else if" after ":else" in ${ctx.file}. ":else" must be the last branch — order the "else if" conditions before the bare ":else".`,
+            { code: "WD013", file: ctx.file }
           );
         falsy.push(`:if ${elseIf[1]}`); // desugar the chain tail into a nested :if
         falsyStart = i;
@@ -529,8 +546,9 @@ function scanConditional(lines, start, ctx) {
       }
       if (t === ":else") {
         if (mode === "else")
-          throw new Error(
-            `Duplicate ":else" in ${ctx.file}. A conditional may have only one bare ":else".`
+          throw wdError(
+            `Duplicate ":else" in ${ctx.file}. A conditional may have only one bare ":else".`,
+            { code: "WD014", file: ctx.file }
           );
         falsyStart = i + 1;
         current = falsy;
@@ -540,5 +558,9 @@ function scanConditional(lines, start, ctx) {
     }
     current.push(line);
   }
-  throw new Error(`Missing :endif for "${lines[start]}" in ${at(ctx, start)}`);
+  throw wdError(`Missing :endif for "${lines[start]}" in ${at(ctx, start)}`, {
+    code: "WD015",
+    file: ctx.file,
+    line: lineOf(ctx, start)
+  });
 }
