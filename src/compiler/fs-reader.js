@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
+import { normalizeNewlines } from "./context.js";
 
 /**
  * A {@link import("./reader.js").Reader} backed by `node:fs`. Each method is a
@@ -17,7 +18,7 @@ import fs from "node:fs";
  */
 export function fsReader() {
   return {
-    readText: (absPath) => fs.readFileSync(absPath, "utf8"),
+    readText: (absPath) => normalizeNewlines(fs.readFileSync(absPath, "utf8")),
     readBinary: (absPath) => fs.readFileSync(absPath),
     exists: (absPath) => fs.existsSync(absPath),
     realpath: (absPath) => fs.realpathSync(absPath)

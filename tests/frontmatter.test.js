@@ -10,6 +10,37 @@ import { createPaths } from "../src/config.js";
 // parseFrontmatter — inline flow arrays (scalar behavior otherwise unchanged)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// CRLF sources. Regression guard: every delimiter test here is LF-shaped, so an
+// un-normalized `---\r\n` opener silently fell through to "no frontmatter" and
+// the whole block was treated as body text. That made a Windows checkout (git's
+// core.autocrlf is on by default there) fail collection schema validation for
+// fields that were plainly present. Caught by the windows-latest CI matrix.
+// ---------------------------------------------------------------------------
+
+test("CRLF frontmatter parses identically to LF", () => {
+  const lf = "---\ntitle: Hello\ntags: [a, b]\n---\n\n# Body\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  const a = parseFrontmatter(lf, "test.md");
+  const b = parseFrontmatter(crlf, "test.md");
+  assert.deepEqual(b.meta, a.meta);
+  assert.equal(b.meta.title, "Hello");
+  assert.equal(b.bodyLine, a.bodyLine);
+  assert.equal(b.body, a.body);
+});
+
+test("a CRLF page compiles to the same HTML as its LF twin", () => {
+  const body = "---\ntitle: Post\n---\n\n# Heading\n\nSome prose.\n";
+  const html = (source) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-crlf-"));
+    const file = path.join(root, "site/pages/index.wd");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, source);
+    return compilePage(file, createPaths(root)).html;
+  };
+  assert.equal(html(body.replace(/\n/g, "\r\n")), html(body));
+});
+
 test("inline array frontmatter parses to a real array", () => {
   const { meta } = parseFrontmatter("---\ntags: [sales, revenue]\n---\nbody");
   assert.deepEqual(meta.tags, ["sales", "revenue"]);

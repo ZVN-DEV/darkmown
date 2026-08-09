@@ -262,7 +262,9 @@ function writeTree(root, entries) {
 
 function describeTree(entries) {
   return entries
-    .map((e) => `  ${e.rel}${e.draft ? "  (draft)" : ""}${e.route ? ` -> ${e.route}` : " -> (none)"}`)
+    .map(
+      (e) => `  ${e.rel}${e.draft ? "  (draft)" : ""}${e.route ? ` -> ${e.route}` : " -> (none)"}`
+    )
     .join("\n");
 }
 
@@ -483,7 +485,10 @@ test("fuzz: route discovery agrees with the model, is stable, and never clobbers
       // The default result is always a subset of the includeDrafts result.
       const draftedRoutes = new Set(withDrafts.map((r) => r.route));
       for (const r of discovered) {
-        assert.ok(draftedRoutes.has(r.route), repro(`route ${r.route} vanished with includeDrafts`));
+        assert.ok(
+          draftedRoutes.has(r.route),
+          repro(`route ${r.route} vanished with includeDrafts`)
+        );
       }
       totalDrafts += withDrafts.length - discovered.length;
 
@@ -528,12 +533,17 @@ test("fuzz: route discovery agrees with the model, is stable, and never clobbers
         assert.ok(isInside(dist, out), repro(`route ${r.route} mapped outside dist: ${out}`));
         assert.ok(!outputs.has(out), repro(`two routes mapped to the same output path: ${out}`));
         outputs.add(out);
-        if (r.meta && typeof r.meta !== "object") assert.fail(repro("route.meta was not an object"));
+        if (r.meta && typeof r.meta !== "object")
+          assert.fail(repro("route.meta was not an object"));
       }
 
       // Sorted, and free of duplicates.
       const routeList = withDrafts.map((r) => r.route);
-      assert.equal(new Set(routeList).size, routeList.length, repro("discovery returned a duplicate"));
+      assert.equal(
+        new Set(routeList).size,
+        routeList.length,
+        repro("discovery returned a duplicate")
+      );
       for (let k = 1; k < routeList.length; k++) {
         assert.ok(
           routeList[k - 1].localeCompare(routeList[k]) <= 0,

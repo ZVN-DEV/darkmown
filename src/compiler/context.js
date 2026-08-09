@@ -214,6 +214,23 @@
  */
 
 // Page-include extensions are the only two file types `@include` will pull in.
+/**
+ * Normalize CRLF/CR line endings to LF.
+ *
+ * Every line-structured parser in the project (frontmatter delimiters, the `.wd`
+ * directive dispatcher, `.skin` indentation) tests LF-shaped text. Source files
+ * authored on Windows — or checked out anywhere with git's `core.autocrlf`, the
+ * default on Windows — arrive CRLF-terminated, and an un-normalized `\r` turns
+ * `---` into `---\r` and silently defeats those tests. Applied at the reader
+ * boundary and again at the two entry points that accept raw strings from
+ * callers that bypass the reader; it is idempotent, so doubling up is free.
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeNewlines(text) {
+  return text.includes("\r") ? text.replace(/\r\n?/g, "\n") : text;
+}
+
 export const pageIncludeExtensions = [".md", ".wd"];
 
 // Reserved per-row meta variables, mapped to their runtime marker token. Shared

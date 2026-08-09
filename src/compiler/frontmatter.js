@@ -3,7 +3,7 @@
 // values, and warn when a file looks like it forgot the opening `---`.
 // ---------------------------------------------------------------------------
 
-import { wdError } from "./context.js";
+import { normalizeNewlines, wdError } from "./context.js";
 import { stripQuotes } from "./interpolation.js";
 
 /**
@@ -21,6 +21,13 @@ import { stripQuotes } from "./interpolation.js";
  * @returns {{ meta: Meta, body: string, bodyLine: number }}
  */
 export function parseFrontmatter(raw, file) {
+  // A file authored on Windows (or checked out with git's autocrlf) arrives
+  // CRLF-terminated, and every delimiter/line test below is LF-shaped — so
+  // without this the opening `---\r\n` never matches and the whole frontmatter
+  // block is silently treated as body text. Normalizing here rather than only
+  // in the reader keeps the direct callers (builder.js reads route frontmatter
+  // straight off disk for feeds) on the same footing. Idempotent on LF input.
+  raw = normalizeNewlines(raw);
   if (!raw.startsWith("---\n")) return { meta: {}, body: raw, bodyLine: 0 };
   const end = raw.indexOf("\n---", 3);
   if (end === -1) {
