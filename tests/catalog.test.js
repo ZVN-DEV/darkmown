@@ -3,15 +3,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { buildSite } from "../src/builder.js";
-import { CATALOG_ACTION_TOKENS, directiveCatalog, llmsText } from "../src/catalog.js";
+import { CATALOG_ACTION_TOKENS, directiveCatalog, llmsFullText, llmsText } from "../src/catalog.js";
 import { run } from "../src/cli.js";
 import { ACTION_USE } from "../src/compiler/actions.js";
 import { LOOP_META } from "../src/compiler/context.js";
 import { FORMATTER_NAMES } from "../src/compiler/format.js";
 import { PREDICATE_OPS } from "../src/compiler/predicates.js";
-import { compilePage } from "../src/compiler.js";
+import { SCHEMA_TYPES } from "../src/compiler/schema.js";
+import { compilePage, parseFrontmatter } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
+import { AI_CRAWLER_POLICIES } from "../src/feeds.js";
 
 // Per-directive compile context: block openers get a closer, stateful lines get
 // a preamble, and path-referencing examples get their fixture files written.
@@ -212,7 +215,147 @@ test("a build emits dist/llms.txt with the cheatsheet", () => {
   fs.writeFileSync(path.join(root, "site/pages/index.md"), "# Home\n");
   const { distRoot } = buildSite(root);
   const out = fs.readFileSync(path.join(distRoot, "llms.txt"), "utf8");
-  assert.equal(out, llmsText());
   assert.match(out, /Darkmown \.wd cheatsheet/);
+  // The site-free cheatsheet is a prefix of the built one: the build appends the
+  // page index, it never rewrites the reference.
+  assert.ok(out.startsWith(llmsText()), "the built llms.txt diverges from the cheatsheet");
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// --- llms.txt / llms-full.txt: index and corpus ----------------------------
+
+/** A small multi-page site with an origin, for the llms.txt pair. */
+function llmsSite() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-llms-"));
+  fs.mkdirSync(path.join(root, "site/pages/guide"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "site/pages/index.md"),
+    [
+      "---",
+      "title: My Site",
+      "description: Notes",
+      "site_url: https://example.com",
+      "---",
+      "",
+      "# Home"
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    path.join(root, "site/pages/guide/index.md"),
+    ["---", "title: Guide", "description: How to", "---", "", "Read the guide body."].join("\n")
+  );
+  return root;
+}
+
+test("llms.txt is an INDEX: every page, one line each, with absolute URLs", () => {
+  const root = llmsSite();
+  const { distRoot } = buildSite(root);
+  const index = fs.readFileSync(path.join(distRoot, "llms.txt"), "utf8");
+
+  assert.match(index, /^- \[My Site\]\(https:\/\/example\.com\/\): Notes$/m);
+  assert.match(index, /^- \[Guide\]\(https:\/\/example\.com\/guide\/\): How to$/m);
+  // An index points at the corpus; that pointer is the whole convention.
+  assert.match(index, /\/llms-full\.txt/);
+  // An index is NOT the corpus: page bodies stay out of it.
+  assert.doesNotMatch(index, /Read the guide body/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("llms-full.txt is the CORPUS: full reference plus every page's source text", () => {
+  const root = llmsSite();
+  const { distRoot } = buildSite(root);
+  const full = fs.readFileSync(path.join(distRoot, "llms-full.txt"), "utf8");
+
+  assert.match(full, /Read the guide body/, "a page body is missing from the corpus");
+  assert.match(full, /URL: https:\/\/example\.com\/guide\//);
+  // The complete authoring reference: every directive AND every error code, so
+  // an AI edit-loop that hits `[WD201]` can resolve it from the same fetch.
+  for (const directive of directiveCatalog().directives) {
+    assert.ok(full.includes(directive.syntax), `${directive.name} syntax missing from the corpus`);
+  }
+  assert.match(full, /WD201/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("the built llms pair matches the generators exactly (no hand-editing drift)", () => {
+  const root = llmsSite();
+  const { distRoot } = buildSite(root);
+  // Rebuild the corpus the way the builder must have: route order, real titles,
+  // absolute URLs, and the AUTHORED body (not the rendered HTML). If the builder
+  // ever hand-assembles either file instead of going through the generators,
+  // or feeds them a different corpus, these equalities break.
+  const bodyOf = (rel) =>
+    parseFrontmatter(fs.readFileSync(path.join(root, "site/pages", rel), "utf8")).body;
+  const corpus = {
+    title: "My Site",
+    description: "Notes",
+    url: "https://example.com",
+    pages: [
+      {
+        title: "My Site",
+        url: "https://example.com/",
+        description: "Notes",
+        body: bodyOf("index.md")
+      },
+      {
+        title: "Guide",
+        url: "https://example.com/guide/",
+        description: "How to",
+        body: bodyOf("guide/index.md")
+      }
+    ]
+  };
+  assert.equal(fs.readFileSync(path.join(distRoot, "llms.txt"), "utf8"), llmsText(corpus));
+  assert.equal(fs.readFileSync(path.join(distRoot, "llms-full.txt"), "utf8"), llmsFullText(corpus));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("the 404 route is not a page of the corpus", () => {
+  const root = llmsSite();
+  fs.writeFileSync(
+    path.join(root, "site/pages/404.md"),
+    ["---", "title: Not found", "---", "", "Nothing here, sorry."].join("\n")
+  );
+  const { distRoot } = buildSite(root);
+  const index = fs.readFileSync(path.join(distRoot, "llms.txt"), "utf8");
+  const full = fs.readFileSync(path.join(distRoot, "llms-full.txt"), "utf8");
+  assert.doesNotMatch(index, /Not found/);
+  assert.doesNotMatch(full, /Nothing here, sorry/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("a site with no site_url indexes route paths rather than inventing an origin", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-llms-nourl-"));
+  fs.mkdirSync(path.join(root, "site/pages"), { recursive: true });
+  fs.writeFileSync(path.join(root, "site/pages/index.md"), "---\ntitle: Local\n---\n\n# Home\n");
+  const { distRoot } = buildSite(root);
+  assert.match(fs.readFileSync(path.join(distRoot, "llms.txt"), "utf8"), /^- \[Local\]\(\/\)$/m);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("the frontmatter key catalog documents only keys the framework really reads", () => {
+  // A stale key here would teach an AI author to write frontmatter that does
+  // nothing. Each documented name must appear in the source that consumes it.
+  const srcRoot = fileURLToPath(new URL("../src", import.meta.url));
+  const sources = fs
+    .readdirSync(srcRoot, { recursive: true, encoding: "utf8" })
+    .filter((rel) => rel.endsWith(".js"))
+    .map((rel) => fs.readFileSync(path.join(srcRoot, rel), "utf8"))
+    .join("\n");
+  for (const key of directiveCatalog().frontmatterKeys) {
+    assert.ok(
+      new RegExp(`\\b${key.name}\\b`).test(sources),
+      `frontmatter key "${key.name}" is documented but never read by src/`
+    );
+  }
+});
+
+test("the documented ai_crawlers example uses a real policy value", () => {
+  const key = directiveCatalog().frontmatterKeys.find((k) => k.name === "ai_crawlers");
+  const value = String(key?.example).split(":")[1].trim();
+  assert.ok(AI_CRAWLER_POLICIES.includes(value), `"${value}" is not an accepted policy`);
+});
+
+test("the documented schema types are exactly the ones the compiler can build", () => {
+  assert.deepEqual(directiveCatalog().schemaTypes, SCHEMA_TYPES);
 });

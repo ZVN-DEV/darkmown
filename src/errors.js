@@ -215,6 +215,12 @@ const ENTRIES = [
     fix: "Close the region with `:endif`.",
     example: IF_EXAMPLE
   },
+  {
+    code: "WD016",
+    title: "Unknown structured-data type",
+    cause: "Frontmatter `schema:` names a type outside the supported whitelist.",
+    fix: "Use one of the listed schema.org types; the message names every one."
+  },
 
   // --- WD1xx: loops and collections ----------------------------------------
   {
@@ -1044,6 +1050,12 @@ const ENTRIES = [
     title: "Deploy command failed",
     cause: "The platform CLI exited non-zero for a reason other than authentication.",
     fix: "Read the CLI output above the error, fix the cause, and re-run."
+  },
+  {
+    code: "WD907",
+    title: "Unknown `ai_crawlers` policy",
+    cause: "The home page's `ai_crawlers:` is neither `allow` nor `deny`.",
+    fix: "Write `ai_crawlers: allow` or `ai_crawlers: deny` (absent means allow)."
   }
 ];
 

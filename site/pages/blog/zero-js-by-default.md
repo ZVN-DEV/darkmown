@@ -3,6 +3,7 @@ title: Zero JavaScript, by default
 description: A Darkmown page ships no framework JavaScript unless it declares reactive behavior. The blog you are reading proves it.
 date: 2026-06-25
 excerpt: View source on this page. There is no runtime script tag, because nothing on it is reactive — and the framework knows the difference.
+schema: BlogPosting
 tags: [performance, philosophy]
 ---
 

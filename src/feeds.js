@@ -13,6 +13,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { wdError } from "./compiler/context.js";
 
 /**
  * @typedef {import("./router.js").Route} Route
@@ -260,16 +261,135 @@ export function buildRss(channel, items) {
 }
 
 /**
- * Build `robots.txt`. Always allows everything (hidden/draft routes are never
- * built, so there's nothing to `Disallow`). The `Sitemap:` line is included
- * ONLY when `siteUrl` is set — a sitemap URL is only meaningful with an origin.
+ * The AI crawler and answer-engine robots.txt tokens Darkmown names explicitly.
+ *
+ * EVERY token here is copied from its own operator's published documentation
+ * (checked 2026-08-09): none are guessed, inferred from a log, or carried over
+ * from a third-party list. A wrong token is worse than a missing one: it looks
+ * like a policy the site is stating and is silently ignored by everybody.
+ *
+ * `Allow: /` for these is not a permission change (the `User-agent: *` group
+ * already allows them); it is an explicit, machine-readable statement of intent,
+ * which is what a publisher wants when the goal is to BE cited by answer engines.
+ * The same list is what `ai_crawlers: deny` turns into `Disallow: /`, which is
+ * the only form that actually changes anything.
+ *
+ * The `note` is written into the generated file next to the group. Search
+ * crawling, model training, and live user-triggered fetches are DIFFERENT
+ * permissions from the same operator, and a future reader editing robots.txt by
+ * hand needs to see that before collapsing a group.
+ * @type {{ operator: string, docs: string, note: string, agents: string[] }[]}
+ */
+export const AI_CRAWLERS = [
+  {
+    operator: "OpenAI",
+    docs: "https://developers.openai.com/api/docs/bots",
+    // Three DIFFERENT crawlers, and collapsing them loses the distinction that
+    // matters: OAI-SearchBot is the one that decides whether pages can be
+    // crawled for ChatGPT Search summaries and citations, GPTBot governs
+    // potential model-training access, and ChatGPT-User is a live fetch made
+    // because a user asked. A publisher who wants citations but not training
+    // allows OAI-SearchBot and disallows GPTBot.
+    note: "OAI-SearchBot = ChatGPT Search crawling and citations. GPTBot = potential model training. ChatGPT-User = a live fetch on a user's request. Different crawlers, different purposes.",
+    agents: ["OAI-SearchBot", "GPTBot", "ChatGPT-User"]
+  },
+  {
+    operator: "Anthropic",
+    docs: "https://support.claude.com/en/articles/8896518",
+    note: "Claude-SearchBot = search indexing. ClaudeBot = training. Claude-User = a live fetch on a user's request.",
+    agents: ["Claude-SearchBot", "ClaudeBot", "Claude-User"]
+  },
+  {
+    operator: "Google",
+    docs: "https://developers.google.com/search/docs/crawling-indexing/google-common-crawlers",
+    note: "A control token, not a crawler: it governs Gemini training and grounding only, and never affects Google Search ranking or inclusion.",
+    agents: ["Google-Extended"]
+  },
+  {
+    operator: "Apple",
+    docs: "https://support.apple.com/en-us/119829",
+    note: "A control token, not a crawler: it governs Apple foundation-model training only. Applebot itself is covered by the wildcard group above.",
+    agents: ["Applebot-Extended"]
+  },
+  {
+    operator: "Perplexity",
+    docs: "https://docs.perplexity.ai/guides/bots",
+    note: "PerplexityBot is a search-index crawler that Perplexity states is not used for foundation-model training. Perplexity-User is a live fetch on a user's request.",
+    agents: ["PerplexityBot", "Perplexity-User"]
+  },
+  {
+    operator: "Meta",
+    docs: "https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/",
+    note: "Crawls for Meta AI training.",
+    agents: ["meta-externalagent"]
+  },
+  {
+    operator: "Mistral",
+    docs: "https://docs.mistral.ai/robots/",
+    note: "MistralAI-Index = search indexing. MistralAI-Training = model training. MistralAI-User = a live fetch on a user's request.",
+    agents: ["MistralAI-Index", "MistralAI-Training", "MistralAI-User"]
+  },
+  {
+    operator: "Amazon",
+    docs: "https://developer.amazon.com/amazonbot",
+    note: "Crawls to improve Alexa and Amazon services.",
+    agents: ["Amazonbot"]
+  },
+  {
+    operator: "Common Crawl",
+    docs: "https://commoncrawl.org/ccbot",
+    note: "Builds the open web corpus most public model training starts from.",
+    agents: ["CCBot"]
+  }
+];
+
+/** The accepted `ai_crawlers:` frontmatter values. */
+export const AI_CRAWLER_POLICIES = ["allow", "deny"];
+
+/**
+ * Build `robots.txt`. The wildcard group always allows everything (hidden/draft
+ * routes are never built, so there's nothing to `Disallow`), then every
+ * {@link AI_CRAWLERS} token is named explicitly with the site's declared policy.
+ * The `Sitemap:` line is included ONLY when `siteUrl` is set: a sitemap URL is
+ * only meaningful with an origin.
  * @param {string} [siteUrl] Absolute origin, or "" / undefined to omit the line.
+ * @param {string} [policy] `"allow"` (default) or `"deny"`, from the home page's
+ *   `ai_crawlers:` frontmatter. Validated by the caller ({@link aiCrawlerPolicy}).
  * @returns {string} The robots.txt body (trailing newline).
  */
-export function buildRobots(siteUrl) {
+export function buildRobots(siteUrl, policy = "allow") {
+  const rule = policy === "deny" ? "Disallow: /" : "Allow: /";
   const lines = ["User-agent: *", "Allow: /"];
-  if (siteUrl) lines.push(`Sitemap: ${absoluteUrl(siteUrl, "/sitemap.xml")}`);
+  for (const crawler of AI_CRAWLERS) {
+    lines.push("", `# ${crawler.operator}: ${crawler.docs}`);
+    lines.push(`# ${crawler.note}`);
+    for (const agent of crawler.agents) lines.push(`User-agent: ${agent}`);
+    lines.push(rule);
+  }
+  if (siteUrl) lines.push("", `Sitemap: ${absoluteUrl(siteUrl, "/sitemap.xml")}`);
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Validate the home page's `ai_crawlers:` frontmatter into a policy string.
+ * Absent means `allow` (the status quo the wildcard group already grants). A
+ * value that is neither `allow` nor `deny` throws rather than defaulting: the
+ * likely intent behind a typo like `ai_crawlers: block` is to opt OUT, and
+ * silently allowing instead would be exactly the wrong failure direction.
+ * @param {import("./compiler.js").Meta} meta Home page frontmatter.
+ * @param {string} [file] Home page source path, for the error message.
+ * @returns {string} One of {@link AI_CRAWLER_POLICIES}.
+ */
+export function aiCrawlerPolicy(meta, file) {
+  const raw = meta.ai_crawlers;
+  if (raw === undefined) return "allow";
+  const value = String(raw).trim().toLowerCase();
+  if (AI_CRAWLER_POLICIES.includes(value)) return value;
+  const hint = `ai_crawlers: ${AI_CRAWLER_POLICIES.join(" or ")}`;
+  throw wdError(
+    `Unknown ai_crawlers value "${String(raw).trim()}"${file ? ` in ${file}` : ""}. Use: ${hint}.`,
+    { code: "WD907", file, hint }
+  );
 }
 
 /** Most-recent-first RSS post cap — a feed is a recent window, not an archive. */

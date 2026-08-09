@@ -1,7 +1,7 @@
 ---
 html: true
 title: A live app in one Markdown file
-description: One .wd file — static prose, fetched data, looped results with nested conditionals, a persistent counter, and a form that round-trips to a real server. No JavaScript written, no components, no build config.
+description: One .wd file: static prose, fetched data, looped results with nested conditionals, a persistent counter, and a form that round-trips to a real server. No JavaScript written, no components, no build config.
 ---
 
 @include /nav.wd
@@ -10,21 +10,21 @@ description: One .wd file — static prose, fetched data, looped results with ne
 
 # A live app, in one Markdown file
 
-Everything on this page — the prose, the fetched list, the badges, the form, the counter — is a single `.wd` file. No components. No JSX. No build config. Watch where JavaScript actually enters.
+Everything on this page (the prose, the fetched list, the badges, the form, the counter) is a single `.wd` file. No components. No JSX. No build config. Watch where JavaScript actually enters.
 
 ## Static until proven reactive
 
-This whole section is plain Markdown. The list below is unrolled **at build time** from a JSON file — it renders into HTML with no runtime at all:
+This whole section is plain Markdown. The list below is unrolled **at build time** from a JSON file, and it renders into HTML with no runtime at all:
 
 @loop /features.json into feature
-- **{ feature.title }** — { feature.body }
+- **{ feature.title }**: { feature.body }
 @endloop
 
-<aside class="boundary">If you deleted everything below this line, this page would ship <strong>zero</strong> bytes of JavaScript. Everything above is static HTML. Below is where the one ~7.7&nbsp;KB gzipped runtime loads (CI-enforced under 8 KB) — and only because the document asks for it.</aside>
+<aside class="boundary">If you deleted everything below this line, this page would ship <strong>zero</strong> bytes of JavaScript. Everything above is static HTML. Below is where the one ~7.7&nbsp;KB gzipped runtime loads (CI-enforced under 8 KB), and only because the document asks for it.</aside>
 
 ## Fetched data, looped, with nested conditions
 
-`:fetch` pulls JSON over the network into reactive state — from a static file here, or any API. Until it lands, the page shows a fallback. Each row then decides its own badge from **nested** conditionals, in plain Markdown:
+`:fetch` pulls JSON over the network into reactive state, from a static file here or any API. Until it lands, the page shows a fallback. Each row then decides its own badge from **nested** conditionals, in plain Markdown:
 
 :fetch roadmap from "/__wd/data/roadmap.json"
 
@@ -47,7 +47,7 @@ This whole section is plain Markdown. The list below is unrolled **at build time
 Loading the roadmap…
 :endif
 
-No ternaries, no `.map()`, no framework — the outer `:if` checks `blocked`, the inner one checks `shipped`, per row, and both stay reactive.
+No ternaries, no `.map()`, no framework. The outer `:if` checks `blocked`, the inner one checks `shipped`, per row, and both stay reactive.
 
 ## A counter that survives reload
 
@@ -63,15 +63,15 @@ You are watching { stars } item(s).
 :button "Reset" -> stars = 0
 
 :if milestone
-Nice — you are tracking the whole near-term roadmap.
+Nice, you are tracking the whole near-term roadmap.
 :endif
 :::
 
 ## A form that talks to a real server
 
-This form posts to the demo echo endpoint and shows the reply. With JavaScript it is a `fetch`; without it, the exact same markup is a native POST. On Vercel/dev the sample endpoint replies; on static-only hosts, point `action=` at your own backend — Darkmown adapts instead of owning one:
+This form posts to the demo echo endpoint and shows the reply. With JavaScript it is a `fetch`; without it, the exact same markup is a native POST. On Vercel/dev the sample endpoint replies; on static-only hosts, point `action=` at your own backend. Darkmown adapts instead of owning one:
 
-:form action="/api/echo" into reply
+:form action="/api/echo/" into reply
 :input note placeholder="Tell us what you'd build with this"
 :submit "Send to the server"
 :endform
@@ -88,6 +88,6 @@ Something went wrong: { reply_error }
 
 ---
 
-That was one file. Static prose, build-time loops, fetched data, nested conditionals, persistent state, computed values, and a server round-trip — and the only JavaScript on the page is the shared runtime Darkmown loads for you. [Read the docs](/docs/) or [deploy your own](/#deploy).
+That was one file. Static prose, build-time loops, fetched data, nested conditionals, persistent state, computed values, and a server round-trip, and the only JavaScript on the page is the shared runtime Darkmown loads for you. [Read the docs](/docs/) or [deploy your own](/#deploy).
 
 </main>

@@ -248,7 +248,7 @@ A month-to-month list price would run **${ annual }/yr**. Choose yearly at check
 Drop in your details and we'll spin up your **${ total }/mo** workspace — no charge for 14 days.
 
 ::: div .checkout-card
-:form action="/api/echo" into receipt
+:form action="/api/echo/" into receipt
 :input name placeholder="Your name"
 :input email placeholder="Work email"
 :submit "Start 14-day trial"

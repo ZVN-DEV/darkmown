@@ -110,6 +110,7 @@ const FILE_BLOCK = {
   "compiler/markdown.js": 0,
   "compiler/format.js": 0,
   "compiler/body.js": 0,
+  "compiler/schema.js": 0,
   "compiler/loops.js": 1,
   "compiler/collections.js": 1,
   "compiler/state.js": 2,
@@ -122,6 +123,7 @@ const FILE_BLOCK = {
   "compiler/page.js": 6,
   "compiler/media.js": 7,
   "skin.js": 8,
+  "feeds.js": 9,
   "router.js": 9,
   "scaffold.js": 9,
   "deploy.js": 9

@@ -12,7 +12,9 @@ import path from "node:path";
 import test from "node:test";
 import { buildSite } from "../src/builder.js";
 import {
+  AI_CRAWLERS,
   absoluteUrl,
+  aiCrawlerPolicy,
   buildRobots,
   buildRss,
   buildSitemap,
@@ -164,12 +166,80 @@ test("buildRss renders channel + items, omitting an absent pubDate/description",
 // --- buildRobots -----------------------------------------------------------
 
 test("buildRobots always allows; the Sitemap line only appears with a site_url", () => {
-  assert.equal(
-    buildRobots("https://x.com"),
-    "User-agent: *\nAllow: /\nSitemap: https://x.com/sitemap.xml\n"
-  );
-  assert.equal(buildRobots(""), "User-agent: *\nAllow: /\n");
-  assert.equal(buildRobots(), "User-agent: *\nAllow: /\n");
+  assert.match(buildRobots("https://x.com"), /^User-agent: \*\nAllow: \/\n/);
+  assert.match(buildRobots("https://x.com"), /^Sitemap: https:\/\/x\.com\/sitemap\.xml$/m);
+  assert.doesNotMatch(buildRobots(""), /^Sitemap:/m);
+  assert.doesNotMatch(buildRobots(), /^Sitemap:/m);
+});
+
+// --- AI crawlers: explicit, verified, and switchable ------------------------
+
+test("every AI crawler token is named explicitly, with its operator's docs URL", () => {
+  const robots = buildRobots("https://x.com");
+  for (const crawler of AI_CRAWLERS) {
+    assert.match(
+      robots,
+      new RegExp(
+        `^# ${crawler.operator}: ${crawler.docs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        "m"
+      ),
+      `${crawler.operator} group is not attributed to its published documentation`
+    );
+    for (const agent of crawler.agents) {
+      assert.match(robots, new RegExp(`^User-agent: ${agent}$`, "m"), `${agent} is not named`);
+    }
+  }
+});
+
+test("the OpenAI group keeps search, training, and user fetches visibly distinct", () => {
+  // These are three DIFFERENT crawlers with three different permissions, and a
+  // future reader editing robots.txt by hand must not collapse them: allowing
+  // OAI-SearchBot (ChatGPT Search citations) while disallowing GPTBot (training)
+  // is a normal, deliberate publisher position.
+  const robots = buildRobots("https://x.com");
+  const note = robots.split("\n").find((line) => line.includes("OAI-SearchBot ="));
+  assert.ok(note, "the OpenAI group carries no explanatory comment");
+  assert.match(note, /OAI-SearchBot = ChatGPT Search/);
+  assert.match(note, /GPTBot = potential model training/);
+  assert.match(note, /ChatGPT-User = a live fetch/);
+});
+
+test("ai_crawlers: deny flips every AI group to Disallow, leaving the wildcard allow intact", () => {
+  const denied = buildRobots("https://x.com", "deny");
+  assert.match(denied, /^User-agent: \*\nAllow: \/\n/, "the wildcard group is untouched");
+  const rules = denied.split("\n").filter((line) => /^(Allow|Disallow): \/$/.test(line));
+  // One `Allow: /` for the wildcard group, then one `Disallow: /` per operator.
+  assert.equal(rules[0], "Allow: /");
+  assert.deepEqual(new Set(rules.slice(1)), new Set(["Disallow: /"]));
+  assert.equal(rules.length - 1, AI_CRAWLERS.length);
+});
+
+test("aiCrawlerPolicy defaults to allow, accepts allow/deny, and rejects anything else", () => {
+  assert.equal(aiCrawlerPolicy({}), "allow");
+  assert.equal(aiCrawlerPolicy({ ai_crawlers: "allow" }), "allow");
+  assert.equal(aiCrawlerPolicy({ ai_crawlers: "DENY" }), "deny");
+  // A typo must NOT silently fall back to allow: the intent behind a wrong
+  // value is almost always to opt OUT, so failing open would be the one
+  // unrecoverable outcome.
+  let err;
+  try {
+    aiCrawlerPolicy({ ai_crawlers: "block" }, "/site/pages/index.md");
+  } catch (e) {
+    err = e;
+  }
+  assert.ok(err, "a bogus ai_crawlers value must not be silently treated as allow");
+  assert.equal(err.wd.code, "WD907");
+  assert.match(err.message, /ai_crawlers: allow or deny/);
+  assert.match(err.message, /index\.md/);
+});
+
+test("a build honors ai_crawlers: deny from the home page frontmatter", () => {
+  const root = fixture();
+  siteWithUrl(root, "ai_crawlers: deny");
+  const { distRoot } = buildSite(root);
+  const robots = fs.readFileSync(path.join(distRoot, "robots.txt"), "utf8");
+  assert.match(robots, /^User-agent: GPTBot\nUser-agent: ChatGPT-User\nDisallow: \/$/m);
+  assert.doesNotMatch(robots.split("# OpenAI")[1], /Allow: \//);
 });
 
 // --- lastmodFor: git → mtime fallback --------------------------------------
@@ -342,7 +412,8 @@ test("without site_url: robots emits (no Sitemap line), feeds skipped with a hin
   assert.equal(feeds.rss, null);
   // robots.txt is still written, without the Sitemap line
   const robots = fs.readFileSync(path.join(distRoot, "robots.txt"), "utf8");
-  assert.equal(robots, "User-agent: *\nAllow: /\n");
+  assert.equal(robots, buildRobots(""));
+  assert.doesNotMatch(robots, /^Sitemap:/m);
   // a loud, actionable hint mentions site_url
   assert.ok(warnings.some((w) => /site_url/.test(w) && /sitemap\.xml \+ rss\.xml/.test(w)));
 });

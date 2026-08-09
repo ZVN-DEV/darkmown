@@ -9,6 +9,7 @@ date: date
 description: string
 excerpt: string?
 tags: string[]?
+schema: string?
 ---
 
 The blog collection schema. Posts are plain `.md` files next to this file;
