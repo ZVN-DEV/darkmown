@@ -1,5 +1,9 @@
-/* Landing page — layers on /base.wd (tokens, type, components, dark mode).
-   Only landing-specific layout lives here. */
+/* Landing page. Layers on /base.wd (tokens, type, components, dark mode).
+   Only landing-specific layout lives here.
+
+   The page itself contains no raw HTML: every block below is produced by a
+   `::: name` container, a markdown element, or a directive. Class names match
+   the container names in site/pages/index.wd. */
 
 /* ── Hero ───────────────────────────────────────────────────────── */
 
@@ -9,173 +13,105 @@
   margin-bottom 2.5rem
 
 .hero h1
-  max-width 16ch
+  max-width 15ch
+  font-size clamp(2.4rem, 6vw, 3.6rem)
 
 .hero h1 em
   font-style italic
   color $accent
 
 .hero > p
-  max-width 64ch
+  max-width 60ch
   font-size 1.18rem
   color $ink-soft
   margin 1rem 0 1.75rem
 
-.hero .eyebrow
-  background $accent-soft
-  padding .3rem .7rem
-  radius 999px
-
-.hero-cta
-  display flex
-  flex-wrap wrap
-  margin-bottom 1.5rem
-
-.hero-install
-  display inline-flex
-  align-items center
-  gap .55rem
-  max-width 100%
-  margin 0 0 2rem
-  padding .7rem 1rem
+/* The install command is a plain ```sh fence; index.js appends the copy
+   button, so the markup stays directive-only and works with JS off. */
+.hero pre
+  position relative
+  max-width 34rem
+  margin 0 0 1.75rem
+  padding .85rem 1rem
   border 1px solid $line
   radius 10px
   bg $sunk
-  font-family ui-monospace, SFMono-Regular, Menlo, monospace
-  overflow-x auto
 
-.hero-install::before
-  content "$"
-  color $accent
-  font-weight 700
-  flex-shrink 0
-
-.hero-install code
-  font-family inherit
+.hero pre code
   font-size .95rem
   color $ink
   white-space nowrap
 
-.hero-install .copy-cmd
-  flex-shrink 0
-  margin-left .35rem
-  padding .25rem .65rem
+.hero pre.has-copy
+  padding-right 5.5rem
+
+.hero pre .copy-cmd
+  position absolute
+  top 50%
+  right .6rem
+  transform translateY(-50%)
+  padding .3rem .7rem
   border 1px solid $line
   radius 7px
-  bg transparent
+  bg $panel
   color $ink-soft
   font-family inherit
   font-size .8rem
   cursor pointer
 
-.hero-install .copy-cmd:hover
+.hero pre .copy-cmd:hover
   color $ink
   border-color $accent
 
-.hero-install .copy-cmd.is-copied
+.hero pre .copy-cmd.is-copied
   color $accent
   border-color $accent
 
-.hero-stats
-  display grid
-  grid-template-columns repeat(4, auto)
-  gap 1.25rem 2.5rem
-  list-style none
-  padding 0
-  margin 0
-  border-top 1px solid $line-soft
-  padding-top 1.5rem
-
-.hero-stats li
+.hero-cta
   display flex
-  flex-direction column
+  flex-wrap wrap
+  gap .6rem
+  margin 0
 
-.hero-stats strong
-  font-size 1.6rem
-  color $accent
-  letter-spacing -.02em
+/* ── Source + the same file running, as one paired module ───────── */
 
-.hero-stats span
-  font-size .82rem
-  color $muted
-  max-width 18ch
-
-@media (max-width: 720px)
-  .hero-stats
-    grid-template-columns 1fr 1fr
-
-/* ── vs-Markdoc comparison ──────────────────────────────────────── */
-
-.versus
-  display grid
-  grid-template-columns 1fr 1fr
-  gap 1.25rem
-  align-items start
-  margin 2.5rem 0 1rem
-
-.vs-card
+/* The source block and the live demo are deliberately the same width and sit
+   inside one bordered card, so the "this text produced that UI" claim reads as
+   a single before/after unit rather than two unrelated page chunks. */
+.pair
+  max-width 46rem
+  margin 1.25rem 0 2.5rem
+  padding 1.25rem
   border 1px solid $line
   radius $radius
   bg $panel
-  padding 1.35rem
-  display flex
-  flex-direction column
-  min-width 0
-  box-shadow 0 1px 2px rgba(28,24,20,.04)
 
-.vs-card.vs-dark
-  background linear-gradient(180deg, $accent-soft, $panel)
-  border 1px solid $accent
-
-.vs-head
-  display flex
-  align-items baseline
-  justify-content space-between
-  gap .75rem
-  margin-bottom .85rem
-
-.vs-tag
-  font-family ui-monospace, SFMono-Regular, Menlo, monospace
-  font-size .72rem
-  font-weight 700
+.pairlabel
+  margin 0 0 .5rem
+  font-size .78rem
   text-transform uppercase
-  letter-spacing .08em
-  padding .25rem .55rem
-  radius 999px
-
-.vs-tag-wd
-  color white
-  bg $accent
-
-.vs-tag-md
-  color $muted
-  bg $sunk
-  border 1px solid $line
-
-.vs-sub
-  font-family ui-monospace, SFMono-Regular, Menlo, monospace
-  font-size .82rem
+  letter-spacing .07em
   color $muted
 
-.vs-card pre
-  margin .25rem 0 0
-  font-size .8rem
-  line-height 1.55
+.pairlabel code
+  font-size .78rem
+  text-transform none
+  letter-spacing 0
+  color $ink
 
-.vs-live-label
-  margin 1rem 0 .35rem
-  font-size .88rem
-  color $muted
-  font-style italic
+.pair > pre
+  margin 0 0 1.5rem
 
-.vs-live
-  border 1px dashed $accent
+.pair .pairlabel + .demo
+  margin 0
+
+.demo
+  border 1px solid $accent
   radius $radius-sm
-  background color-mix(in srgb, $accent-soft 50%, $panel)
-  padding 1rem 1.1rem .85rem
-  margin .15rem 0 0
+  background color-mix(in srgb, $accent-soft 45%, $panel)
+  padding 1.15rem 1.25rem 1rem
 
-.vs-live input[data-wd-bind-input]
+.demo input[data-wd-bind-input]
   width 100%
   box-sizing border-box
   font-family inherit
@@ -187,7 +123,7 @@
   color $ink
   margin 0 0 .75rem
 
-.vs-live .product
+.demo .product
   display flex
   align-items center
   justify-content space-between
@@ -199,10 +135,10 @@
   radius 8px
   font-size .95rem
 
-.vs-live .product p
+.demo .product p
   margin 0
 
-.vs-live .product button
+.demo .product button
   border 0
   bg $accent
   color white
@@ -213,57 +149,68 @@
   cursor pointer
   flex-shrink 0
 
-.vs-live .product button:hover
+.demo .product button:hover
   bg $accent-deep
 
-.vs-live > p:last-of-type
+.demo > p:last-of-type
   margin .85rem 0 0
   font-size .95rem
 
-.vs-needs
-  margin 1rem 0 0
-  padding 1rem 1.1rem
-  border-left 3px solid $warm
-  bg $warm-soft
-  radius 8px
+/* ── Live data strip (:fetch stars + visits) ────────────────────── */
 
-.vs-needs strong
-  color $warm
-  font-size .92rem
+.livestrip
+  display grid
+  grid-template-columns repeat(4, 1fr)
+  gap 1rem
+  margin 1.5rem 0 2rem
+  padding 1.35rem 0
+  border-top 1px solid $line-soft
+  border-bottom 1px solid $line-soft
 
-.vs-needs pre
-  margin .7rem 0 .6rem
-  font-size .78rem
+/* Every stat is structurally identical: the value is a bare <p> (either plain
+   prose or the body of an `:if` region), the label is its own `.statlabel`
+   container. Keeping the label in a container is what stops markdown from
+   folding value and label into one paragraph, which is exactly what happened
+   when they were two adjacent lines. */
+.stat
+  display flex
+  flex-direction column
+  gap .2rem
+  min-width 0
 
-.vs-needs-foot
-  display block
-  font-size .85rem
-  color $muted
+.stat > p
+  margin 0
+  font-size 1.85rem
+  line-height 1.05
+  color $accent
+  letter-spacing -.02em
+  font-variant-numeric tabular-nums
 
-.vs-caption
-  margin auto 0 0
-  padding-top 1rem
-  font-style italic
-  color $ink
-  font-size .95rem
+/* The `:if` lifecycle regions wrap the value; unwrap them for layout so the
+   value sits on the same baseline whether it is static or fetched. */
+.stat > div[data-wd-if] p
+  margin 0
+  font-size 1.85rem
+  line-height 1.05
+  color $accent
+  letter-spacing -.02em
+  font-variant-numeric tabular-nums
 
-.vs-card.vs-dark .vs-caption
-  color $accent-deep
+.statlabel
+  font-size .88rem
+  line-height 1.35
+  color $ink-soft
+  max-width 20ch
+
+.statlabel p
+  margin 0
 
 @media (max-width: 720px)
-  .versus
-    grid-template-columns 1fr
-    gap 1rem
+  .livestrip
+    grid-template-columns 1fr 1fr
+    gap 1.25rem
 
-/* ── Secondary value props ──────────────────────────────────────── */
-
-.props
-  margin 1.5rem 0 0
-
-.props h2
-  margin-top 1.5rem
-
-/* ── Demo-directive widgets (`:try`, feature-card include, index.js) ─ */
+/* ── Demo-directive widgets (`:try`) ────────────────────────────── */
 
 .try-card
   display inline-flex
@@ -286,44 +233,3 @@
   padding .1rem .5rem
   radius 999px
   font-size .8rem
-
-.feature-card
-  display grid
-  gap .35rem
-  margin 1rem 0
-  padding 1.1rem 1.25rem
-  bg $panel
-  border 1px solid $line
-  radius $radius
-
-.feature-card strong
-  color $warm
-
-.pulse-button
-  border 0
-  bg $ink
-  color $paper
-  padding .85rem 1.15rem
-  radius 999px
-  font-family inherit
-  cursor pointer
-
-.pulse-button.is-on
-  bg $warm
-
-.sprint-board
-  display grid
-  grid-template-columns repeat(auto-fit, minmax(130px, 1fr))
-  gap 1rem
-  margin 1rem 0
-
-.sprint-board article
-  bg $panel
-  border 1px solid $line
-  padding 1rem
-  radius $radius
-
-.sprint-board span
-  display block
-  color $accent
-  font-size .9rem

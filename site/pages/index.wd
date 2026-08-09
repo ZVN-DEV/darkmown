@@ -1,7 +1,6 @@
 ---
-html: true
-title: Darkmown — Markdown that runs, not Markdown that needs React
-description: A live store widget — search filter, add-to-cart, running total — written as one Markdown file that runs. The same outcome in Markdoc needs a React component, hydration, and a build step. Compare them side by side.
+title: Darkmown: Markdown that runs
+description: A .md file is a page. Rename it to .wd and the same file gets loops, state, fetched data, and forms, with no components, no JSX, and no build step. Pages with no state ship zero framework JavaScript.
 image: https://darkmown.com/__wd/media/og.png
 site_url: https://darkmown.com
 transitions: true
@@ -10,39 +9,43 @@ transitions: true
 @include /nav.wd
 @include /base.wd
 
-<main>
+::: main
 
-<section class="hero">
-  <span class="eyebrow">Darkmown vs. Markdoc</span>
+::: hero
 
-# Markdown that *runs.* Not Markdown that needs React.
+# Markdown that *runs.*
 
-The left file is Markdown. It is also a running app — a live search filter, add-to-cart, and a running total. The right file is the closest Markdoc can get on its own: a static list. To make it do what the left one already does, you add a React component, hydration, and a build step.
+A `.md` file is already a page. Rename it to `.wd` and that same file gets loops, state, fetched data, and forms. No components, no JSX, no config. Pages with no state ship **zero** framework JavaScript.
 
-<div class="hero-cta">
-<a class="btn primary" href="/showcase/">See the showcase</a>
-<a class="btn" href="/docs/">Read the docs</a>
-</div>
+```sh
+npx @zvndev/darkmown init my-site
+```
 
-<div class="hero-install"><code>npx @zvndev/darkmown init my-site</code><button type="button" class="copy-cmd" data-copy-cmd aria-label="Copy install command">Copy</button></div>
+::: hero-cta
+[Read the docs](/docs/){.btn .primary}
+[Try it in your browser](/playground/){.btn}
+[Star on GitHub](https://github.com/ZVN-DEV/darkmown){.btn}
+:::
 
-<p class="hero-try"><a href="/playground/">or try it in your browser →</a></p>
+:::
 
-<ul class="hero-stats">
-  <li><strong>0 KB</strong><span>framework JS on static pages</span></li>
-  <li><strong>~7.7 KB</strong><span>one runtime, CI-enforced &lt; 8 KB</span></li>
-  <li><strong>1</strong><span>loop and one binding to learn</span></li>
-  <li><strong>MIT</strong><span>zero runtime dependencies</span></li>
-</ul>
-</section>
+## One file. Here is the source.
 
-<section class="versus">
+A store with a live search filter, add-to-cart, and a running total.
 
-::: div .vs-card .vs-dark
-<header class="vs-head"><span class="vs-tag vs-tag-wd">Darkmown</span><span class="vs-sub">store.wd</span></header>
+::: pair
+
+::: pairlabel
+`store.wd`, the whole file
+:::
 
 ```wd
-:state products = [{"id":1,"name":"Aurora Lamp","price":49},{"id":2,"name":"Briza Fan","price":39},{"id":3,"name":"Cove Speaker","price":89},{"id":4,"name":"Dune Mug","price":12}]
+:state products = [
+  { "id": 1, "name": "Aurora Lamp", "price": 49 },
+  { "id": 2, "name": "Briza Fan", "price": 39 },
+  { "id": 3, "name": "Cove Speaker", "price": 89 },
+  { "id": 4, "name": "Dune Mug", "price": 12 }
+]
 :state cart = []
 :state q = ""
 :computed count = cart.length
@@ -51,7 +54,7 @@ The left file is Markdown. It is also a running app — a live search filter, ad
 
 @loop products into p where p.name contains q
 ::: card .product
-**{ p.name }** — ${ p.price }
+**{ p.name }** · ${ p.price }
 :button "Add" -> cart += p
 :::
 @endloop
@@ -59,10 +62,17 @@ The left file is Markdown. It is also a running app — a live search filter, ad
 Cart: { count } item(s)
 ```
 
-<p class="vs-live-label">↓ and here is that exact file, running</p>
+::: pairlabel
+that same file, running (type in the box)
+:::
 
-::: div .vs-live
-:state products = [{"id":1,"name":"Aurora Lamp","price":49},{"id":2,"name":"Briza Fan","price":39},{"id":3,"name":"Cove Speaker","price":89},{"id":4,"name":"Dune Mug","price":12}]
+::: demo
+:state products = [
+  { "id": 1, "name": "Aurora Lamp", "price": 49 },
+  { "id": 2, "name": "Briza Fan", "price": 39 },
+  { "id": 3, "name": "Cove Speaker", "price": 89 },
+  { "id": 4, "name": "Dune Mug", "price": 12 }
+]
 :state cart = []
 :state q = ""
 :computed count = cart.length
@@ -71,7 +81,7 @@ Cart: { count } item(s)
 
 @loop products into p where p.name contains q
 ::: card .product
-**{ p.name }** — ${ p.price }
+**{ p.name }** · ${ p.price }
 :button "Add" -> cart += p
 :::
 @endloop
@@ -79,102 +89,104 @@ Cart: { count } item(s)
 Cart: **{ count }** item(s)
 :::
 
-<p class="vs-caption">This is the whole file. It runs.</p>
 :::
 
-::: div .vs-card
-<header class="vs-head"><span class="vs-tag vs-tag-md">Markdoc</span><span class="vs-sub">store.md</span></header>
+## This page is built in Darkmown
 
-```text
-{% if $products %}
-- **Aurora Lamp** — $49
-- **Briza Fan** — $39
-- **Cove Speaker** — $89
-- **Dune Mug** — $12
-{% /if %}
-```
+Not a screenshot, and not a React site describing a Markdown tool. `site/pages/index.wd` is a `.wd` file with no raw HTML in it. The first two numbers below are live: a `:fetch` reading `api/stats.js`, a serverless function in this same repo.
 
-<p class="vs-live-label">Markdoc has <code>{% if %}</code>, <code>{% partial %}</code>, and <code>$variables</code> — but no loop tag, so each row is written by hand and the list is static. To filter, add to a cart, or total it, you reach for code:</p>
+:fetch stats from "/api/stats" timeout=6000
 
-::: div .vs-needs
-<strong>+ store-widget.jsx</strong> — a React component, registered as a custom tag:
+::: livestrip
 
-```jsx
-const tags = { store: { render: 'Store' } };
-Markdoc.renderers.react(content, React, {
-  components: { Store } // your filter + cart + total live here
-});
-```
-
-<span class="vs-needs-foot">…plus a React + hydration runtime shipped to the browser, and the build step that wires the tag to the component.</span>
+::: stat
+:if stats_loading
+·
+:endif
+:if stats_error
+★
+:endif
+:if stats
+{ stats.stars }
+:endif
+::: statlabel
+GitHub stars, live
+:::
 :::
 
-<p class="vs-caption">Same outcome needs a React component.</p>
+::: stat
+:if stats_loading
+·
+:endif
+:if stats_error
+↓
+:endif
+:if stats
+{ stats.downloads }
+:endif
+::: statlabel
+npm installs last month
+:::
 :::
 
-</section>
+::: stat
+7,654 B
+::: statlabel
+the whole runtime, gzipped
+:::
+:::
 
-:note "Static pages ship zero JavaScript. The moment a page asks for reactivity — like this very homepage — one ~7.7 KB gzipped runtime loads (CI-enforced under 8 KB), never before. JS optional, CSS optional, always."
+::: stat
+0 KB
+::: statlabel
+JS on a static page
+:::
+:::
 
-<section class="props">
+:::
+
+Say hello and the form round-trips to a real serverless function, then renders the reply:
+
+:form action="/api/echo" into reply
+:input note placeholder="What would you build with this?"
+:submit "Send it"
+:endform
+
+:if reply
+The server answered at **{ reply.at }**. That was a `:form action=`. With JavaScript off it degrades to a plain native POST.
+:else if reply_error
+The echo endpoint is only live on the deployed site: { reply_error }
+:endif
 
 ## Three rules, no escape hatch
 
-- **Zero-JS static.** A page with no state ships no framework JavaScript. `/markdown/` and `/docs/` prove it — open them and check the network tab.
-- **One runtime.** Every reactive page shares the same ~7.7 KB gzipped runtime, CI-enforced under 8 KB. No per-component bundles, no hydration tax that scales with your UI.
-- **One loop, one binding.** `@loop … into …` is the only loop; `{ name }` is the only interpolation. Nothing else to learn, nothing else to misuse.
-
-</section>
+- **Zero-JS static.** A page with no state ships no framework JavaScript. Open [the docs](/docs/) or [a plain `.md` page](/markdown/) and check the network tab.
+- **One runtime.** Every reactive page shares the same 7,654-byte gzipped runtime, CI-enforced under 8 KB. No per-component bundles, no hydration tax that grows with your UI. It runs under a strict CSP with no `unsafe-eval`.
+- **One loop, one binding.** `@loop … into …` is the only loop. `{ name }` is the only interpolation. There is no second way to do either.
 
 ## A whole framework, in text
 
-Everything a site needs, expressed as Markdown directives. No components, no config, no JSX, no special files:
+- **Routing.** Folders are routes. Drop a file in, it is a page. Prefix it with `.` or `-` to hide it.
+- **State and reactivity.** `:state`, `:button`, `:if`, and keyed `@loop`s patch the DOM directly. No virtual DOM.
+- **Server calls.** `:fetch` pulls JSON into state; `:form action=` round-trips to any backend and degrades to a native POST without JS.
+- **Composition.** `@include` embeds one Markdown file into another, passing values down.
+- **Styling, optional.** Colocate a `.skin` file for design tokens, or ship none and let the browser default.
+- **Errors that teach.** Every compile error carries a stable code, the `file:line`, and a corrective example that is guaranteed to compile.
 
-- **Routing** — folders are routes. Drop a file in, it's a page. Prefix with `.` or `-` to hide it.
-- **State & reactivity** — `:state`, `:button`, `:if`, and keyed `@loop`s patch the DOM directly. No virtual DOM.
-- **Server calls** — `:fetch` pulls JSON into state; `:form action=` round-trips to any backend and degrades to a native POST without JS.
-- **Composition** — `@include` embeds one Markdown file into another, passing values down Liquid-style.
-- **Styling, optional** — colocate a `.skin` file for design tokens, or ship none and let the browser default.
+## See it for real
 
-## What to try
+:try "A whole live app in one file: fetch, loops, nested ifs, a form" href="/app/"
+:try "The docs, a .wd page built from includes" href="/docs/"
+:try "A plain .md page, where directives stay inert text" href="/markdown/"
 
-:try "A whole live app in one .wd file: fetch, loops, nested ifs, a form" href="/app/"
-:try "The docs route — a .wd page built from includes" href="/docs/"
-:try "A plain .md page where directives stay inert text" href="/markdown/"
-:try "Reactive page: state, keyed loops, scoped sections" href="/reactive/"
-:try "Data page: fetch, forms, server round-trips, persistence" href="/data/"
-:try "A hidden route, to confirm it 404s" href="/-draft/"
+`npm run build` emits a plain static `dist/` (no server, no special runtime), so it deploys anywhere that serves files. This site is a Darkmown build.
 
-## Loops that read like prose
+::: hero-cta
+[Deploy to Vercel](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown){.btn .primary}
+[Read the docs](/docs/){.btn}
+[How it compares to Markdoc](/vs/markdoc/){.btn}
+:::
 
-`@loop` is the only loop. Point it at a JSON file, an in-scope value, or a `:state` list, and the body repeats once per row. Includes inside the loop inherit the loop value:
-
-```wd
-@loop /features.json into card
-@include /feature-card.wd
-@endloop
-```
-
-@loop /features.json into card
-@include /feature-card.wd
-@endloop
-
-## Colocated behavior
-
-This button is powered by `site/pages/index.js`, discovered by matching the page basename:
-
-<button class="pulse-button" data-wd-demo>Script is waiting</button>
-
-<span id="deploy"></span>
-
-## Deploy in one click
-
-`npm run build` emits a plain static `dist/` — no server, no special runtime — so it deploys anywhere that serves files. This very site is a Darkmown build. The demo form posts to Darkmown's dev/Vercel echo endpoint; on static-only hosts, point `action=` at your own backend or remove that demo.
-
-<a class="btn primary" href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy to Vercel</a>
-<a class="btn" href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown">Deploy static to Cloudflare</a>
-<a class="btn" href="https://github.com/ZVN-DEV/darkmown">Star on GitHub</a>
-
-</main>
+:::
 
 @include /footer.wd

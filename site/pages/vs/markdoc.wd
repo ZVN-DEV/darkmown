@@ -1,0 +1,96 @@
+---
+title: Darkmown vs. Markdoc: Markdown that runs, without a React component
+description: Markdoc gives Markdown conditionals, partials and variables, but no loop tag and no interactivity. A filter, a cart, or a total means writing a React component and shipping a hydration runtime. Darkmown does it in the Markdown file. Side by side.
+image: https://darkmown.com/__wd/media/og.png
+site_url: https://darkmown.com
+transitions: true
+---
+
+@include /nav.wd
+@include /base.wd
+
+::: main
+
+# Darkmown vs. Markdoc
+
+[Markdoc](https://markdoc.dev) is a good tool, and the closest thing to Darkmown in spirit: Markdown with first-party syntax instead of MDX's "Markdown plus JavaScript". If you are choosing between them, the difference is narrow and specific.
+
+**Markdoc renders content. Darkmown runs it.** Markdoc has `{% if %}`, `{% partial %}` and `$variables`, so it can vary what it renders at build time. It has no loop tag, and no state, so the moment your page needs a filter, a cart, or a running total, you register a custom tag backed by a React component, ship React and a hydration runtime to the browser, and wire it up in your build. Darkmown expresses those in the Markdown file, and ships one 7,654-byte runtime.
+
+## The same store, both ways
+
+::: versus
+
+::: card .vs-card .vs-dark
+`store.wd` (Darkmown)
+
+```wd
+:state products = [
+  { "id": 1, "name": "Aurora Lamp", "price": 49 },
+  { "id": 2, "name": "Briza Fan", "price": 39 }
+]
+:state cart = []
+:state q = ""
+:computed count = cart.length
+
+:bind q placeholder="Search products…"
+
+@loop products into p where p.name contains q
+::: card .product
+**{ p.name }** · ${ p.price }
+:button "Add" -> cart += p
+:::
+@endloop
+
+Cart: { count } item(s)
+```
+
+That is the whole file. [It is running on the homepage](/): search, add to cart, and a live total.
+:::
+
+::: card .vs-card
+`store.md` (Markdoc)
+
+```text
+{% if $products %}
+- **Aurora Lamp**, $49
+- **Briza Fan**, $39
+{% /if %}
+```
+
+There is no loop tag, so each row is written by hand and the list is static. To filter, add to a cart, or total it, you reach for code:
+
+```jsx
+const tags = {
+  store: { render: 'Store' }
+};
+
+// your filter + cart + total live here
+Markdoc.renderers.react(content, React, {
+  components: { Store }
+});
+```
+
+…plus React and a hydration runtime shipped to the browser, and the build step that wires the tag to the component.
+:::
+
+:::
+
+## Where each one wins
+
+- **Pick Markdoc** if you are already in a React app, want Markdown authoring with a validated custom-tag schema, and are happy for interactivity to live in React components. Its schema validation and editor tooling are genuinely strong, and it is battle-tested at Stripe's scale.
+- **Pick Darkmown** if you want the page itself to be the app (loops, state, fetch, and forms expressed in Markdown), and you want static pages to ship literally zero framework JavaScript.
+
+## Honest differences
+
+- **Markdoc is older and more proven.** It runs Stripe's documentation. Darkmown is young; judge it accordingly.
+- **Markdoc has schema validation for custom tags.** Darkmown has no custom tags at all, by design: the directive vocabulary is fixed and closed, which is what lets it validate expressions at compile time and run without `eval`.
+- **Markdoc is renderer-agnostic** (React, HTML, or your own). Darkmown compiles to static HTML plus its own small runtime, and is not a library you embed in another framework's render tree.
+- **Neither ships a component model.** Markdoc composes with `{% partial %}`, Darkmown with `@include`.
+
+[Read the docs](/docs/){.btn .primary}
+[Try Darkmown in your browser](/playground/){.btn}
+
+:::
+
+@include /footer.wd
