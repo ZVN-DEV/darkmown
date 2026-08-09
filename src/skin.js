@@ -311,7 +311,15 @@ function subjectBase(base) {
  */
 function normalizeAttr(bracketed) {
   const m = bracketed.match(/^\[\s*([^\]=\s]+)\s*=\s*"?([^\]"]*)"?\s*\]$/);
-  return m ? `[${m[1]}="${m[2]}"]` : null;
+  if (!m) return null;
+  // The value is quoted on the way out, but the NAME lands in the selector
+  // verbatim — so it must be validated, not just captured. Without this an
+  // input like `tokens [{=v]` emitted `:root[{="v"]`, whose stray brace
+  // unbalances the stylesheet and makes a CSS parser swallow every rule that
+  // follows it. Anything that is not a plain CSS identifier falls through to
+  // the caller's `:root` fallback. (Found by tests/fuzz-skin.test.js.)
+  if (!/^[A-Za-z_-][\w-]*$/.test(m[1])) return null;
+  return `[${m[1]}="${m[2]}"]`;
 }
 
 /**

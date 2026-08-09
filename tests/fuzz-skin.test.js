@@ -102,7 +102,7 @@ function makeRng(seed) {
 const TAGS = ["h2", "h3", "a", "button", "span", "li", "img", "input", "code", "p"];
 const CLASSES = [".card", ".title", ".btn", ".row", ".badge", ".panel", ".meta", ".is-open"];
 const IDS = ["#hero", "#main-nav", "#footer_x"];
-const ATTRS = ['[href]', '[data-open]', '[type="text"]', "[hidden]"];
+const ATTRS = ["[href]", "[data-open]", '[type="text"]', "[hidden]"];
 const PSEUDOS = [":hover", ":focus", ":first-child", "::before", "::after", ":not([hidden])"];
 const COMBINATORS = [" ", " > ", " + ", " ~ "];
 const AT_RULES = [
@@ -493,7 +493,11 @@ test("fuzz: scoped compilation only ever ADDS the scope attribute (strip-equival
 
     // Anti-vacuity: a source with rules must actually differ between the modes.
     if (ruleCount > 0) {
-      assert.notEqual(scoped, plain, repro("scoped mode emitted nothing extra for a source with rules"));
+      assert.notEqual(
+        scoped,
+        plain,
+        repro("scoped mode emitted nothing extra for a source with rules")
+      );
     }
 
     const parsed = parseCss(scoped);
@@ -715,57 +719,44 @@ test("fuzz: a malformed tokens modifier never invents a new rule", () => {
 });
 
 // ---------------------------------------------------------------------------
-// KNOWN BUG — quarantined so the tree stays green; run it with
-// `WD_FUZZ_KNOWN_BUGS=1 node --test tests/fuzz-skin.test.js` to see it fail.
+// REGRESSION GUARD — this fuzzer found a real bug, which is now fixed in
+// `normalizeAttr` (src/skin.js). Kept as a permanent guard.
 //
-// `normalizeAttr` (src/skin.js:309-312) QUOTES the attribute value but never
-// VALIDATES the attribute name, so junk in the name position lands unquoted in
-// a selector:
+// The bug: `normalizeAttr` QUOTED the attribute value but never VALIDATED the
+// attribute name, so junk in the name position landed unquoted in a selector:
 //
 //     tokens [{=v]        →  :root[{="v"] {  --ink: #fff; }
 //                                  ^ unquoted brace inside the selector
 //
-// The stylesheet's braces no longer balance, and a CSS parser consuming the
-// never-closed block swallows EVERY rule that follows in the file. Its own
-// docstring states the opposite contract ("Returns null for a malformed
-// modifier … so the caller can fall back to default `:root` tokens instead of
-// emitting a junk selector"), and `tests/skin.test.js` already asserts that
-// contract for the shapes the regex happens to reject. This case slips through.
+// The stylesheet's braces then no longer balance, and a CSS parser consuming
+// the never-closed block swallows EVERY rule that follows in the file. The
+// function's own docstring already claimed the opposite contract ("Returns null
+// for a malformed modifier … so the caller can fall back to default `:root`
+// tokens instead of emitting a junk selector"), and `tests/skin.test.js`
+// asserted that contract only for the shapes the regex happened to reject.
 //
-// Fix shape (NOT applied here — src/ is owned by another track): require the
-// captured name to be a CSS identifier, e.g. `/^[A-Za-z_-][\w-]*$/`, and return
-// null otherwise so the existing `:root` fallback engages.
+// The fix: require the captured name to match `/^[A-Za-z_-][\w-]*$/` and return
+// null otherwise, so the existing `:root` fallback engages.
 // ---------------------------------------------------------------------------
 
-const KNOWN_BUG_SKIP =
-  process.env.WD_FUZZ_KNOWN_BUGS === "1"
-    ? false
-    : "KNOWN BUG (unfixed, src/ owned by another track): `tokens [{=v]` emits " +
-      ":root[{=\"v\"] — an unquoted brace in the attribute NAME unbalances the " +
-      "stylesheet. Run with WD_FUZZ_KNOWN_BUGS=1 to reproduce.";
-
-test(
-  "fuzz: a tokens modifier never emits an unquoted brace into a selector",
-  { skip: KNOWN_BUG_SKIP },
-  () => {
-    const CASES = 600;
-    for (let i = 0; i < CASES; i++) {
-      const seed = ((BASE_SEED ^ 0x2a2a2a2a) + i) >>> 0;
-      const rng = makeRng(seed);
-      const modifier = randModifier(rng);
-      const src = [`tokens ${modifier}`, "  ink #fff", ".card", "  color red"].join("\n");
-      const css = compileSkin(src);
-      assert.equal(
-        braceDepth(css),
-        0,
-        `\n\n=== KNOWN BUG REPRODUCED (skin: tokens modifier) ===\n` +
-          `seed: ${seed} (re-run: WD_FUZZ_SEED=${seed})\n` +
-          `modifier: ${JSON.stringify(modifier)}\n` +
-          `emitted CSS has unbalanced braces (a CSS parser swallows the rest of the file):\n${css}\n`
-      );
-    }
+test("fuzz: a tokens modifier never emits an unquoted brace into a selector", () => {
+  const CASES = 600;
+  for (let i = 0; i < CASES; i++) {
+    const seed = ((BASE_SEED ^ 0x2a2a2a2a) + i) >>> 0;
+    const rng = makeRng(seed);
+    const modifier = randModifier(rng);
+    const src = [`tokens ${modifier}`, "  ink #fff", ".card", "  color red"].join("\n");
+    const css = compileSkin(src);
+    assert.equal(
+      braceDepth(css),
+      0,
+      `\n\n=== KNOWN BUG REPRODUCED (skin: tokens modifier) ===\n` +
+        `seed: ${seed} (re-run: WD_FUZZ_SEED=${seed})\n` +
+        `modifier: ${JSON.stringify(modifier)}\n` +
+        `emitted CSS has unbalanced braces (a CSS parser swallows the rest of the file):\n${css}\n`
+    );
   }
-);
+});
 
 // ---------------------------------------------------------------------------
 // Test 5: depth and adversarial whitespace.

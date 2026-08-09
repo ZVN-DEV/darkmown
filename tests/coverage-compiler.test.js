@@ -50,6 +50,12 @@ test(":fetch with an unknown when= value is rejected (directives 296-300)", () =
   );
 });
 
+test(":fetch option that is not key=value is rejected (fetch.js WD502)", () => {
+  // A bare word in the options position never matches the `name=value` shape,
+  // so it is reported as an unknown option rather than silently ignored.
+  throwsCompiling([':fetch items from "/api" bogus'].join("\n"), /Unknown :fetch option "bogus"/);
+});
+
 test(":fetch with a control-character URL is rejected (directives 376-380)", () => {
   // A tab inside the quoted URL trips the control-character guard in
   // validateFetchUrl (value contains 	).
