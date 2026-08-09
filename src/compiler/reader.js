@@ -45,17 +45,13 @@ import { normalizeNewlines } from "./context.js";
  */
 export function memoryReader(files, cwd = "/") {
   const map = files instanceof Map ? files : new Map(Object.entries(files));
-  // Deliberately POSIX, not the host's `path`. An in-memory compile has no real
-  // filesystem, so it must resolve identically on every platform — the browser
-  // playground and a mobile host have no drive letters, and on Windows the host
-  // `path.resolve("/site/pages/a.wd")` would return `D:\site\pages\a.wd`,
-  // silently making the same file map compile differently there. Incoming
-  // separators are normalized first so a caller passing Windows-style paths
-  // still resolves to the same POSIX key.
-  const toPosix = (/** @type {string} */ p) => p.replaceAll("\\", "/");
-  const root = path.posix.resolve(toPosix(cwd));
-  const resolve = (/** @type {string} */ absPath) => path.posix.resolve(root, toPosix(absPath));
-  const keyOf = (/** @type {string} */ absPath) => path.posix.relative(root, resolve(absPath));
+  // Resolution deliberately uses the HOST `path`, because `cwd` is frequently a
+  // real OS directory (the fs-parity test compiles the same project from disk
+  // and from memory against one temp root, and a Windows temp root is
+  // `C:\…` — which `path.posix` does not recognize as absolute). Only the
+  // resulting KEY is forced to POSIX, matching the map's documented key shape.
+  const keyOf = (/** @type {string} */ absPath) =>
+    path.relative(cwd, path.resolve(absPath)).split(path.sep).join("/");
   return {
     readText: (absPath) => {
       const key = keyOf(absPath);
@@ -69,6 +65,6 @@ export function memoryReader(files, cwd = "/") {
       throw new Error("memoryReader: binary reads are unsupported");
     },
     exists: (absPath) => map.has(keyOf(absPath)),
-    realpath: (absPath) => resolve(absPath)
+    realpath: (absPath) => path.resolve(absPath)
   };
 }

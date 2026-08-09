@@ -74,5 +74,11 @@ try {
 }
 
 function run(command, args, cwd) {
-  return execFileSync(command, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  // On Windows the npm/npx entry points are `.cmd` shims, which `execFileSync`
+  // cannot launch without a shell (spawnSync ENOENT). Map to the real
+  // executable name instead of enabling `shell: true`, which would drag these
+  // arguments through shell quoting.
+  const bin =
+    process.platform === "win32" && /^(npm|npx)$/.test(command) ? `${command}.cmd` : command;
+  return execFileSync(bin, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }

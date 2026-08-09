@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
 
+// On Windows the npm entry point is `npm.cmd`; `execFileSync` cannot launch a
+// .cmd without a shell, so a bare "npm" fails with spawnSync ENOENT. Naming the
+// real executable keeps this shell-free rather than reaching for `shell: true`.
+const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
+
 test("npm pack includes the runtime, compiler, cli, and intentional demo/support files", () => {
-  const output = execFileSync("npm", ["pack", "--dry-run", "--json"], { encoding: "utf8" });
+  const output = execFileSync(NPM, ["pack", "--dry-run", "--json"], { encoding: "utf8" });
   const [report] = JSON.parse(output);
   const files = report.files.map((file) => file.path);
   // Hidden demo sources ship intentionally: they prove the router hides dot/dash

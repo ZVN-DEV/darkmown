@@ -132,24 +132,30 @@ test("memoryReader reports existence and throws ENOENT-style on a missing read",
   assert.equal(reader.readText("/site/pages/a.wd"), "hi");
   assert.throws(() => reader.readText("/site/pages/missing.wd"), /no in-memory file/);
   assert.throws(() => reader.readBinary("/site/pages/a.wd"), /binary reads are unsupported/);
-  assert.equal(reader.realpath("/site/pages/a.wd"), "/site/pages/a.wd");
+  // realpath is host-resolved (it is only ever an identity key for cycle
+  // detection within one compile), so assert the contract — idempotent and
+  // stable — rather than a POSIX literal that a Windows host would fail.
+  const real = reader.realpath("/site/pages/a.wd");
+  assert.equal(real, path.resolve("/site/pages/a.wd"));
+  assert.equal(reader.realpath(real), real);
 });
 
-test("memoryReader resolves POSIX-identically regardless of host platform", () => {
-  // An in-memory compile has no real filesystem, so the same file map must
-  // resolve the same way everywhere: the browser playground and a mobile host
-  // have no drive letters. Using the host `path` meant that on Windows
-  // `path.resolve("/site/pages/a.wd")` returned `D:\site\pages\a.wd`, so keys
-  // missed and realpath (the include-cycle key) was host-specific.
-  const reader = memoryReader({ "site/pages/a.wd": "hi" }, "/");
-  // Windows-style separators map onto the same POSIX key.
-  assert.equal(reader.exists("\\site\\pages\\a.wd"), true);
-  assert.equal(reader.readText("\\site\\pages\\a.wd"), "hi");
-  // realpath never leaks a host drive letter or backslash.
-  const real = reader.realpath("/site/pages/a.wd");
-  assert.equal(real, "/site/pages/a.wd");
-  assert.ok(!real.includes("\\"), `realpath leaked a backslash: ${real}`);
-  assert.ok(!/^[A-Za-z]:/.test(real), `realpath leaked a drive letter: ${real}`);
+test("memoryReader keys stay POSIX even when the host separator is not", () => {
+  // The map's KEYS are POSIX by contract, but resolution runs through the host
+  // `path` because `cwd` is often a real OS directory (see the fs-parity test,
+  // whose temp root on Windows is `C:\…`). So the invariant worth pinning is
+  // the key shape, not the absolute-path shape: a lookup made with the host's
+  // own separator must still land on the POSIX key.
+  const root = path.resolve("/proj");
+  const reader = memoryReader({ "site/pages/a.wd": "hi" }, root);
+  assert.equal(reader.readText(path.join(root, "site", "pages", "a.wd")), "hi");
+  assert.equal(reader.exists(path.join(root, "site", "pages", "a.wd")), true);
+  assert.equal(reader.exists(path.join(root, "site", "pages", "missing.wd")), false);
+  // The key named in the ENOENT message is POSIX regardless of host separator.
+  assert.throws(
+    () => reader.readText(path.join(root, "site", "pages", "missing.wd")),
+    /no in-memory file "site\/pages\/missing\.wd"/
+  );
 });
 
 test("a local <img> degrades to no dimensions in the memory path (no fs image read)", () => {
