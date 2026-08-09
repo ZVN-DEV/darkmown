@@ -1,64 +1,4 @@
 /**
- * @param {import("./reader.js").Reader} reader The source reader for this
- *   compile (fs-backed by default; in-memory for `compileFromMemory`).
- * @returns {Compilation}
- */
-export function createCompilation(reader: import("./reader.js").Reader): Compilation;
-/**
- * @param {Scope | null} parent
- * @param {Record<string, unknown>} [vars]
- * @returns {Scope}
- */
-export function createScope(parent: Scope | null, vars?: Record<string, unknown>): Scope;
-/**
- * Format a source location as `file:line` (1-based) for compile errors. Keeps the
- * file path intact so existing message matchers still pass, while pointing at the
- * directive's (or unclosed opener's) line. `index` is 0-based into the current
- * `compileBody` slice; `ctx.lineOffset` (where that slice starts in the body,
- * accumulated by {@link nestedCtx} as block handlers recurse) and `ctx.bodyLine`
- * (the frontmatter offset) shift it back to the true file line.
- * @param {Pick<Ctx, "file" | "bodyLine" | "lineOffset">} ctx
- * @param {number} index 0-based line index into the current body slice.
- * @returns {string}
- */
-export function at(ctx: Pick<Ctx, "file" | "bodyLine" | "lineOffset">, index: number): string;
-/**
- * The 1-based true file line for a body-slice `index` — the numeric half of
- * {@link at}, exposed so {@link wdError} can populate the structured `wd.line`.
- * @param {Pick<Ctx, "bodyLine" | "lineOffset">} ctx
- * @param {number} index 0-based line index into the current body slice.
- * @returns {number}
- */
-export function lineOf(ctx: Pick<Ctx, "bodyLine" | "lineOffset">, index: number): number;
-/**
- * Build a compile `Error` carrying a structured {@link WdErrorInfo} on `err.wd`
- * — so an AI edit-loop (or an editor) gets code/file/line/hint/example without
- * re-parsing the prose. The string message is the caller's text prefixed with
- * the stable `[WDxxx]` code, so a user can search the code straight out of the
- * terminal; everything after the prefix (the `file:line`, the corrective `Use:`
- * template, the concrete `e.g.` example) is unchanged.
- *
- * Every author-facing compile error is built here, so no error can ship without
- * a code. See `src/errors.js` for the registry and the numbering scheme.
- * @param {string} message The user-facing error text, without the code prefix.
- * @param {WdErrorInfo} wd The structured mirror (its `code` becomes the prefix).
- * @returns {Error & { wd: WdErrorInfo }}
- */
-export function wdError(message: string, wd: WdErrorInfo): Error & {
-    wd: WdErrorInfo;
-};
-/**
- * The compile context for a nested block body that starts `start` lines into the
- * current slice. The offset accumulates, so errors inside arbitrarily nested
- * blocks (`::: container`, `:form`, `@loop`, `:if`, `:carousel`) still report
- * the true file line through {@link at}.
- * @template {Pick<Ctx, "lineOffset">} T
- * @param {T} ctx
- * @param {number} start 0-based index the nested body starts at in the current slice.
- * @returns {T}
- */
-export function nestedCtx<T extends Pick<Ctx, "lineOffset">>(ctx: T, start: number): T;
-/**
  * @typedef {import("../config.js").Paths} Paths
  */
 /**
@@ -248,6 +188,80 @@ export function nestedCtx<T extends Pick<Ctx, "lineOffset">>(ctx: T, start: numb
  * @property {string} target State key (possibly dotted) the action mutates.
  * @property {unknown} [value] Literal value for value-carrying ops.
  */
+/**
+ * Normalize CRLF/CR line endings to LF.
+ *
+ * Every line-structured parser in the project (frontmatter delimiters, the `.wd`
+ * directive dispatcher, `.skin` indentation) tests LF-shaped text. Source files
+ * authored on Windows — or checked out anywhere with git's `core.autocrlf`, the
+ * default on Windows — arrive CRLF-terminated, and an un-normalized `\r` turns
+ * `---` into `---\r` and silently defeats those tests. Applied at the reader
+ * boundary and again at the two entry points that accept raw strings from
+ * callers that bypass the reader; it is idempotent, so doubling up is free.
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeNewlines(text: string): string;
+/**
+ * @param {import("./reader.js").Reader} reader The source reader for this
+ *   compile (fs-backed by default; in-memory for `compileFromMemory`).
+ * @returns {Compilation}
+ */
+export function createCompilation(reader: import("./reader.js").Reader): Compilation;
+/**
+ * @param {Scope | null} parent
+ * @param {Record<string, unknown>} [vars]
+ * @returns {Scope}
+ */
+export function createScope(parent: Scope | null, vars?: Record<string, unknown>): Scope;
+/**
+ * Format a source location as `file:line` (1-based) for compile errors. Keeps the
+ * file path intact so existing message matchers still pass, while pointing at the
+ * directive's (or unclosed opener's) line. `index` is 0-based into the current
+ * `compileBody` slice; `ctx.lineOffset` (where that slice starts in the body,
+ * accumulated by {@link nestedCtx} as block handlers recurse) and `ctx.bodyLine`
+ * (the frontmatter offset) shift it back to the true file line.
+ * @param {Pick<Ctx, "file" | "bodyLine" | "lineOffset">} ctx
+ * @param {number} index 0-based line index into the current body slice.
+ * @returns {string}
+ */
+export function at(ctx: Pick<Ctx, "file" | "bodyLine" | "lineOffset">, index: number): string;
+/**
+ * The 1-based true file line for a body-slice `index` — the numeric half of
+ * {@link at}, exposed so {@link wdError} can populate the structured `wd.line`.
+ * @param {Pick<Ctx, "bodyLine" | "lineOffset">} ctx
+ * @param {number} index 0-based line index into the current body slice.
+ * @returns {number}
+ */
+export function lineOf(ctx: Pick<Ctx, "bodyLine" | "lineOffset">, index: number): number;
+/**
+ * Build a compile `Error` carrying a structured {@link WdErrorInfo} on `err.wd`
+ * — so an AI edit-loop (or an editor) gets code/file/line/hint/example without
+ * re-parsing the prose. The string message is the caller's text prefixed with
+ * the stable `[WDxxx]` code, so a user can search the code straight out of the
+ * terminal; everything after the prefix (the `file:line`, the corrective `Use:`
+ * template, the concrete `e.g.` example) is unchanged.
+ *
+ * Every author-facing compile error is built here, so no error can ship without
+ * a code. See `src/errors.js` for the registry and the numbering scheme.
+ * @param {string} message The user-facing error text, without the code prefix.
+ * @param {WdErrorInfo} wd The structured mirror (its `code` becomes the prefix).
+ * @returns {Error & { wd: WdErrorInfo }}
+ */
+export function wdError(message: string, wd: WdErrorInfo): Error & {
+    wd: WdErrorInfo;
+};
+/**
+ * The compile context for a nested block body that starts `start` lines into the
+ * current slice. The offset accumulates, so errors inside arbitrarily nested
+ * blocks (`::: container`, `:form`, `@loop`, `:if`, `:carousel`) still report
+ * the true file line through {@link at}.
+ * @template {Pick<Ctx, "lineOffset">} T
+ * @param {T} ctx
+ * @param {number} start 0-based index the nested body starts at in the current slice.
+ * @returns {T}
+ */
+export function nestedCtx<T extends Pick<Ctx, "lineOffset">>(ctx: T, start: number): T;
 export const pageIncludeExtensions: string[];
 /** @type {Record<string, string>} */
 export const LOOP_META: Record<string, string>;

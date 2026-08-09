@@ -3,7 +3,11 @@
  * ABSOLUTE path (the compiler resolves includes/assets to absolute paths before
  * reading), so a reader only has to map absolute paths to bytes/existence.
  * @typedef {object} Reader
- * @property {(absPath: string) => string} readText Read a UTF-8 text file.
+ * @property {(absPath: string) => string} readText Read a UTF-8 text file. The
+ *   result is ALWAYS LF-normalized: every parser downstream is line-structured
+ *   and LF-shaped, so a CRLF source (Windows, or any `core.autocrlf` checkout)
+ *   would otherwise fail to match delimiters like `---`. A custom reader must
+ *   uphold this.
  * @property {(absPath: string) => Uint8Array} readBinary Read raw bytes (images).
  * @property {(absPath: string) => boolean} exists Whether the path exists.
  * @property {(absPath: string) => string} realpath Canonical path (symlinks
@@ -29,7 +33,11 @@ export function memoryReader(files: Record<string, string> | Map<string, string>
  */
 export type Reader = {
     /**
-     * Read a UTF-8 text file.
+     * Read a UTF-8 text file. The
+     * result is ALWAYS LF-normalized: every parser downstream is line-structured
+     * and LF-shaped, so a CRLF source (Windows, or any `core.autocrlf` checkout)
+     * would otherwise fail to match delimiters like `---`. A custom reader must
+     * uphold this.
      */
     readText: (absPath: string) => string;
     /**

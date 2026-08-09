@@ -39,3 +39,25 @@ test("npm pack includes the runtime, compiler, cli, and intentional demo/support
     assert.equal(files.includes(required), true, `missing ${required} from npm pack`);
   }
 });
+
+test("the shipped declarations are the flat tree the exports map points at", () => {
+  const output = runNpm(["pack", "--dry-run", "--json"], { encoding: "utf8" });
+  const [report] = JSON.parse(output);
+  const files = report.files.map((file) => file.path);
+
+  // Both entrypoints in `exports` must actually resolve inside the tarball.
+  for (const required of ["types/index.d.ts", "types/catalog.d.ts", "types/compiler.d.ts"]) {
+    assert.equal(files.includes(required), true, `missing ${required} from npm pack`);
+  }
+
+  // `npm run types` emits into `types/` but does NOT clean it first, so a
+  // change to the declaration build's rootDir once left a full duplicate tree
+  // under `types/src/**` sitting beside the real one — 38 redundant files that
+  // would have shipped. Nothing legitimate lives at that path.
+  const nested = files.filter((file) => file.startsWith("types/src/"));
+  assert.deepEqual(
+    nested,
+    [],
+    `duplicate declaration tree under types/src/ — delete it and re-run \`npm run types\``
+  );
+});
