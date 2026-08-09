@@ -45,6 +45,12 @@ test("the shipped declarations are the flat tree the exports map points at", () 
   const [report] = JSON.parse(output);
   const files = report.files.map((file) => file.path);
 
+  // `darkmown init` copies AGENTS.md out of the installed package into the new
+  // project root, which is the only place a coding agent reads it. Drop it from
+  // the `files` allowlist and init silently scaffolds a project with no agent
+  // context at all: no error, no missing file, just worse output forever after.
+  assert.equal(files.includes("AGENTS.md"), true, "AGENTS.md must ship; init copies it");
+
   // Both entrypoints in `exports` must actually resolve inside the tarball.
   for (const required of ["types/index.d.ts", "types/catalog.d.ts", "types/compiler.d.ts"]) {
     assert.equal(files.includes(required), true, `missing ${required} from npm pack`);

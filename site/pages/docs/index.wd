@@ -694,7 +694,7 @@ A shipped code is a public contract: never renumbered, never reused. The full re
 
 The `darkmown` command (installed by `npx @zvndev/darkmown`) is the whole tool — every command is one word:
 
-- `darkmown init [dir] [--template <name>]` — scaffold a new site from a template (`starter`, `blog`, `store`, `dashboard`, `landing`). Existing files are never overwritten.
+- `darkmown init [dir] [--template <name>]` scaffolds a new site from a template (`starter`, `blog`, `store`, `dashboard`, `landing`). It also writes agent context at the project root: `AGENTS.md` (the full directive reference, copied from the installed package so it can never teach syntax the compiler rejects), a `CLAUDE.md` pointing at it, and a `.gitignore`. Existing files are never overwritten.
 - `darkmown dev` — the live compiler: browser reload, an in-browser error overlay, incremental rebuilds, and a local runner for `api/*` functions.
 - `darkmown build [--target cloudflare] [--drafts]` — write 100% static output to `dist/` (plus `sitemap.xml` / `rss.xml` / `robots.txt`); `--drafts` includes `draft: true` pages for a staging deploy.
 - `darkmown serve` — preview the built `dist/` locally (static only; use `dev` to exercise `api/*`).

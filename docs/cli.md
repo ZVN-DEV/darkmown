@@ -34,6 +34,8 @@ Scaffolds a Darkmown site from a template (default: `starter`). Available templa
 darkmown init my-site --template store
 ```
 
+Every scaffold also writes agent context at the project root: `AGENTS.md` (the full directive reference, copied byte-for-byte from the installed package so it can never teach different syntax than the compiler accepts), a short `CLAUDE.md` pointing at it, and a `.gitignore` covering `node_modules/` and `dist/`. Coding agents read instruction files from the project root, so without this a new project starts every session with the agent guessing at directive syntax.
+
 Existing files are never overwritten. The generated `package.json` is private, sets `"type": "module"` (so `api/*.js` import as ESM), includes `dev`/`build`/`preview` scripts, and names the app after the target directory.
 
 After scaffolding:
