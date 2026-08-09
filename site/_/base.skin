@@ -484,6 +484,14 @@ code
   color $accent-deep
   padding .12rem .36rem
   radius 6px
+  /* An inline token that wraps (`unsafe-eval` breaks at its hyphen) otherwise
+     leaves a half-open pill on each line: padding and rounding on the outer
+     edges only. `clone` gives every fragment the full box, so a wrapped token
+     reads as one styled run instead of a rendering artifact. Wrapping itself
+     is left alone on purpose: some inline tokens on this site run to 70+
+     characters, and `nowrap` would overflow the viewport on a phone. */
+  box-decoration-break clone
+  -webkit-box-decoration-break clone
 
 h1 code, h2 code, h3 code
   font-size .82em

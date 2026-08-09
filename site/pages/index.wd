@@ -104,13 +104,13 @@ Not a screenshot, and not a React site describing a Markdown tool. `site/pages/i
 ·
 :endif
 :if stats_error
-★
+n/a
 :endif
 :if stats
-{ stats.stars }
+{ stats.version }
 :endif
 ::: statlabel
-GitHub stars, live
+latest release, live from npm
 :::
 :::
 
@@ -119,7 +119,7 @@ GitHub stars, live
 ·
 :endif
 :if stats_error
-↓
+n/a
 :endif
 :if stats
 { stats.downloads }
