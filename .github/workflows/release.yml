@@ -42,7 +42,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      # `--project=chromium` is REQUIRED, not an optimisation: playwright.config
+      # now declares chromium + firefox + webkit, so a bare `npm run test:e2e`
+      # here would try to launch two engines this job never installed and fail
+      # the release. The three-engine matrix is CI's job (.github/workflows/ci.yml)
+      # and it has already run against this exact commit on the way to the tag;
+      # the release gate keeps one engine so tagging stays fast.
+      - run: npm run test:e2e -- --project=chromium
       - run: npm run test:extension
 
       # Supply-chain guard: prove the PUBLISHED TARBALL actually works before we

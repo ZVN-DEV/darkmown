@@ -11,11 +11,34 @@ concurrency:
 
 jobs:
   test:
-    name: Test (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    name: Test (Node ${{ matrix.node }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      # A Windows-only or macOS-only red must not cancel the Linux legs. The
+      # whole point of the extra OSes is to learn what breaks where, so we want
+      # the full picture from one run, not the first failure.
+      fail-fast: false
       matrix:
+        # Base combinations: the full Node support range, on Linux.
+        os: [ubuntu-latest]
         node: [20, 22, 24]
+        # An `include` entry whose keys would OVERWRITE a base matrix value
+        # (here `os`) cannot be merged into an existing combination, so Actions
+        # appends it as a NEW combination instead. That is what keeps this
+        # cheap: 3 Linux legs + 1 Windows + 1 macOS = 5 jobs, not a 3x3 grid.
+        #
+        # Windows and macOS are pinned to Node 22 deliberately, and Node 22 is a
+        # FLOOR for the Windows leg, not just a cost choice: npm runs script
+        # bodies through cmd.exe on Windows, cmd.exe does not expand globs, and
+        # `node --test` only grew its own glob expansion in Node 22. On Node 20
+        # `npm test` (node --test tests/*.test.js) would fail on Windows with
+        # "Could not find tests/*.test.js" before a single test ran. Do not drop
+        # the Windows leg to Node 20 without changing the test script first.
+        include:
+          - os: windows-latest
+            node: 22
+          - os: macos-latest
+            node: 22
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -23,6 +46,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      # Left on each runner's DEFAULT shell (PowerShell on Windows) on purpose:
+      # the CLI and the builder do heavy path work that had never executed on
+      # win32 before this matrix existed, and we want it exercised the way a
+      # Windows user actually invokes it.
       - run: npm test
 
   coverage:
@@ -72,8 +99,20 @@ jobs:
       - run: npm run typecheck
 
   e2e:
-    name: Browser e2e (Playwright)
+    name: Browser e2e (${{ matrix.browser }})
     runs-on: ubuntu-latest
+    strategy:
+      # A WebKit-only regression and a Firefox-only one are different bugs; one
+      # engine going red must not hide the other two.
+      fail-fast: false
+      matrix:
+        # One engine per job rather than one job running all three. The specs
+        # themselves are fast (~10-15s per engine), so the job cost is dominated
+        # by npm ci + browser provisioning. Sharding keeps e2e wall-clock flat
+        # against the old chromium-only job instead of tripling it, gives each
+        # engine its own red/green square in the Actions UI, and lets each leg
+        # cache and apt-install ONLY the engine it runs.
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -81,20 +120,64 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+
+      # The cache key has to track the RESOLVED Playwright version, not a
+      # literal and not the semver range in package.json: browser builds are
+      # pinned per Playwright release, so a devDependency bump MUST miss the
+      # cache or the run would quietly execute against stale binaries. Read it
+      # back out of the installed package, after npm ci, so it is the version
+      # the lockfile actually produced.
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browser (${{ matrix.browser }})
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ steps.pw.outputs.version }}
+          # No restore-keys, same rule as everywhere else in this repo: a
+          # partial hit would restore a PREVIOUS Playwright's binaries and then
+          # save the new ones alongside them, so the entry grows by a few
+          # hundred MB on every upgrade and never shrinks. A version bump should
+          # be a clean miss and a clean re-download.
+
+      - name: Install browser (cache miss)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      # The cache only covers ~/.cache/ms-playwright. The shared libraries that
+      # `--with-deps` apt-installs (WebKit alone pulls dozens) live in system
+      # paths that are not cached, so a cache hit still needs the OS-level deps
+      # put back, just not the browser download.
+      - name: Install browser system deps (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps ${{ matrix.browser }}
+
       # playwright.config.js builds + serves the demo site via webServer.
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --project=${{ matrix.browser }}
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          # Artifact names must be unique across matrix legs or the upload
+          # fails on the second one.
+          name: playwright-report-${{ matrix.browser }}
           path: playwright-report/
           retention-days: 7
 
   build:
-    name: Build demo site
-    runs-on: ubuntu-latest
+    name: Build demo site (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The builder is where the filesystem work lives: route discovery walks
+        # site/pages, includes are resolved through a containment guard, assets
+        # are collected next to their page, and the output path is checked to
+        # stay inside dist. All of that is path.sep-sensitive, so this job (not
+        # the unit tests) is the one most likely to expose a real win32 bug.
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -103,11 +186,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: test -f dist/index.html && test -f dist/routes.json
+      # `test -f` is POSIX and windows-latest defaults to PowerShell, where
+      # `test` is an alias for Test-Path with different semantics. Pin these
+      # ASSERTION steps to bash (GitHub's Windows image ships Git Bash) and
+      # leave the build steps themselves on each runner's native shell, so the
+      # product still runs the way a Windows user would run it.
+      - shell: bash
+        run: test -f dist/index.html && test -f dist/routes.json
       # Staging (dogfood): the site must ALSO build with drafts included — a
       # draft-only compile error never surfaces in the default build above.
       - run: node src/cli.js build --drafts
-      - run: test -f dist/blog/unfinished-thoughts/index.html
+      - shell: bash
+        run: test -f dist/blog/unfinished-thoughts/index.html
 
   size:
     name: Runtime size budget
@@ -140,7 +230,7 @@ jobs:
       - run: npm audit --audit-level=high
 
   extension:
-    name: VS Code grammar
+    name: VS Code extension (grammar + VSIX)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -152,3 +242,27 @@ jobs:
         run: |
           npm ci
           npm test
+
+      # The extension is not on the marketplace yet, so nothing else proves the
+      # manifest is packageable: a bad `.vscodeignore`, a missing icon/LICENSE,
+      # or a malformed `contributes` block would only surface at publish time.
+      # `vsce package` performs the same validation the marketplace does, so
+      # running it here turns "we could publish" into a per-push fact.
+      # It deliberately does NOT publish: that needs a marketplace Personal
+      # Access Token that only the repo owner holds, and a publish step gated on
+      # a secret nobody has configured would just be a permanently red job.
+      # Publishing stays a manual action (see editors/vscode/PUBLISHING.md).
+      - name: Package the extension (VSIX)
+        run: npm run pack:extension
+
+      # Upload the VSIX so the extension is INSTALLABLE straight from a CI run
+      # ("Install from VSIX..." in VS Code) while the marketplace listing does
+      # not exist. This is the interim distribution channel, so give it a longer
+      # retention than the debug-only Playwright reports.
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v7
+        with:
+          name: darkmown-vscode-extension
+          path: editors/vscode/*.vsix
+          if-no-files-found: error
+          retention-days: 30
