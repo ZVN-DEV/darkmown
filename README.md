@@ -58,7 +58,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 
 ## Commands
 
-- `darkmown init [dir] [--template <name>]` scaffolds a new site from a template (`starter`, `blog`, `store`, `dashboard`, `landing`).
+- `darkmown init [dir] [--template <name>]` scaffolds a new site from a template (`starter`, `blog`, `store`, `dashboard`, `landing`). It also drops `AGENTS.md` (the full directive reference), a `CLAUDE.md` pointing at it, and a `.gitignore` into the project root, so a coding agent working in your new project has the directive vocabulary in context from the first prompt.
 - `darkmown dev` starts the live compiler with browser reload, an in-browser error overlay, and a local runner for `api/*` functions. Rebuilds are incremental: each dev build records a per-route dependency map (page file, includes, colocated assets, loop data, collections), so editing one file recompiles only the routes that depend on it — with a full rebuild on any uncertainty (a new/deleted/renamed file, or a framework `src/` change). Rebuilds run one at a time; edits landing mid-build batch into the next one.
 - `darkmown build [--target cloudflare] [--drafts]` writes static output to `dist` (plus `sitemap.xml`/`rss.xml`/`robots.txt`); `--drafts` includes `draft: true` pages for staging.
 - `darkmown deploy <vercel|cloudflare> [--prod]` builds and deploys via the platform CLI.

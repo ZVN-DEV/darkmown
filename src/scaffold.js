@@ -27,7 +27,9 @@ export function availableTemplates() {
  * Scaffold a new Darkmown project into `root` from a template, creating files
  * that don't already exist (never overwriting). `package.json` is generated (so
  * the name tracks the directory and the `@zvndev/darkmown` dep pins the installed
- * version); every other file is copied verbatim from the chosen template.
+ * version); `AGENTS.md` is copied from the package so coding agents find the
+ * directive reference at the project root; `CLAUDE.md` and `.gitignore` are
+ * generated; every other file is copied verbatim from the chosen template.
  * @param {string} root Absolute path to the target project directory.
  * @param {{ template?: string }} [options] `template` defaults to `"starter"`.
  * @returns {{ root: string, template: string }}
@@ -70,6 +72,37 @@ export function initProject(root, options = {}) {
       2
     )}\n`
   );
+
+  // Agent context. The package already carries a full build-with-Darkmown
+  // guide, but at the PACKAGE root — so a consumer's copy lands in
+  // node_modules/@zvndev/darkmown/AGENTS.md, where no coding agent looks. Agents
+  // read instruction files from the PROJECT root, so the guide is copied there
+  // and the scaffolded project starts with the directive vocabulary in context
+  // instead of the agent guessing at it.
+  //
+  // Copied rather than generated: it is one maintained file, so a scaffolded
+  // project and this repo can never teach different syntax.
+  copyNew(path.join(moduleDir, "..", "AGENTS.md"), path.join(root, "AGENTS.md"));
+
+  // Claude Code reads CLAUDE.md; most other agents read AGENTS.md. A pointer,
+  // not a second copy, so there is exactly one file to keep true.
+  writeNew(
+    root,
+    "CLAUDE.md",
+    "# Project instructions\n\n" +
+      "This project is built with [Darkmown](https://darkmown.com). " +
+      "The directive reference, project layout, and build rules are in " +
+      "[AGENTS.md](./AGENTS.md). Read it before writing or editing any " +
+      "`.md`/`.wd` file.\n\n" +
+      "Refresh the directive reference at any time with " +
+      "`npx darkmown catalog --llms` (cheatsheet) or " +
+      "`npx darkmown catalog --llms-full` (full reference). Both are generated " +
+      "from the compiler's own tables, so they cannot drift from what compiles.\n"
+  );
+
+  // Without this a first `git init` stages the build output and the whole
+  // dependency tree, which is the first thing anyone does after `init`.
+  writeNew(root, ".gitignore", "node_modules/\ndist/\n.DS_Store\n");
 
   for (const rel of walk(templateDir)) {
     copyNew(path.join(templateDir, rel), path.join(root, rel));
