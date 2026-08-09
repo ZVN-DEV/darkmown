@@ -135,6 +135,23 @@ test("memoryReader reports existence and throws ENOENT-style on a missing read",
   assert.equal(reader.realpath("/site/pages/a.wd"), "/site/pages/a.wd");
 });
 
+test("memoryReader resolves POSIX-identically regardless of host platform", () => {
+  // An in-memory compile has no real filesystem, so the same file map must
+  // resolve the same way everywhere: the browser playground and a mobile host
+  // have no drive letters. Using the host `path` meant that on Windows
+  // `path.resolve("/site/pages/a.wd")` returned `D:\site\pages\a.wd`, so keys
+  // missed and realpath (the include-cycle key) was host-specific.
+  const reader = memoryReader({ "site/pages/a.wd": "hi" }, "/");
+  // Windows-style separators map onto the same POSIX key.
+  assert.equal(reader.exists("\\site\\pages\\a.wd"), true);
+  assert.equal(reader.readText("\\site\\pages\\a.wd"), "hi");
+  // realpath never leaks a host drive letter or backslash.
+  const real = reader.realpath("/site/pages/a.wd");
+  assert.equal(real, "/site/pages/a.wd");
+  assert.ok(!real.includes("\\"), `realpath leaked a backslash: ${real}`);
+  assert.ok(!/^[A-Za-z]:/.test(real), `realpath leaked a drive letter: ${real}`);
+});
+
 test("a local <img> degrades to no dimensions in the memory path (no fs image read)", () => {
   const files = {
     "site/pages/pic.wd": `---

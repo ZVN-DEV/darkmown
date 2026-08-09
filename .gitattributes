@@ -1,0 +1,32 @@
+# Normalize every text file to LF in the repository AND in the working tree.
+#
+# Without this, git's `core.autocrlf` (on by default on Windows) hands Windows
+# contributors and windows-latest CI runners a CRLF checkout. That breaks two
+# classes of thing here:
+#
+#   1. Generated artifacts. `docs/errors.md`, `grammar/wd-directives.gbnf`, and
+#      the VS Code grammar are emitted with LF by their generators, then
+#      compared byte-for-byte against the committed copy by drift-guard tests.
+#      A CRLF checkout fails those comparisons with a diff that looks identical.
+#   2. Docs snippet tests, which read README.md / the docs page off disk and
+#      search for LF-shaped `.wd` fragments.
+#
+# `eol=lf` (not just `text=auto`) is what pins the WORKING TREE, so this holds
+# on Windows rather than only inside the object database.
+#
+# Note this is about THIS repository's own consistency. Darkmown itself accepts
+# CRLF source files from users: the compiler normalizes at the reader boundary
+# and in parseFrontmatter, guarded by tests/frontmatter.test.js.
+* text=auto eol=lf
+
+# Binary assets must never be touched by eol conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.vsix binary
+*.tgz binary
