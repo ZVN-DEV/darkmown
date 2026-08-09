@@ -115,11 +115,6 @@ export const ERROR_AREAS = [
  */
 export const RETIRED_CODES = [];
 
-// WD612 is deliberately absent: it is reserved for the include-cycle error in
-// `src/compiler/page.js`, which is owned by a parallel change. When that throw
-// is routed through `wdError`, add its entry here rather than taking WD612 for
-// anything else.
-
 /** The registry, in code order. */
 /** @type {Omit<ErrorEntry, "area">[]} */
 const ENTRIES = [
@@ -947,6 +942,13 @@ const ENTRIES = [
     title: "Protocol-relative `:try` href",
     cause: "A `//host` href inherits whatever scheme the page was served over.",
     fix: "Write `http:` or `https:` explicitly."
+  },
+  {
+    code: "WD612",
+    title: "Include cycle",
+    cause:
+      "An `@include` chain reaches a file that is already being compiled, so the compile would never terminate.",
+    fix: "Break the loop: remove the `@include` that points back, or move the shared content into a third file both sides include."
   },
 
   // --- WD7xx: media and embeds ---------------------------------------------

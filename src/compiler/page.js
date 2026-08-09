@@ -9,7 +9,7 @@ import path from "node:path";
 import { createPaths } from "../config.js";
 import { htmlHasHighlight } from "../highlight.js";
 import { compileBody } from "./body.js";
-import { createCompilation, createScope } from "./context.js";
+import { createCompilation, createScope, wdError } from "./context.js";
 import { parseFrontmatter, warnLikelyFrontmatter } from "./frontmatter.js";
 import { imageSize } from "./image-size.js";
 import {
@@ -364,8 +364,9 @@ export function compileFile(
 ) {
   const real = comp.reader.realpath(file);
   if (stack.includes(real)) {
-    throw new Error(
-      `Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`
+    throw wdError(
+      `[WD612] Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`,
+      { code: "WD612", file }
     );
   }
 

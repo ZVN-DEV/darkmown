@@ -187,6 +187,7 @@ free number in their block.
 | `WD609` | Malformed `:if` | The `:if` line carries no condition. | Give a name, or a comparison joined with `and`/`or`/`not`. | `:if count > 0` |
 | `WD610` | Unsafe `:try` href | The href has control characters, or a scheme outside http/https/mailto. | Use a relative URL, or an `http:`, `https:`, or `mailto:` URL. |  |
 | `WD611` | Protocol-relative `:try` href | A `//host` href inherits whatever scheme the page was served over. | Write `http:` or `https:` explicitly. |  |
+| `WD612` | Include cycle | An `@include` chain reaches a file that is already being compiled, so the compile would never terminate. | Break the loop: remove the `@include` that points back, or move the shared content into a third file both sides include. |  |
 
 ## WD7xx — Media & embeds
 

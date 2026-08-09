@@ -101,9 +101,7 @@ const INTERNAL_INVARIANTS = {
 // Author-facing throws that are NOT yet routed through `wdError`, with the code
 // reserved for each. This list must shrink to empty; it exists only because the
 // file is owned by a parallel change and must not be edited from here.
-const PENDING_CODES = {
-  "compiler/page.js": "WD612 (include cycle) — page.js is owned by another track"
-};
+const PENDING_CODES = {};
 
 /** The subsystem block (hundreds digit) each source file's codes must fall in. */
 const FILE_BLOCK = {
@@ -121,6 +119,7 @@ const FILE_BLOCK = {
   "compiler/fetch.js": 5,
   "compiler/includes.js": 6,
   "compiler/structure.js": 6,
+  "compiler/page.js": 6,
   "compiler/media.js": 7,
   "skin.js": 8,
   "router.js": 9,
@@ -301,8 +300,10 @@ test("the internal-invariant and pending allowlists still describe reality", () 
       `${rel} no longer throws a plain Error — drop it from the allowlist`
     );
   }
-  // The pending list is temporary by construction; keep it visible and small.
-  assert.deepEqual(Object.keys(PENDING_CODES), ["compiler/page.js"]);
+  // The pending list is temporary by construction: it exists only to park a
+  // file mid-handoff. It is empty now that page.js carries WD612, and it should
+  // stay empty — a non-empty list means someone left an uncoded error behind.
+  assert.deepEqual(Object.keys(PENDING_CODES), []);
 });
 
 // ---------------------------------------------------------------------------
