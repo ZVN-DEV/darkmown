@@ -13,22 +13,22 @@ const project = path.join(root, "smoke-site");
 
 try {
   const [{ filename }] = JSON.parse(
-    run("npm", ["pack", "--json", "--pack-destination", root], repoRoot)
+    runNpm(["pack", "--json", "--pack-destination", root], repoRoot)
   );
   const tarball = path.join(root, filename);
   assert.ok(fs.existsSync(tarball), "npm pack should produce a local tarball for smoke testing");
 
   fs.mkdirSync(driver, { recursive: true });
-  run("npm", ["init", "-y"], driver);
-  run("npm", ["install", "--no-audit", "--no-fund", tarball], driver);
+  runNpm(["init", "-y"], driver);
+  runNpm(["install", "--no-audit", "--no-fund", tarball], driver);
 
-  const installedBin = path.join(
-    driver,
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? "darkmown.cmd" : "darkmown"
-  );
-  run(installedBin, ["init", project], root);
+  // Drive the installed CLI's real JS entry under node rather than the
+  // node_modules/.bin shim: on Windows that shim is a .cmd, which cannot be
+  // spawned without a shell (see runNpm). This still proves the tarball
+  // installed a working CLI; that `bin` points at this file is asserted by
+  // tests/pack.test.js and package.json.
+  const installedCli = path.join(driver, "node_modules", "@zvndev", "darkmown", "src", "cli.js");
+  run(process.execPath, [installedCli, "init", project], root);
 
   const pkg = JSON.parse(fs.readFileSync(path.join(project, "package.json"), "utf8"));
   assert.equal(pkg.private, true, "scaffolded app should be private by default");
@@ -36,14 +36,9 @@ try {
   assert.equal(pkg.scripts.build, "darkmown build");
   assert.equal(pkg.scripts.preview, "darkmown serve");
 
-  run("npm", ["install", "--no-audit", "--no-fund", "--save-dev", tarball], project);
-  const projectBin = path.join(
-    project,
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? "darkmown.cmd" : "darkmown"
-  );
-  run(projectBin, ["build"], project);
+  runNpm(["install", "--no-audit", "--no-fund", "--save-dev", tarball], project);
+  const projectCli = path.join(project, "node_modules", "@zvndev", "darkmown", "src", "cli.js");
+  run(process.execPath, [projectCli, "build"], project);
 
   const routes = JSON.parse(fs.readFileSync(path.join(project, "dist", "routes.json"), "utf8"));
   const byRoute = new Map(routes.map((route) => [route.route, route]));
@@ -73,12 +68,24 @@ try {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
-function run(command, args, cwd) {
-  // On Windows the npm/npx entry points are `.cmd` shims, which `execFileSync`
-  // cannot launch without a shell (spawnSync ENOENT). Map to the real
-  // executable name instead of enabling `shell: true`, which would drag these
-  // arguments through shell quoting.
-  const bin =
-    process.platform === "win32" && /^(npm|npx)$/.test(command) ? `${command}.cmd` : command;
-  return execFileSync(bin, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+// Invoking npm portably is fiddlier than it looks. On Windows the entry point is
+// a `.cmd` shim: a bare "npm" fails with ENOENT, and since Node's CVE-2024-27980
+// fix, spawning a .cmd fails with EINVAL unless a shell is involved. Run npm's
+// own JS entry under the CURRENT Node binary instead — shell-free, so none of
+// these temp paths pass through shell quoting. `npm_execpath` is set whenever
+// this runs under an npm script, which is how `npm run smoke` and CI invoke it.
+function runNpm(args, cwd) {
+  const cli = process.env.npm_execpath;
+  if (cli) return run(process.execPath, [cli, ...args], cwd);
+  const win = process.platform === "win32";
+  return run(win ? "npm.cmd" : "npm", args, cwd, { shell: win });
+}
+
+function run(command, args, cwd, extra = {}) {
+  return execFileSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...extra
+  });
 }
