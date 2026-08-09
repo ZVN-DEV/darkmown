@@ -31,7 +31,7 @@ test.describe("/data/ — fetch, forms, computed", () => {
     await page.getByRole("button", { name: "Save profile" }).click();
 
     // State now exists → the reactive sentence renders with the values.
-    await expect(page.getByText("Hello Ada — good luck with the moat.")).toBeVisible();
+    await expect(page.getByText("Hello Ada, good luck with the moat.")).toBeVisible();
     await expect(page.getByText("Submit the form and this sentence reacts.")).toBeHidden();
   });
 

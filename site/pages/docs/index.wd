@@ -551,6 +551,7 @@ Darkmown builds 100% static HTML — never per-request rendering. When you need 
 
 - A backend endpoint is a Web-standard handler in a top-level `api/` directory: `export default (request, context) => Response`. `api/echo.js` → `/api/echo`; `api/users/[id].js` → `/api/users/:id`.
 - One shape runs everywhere: `darkmown dev` (local runner), Vercel (native Edge Functions), and Cloudflare Pages (the build emits a `dist/_worker.js`). `:fetch`/`:form` point at `/api/*` with no extra config.
+- If your host rewrites trailing slashes, point at the form it will settle on. Vercel's `trailingSlash: true` redirects `/api/echo` to `/api/echo/`, and the local runner answers both, so a missing slash costs a redirect that only appears once deployed. The redirect is a `308`, so a form POST still arrives intact; you are paying a round trip, not losing data.
 - `darkmown deploy vercel` or `darkmown deploy cloudflare` builds and ships in one command, printing your URL.
 - For a remote/custom backend, point `:fetch`/`:form` at an absolute URL and widen the CSP `connect-src` / `form-action`. Darkmown owns no server — it adapts to yours.
 

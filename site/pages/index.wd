@@ -96,7 +96,7 @@ Cart: **{ count }** item(s)
 
 Not a screenshot, and not a React site describing a Markdown tool. `site/pages/index.wd` is a `.wd` file with no raw HTML in it. The first two numbers below are live: a `:fetch` reading `api/stats.js`, a serverless function in this same repo.
 
-:fetch stats from "/api/stats" timeout=6000
+:fetch stats from "/api/stats/" timeout=6000
 
 ::: livestrip
 
@@ -148,7 +148,7 @@ JS on a static page
 
 Say hello and the form round-trips to a real serverless function, then renders the reply:
 
-:form action="/api/echo" into reply
+:form action="/api/echo/" into reply
 :input note placeholder="What would you build with this?"
 :submit "Send it"
 :endform

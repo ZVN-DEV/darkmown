@@ -446,3 +446,54 @@ test("a .md page gets the full SEO shell without gaining directive behavior", ()
   assert.match(html, /:state count = 0/);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("every /api/ URL the demo site references agrees with the deployed trailing-slash rule", () => {
+  // Vercel's `trailingSlash: true` redirects any extensionless path that lacks
+  // a slash, and `/api/stats` has no extension. It still resolves (a 308
+  // preserves method and body, so even the no-JS native form POST survives),
+  // but it costs a round trip on every stats :fetch and every form submit.
+  //
+  // This is invisible locally: `darkmown dev`'s API runner splits the pathname
+  // and drops the empty trailing segment, so BOTH forms answer 200 there. The
+  // divergence only appears once Vercel's router is in front. Pin the site's
+  // URLs to the config so the two cannot drift apart again.
+  const repoRoot = path.resolve(import.meta.dirname, "..");
+  const vercel = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
+  const wantSlash = vercel.trailingSlash === true;
+
+  const pagesDir = path.join(repoRoot, "site", "pages");
+  /** @param {string} dir @returns {string[]} */
+  const walk = (dir) =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) return walk(abs);
+      return /\.(wd|md)$/.test(e.name) ? [abs] : [];
+    });
+
+  // Only URLs backed by a REAL function in api/ are checked. The docs teach
+  // `:fetch` against illustrative endpoints (`/api/feed`, `/api/users/{ id }`)
+  // that this site does not host, and those must keep showing the framework's
+  // plain route mapping rather than one deploy target's slash convention.
+  const live = new Set(
+    fs
+      .readdirSync(path.join(repoRoot, "api"))
+      .filter((f) => /\.m?js$/.test(f))
+      .map((f) => `/api/${f.replace(/\.m?js$/, "")}`)
+  );
+
+  const offenders = [];
+  for (const file of walk(pagesDir)) {
+    const src = fs.readFileSync(file, "utf8");
+    for (const [, url] of src.matchAll(/["'](\/api\/[^"'\s]*)["']/g)) {
+      if (!live.has(url.replace(/\/$/, ""))) continue;
+      if (url.endsWith("/") !== wantSlash) {
+        offenders.push(`${path.relative(repoRoot, file)}: ${url}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `these /api/ URLs would 308 on Vercel (trailingSlash: ${vercel.trailingSlash}):\n  ${offenders.join("\n  ")}`
+  );
+});
