@@ -17,6 +17,7 @@
 
 import path from "node:path";
 import { firstParagraph } from "../feeds.js";
+import { wdError } from "./context.js";
 import { parseFrontmatter } from "./frontmatter.js";
 import { fsReader } from "./fs-reader.js";
 
@@ -197,8 +198,9 @@ export function parseSchema(raw, file) {
     if (!trimmed || trimmed.startsWith("#")) continue; // blank line or comment
     const match = trimmed.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);
     if (!match) {
-      throw new Error(
-        `Malformed schema line in ${file}:${i + 1}: "${trimmed}". Use: field: type (e.g. \`title: string\`, \`tags: string[]\`, \`featured: boolean?\`).`
+      throw wdError(
+        `Malformed schema line in ${file}:${i + 1}: "${trimmed}". Use: field: type (e.g. \`title: string\`, \`tags: string[]\`, \`featured: boolean?\`).`,
+        { code: "WD120", file, line: i + 1 }
       );
     }
     fields.push(parseSchemaField(match[1], match[2].trim(), file, i + 1));
@@ -219,8 +221,9 @@ function parseSchemaField(name, rawType, file, lineNo) {
   const optional = rawType.endsWith("?");
   const type = optional ? rawType.slice(0, -1).trim() : rawType;
   if (!SCHEMA_TYPES.has(type)) {
-    throw new Error(
-      `Unknown schema type "${rawType}" for field "${name}" in ${file}:${lineNo}. Use one of: ${[...SCHEMA_TYPES].join(", ")} (append "?" to make a field optional).`
+    throw wdError(
+      `Unknown schema type "${rawType}" for field "${name}" in ${file}:${lineNo}. Use one of: ${[...SCHEMA_TYPES].join(", ")} (append "?" to make a field optional).`,
+      { code: "WD121", file, line: lineNo }
     );
   }
   return { name, type, optional };
@@ -249,8 +252,9 @@ function validateRows(rows, schema, name) {
     for (const field of schema) validateField(row, field, where);
     for (const key of Object.keys(row)) {
       if (allowed.has(key)) continue;
-      throw new Error(
-        `Unknown frontmatter field "${key}" in ${where}: it is not declared in _schema.wd. Add \`${key}: <type>\` to the schema, or remove the field.`
+      throw wdError(
+        `Unknown frontmatter field "${key}" in ${where}: it is not declared in _schema.wd. Add \`${key}: <type>\` to the schema, or remove the field.`,
+        { code: "WD122" }
       );
     }
   }
@@ -267,14 +271,16 @@ function validateField(row, field, where) {
   const present = field.name in row && row[field.name] !== null && row[field.name] !== "";
   if (!present) {
     if (field.optional) return;
-    throw new Error(
-      `Missing required field "${field.name}" (${field.type}) in ${where}. Add \`${field.name}: …\` to the entry's frontmatter, or mark it optional with "${field.name}: ${field.type}?" in _schema.wd.`
+    throw wdError(
+      `Missing required field "${field.name}" (${field.type}) in ${where}. Add \`${field.name}: …\` to the entry's frontmatter, or mark it optional with "${field.name}: ${field.type}?" in _schema.wd.`,
+      { code: "WD123" }
     );
   }
   const value = row[field.name];
   if (!matchesType(value, field.type)) {
-    throw new Error(
-      `Field "${field.name}" in ${where} should be ${field.type} but is "${describe(value)}". Fix the entry's frontmatter or the schema.`
+    throw wdError(
+      `Field "${field.name}" in ${where} should be ${field.type} but is "${describe(value)}". Fix the entry's frontmatter or the schema.`,
+      { code: "WD124" }
     );
   }
 }

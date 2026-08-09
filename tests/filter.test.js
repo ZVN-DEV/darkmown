@@ -63,6 +63,17 @@ test(":bind on undeclared state throws with a corrective suggestion", () => {
   );
 });
 
+test(":bind rejects unknown bare flags", () => {
+  // `required` and `autofocus` are the only bare flags; anything else is a
+  // typo the author should hear about rather than have silently dropped.
+  const root = fixture();
+  write(root, "site/pages/index.wd", [':state q = ""', ":bind q autoplay"].join("\n"));
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
+    /Unknown :bind flag "autoplay"/
+  );
+});
+
 test(":bind rejects unknown attributes", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", [':state q = ""', ':bind q onclick="evil()"'].join("\n"));

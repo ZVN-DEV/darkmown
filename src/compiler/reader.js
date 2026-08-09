@@ -13,13 +13,18 @@
 // ---------------------------------------------------------------------------
 
 import path from "node:path";
+import { normalizeNewlines } from "./context.js";
 
 /**
  * The narrow filesystem surface the compiler needs. Every method takes an
  * ABSOLUTE path (the compiler resolves includes/assets to absolute paths before
  * reading), so a reader only has to map absolute paths to bytes/existence.
  * @typedef {object} Reader
- * @property {(absPath: string) => string} readText Read a UTF-8 text file.
+ * @property {(absPath: string) => string} readText Read a UTF-8 text file. The
+ *   result is ALWAYS LF-normalized: every parser downstream is line-structured
+ *   and LF-shaped, so a CRLF source (Windows, or any `core.autocrlf` checkout)
+ *   would otherwise fail to match delimiters like `---`. A custom reader must
+ *   uphold this.
  * @property {(absPath: string) => Uint8Array} readBinary Read raw bytes (images).
  * @property {(absPath: string) => boolean} exists Whether the path exists.
  * @property {(absPath: string) => string} realpath Canonical path (symlinks
@@ -40,6 +45,11 @@ import path from "node:path";
  */
 export function memoryReader(files, cwd = "/") {
   const map = files instanceof Map ? files : new Map(Object.entries(files));
+  // Resolution deliberately uses the HOST `path`, because `cwd` is frequently a
+  // real OS directory (the fs-parity test compiles the same project from disk
+  // and from memory against one temp root, and a Windows temp root is
+  // `C:\…` — which `path.posix` does not recognize as absolute). Only the
+  // resulting KEY is forced to POSIX, matching the map's documented key shape.
   const keyOf = (/** @type {string} */ absPath) =>
     path.relative(cwd, path.resolve(absPath)).split(path.sep).join("/");
   return {
@@ -49,7 +59,7 @@ export function memoryReader(files, cwd = "/") {
       if (value === undefined) {
         throw new Error(`ENOENT: no in-memory file "${key}" (from ${absPath})`);
       }
-      return value;
+      return normalizeNewlines(value);
     },
     readBinary: () => {
       throw new Error("memoryReader: binary reads are unsupported");

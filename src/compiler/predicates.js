@@ -65,6 +65,7 @@ function compileCondition(cond, itemName, ctx) {
   if (!m) {
     const hint = `${itemName}.field contains state, or ${itemName}.field <op> value — e.g. ${itemName}.price < 50`;
     throw wdError(`Malformed where-condition "${cond}" in ${ctx.file}. Use: ${hint}`, {
+      code: "WD220",
       file: ctx.file,
       hint,
       example: `${itemName}.price < 50`
@@ -90,20 +91,25 @@ function compileOperand(tok, itemName, ctx) {
   if (/^-?\d+(?:\.\d+)?$/.test(tok)) return { code: tok, usesState: false };
   if (["true", "false", "null"].includes(tok)) return { code: tok, usesState: false };
   if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(tok)) {
-    throw new Error(
-      `Unsupported operand "${tok}" in @loop where (${ctx.file}). Use ${itemName}.field, a :state name, a number, or a "string".`
+    throw wdError(
+      `Unsupported operand "${tok}" in @loop where (${ctx.file}). Use ${itemName}.field, a :state name, a number, or a "string".`,
+      { code: "WD221", file: ctx.file }
     );
   }
   const segs = tok.split(".");
   if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
-    throw new Error(`Path "${tok}" is not allowed in @loop where (${ctx.file})`);
+    throw wdError(`Path "${tok}" is not allowed in @loop where (${ctx.file})`, {
+      code: "WD222",
+      file: ctx.file
+    });
   }
   if (segs[0] === itemName)
     return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, usesState: false };
   const key = resolveStateKey(segs[0], ctx);
   if (!key) {
-    throw new Error(
-      `@loop where references unknown name "${segs[0]}" in ${ctx.file}. Use the loop item (${itemName}.field) or a declared :state.`
+    throw wdError(
+      `@loop where references unknown name "${segs[0]}" in ${ctx.file}. Use the loop item (${itemName}.field) or a declared :state.`,
+      { code: "WD223", file: ctx.file }
     );
   }
   const rest = segs.slice(1).join(".");
@@ -149,13 +155,17 @@ function compileWhenOperand(tok, ctx, what) {
   if (/^-?\d+(?:\.\d+)?$/.test(tok)) return { code: tok, state: false, item: false };
   if (["true", "false", "null"].includes(tok)) return { code: tok, state: false, item: false };
   if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(tok)) {
-    throw new Error(
-      `Unsupported operand "${tok}" in ${what} (${ctx.file}). Use item.field, a :state name, a number, or a "string".`
+    throw wdError(
+      `Unsupported operand "${tok}" in ${what} (${ctx.file}). Use item.field, a :state name, a number, or a "string".`,
+      { code: "WD224", file: ctx.file }
     );
   }
   const segs = tok.split(".");
   if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
-    throw new Error(`Path "${tok}" is not allowed in ${what} (${ctx.file})`);
+    throw wdError(`Path "${tok}" is not allowed in ${what} (${ctx.file})`, {
+      code: "WD225",
+      file: ctx.file
+    });
   }
   const scoped = lookupVar(ctx.scope, segs[0]);
   if (scoped.found)
@@ -168,8 +178,9 @@ function compileWhenOperand(tok, ctx, what) {
     return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, state: false, item: true };
   const key = resolveStateKey(segs[0], ctx);
   if (!key)
-    throw new Error(
-      `${what} references unknown name "${segs[0]}" in ${ctx.file}. Use a loop item field, a declared :state, a number, or a "string".`
+    throw wdError(
+      `${what} references unknown name "${segs[0]}" in ${ctx.file}. Use a loop item field, a declared :state, a number, or a "string".`,
+      { code: "WD226", file: ctx.file }
     );
   const rest = segs.slice(1).join(".");
   return {
@@ -262,12 +273,16 @@ export function compileComputedExpr(raw, ctx) {
           ["constructor", "prototype", "__proto__"].includes(s)
         )
       ) {
-        throw new Error(`Path "${listPath}" is not allowed in :computed ${name}() (${ctx.file})`);
+        throw wdError(`Path "${listPath}" is not allowed in :computed ${name}() (${ctx.file})`, {
+          code: "WD227",
+          file: ctx.file
+        });
       }
       const key = resolveStateKey(segs[0], ctx);
       if (!key) {
-        throw new Error(
-          `:computed ${name}() references unknown state "${segs[0]}" in ${ctx.file}. Declare it with :state or :fetch first.`
+        throw wdError(
+          `:computed ${name}() references unknown state "${segs[0]}" in ${ctx.file}. Declare it with :state or :fetch first.`,
+          { code: "WD228", file: ctx.file }
         );
       }
       const rest = segs.slice(1).join(".");
@@ -279,15 +294,22 @@ export function compileComputedExpr(raw, ctx) {
     }
   );
   if (/["'\\`]/.test(expr)) {
-    throw new Error(`Unsupported string syntax in :computed expression "${raw}" (${ctx.file})`);
+    throw wdError(`Unsupported string syntax in :computed expression "${raw}" (${ctx.file})`, {
+      code: "WD229",
+      file: ctx.file
+    });
   }
   if (!/^[\w$.\s+\-*/%()<>=!&|]*$/.test(expr)) {
-    throw new Error(
-      `Unsupported syntax in :computed expression "${raw}" (${ctx.file}). Allowed: state names, numbers, strings, + - * / % ( ), comparisons, && || !.`
+    throw wdError(
+      `Unsupported syntax in :computed expression "${raw}" (${ctx.file}). Allowed: state names, numbers, strings, + - * / % ( ), comparisons, && || !.`,
+      { code: "WD230", file: ctx.file }
     );
   }
   if (/(^|[^=!<>])=(?!=)/.test(expr)) {
-    throw new Error(`Assignment is not allowed in :computed expressions ("${raw}" in ${ctx.file})`);
+    throw wdError(`Assignment is not allowed in :computed expressions ("${raw}" in ${ctx.file})`, {
+      code: "WD231",
+      file: ctx.file
+    });
   }
   // Reject function-call syntax: a `(` that directly follows an identifier, a
   // string literal, or a closing `)` (e.g. `x()`, `x.valueOf()`, `(a)(b)`). Only
@@ -297,8 +319,9 @@ export function compileComputedExpr(raw, ctx) {
   // SECURITY.md guarantee that function calls are compile errors. Runs BEFORE the
   // identifier→S() mapping so it never trips on the emitted helper calls.
   if (/[\w$)]\s*\(/.test(expr)) {
-    throw new Error(
-      `Function calls are not allowed in :computed expressions ("${raw}" in ${ctx.file})`
+    throw wdError(
+      `Function calls are not allowed in :computed expressions ("${raw}" in ${ctx.file})`,
+      { code: "WD232", file: ctx.file }
     );
   }
   expr = expr.replace(/[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/g, (ref) => {
@@ -306,14 +329,16 @@ export function compileComputedExpr(raw, ctx) {
     if (["true", "false", "null"].includes(ref)) return ref;
     const segs = ref.split(".");
     if (segs.some((seg) => ["constructor", "prototype", "__proto__"].includes(seg))) {
-      throw new Error(
-        `Path segment "${ref}" is not allowed in :computed expressions (${ctx.file})`
-      );
+      throw wdError(`Path segment "${ref}" is not allowed in :computed expressions (${ctx.file})`, {
+        code: "WD233",
+        file: ctx.file
+      });
     }
     const key = resolveStateKey(segs[0], ctx);
     if (!key) {
-      throw new Error(
-        `:computed references unknown state "${segs[0]}" in ${ctx.file}. Declare it with :state or :fetch first.`
+      throw wdError(
+        `:computed references unknown state "${segs[0]}" in ${ctx.file}. Declare it with :state or :fetch first.`,
+        { code: "WD234", file: ctx.file }
       );
     }
     const rest = segs.slice(1).join(".");

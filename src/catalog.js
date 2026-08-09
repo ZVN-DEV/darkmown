@@ -13,6 +13,10 @@
 // hints use, and the operator/formatter lists are read from the compiler's own
 // tables (FORMATTER_NAMES, PREDICATE_OPS, LOOP_META) — so the catalog cannot
 // drift from what actually compiles (drift-guarded in tests/catalog.test.js).
+//
+// The catalog also carries the stable compile-error codes (`errors`, from
+// src/errors.js): an AI edit-loop that hits `[WD201] …` can look the code up in
+// the same artifact it learned the syntax from, without parsing the prose.
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
@@ -41,6 +45,7 @@ import {
   IF_EXAMPLE,
   INCLUDE_EXAMPLE
 } from "./compiler/structure.js";
+import { ERROR_AREAS, errorCatalog } from "./errors.js";
 
 /**
  * @typedef {"static" | "reactive" | "either"} Reactivity Whether the directive
@@ -77,6 +82,10 @@ import {
  * @property {CatalogEntry[]} formatPipes The `{ value | pipe }` formatter whitelist.
  * @property {CatalogEntry[]} predicateOps Comparison operators for `where`/`:if`/`when`.
  * @property {string[]} predicateJoiners Logical joiners (`and`/`or`/`not`).
+ * @property {import("./errors.js").ErrorArea[]} errorAreas The `WDxxx` code blocks.
+ * @property {import("./errors.js").ErrorEntry[]} errors Every stable compile-error
+ *   code, with its cause and fix. A thrown error's message starts with its code
+ *   (`[WD201] …`) and mirrors it on `err.wd.code`.
  */
 
 /** The directive surface. `example` is drawn from the compiler's own constants. */
@@ -512,7 +521,9 @@ export function directiveCatalog() {
       description: OP_DESC[op],
       example: op === "contains" ? 'p.tags contains "sale"' : `p.price ${op} 50`
     })),
-    predicateJoiners: [...PREDICATE_JOINERS]
+    predicateJoiners: [...PREDICATE_JOINERS],
+    errorAreas: ERROR_AREAS.map((area) => ({ ...area })),
+    errors: errorCatalog()
   };
 }
 
@@ -581,6 +592,10 @@ export function llmsText() {
   out.push("- One loop syntax (`@loop … into … @endloop`), one interpolation syntax (`{ name }`).");
   out.push("- Actions and predicates are a fixed whitelist — no JavaScript, no `x.filter(...)`.");
   out.push("- Close every block: `@endloop`, `:endif`, `:endform`, `:endcarousel`, `:::`.");
+  out.push(
+    "- Compile errors start with a stable code (`[WD201] …`) and always name the file," +
+      " the line, and a fix. Read the message; it tells you exactly what to write."
+  );
   out.push("");
   return out.join("\n");
 }

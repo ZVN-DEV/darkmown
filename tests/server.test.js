@@ -5,7 +5,10 @@ import { injectDevClient } from "../src/dev.js";
 import { resolvePublicFile, serve } from "../src/statics.js";
 
 test("public file resolution stays inside dist", () => {
-  const dist = "/tmp/example/dist";
+  // Resolve, don't hardcode: `resolvePublicFile` resolves internally, and on
+  // Windows a bare "/tmp/…" literal has no drive letter so the comparison
+  // would fail on a path shape rather than on containment behavior.
+  const dist = path.resolve("/tmp/example/dist");
 
   assert.equal(resolvePublicFile(dist, "/"), path.join(dist, "index.html"));
   assert.equal(resolvePublicFile(dist, "/docs/"), path.join(dist, "docs/index.html"));
@@ -18,7 +21,10 @@ test("public file resolution stays inside dist", () => {
 });
 
 test("malformed percent-encoded request paths resolve to not found", () => {
-  const dist = "/tmp/example/dist";
+  // Resolve, don't hardcode: `resolvePublicFile` resolves internally, and on
+  // Windows a bare "/tmp/…" literal has no drive letter so the comparison
+  // would fail on a path shape rather than on containment behavior.
+  const dist = path.resolve("/tmp/example/dist");
   assert.equal(resolvePublicFile(dist, "/%E0%A4%A"), null);
 });
 

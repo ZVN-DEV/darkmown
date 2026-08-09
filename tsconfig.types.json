@@ -5,6 +5,10 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "removeComments": false,
+    // TypeScript 6 requires rootDir to be explicit once the inferred common
+    // source directory is ambiguous (TS5011); without it `npm run types` errors
+    // and emits nothing, so the committed types/*.d.ts silently go stale.
+    "rootDir": "./src",
     "outDir": "types"
   },
   "include": [

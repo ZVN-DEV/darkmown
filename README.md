@@ -39,6 +39,10 @@ npx darkmown dev
 
 The package is `@zvndev/darkmown`; the command it installs is plain `darkmown`.
 
+Every merge to `master` also publishes a prerelease to the `next` tag, so you can try a
+fix before it ships stable: `npm install -D @zvndev/darkmown@next`. Use `@latest` (the
+default) for anything you care about.
+
 Prefer to see it run before you install? The [browser playground](https://darkmown.com/playground/)
 compiles `.wd`/`.md` live in your browser — the same compiler the CLI ships — with
 no install and no build step.
@@ -995,12 +999,40 @@ import { compileFromMemory } from "@zvndev/darkmown";
 try {
   compileFromMemory({ "site/pages/index.wd": ":state x" }, "site/pages/index.wd");
 } catch (err) {
-  err.message; // "Malformed :state in …/index.wd:1: :state x. Use: :state name = value [persist] — e.g. :state count = 0"
-  err.wd;      // { file: "…/index.wd", line: 1, hint: ":state name = value [persist] — e.g. …", example: ":state count = 0" }
+  err.message; // "[WD201] Malformed :state in …/index.wd:1: :state x. Use: :state name = value [persist] — e.g. :state count = 0"
+  err.wd;      // { code: "WD201", file: "…/index.wd", line: 1, hint: ":state name = value [persist] — e.g. …", example: ":state count = 0" }
 }
 ```
 
 `example` is always a concrete, **compilable** line (never a `[placeholder]`), and every corrective `Use:` hint that contains bracket-placeholders ends with a matching `— e.g. <valid line>`. This is a deliberate affordance for small local models, which otherwise copy `[optional]`-style placeholders into source verbatim.
+
+## Compile error codes
+
+Every author-facing compile error opens with a stable `WDxxx` code, so it is searchable, linkable, and matchable by tooling without parsing prose:
+
+```
+[WD201] Malformed :state in site/pages/index.wd:1: :state x.
+        Use: :state name = value [persist] — e.g. :state count = 0
+```
+
+The full list lives in [`docs/errors.md`](docs/errors.md) — code, cause, fix, and a compilable example each. Codes are grouped by subsystem:
+
+| Range | Subsystem |
+| --- | --- |
+| `WD0xx` | Source, frontmatter & block structure |
+| `WD1xx` | Loops & collections |
+| `WD2xx` | State & expressions |
+| `WD3xx` | Button, effect & timer actions |
+| `WD4xx` | Forms & form fields |
+| `WD5xx` | Data fetching & URL safety |
+| `WD6xx` | Includes & page structure |
+| `WD7xx` | Media & embeds |
+| `WD8xx` | Skins & styling |
+| `WD9xx` | Project, routing & CLI |
+
+**A shipped code is a public contract:** it is never renumbered and a retired number is never reused, so an error found in an old log or issue always resolves to a meaningful entry. `docs/errors.md` is generated from the compiler's own registry, and drift guards fail the build if an author-facing error is added without a code, if two errors share one, or if a code goes undocumented.
+
+Genuine *internal* invariants — the expression-AST parser reading the compiler's own validated output, the reader contract — deliberately stay plain `Error`s and carry no code, because they signal a framework bug rather than something you can fix in a page.
 
 ## AI authoring
 

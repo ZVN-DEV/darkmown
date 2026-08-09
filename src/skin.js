@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { wdError } from "./compiler/context.js";
 
 const aliases = new Map([
   ["radius", "border-radius"],
@@ -96,7 +97,7 @@ export function compileSkin(source, opts = {}) {
   }
   for (let i = start; i < lines.length; i++) {
     if (lines[i].text === "scoped" && lines[i].indent === 0) {
-      throw new Error('"scoped" must be the first line of a .skin file');
+      throw wdError('"scoped" must be the first line of a .skin file', { code: "WD801" });
     }
   }
 
@@ -184,8 +185,9 @@ export function compileSkin(source, opts = {}) {
     // place a filtered bare `*`/`page` reset would otherwise leak through to), so
     // it errors with the same hint instead of emitting a never-matching rule.
     if (scope && current === ":root") {
-      throw new Error(
-        `page-level declaration "${text}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`
+      throw wdError(
+        `page-level declaration "${text}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`,
+        { code: "WD802" }
       );
     }
     const media = stack.find((frame) => frame.media)?.media;
@@ -235,8 +237,9 @@ function guardPageLevel(text, parent) {
   for (const part of text.split(",")) {
     const clean = part.trim();
     if (PAGE_LEVEL_SELECTORS.has(clean)) {
-      throw new Error(
-        `page-level selector "${clean}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`
+      throw wdError(
+        `page-level selector "${clean}" is not allowed in a scoped .skin — page-level styles belong in a global skin, not a scoped one`,
+        { code: "WD803" }
       );
     }
   }
@@ -308,7 +311,15 @@ function subjectBase(base) {
  */
 function normalizeAttr(bracketed) {
   const m = bracketed.match(/^\[\s*([^\]=\s]+)\s*=\s*"?([^\]"]*)"?\s*\]$/);
-  return m ? `[${m[1]}="${m[2]}"]` : null;
+  if (!m) return null;
+  // The value is quoted on the way out, but the NAME lands in the selector
+  // verbatim — so it must be validated, not just captured. Without this an
+  // input like `tokens [{=v]` emitted `:root[{="v"]`, whose stray brace
+  // unbalances the stylesheet and makes a CSS parser swallow every rule that
+  // follows it. Anything that is not a plain CSS identifier falls through to
+  // the caller's `:root` fallback. (Found by tests/fuzz-skin.test.js.)
+  if (!/^[A-Za-z_-][\w-]*$/.test(m[1])) return null;
+  return `[${m[1]}="${m[2]}"]`;
 }
 
 /**

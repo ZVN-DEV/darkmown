@@ -34,6 +34,7 @@ export function handleState(line, ctx, index) {
   const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+persist)?$/);
   if (!match)
     throw wdError(`Malformed :state in ${at(ctx, index)}: ${line}. ${STATE_USE}`, {
+      code: "WD201",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: STATE_USE.slice("Use: ".length),
@@ -54,11 +55,15 @@ export function handleState(line, ctx, index) {
  */
 export function declareState(name, value, ctx) {
   if (ctx.loopItem)
-    throw new Error(`State cannot be declared inside a reactive @loop body (${ctx.file})`);
+    throw wdError(`State cannot be declared inside a reactive @loop body (${ctx.file})`, {
+      code: "WD202",
+      file: ctx.file
+    });
   if (ctx.comp.stores.has(name))
     throw wdError(
       `State "${name}" collides with a :store of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one — e.g. ${STORE_EXAMPLE}`,
       {
+        code: "WD203",
         file: ctx.file,
         hint: `:store name = value for the global, or rename one — e.g. ${STORE_EXAMPLE}`,
         example: STORE_EXAMPLE
@@ -66,7 +71,10 @@ export function declareState(name, value, ctx) {
     );
   const key = ctx.sections.length ? `${ctx.sections.at(-1)}:${name}` : name;
   if (ctx.comp.state.has(key))
-    throw new Error(`State "${name}" is declared twice in the same scope (${ctx.file})`);
+    throw wdError(`State "${name}" is declared twice in the same scope (${ctx.file})`, {
+      code: "WD204",
+      file: ctx.file
+    });
   ctx.comp.state.set(key, value);
   ctx.comp.assets.runtime = true;
   return key;
@@ -84,6 +92,7 @@ export function handleStore(line, ctx, index) {
     throw wdError(
       `Malformed :store in ${at(ctx, index)}: ${line}. Use: :store name = value [ephemeral] — e.g. ${STORE_EXAMPLE}`,
       {
+        code: "WD205",
         file: ctx.file,
         line: lineOf(ctx, index),
         hint: `:store name = value [ephemeral] — e.g. ${STORE_EXAMPLE}`,
@@ -110,6 +119,7 @@ export function declareStore(name, value, ctx) {
     throw wdError(
       `Store "${name}" is declared twice in ${ctx.file}. Use: :store name = value — e.g. ${STORE_EXAMPLE}`,
       {
+        code: "WD206",
         file: ctx.file,
         hint: `:store name = value — e.g. ${STORE_EXAMPLE}`,
         example: STORE_EXAMPLE
@@ -119,6 +129,7 @@ export function declareStore(name, value, ctx) {
     throw wdError(
       `Store "${name}" collides with a :state of the same name in ${ctx.file}. Use: :store name = value for the global, or rename one — e.g. ${STORE_EXAMPLE}`,
       {
+        code: "WD207",
         file: ctx.file,
         hint: `:store name = value for the global, or rename one — e.g. ${STORE_EXAMPLE}`,
         example: STORE_EXAMPLE
@@ -152,6 +163,7 @@ export function handleComputed(line, ctx, index) {
   const match = line.match(/^:computed\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
   if (!match)
     throw wdError(`Malformed :computed in ${at(ctx, index)}: ${line}. Use: ${COMPUTED_EXAMPLE}`, {
+      code: "WD208",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: COMPUTED_EXAMPLE,
@@ -169,6 +181,7 @@ export function handleComputed(line, ctx, index) {
     throw wdError(
       `Malformed :computed expression in ${at(ctx, index)}: ${line}. Use: ${COMPUTED_EXAMPLE}`,
       {
+        code: "WD209",
         file: ctx.file,
         line: lineOf(ctx, index),
         hint: COMPUTED_EXAMPLE,
@@ -203,6 +216,7 @@ export function handleTheme(line, ctx, index) {
     throw wdError(
       `Malformed :theme in ${at(ctx, index)}: ${line}. Use: :theme  (or  :theme name = "auto") — e.g. ${THEME_EXAMPLE}`,
       {
+        code: "WD210",
         file: ctx.file,
         line: lineOf(ctx, index),
         hint: `:theme  (or  :theme name = "auto") — e.g. ${THEME_EXAMPLE}`,

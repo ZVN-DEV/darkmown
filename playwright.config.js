@@ -27,16 +27,39 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
+  // Three engines, because the runtime is the one part of Darkmown that does not
+  // run under node:test — src/runtime.js ships to a browser and e2e is its only
+  // enforced net (see the coverage-gate comment in .github/workflows/ci.yml).
+  // Blink / Gecko / WebKit each get a vote on the keyed loop reconciler, the
+  // binding pass, fetch, forms, and the AST interpreter.
+  //
+  // CI runs one engine per job (`--project=<name>`, see the e2e matrix in
+  // ci.yml) so three engines cost the same wall-clock as one. Locally, a bare
+  // `npm run test:e2e` runs all three; pass `--project=chromium` for a fast loop.
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
+    },
   ],
   // Build the demo site, then serve the static dist on the fixed port.
   // The published package stays zero-dep; this only runs under `npm run test:e2e`.
+  //
+  // PORT goes through `env`, NOT a `PORT=… node …` prefix on the command: that
+  // prefix is Bourne-shell syntax, and Playwright hands this string to cmd.exe
+  // on Windows, which would read "PORT=4173" as the program name. `env` is
+  // portable and reaches the same process.
   webServer: {
-    command: `npm run build && PORT=${PORT} node src/cli.js serve`,
+    command: "npm run build && node src/cli.js serve",
+    env: { PORT: String(PORT) },
     url: baseURL,
     timeout: 120_000,
     reuseExistingServer: !process.env.CI,

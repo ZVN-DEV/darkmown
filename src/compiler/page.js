@@ -6,12 +6,12 @@
 // ---------------------------------------------------------------------------
 
 import path from "node:path";
-import { imageSize } from "image-size";
 import { createPaths } from "../config.js";
 import { htmlHasHighlight } from "../highlight.js";
 import { compileBody } from "./body.js";
-import { createCompilation, createScope } from "./context.js";
+import { createCompilation, createScope, wdError } from "./context.js";
 import { parseFrontmatter, warnLikelyFrontmatter } from "./frontmatter.js";
+import { imageSize } from "./image-size.js";
 import {
   collectColocatedAssets,
   scanMarkdownHints,
@@ -279,8 +279,9 @@ function measureImage(src, paths, reader) {
     return null; // page-relative: the source directory is lost after assembly
   }
   try {
-    const { width, height } = imageSize(reader.readBinary(filePath));
-    if (typeof width === "number" && typeof height === "number") return { width, height };
+    // `imageSize` itself never throws (an unsupported or malformed image is just
+    // null); the try/catch is for the read, which does throw on a missing file.
+    return imageSize(reader.readBinary(filePath));
   } catch {
     /* missing or unreadable — degrade to no dimensions */
   }
@@ -363,8 +364,9 @@ export function compileFile(
 ) {
   const real = comp.reader.realpath(file);
   if (stack.includes(real)) {
-    throw new Error(
-      `Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`
+    throw wdError(
+      `[WD612] Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`,
+      { code: "WD612", file }
     );
   }
 

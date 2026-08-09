@@ -40,6 +40,7 @@ export function handleFetch(line, ctx, index) {
   const head = line.match(/^:fetch\s+([A-Za-z_$][\w$]*)\s+from\s+("[^"]+"|\S+)\s*(.*)$/);
   if (!head)
     throw wdError(`Malformed :fetch in ${at(ctx, index)}: ${line}. ${FETCH_USE}`, {
+      code: "WD501",
       file: ctx.file,
       line: lineOf(ctx, index),
       hint: FETCH_USE.slice("Use: ".length),
@@ -51,10 +52,19 @@ export function handleFetch(line, ctx, index) {
   const opts = {};
   for (const part of head[3].trim().split(/\s+/).filter(Boolean)) {
     const kv = part.match(/^([A-Za-z]+)=(.+)$/);
-    if (!kv) throw new Error(`Unknown :fetch option "${part}" in ${at(ctx, index)}. ${FETCH_USE}`);
+    if (!kv)
+      throw wdError(`Unknown :fetch option "${part}" in ${at(ctx, index)}. ${FETCH_USE}`, {
+        code: "WD502",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
     const optName = kv[1];
     if (!["method", "when", "timeout", "retry", "headers", "body", "refresh"].includes(optName)) {
-      throw new Error(`Unknown :fetch option "${optName}" in ${at(ctx, index)}. ${FETCH_USE}`);
+      throw wdError(`Unknown :fetch option "${optName}" in ${at(ctx, index)}. ${FETCH_USE}`, {
+        code: "WD502",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      });
     }
     opts[optName] = stripQuotes(kv[2]);
   }
@@ -63,17 +73,27 @@ export function handleFetch(line, ctx, index) {
     opts.method &&
     !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(opts.method.toUpperCase())
   ) {
-    throw new Error(
-      `:fetch method "${opts.method}" is not allowed in ${at(ctx, index)}. ${FETCH_USE}`
+    throw wdError(
+      `:fetch method "${opts.method}" is not allowed in ${at(ctx, index)}. ${FETCH_USE}`,
+      {
+        code: "WD503",
+        file: ctx.file,
+        line: lineOf(ctx, index)
+      }
     );
   }
   if (opts.when && !["load", "visible"].includes(opts.when)) {
-    throw new Error(`:fetch when "${opts.when}" is not allowed in ${at(ctx, index)}. ${FETCH_USE}`);
+    throw wdError(`:fetch when "${opts.when}" is not allowed in ${at(ctx, index)}. ${FETCH_USE}`, {
+      code: "WD504",
+      file: ctx.file,
+      line: lineOf(ctx, index)
+    });
   }
   for (const n of ["timeout", "retry"]) {
     if (opts[n] !== undefined && !/^\d+$/.test(opts[n])) {
-      throw new Error(
-        `:fetch ${n} must be a non-negative integer in ${at(ctx, index)}. ${FETCH_USE}`
+      throw wdError(
+        `:fetch ${n} must be a non-negative integer in ${at(ctx, index)}. ${FETCH_USE}`,
+        { code: "WD505", file: ctx.file, line: lineOf(ctx, index) }
       );
     }
   }
@@ -81,8 +101,9 @@ export function handleFetch(line, ctx, index) {
     // Layer 2: a 401 triggers a token-refresh POST to this URL, then one retry.
     // The new token is written back into the `headers=` state, so it is required.
     if (!opts.headers) {
-      throw new Error(
-        `:fetch refresh= needs headers= (the state key holding the token to renew) in ${at(ctx, index)}. ${FETCH_USE}`
+      throw wdError(
+        `:fetch refresh= needs headers= (the state key holding the token to renew) in ${at(ctx, index)}. ${FETCH_USE}`,
+        { code: "WD506", file: ctx.file, line: lineOf(ctx, index) }
       );
     }
     opts.refresh = validateFetchUrl(opts.refresh, ctx, ":fetch refresh");
@@ -147,20 +168,23 @@ export function validateFetchUrl(url, ctx, what = ":fetch") {
   const value = url.trim();
   // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejects control characters in URLs/hrefs.
   if (value !== url || value === "" || /[\u0000-\u001F\u007F]/.test(value)) {
-    throw new Error(
-      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Use a relative path (/, ./, ../), an http(s):// URL, or a { state } interpolation.`
+    throw wdError(
+      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Use a relative path (/, ./, ../), an http(s):// URL, or a { state } interpolation.`,
+      { code: "WD507", file: ctx.file }
     );
   }
   if (value.startsWith("//")) {
-    throw new Error(
-      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http:// or https:// explicitly.`
+    throw wdError(
+      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. Protocol-relative URLs are not allowed; use http:// or https:// explicitly.`,
+      { code: "WD508", file: ctx.file }
     );
   }
   if (value.startsWith("{")) return value; // interpolation-first; the runtime percent-encodes state values
   const scheme = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
   if (scheme && !["http", "https"].includes(scheme[1].toLowerCase())) {
-    throw new Error(
-      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. The "${scheme[1]}:" scheme is not allowed; use http://, https://, or a relative path.`
+    throw wdError(
+      `Unsafe ${what} URL "${escapeHtml(url)}" in ${ctx.file}. The "${scheme[1]}:" scheme is not allowed; use http://, https://, or a relative path.`,
+      { code: "WD509", file: ctx.file }
     );
   }
   return value;

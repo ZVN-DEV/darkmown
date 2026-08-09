@@ -47,6 +47,7 @@ Darkmown is a Markdown-native framework for mostly-static sites with tiny reacti
 - [Syntax highlighting](#syntax-highlighting)
 - [Trust boundary](#trust-boundary)
 - [Colocation](#colocation)
+- [Compile error codes](#compile-error-codes)
 - [CLI reference](#cli-reference)
 - [Spec status](#spec-status)
 </nav>
@@ -617,6 +618,19 @@ darkmown catalog --llms > system-prompt.md
 ```
 
 Compile errors help here too: every corrective `Use:` hint ends with a concrete `— e.g. <valid line>`, and each thrown error carries a structured `err.wd = { file, line, hint, example }` mirror alongside its message — so an edit-and-retry loop gets the fix without parsing prose.
+
+## Compile error codes
+
+Every author-facing compile error opens with a stable `WDxxx` code, so it is searchable and matchable by tooling without parsing prose:
+
+```
+[WD201] Malformed :state in site/pages/index.wd:1: :state x.
+        Use: :state name = value [persist] — e.g. :state count = 0
+```
+
+The code is mirrored on the thrown error as `err.wd.code`, alongside `file`, `line`, `hint`, and a compilable `example`. Codes are grouped by subsystem — `WD0xx` source and frontmatter, `WD1xx` loops, `WD2xx` state and expressions, `WD3xx` actions, `WD4xx` forms, `WD5xx` fetching, `WD6xx` includes and structure, `WD7xx` media, `WD8xx` skins, `WD9xx` project and CLI.
+
+A shipped code is a public contract: never renumbered, never reused. The full reference — cause, fix, and an example per code — is generated from the compiler's own registry, so it cannot drift from what actually throws.
 
 ## CLI reference
 

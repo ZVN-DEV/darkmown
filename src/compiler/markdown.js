@@ -7,7 +7,7 @@
 
 import MarkdownIt from "markdown-it";
 import { highlightCode } from "../highlight.js";
-import { LOOP_META } from "./context.js";
+import { LOOP_META, wdError } from "./context.js";
 import { applyPipeline, fmtAttr, validatePipes } from "./format.js";
 import {
   escapeHtml,
@@ -266,8 +266,9 @@ function resolveBindingHtml(expr, ctx) {
   // Per-row meta vars ($index/$number/$first/$last/$count) — only inside a loop.
   if (LOOP_META[head]) {
     if (!ctx.loopMeta)
-      throw new Error(
-        `"{ ${expr} }" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Move it into a loop body, or rename your value.`
+      throw wdError(
+        `"{ ${expr} }" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Move it into a loop body, or rename your value.`,
+        { code: "WD005", file: ctx.file }
       );
     if (ctx.loopItem) return `<span data-wd-each-meta="${LOOP_META[head]}"${fmt}></span>`; // reactive: filled per row
     // static: the value is in scope (injected by staticUnroll); fall through.

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { wdError } from "./compiler/context.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const templatesDir = path.join(moduleDir, "templates");
@@ -36,9 +37,10 @@ export function initProject(root, options = {}) {
   const templateDir = path.join(templatesDir, template);
   if (!fs.existsSync(templateDir) || !fs.statSync(templateDir).isDirectory()) {
     const list = availableTemplates().join(", ");
-    throw new Error(
+    throw wdError(
       `Unknown template "${template}". Available templates: ${list || "(none)"}. ` +
-        "Use: darkmown init [dir] --template <name>"
+        "Use: darkmown init [dir] --template <name>",
+      { code: "WD903", hint: "darkmown init [dir] --template <name>" }
     );
   }
 

@@ -1,0 +1,174 @@
+name: Canary
+
+# Publishes an ephemeral prerelease to the `next` dist-tag on every merge to
+# master, so a change can be installed and tried before anyone tags a release.
+#
+# SAFETY CONTRACT (read this before editing anything below):
+#   1. This workflow is push-to-master only. It is NOT tag-triggered. The tag
+#      path in release.yml stays the one and only way a stable version ships,
+#      and nothing here reads, writes, or reruns it.
+#   2. Every publish carries `--tag next`. npm applies `latest` by DEFAULT, to
+#      prereleases included, so that flag is the whole story for `latest` and is
+#      asserted both before and after the publish.
+#   3. The version bump is never committed. No `git commit`, no `git push`, no
+#      tag, and no `contents: write` anywhere in this file.
+#   4. Forks cannot run it against our package name (repository guard below).
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  # Serialise, do NOT cancel. Two merges landing seconds apart must not both be
+  # inside `npm publish` at once, but killing a run mid-publish is worse than
+  # letting it finish: each canary version is unique, so a queued run still
+  # produces a meaningful artifact rather than a wasted one.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (canary gates)
+    runs-on: ubuntu-latest
+    # Guard 4 of the safety contract. A fork that syncs master would otherwise
+    # run this in its own Actions and attempt to publish our package name. It
+    # would fail for want of NPM_TOKEN, but "fails at the last step" is not a
+    # safety property. Refuse before doing any work.
+    if: github.repository == 'ZVN-DEV/darkmown' && github.ref == 'refs/heads/master'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The same five gates the stable release runs, in the same order, so a
+      # canary is never held to a lower standard than a tag. Single-Node here
+      # rather than release.yml's 20/22/24 matrix: ci.yml is running that full
+      # matrix (plus Windows, macOS, and three browser engines) against this
+      # exact commit in parallel. This job exists to make the gates BLOCKING for
+      # the publish below, not to re-derive what CI already knows.
+      - run: npm run typecheck
+      - run: npm run test:cov
+      - run: npm run build
+      - run: npm run runtime:size
+      - run: npm audit --audit-level=high
+
+  publish:
+    name: Publish to the next channel
+    needs: verify
+    runs-on: ubuntu-latest
+    # Repeated deliberately. `needs: verify` already inherits the skip, but this
+    # is the job that can reach the registry, so it states its own conditions.
+    if: github.repository == 'ZVN-DEV/darkmown' && github.ref == 'refs/heads/master'
+    permissions:
+      # Never `write`. A canary must not push, tag, or cut a GitHub release —
+      # that is release.yml's job and it is the reason this token is read-only.
+      contents: read
+      # Required for `npm publish --provenance`.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+
+      # Ephemeral prerelease version, derived from the CURRENT package.json
+      # version with the patch bumped: a canary then sorts ABOVE the last stable
+      # release and BELOW the next one, which is what it actually represents.
+      # Two identifiers follow, and they are both load-bearing:
+      #   - run_number: monotonically increasing, so canaries order correctly
+      #   - short SHA:  makes the version unique and traceable to a commit
+      # The SHA is `g`-prefixed (git-describe style) on purpose. A bare all-digit
+      # short SHA with a leading zero would be an invalid semver numeric
+      # identifier and npm would reject the version.
+      - name: Compute canary version
+        id: canary
+        env:
+          RUN: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p 'const v = require("./package.json").version.split("-")[0].split(".").map(Number); v[2] += 1; v.join(".") + "-next." + process.env.RUN + ".g" + process.env.SHA.slice(0, 7)')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Canary version: $VERSION"
+
+      # Fail closed. If the computed string is not a prerelease, something above
+      # is wrong and publishing it would put a stable-looking version on the
+      # registry. Refuse rather than guess.
+      - name: Assert the version is a prerelease
+        env:
+          VERSION: ${{ steps.canary.outputs.version }}
+        run: |
+          set -euo pipefail
+          case "$VERSION" in
+            *-next.*) echo "OK: $VERSION carries a -next. prerelease identifier" ;;
+            *) echo "::error::refusing to publish '$VERSION': a canary must be a prerelease"; exit 1 ;;
+          esac
+
+      # Writes package.json (and the lockfile) on the runner only.
+      # `--no-git-tag-version` means npm touches no git state whatsoever: no
+      # commit, no tag. Nothing later in this job pushes, so the bump dies with
+      # the runner, which is exactly what "ephemeral" has to mean.
+      - name: Apply the canary version (runner only, never committed)
+        run: npm version --no-git-tag-version "${{ steps.canary.outputs.version }}"
+
+      # `npm publish` runs `prepublishOnly` -> `prepublish:check`, which packs
+      # the tarball and smoke-tests it in a temp project via `npm run smoke`, so
+      # the published bytes are exercised here the same way release.yml exercises
+      # them with its explicit pack step. The canary is not the weaker gate.
+      #
+      # `--tag next` is guard 2 of the safety contract. Do not remove it, and do
+      # not "simplify" it away: without it npm would move `latest` to this
+      # prerelease.
+      - name: Publish to the next channel
+        run: npm publish --provenance --access public --tag next
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Post-condition, not decoration: prove `latest` still points somewhere
+      # else. Deliberately fail-OPEN on a lookup error (the registry needs a
+      # moment to propagate a fresh publish, and a read timeout must not turn a
+      # good publish red) and fail-CLOSED on the one answer that matters.
+      - name: Assert the latest dist-tag did not move
+        env:
+          VERSION: ${{ steps.canary.outputs.version }}
+          # setup-node's .npmrc always points at ${NODE_AUTH_TOKEN} and falls
+          # back to a placeholder when the secret is not in scope, which the
+          # registry rejects outright. Pass the real token so this read gets a
+          # real answer instead of quietly landing in the fail-open branch.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          LATEST="$(npm view @zvndev/darkmown dist-tags.latest 2>/dev/null || true)"
+          if [ -z "$LATEST" ]; then
+            echo "::warning::could not read the latest dist-tag (registry propagation); skipping the check"
+            exit 0
+          fi
+          echo "latest=$LATEST  published=$VERSION"
+          if [ "$LATEST" = "$VERSION" ]; then
+            echo "::error::the canary $VERSION became the 'latest' dist-tag — the --tag next flag is missing or was ignored"
+            exit 1
+          fi
+          echo "OK: latest is still $LATEST"
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.canary.outputs.version }}
+        run: |
+          {
+            echo "### Canary published"
+            echo
+            echo '```'
+            echo "npm install @zvndev/darkmown@next   # $VERSION"
+            echo '```'
+            echo
+            echo "The \`latest\` dist-tag was not touched. Stable releases still come only from a \`v*\` tag via release.yml."
+          } >> "$GITHUB_STEP_SUMMARY"

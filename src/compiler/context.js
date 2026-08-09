@@ -155,10 +155,17 @@
 /**
  * Structured, machine-readable companion to a compile error's string message.
  * The string `message` contract is unchanged; `wd` gives an AI edit-loop (or an
- * editor) the same facts without re-parsing the prose: which file/line, the
- * corrective `Use:` template, and one concrete compilable example line.
+ * editor) the same facts without re-parsing the prose: which code, which
+ * file/line, the corrective `Use:` template, and one concrete compilable
+ * example line.
  * @typedef {object} WdErrorInfo
- * @property {string} file Absolute path of the source file the error is in.
+ * @property {string} code Stable error code (`WD` + three digits, e.g. `WD201`).
+ *   Every code is registered in `src/errors.js` with a title, cause, and fix,
+ *   and documented in `docs/errors.md`. {@link wdError} prefixes the string
+ *   message with `[<code>] `, so the code is greppable from the message too.
+ * @property {string} [file] Absolute path of the source file the error is in,
+ *   when the throwing layer knows one (`compileSkin` is a pure string→string
+ *   pass and a collection-row check names the entry route instead).
  * @property {number} [line] 1-based file line the error points at, when known
  *   (some errors — e.g. a bad `where` operand — are file-scoped only, matching
  *   the string message, which likewise omits the line there).
@@ -207,6 +214,23 @@
  */
 
 // Page-include extensions are the only two file types `@include` will pull in.
+/**
+ * Normalize CRLF/CR line endings to LF.
+ *
+ * Every line-structured parser in the project (frontmatter delimiters, the `.wd`
+ * directive dispatcher, `.skin` indentation) tests LF-shaped text. Source files
+ * authored on Windows — or checked out anywhere with git's `core.autocrlf`, the
+ * default on Windows — arrive CRLF-terminated, and an un-normalized `\r` turns
+ * `---` into `---\r` and silently defeats those tests. Applied at the reader
+ * boundary and again at the two entry points that accept raw strings from
+ * callers that bypass the reader; it is idempotent, so doubling up is free.
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeNewlines(text) {
+  return text.includes("\r") ? text.replace(/\r\n?/g, "\n") : text;
+}
+
 export const pageIncludeExtensions = [".md", ".wd"];
 
 // Reserved per-row meta variables, mapped to their runtime marker token. Shared
@@ -286,16 +310,21 @@ export function lineOf(ctx, index) {
 }
 
 /**
- * Build a compile `Error` whose string `message` is unchanged but which also
- * carries a structured {@link WdErrorInfo} on `err.wd` — so an AI edit-loop (or
- * an editor) gets file/line/hint/example without re-parsing the prose. The
- * string contract is the source of truth; `wd` is a strictly additive mirror.
- * @param {string} message The full user-facing error string (unchanged contract).
- * @param {WdErrorInfo} wd The structured mirror.
+ * Build a compile `Error` carrying a structured {@link WdErrorInfo} on `err.wd`
+ * — so an AI edit-loop (or an editor) gets code/file/line/hint/example without
+ * re-parsing the prose. The string message is the caller's text prefixed with
+ * the stable `[WDxxx]` code, so a user can search the code straight out of the
+ * terminal; everything after the prefix (the `file:line`, the corrective `Use:`
+ * template, the concrete `e.g.` example) is unchanged.
+ *
+ * Every author-facing compile error is built here, so no error can ship without
+ * a code. See `src/errors.js` for the registry and the numbering scheme.
+ * @param {string} message The user-facing error text, without the code prefix.
+ * @param {WdErrorInfo} wd The structured mirror (its `code` becomes the prefix).
  * @returns {Error & { wd: WdErrorInfo }}
  */
 export function wdError(message, wd) {
-  const err = /** @type {Error & { wd: WdErrorInfo }} */ (new Error(message));
+  const err = /** @type {Error & { wd: WdErrorInfo }} */ (new Error(`[${wd.code}] ${message}`));
   err.wd = wd;
   return err;
 }

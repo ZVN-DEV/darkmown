@@ -48,6 +48,15 @@ test(":video rejects unsafe URLs and unknown flags/attrs", () => {
   assert.throws(() => compile(`:video /clip.mp4 bogus=1`), /Unknown :video attribute "bogus"/);
 });
 
+test(":embed rejects unknown attributes", () => {
+  // `title` is the only attribute :embed accepts; anything else is a compile
+  // error rather than an attribute quietly dropped from the iframe.
+  assert.throws(
+    () => compile(`:embed https://youtu.be/dQw4w9WgXcQ caption="hi"`),
+    /Unknown :embed attribute "caption"/
+  );
+});
+
 test(":embed rewrites YouTube to the privacy-friendly no-cookie embed, lazily", () => {
   for (const url of [
     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
