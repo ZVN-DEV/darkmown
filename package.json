@@ -67,13 +67,13 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@types/markdown-it": "^14.1.2",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.3.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
     "@playwright/test": "^1.61.1",
-    "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.1.1",
     "esbuild": "^0.28.2",
     "husky": "^9.1.7",
