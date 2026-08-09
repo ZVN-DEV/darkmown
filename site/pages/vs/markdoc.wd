@@ -4,6 +4,7 @@ description: Markdoc gives Markdown conditionals, partials and variables, but no
 image: https://darkmown.com/__wd/media/og.png
 site_url: https://darkmown.com
 transitions: true
+schema: TechArticle
 ---
 
 @include /nav.wd

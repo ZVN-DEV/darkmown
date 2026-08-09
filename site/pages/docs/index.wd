@@ -3,6 +3,7 @@ html: true
 title: Darkmown docs
 description: Learn Darkmown routing, directives, state, loops, forms, and the static-to-reactive model.
 transitions: true
+schema: TechArticle
 ---
 
 @include /nav.wd
@@ -31,6 +32,9 @@ Darkmown is a Markdown-native framework for mostly-static sites with tiny reacti
 - [Interpolation](#interpolation)
 - [Frontmatter](#frontmatter)
 - [SEO & feeds](#seo--feeds)
+- [Canonical URLs](#canonical-urls)
+- [Structured data](#structured-data)
+- [AI crawlers](#ai-crawlers)
 - [Drafts](#drafts)
 - [Instant navigation](#instant-navigation)
 - [Images](#images)
@@ -295,6 +299,57 @@ site_url: https://example.com
 ```
 
 A page becomes an **RSS post** by carrying a `date:`; `excerpt:` is its feed summary (else `description:`, else — for a plain `.md` — its first paragraph). The sitemap's `<lastmod>` is the `date:` if set, else the file's git/last-modified date. `robots.txt` is always written; the `Sitemap:` line only appears with a `site_url`. Without `site_url`, robots still emits and the build prints a hint — it never breaks.
+
+## Canonical URLs
+
+With `site_url` set, every page states its own absolute URL twice, as `<link rel="canonical">` and as `og:url`, both built from the **same route string** the sitemap and your internal links use, so nothing can drift out of agreement:
+
+```html
+<link rel="canonical" href="https://example.com/docs/">
+<meta property="og:url" content="https://example.com/docs/">
+```
+
+Darkmown routes are **trailing-slashed** (`/docs/`), matching the `dist/docs/index.html` the build writes. `darkmown deploy vercel` writes `trailingSlash: true` so the host serves exactly that form. Host it elsewhere and configure the same: a host that redirects `/docs/` to `/docs` puts a redirect hop on every internal navigation and makes your own sitemap advertise URLs that redirect.
+
+A paginated listing canonicalises **each page to itself** (`/blog/page/2/` points at `/blog/page/2/`), never back to page one. Pages 2+ hold different content, and pointing them at page one asks a crawler to drop them.
+
+`og:type` is `article` for a page with a `date:` (or an article `schema:`), `website` otherwise. There is no `twitter:title`/`twitter:description`: X's card parser falls back to the Open Graph tags, so they would be duplicate bytes on every page.
+
+## Structured data
+
+One frontmatter key emits a JSON-LD block into the head. This is ordinary indexing hygiene for Google's conventional **rich results**; Google's own generative-search guidance says there is no special AI schema and that structured data is not required for generative results, so Darkmown does not sell it as an AI-citation lever.
+
+```md
+---
+title: Zero JavaScript, by default
+date: 2026-06-25
+author: Ada Lovelace
+schema: BlogPosting
+---
+```
+
+The types are a compile-time whitelist, like every other Darkmown vocabulary: `Article`, `BlogPosting`, `TechArticle`, `WebSite`, `Organization`. Anything else is a compile error that names every valid type. Pass a list for a page that is honestly both: `schema: [WebSite, Organization]`. Supporting keys are `author:` (a name or a list) and `updated:` for articles, `organization:` and `logo:` for `Organization`; everything else is reused from `title`, `description`, `image`, `date`, `lang`, and the canonical URL.
+
+**Only what the page has.** A key you did not write produces no property at all: never a blank one, never a guess. There is deliberately no way to emit `aggregateRating`, `review`, or `offers`: fabricated ratings are a manual-action risk and Darkmown cannot know them. `FAQPage` is not supported either, because it would mean inferring a Q&A structure out of prose.
+
+**`BreadcrumbList` is automatic** for nested routes (two or more path segments) once `site_url` is set, built from routes that actually exist with their real titles, so a crumb never links a page you never wrote. JSON-LD is an inert data block, so a static page stays static and ships no JavaScript.
+
+## AI crawlers
+
+`robots.txt` names every major AI crawler and answer engine explicitly, grouped by operator, each group linking the documentation its tokens were verified against and noting what that operator's crawlers actually do:
+
+```
+# OpenAI: https://developers.openai.com/api/docs/bots
+# OAI-SearchBot = ChatGPT Search crawling and citations. GPTBot = potential model training. …
+User-agent: OAI-SearchBot
+User-agent: GPTBot
+User-agent: ChatGPT-User
+Allow: /
+```
+
+Covered: OpenAI, Anthropic, Google (`Google-Extended`), Apple (`Applebot-Extended`), Perplexity, Meta, Mistral, Amazon, and Common Crawl. Search crawling, model training, and live user-triggered fetches are **different** permissions from the same operator, which is why each group says which is which.
+
+Flip the whole set to `Disallow: /` from the home page with `ai_crawlers: deny`. `allow` is the default. A value that is neither fails the build rather than defaulting. The intent behind a typo like `ai_crawlers: block` is almost always to opt *out*, and silently allowing would be the one unrecoverable outcome.
 
 ## Drafts
 
@@ -610,11 +665,13 @@ See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/master/SECURITY.md) i
 Darkmown ships a machine-readable description of its own language, so an AI tool can learn `.wd` and be constrained to output that compiles. It is all generated from the compiler's own tables, so it never drifts from the real grammar.
 
 - **`darkmown catalog`** prints structured JSON: every directive, `@loop` clause, loop variable, button action, format pipe, and predicate operator — each with a syntax template, a one-line description, one concrete example, and whether it needs the reactive runtime. Import it too: `import { directiveCatalog } from "@zvndev/darkmown/catalog"`.
-- **`darkmown catalog --llms`** prints a compact (~90-line) cheatsheet — the artifact you paste into a model's system prompt. Every build also writes it to `dist/llms.txt`.
+- **`darkmown catalog --llms`** prints a compact cheatsheet, the artifact you paste into a model's system prompt. Every build writes it to `dist/llms.txt` too, followed by a one-line index of every page on your site and a pointer to the full corpus.
+- **`darkmown catalog --llms-full`** prints the complete reference that index points at: every directive with its full syntax and example, every clause, action, pipe, operator, and frontmatter key, and every compile-error code with its cause and fix. Every build writes it to `dist/llms-full.txt`, with the full source text of every page appended.
 - **`grammar/wd-directives.gbnf`** is a generated GBNF grammar for `.wd` directive lines. Point a grammar-constrained decoder (llama.cpp and friends) at it to make invalid directive lines — JS idioms, HTML muscle-memory — impossible to generate.
 
 ```sh
 darkmown catalog --llms > system-prompt.md
+darkmown catalog --llms-full            # the complete reference + every error code
 ```
 
 Compile errors help here too: every corrective `Use:` hint ends with a concrete `— e.g. <valid line>`, and each thrown error carries a structured `err.wd = { file, line, hint, example }` mirror alongside its message — so an edit-and-retry loop gets the fix without parsing prose.
@@ -640,7 +697,7 @@ The `darkmown` command (installed by `npx @zvndev/darkmown`) is the whole tool �
 - `darkmown dev` — the live compiler: browser reload, an in-browser error overlay, incremental rebuilds, and a local runner for `api/*` functions.
 - `darkmown build [--target cloudflare] [--drafts]` — write 100% static output to `dist/` (plus `sitemap.xml` / `rss.xml` / `robots.txt`); `--drafts` includes `draft: true` pages for a staging deploy.
 - `darkmown serve` — preview the built `dist/` locally (static only; use `dev` to exercise `api/*`).
-- `darkmown catalog [--llms]` — print the `.wd` directive catalog as JSON, or with `--llms` a compact cheatsheet for priming an AI model (see [AI authoring](#ai-authoring)).
+- `darkmown catalog [--llms|--llms-full]`: print the `.wd` directive catalog as JSON, a compact cheatsheet for priming an AI model, or the complete reference including every error code (see [AI authoring](#ai-authoring)).
 - `darkmown deploy <vercel|cloudflare> [--prod]` — build (target-aware) and deploy through the platform CLI, printing your URL; an unauthenticated CLI surfaces the login to run first.
 - `darkmown version` / `darkmown help` — print the installed version, or the full command summary and directive syntax.
 

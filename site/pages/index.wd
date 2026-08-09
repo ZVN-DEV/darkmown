@@ -4,6 +4,7 @@ description: A .md file is a page. Rename it to .wd and the same file gets loops
 image: https://darkmown.com/__wd/media/og.png
 site_url: https://darkmown.com
 transitions: true
+schema: WebSite
 ---
 
 @include /nav.wd

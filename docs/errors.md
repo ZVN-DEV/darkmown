@@ -49,6 +49,7 @@ free number in their block.
 | `WD013` | `:else if` after `:else` | A conditional continues with `:else if` after a bare `:else` already closed it. | Order every `:else if` before the bare `:else`. |  |
 | `WD014` | Duplicate `:else` | A conditional has more than one bare `:else` branch. | Keep one `:else`; turn the others into `:else if` branches. |  |
 | `WD015` | Missing `:endif` | An `:if` region is never closed. | Close the region with `:endif`. | `:if count > 0` |
+| `WD016` | Unknown structured-data type | Frontmatter `schema:` names a type outside the supported whitelist. | Use one of the listed schema.org types; the message names every one. |  |
 
 ## WD1xx — Loops & collections
 
@@ -217,6 +218,7 @@ free number in their block.
 | `WD904` | Unknown deploy target | `darkmown deploy` names a platform Darkmown does not drive. | Deploy to `vercel` or `cloudflare`. |  |
 | `WD905` | Deploy CLI not signed in | The platform CLI rejected the deploy with an authentication failure. | Run the platform login command, then re-run the deploy. |  |
 | `WD906` | Deploy command failed | The platform CLI exited non-zero for a reason other than authentication. | Read the CLI output above the error, fix the cause, and re-run. |  |
+| `WD907` | Unknown `ai_crawlers` policy | The home page's `ai_crawlers:` is neither `allow` nor `deny`. | Write `ai_crawlers: allow` or `ai_crawlers: deny` (absent means allow). |  |
 
 ## Errors without a code
 

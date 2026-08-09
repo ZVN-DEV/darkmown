@@ -21,6 +21,7 @@ import {
 import { escapeHtml } from "./interpolation.js";
 import { selectMd } from "./markdown.js";
 import { memoryReader } from "./reader.js";
+import { buildJsonLd, isArticleSchema } from "./schema.js";
 
 /**
  * @typedef {import("./context.js").Paths} Paths
@@ -43,13 +44,15 @@ const SKIP_LINK_STYLE =
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader }} [options]
+ * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader }} [options]
  *   When a site-wide RSS feed is emitted (the home page set `site_url` and the
  *   site has dated posts), `feed` carries its absolute href + title so every page
- *   links it. `collections` is the build-time collection index a bare-name
- *   `@loop` resolves against; `vars` seeds the document scope (the pager `page`
- *   object on a paginated route). `reader` is the source reader (fs-backed by
- *   default via `src/compiler.js`; in-memory for `compileFromMemory`).
+ *   links it. `site` carries the origin + this page's own route (and its resolved
+ *   breadcrumb trail) so the shell can state a canonical URL. `collections` is the
+ *   build-time collection index a bare-name `@loop` resolves against; `vars` seeds
+ *   the document scope (the pager `page` object on a paginated route). `reader` is
+ *   the source reader (fs-backed by default via `src/compiler.js`; in-memory for
+ *   `compileFromMemory`).
  * @returns {CompiledPage}
  */
 export function compilePage(file, context, options = {}) {
@@ -57,8 +60,8 @@ export function compilePage(file, context, options = {}) {
   // injects `fsReader()`, and `compileFromMemory` injects a `memoryReader`.
   const reader = /** @type {import("./reader.js").Reader} */ (options.reader);
   const compiled = compileDocument(file, context, [], options.vars, options.collections, reader);
-  const title = compiled.meta.title || "Darkmown";
-  const description = compiled.meta.description || "";
+  const title = String(compiled.meta.title || "Darkmown");
+  const description = String(compiled.meta.description || "");
   // Per-page document language for the `<html lang>` attribute (`lang: fr` in
   // frontmatter). Defaults to English.
   const lang =
@@ -67,24 +70,57 @@ export function compilePage(file, context, options = {}) {
       : "en";
   // Optional `image:` frontmatter sets the social-share preview (absolute URL).
   const image = typeof compiled.meta.image === "string" ? compiled.meta.image : "";
+  // The page's own absolute URL, resolved by the builder (which knows both the
+  // site origin from the home page's `site_url` and the concrete route this page
+  // is written to, including a paginated `/page/2/`). Without it there is no
+  // honest canonical to state, so the tags are simply omitted.
+  const canonical = canonicalUrl(options.site);
+  // `og:type` follows the framework's own "this is a post" signals: a
+  // frontmatter `date:` (what RSS already keys off) or an article-family
+  // `schema:` type. Everything else is a website page.
+  const dated = typeof compiled.meta.date === "string" && compiled.meta.date.trim() !== "";
+  const ogType = dated || isArticleSchema(compiled.meta) ? "article" : "website";
   /** @type {string[]} */
   const social = [];
   if (description) social.push(`<meta name="description" content="${escapeHtml(description)}">`);
-  if (description || image) {
+  // The canonical link is the one place the site declares which URL form wins.
+  // It must agree with the sitemap and with every internal link, so it is built
+  // from the same route string those are built from.
+  if (canonical) social.push(`<link rel="canonical" href="${escapeHtml(canonical)}">`);
+  if (description || image || canonical) {
     social.push(`<meta property="og:title" content="${escapeHtml(title)}">`);
     if (description)
       social.push(`<meta property="og:description" content="${escapeHtml(description)}">`);
-    social.push(`<meta property="og:type" content="website">`);
+    social.push(`<meta property="og:type" content="${ogType}">`);
+    if (canonical) social.push(`<meta property="og:url" content="${escapeHtml(canonical)}">`);
   }
   if (image) {
     social.push(`<meta property="og:image" content="${escapeHtml(image)}">`);
     social.push(`<meta name="twitter:image" content="${escapeHtml(image)}">`);
   }
-  if (description || image) {
+  // No `twitter:title`/`twitter:description`: X's card parser falls back to the
+  // Open Graph tags above when the twitter-namespaced ones are absent, so they
+  // would be duplicate bytes on every page. `twitter:card` has no Open Graph
+  // equivalent, so it is stated explicitly.
+  if (description || image || canonical) {
     social.push(
       `<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`
     );
   }
+  // Structured data (JSON-LD): opt-in per page via `schema:`, plus the
+  // breadcrumb trail the builder resolved for a nested route. Inert data, not
+  // executable script, it adds zero runtime bytes and a static page stays static.
+  const jsonLd = buildJsonLd({
+    meta: compiled.meta,
+    file,
+    title,
+    description,
+    image,
+    lang,
+    canonical,
+    breadcrumbs: (options.site && options.site.breadcrumbs) || []
+  });
+  if (jsonLd) social.push(jsonLd);
   const descriptionTag = social.length ? `\n  ${social.join("\n  ")}` : "";
   const favicon =
     "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='bold'%20fill='%23f7f3ea'%3ED%3C/text%3E%3C/svg%3E";
@@ -190,6 +226,30 @@ ${scripts}
     warnings: compiled.warnings,
     pagination: compiled.pagination
   };
+}
+
+/**
+ * Where this page sits on a real, deployed site: the origin the home page
+ * declared with `site_url`, the concrete route this page is written to, and the
+ * breadcrumb trail the builder resolved from the routes that actually exist.
+ * Supplied by `src/builder.js`, the only layer that knows all three.
+ * @typedef {object} SiteContext
+ * @property {string} url Absolute site origin, e.g. `https://example.com`.
+ * @property {string} route Public route path for THIS page (trailing-slashed).
+ * @property {{ name: string, url: string }[]} [breadcrumbs] Resolved crumb trail.
+ */
+
+/**
+ * The page's absolute canonical URL, or "" when the site has no declared origin
+ * (no `site_url` in the home page's frontmatter). One derivation, shared by the
+ * `<link rel="canonical">` and `og:url` tags, and identical to the join the
+ * sitemap uses: so the two can never disagree about the canonical URL form.
+ * @param {SiteContext} [site]
+ * @returns {string}
+ */
+function canonicalUrl(site) {
+  if (!site || !site.url || !site.route) return "";
+  return `${site.url.replace(/\/$/, "")}${site.route}`;
 }
 
 /**
@@ -424,7 +484,7 @@ export function compileFile(
  * @param {Record<string, string> | Map<string, string>} files Project-relative
  *   path → source content.
  * @param {string} entryPath Project-relative path of the page to compile.
- * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
+ * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
  *   Same shell options as {@link compilePage}; `cwd` overrides the virtual
  *   project root the relative keys resolve against (defaults to `/`).
  * @returns {CompiledPage}
@@ -436,6 +496,7 @@ export function compileFromMemory(files, entryPath, options = {}) {
   const abs = path.resolve(cwd, entryPath);
   return compilePage(abs, context, {
     feed: options.feed,
+    site: options.site,
     collections: options.collections,
     vars: options.vars,
     reader

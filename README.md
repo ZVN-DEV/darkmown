@@ -162,10 +162,77 @@ site_url: https://example.com
 ---
 ```
 
-- **`site_url`** (absolute origin, **no trailing slash**) turns on `sitemap.xml` and `rss.xml` and is the absolute prefix for every URL in them. The home `title`/`description` become the RSS channel title/description.
-- **`robots.txt`** is *always* emitted (`User-agent: * / Allow: /`); the `Sitemap:` line is added only when `site_url` is set.
+- **`site_url`** (absolute origin, **no trailing slash**) turns on `sitemap.xml`, `rss.xml`, and every page's **canonical URL**, and is the absolute prefix for every URL in them. The home `title`/`description` become the RSS channel title/description.
+- **`robots.txt`** is *always* emitted; the `Sitemap:` line is added only when `site_url` is set. See [AI crawlers](#ai-crawlers) below for the explicit per-crawler groups.
 - **`sitemap.xml`** lists every built page (reactive pages included — they're indexable HTML). Each `<lastmod>` is the page's frontmatter `date:` if set, else its git last-commit date, else the file's mtime. No `<priority>`/`<changefreq>`.
 - **`rss.xml`** syndicates your **posts** — any page with a `date:` in its frontmatter. Newest first, capped at the 20 most recent. Each item's `<description>` is the page's `excerpt:`, else its `description:`, else (for a plain `.md` post) its first paragraph. Every page links the feed with `<link rel="alternate" type="application/rss+xml">` so readers can autodiscover it.
+
+### Canonical URLs
+
+With `site_url` set, every page's `<head>` states its own absolute URL twice, as `<link rel="canonical">` and `og:url`:
+
+```html
+<link rel="canonical" href="https://example.com/docs/">
+<meta property="og:url" content="https://example.com/docs/">
+```
+
+Both are built from the **same route string** the sitemap and your internal links use, so the three can never disagree about which URL form is canonical. Darkmown routes are **trailing-slashed** (`/docs/`, matching the `dist/docs/index.html` the build writes), and `darkmown deploy vercel` writes `trailingSlash: true` so the host serves that same form directly. If you host it yourself, configure the host to match: a host that redirects `/docs/` to `/docs` puts a redirect hop on every internal navigation and makes your own sitemap advertise URLs that redirect.
+
+A paginated listing canonicalises **each page to itself** (`/blog/page/2/` points at `/blog/page/2/`), never back to page one, because pages 2..N hold different content and pointing them at page one asks a crawler to drop them.
+
+`og:type` is `article` for a page with a `date:` (or an article `schema:`), and `website` otherwise. There is no `twitter:title`/`twitter:description`: X's card parser falls back to the Open Graph tags, so they would be duplicate bytes on every page. `twitter:card` has no Open Graph equivalent, so it *is* stated.
+
+### Structured data (`schema:`)
+
+Opt a page into JSON-LD with one frontmatter key. This is ordinary indexing hygiene for Google's conventional **rich results**. Google's own generative-search guidance is explicit that "there's no special schema.org markup you need to add" and that structured data "isn't required for generative AI search", so this is not an AI-citation lever and is not sold as one.
+
+```md
+---
+title: Zero JavaScript, by default
+description: A Darkmown page ships no framework JavaScript unless it declares reactive behavior.
+date: 2026-06-25
+author: Ada Lovelace
+schema: BlogPosting
+---
+```
+
+```html
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting",
+"headline":"Zero JavaScript, by default","datePublished":"2026-06-25",
+"author":{"@type":"Person","name":"Ada Lovelace"},"url":"https://example.com/blog/zero-js/"}</script>
+```
+
+- **Types** (a compile-time whitelist, like every other Darkmown vocabulary): `Article`, `BlogPosting`, `TechArticle`, `WebSite`, `Organization`. Anything else is a compile error naming every valid type. Pass a list for a page that is honestly both: `schema: [WebSite, Organization]`.
+- **Supporting keys:** `author:` (a name or a list) and `updated:` for articles; `organization:` and `logo:` for `Organization`. Everything else is reused from `title`, `description`, `image`, `date`, `lang`, and the canonical URL.
+- **Only what the page has.** A key you did not write produces no property at all: never a blank one and never a guess. There is deliberately **no** way to emit `aggregateRating`, `review`, or `offers`: fabricated ratings are a manual-action risk, and Darkmown cannot know them. `FAQPage` is likewise not supported, because it would mean inferring a Q&A structure out of prose.
+- **`BreadcrumbList` is automatic** for nested routes (two or more path segments) once `site_url` is set. The trail is built from routes that **actually exist**, with their real titles, so a crumb never links a page you never wrote: `/vs/markdoc/` on a site with no `/vs/` page yields `Home > vs Markdoc`.
+- Zero runtime cost. JSON-LD is an inert data block, so a static page stays static (`runtime: false`) and ships no JavaScript. It is verified in a real browser to survive Darkmown's strict, `unsafe-inline`-free `script-src`.
+
+### AI crawlers
+
+`robots.txt` names every major AI crawler and answer engine explicitly, grouped by operator, with a link to the documentation each token was verified against:
+
+```
+# OpenAI: https://developers.openai.com/api/docs/bots
+# OAI-SearchBot = ChatGPT Search crawling and citations. GPTBot = potential model training. …
+User-agent: OAI-SearchBot
+User-agent: GPTBot
+User-agent: ChatGPT-User
+Allow: /
+```
+
+Covered: **OpenAI** (`OAI-SearchBot`, `GPTBot`, `ChatGPT-User`), **Anthropic** (`Claude-SearchBot`, `ClaudeBot`, `Claude-User`), **Google** (`Google-Extended`), **Apple** (`Applebot-Extended`), **Perplexity** (`PerplexityBot`, `Perplexity-User`), **Meta** (`meta-externalagent`), **Mistral** (`MistralAI-Index`, `MistralAI-Training`, `MistralAI-User`), **Amazon** (`Amazonbot`), and **Common Crawl** (`CCBot`). Search crawling, model training, and live user-triggered fetches are *different* permissions from the same operator, so each group carries a comment saying which is which.
+
+Flip the whole set to `Disallow: /` from the home page:
+
+```md
+---
+site_url: https://example.com
+ai_crawlers: deny
+---
+```
+
+`allow` is the default (and matches what `User-agent: *` already grants). A value that is neither `allow` nor `deny` **fails the build** rather than defaulting: the intent behind a typo like `ai_crawlers: block` is almost always to opt *out*, and silently allowing would be the one unrecoverable outcome.
 
 ```md
 ---
@@ -1039,12 +1106,14 @@ Genuine *internal* invariants — the expression-AST parser reading the compiler
 Darkmown ships its own description of the `.wd` language — the same tables the compiler validates against — so a tool can teach a model to write `.wd` and constrain its output to what compiles.
 
 - **Directive catalog** — `darkmown catalog` prints structured JSON: every directive, `@loop` clause, loop variable, button action, format pipe, and predicate operator, each with a syntax template, a one-line description, one concrete example, and whether it needs the reactive runtime. Importable too: `import { directiveCatalog } from "@zvndev/darkmown/catalog"`.
-- **Cheatsheet (`llms.txt`)** — `darkmown catalog --llms` prints a compact (~90-line) markdown cheatsheet generated from the same data — the artifact you stuff into a model's system prompt. Every build also writes it to `dist/llms.txt`.
+- **Cheatsheet (`llms.txt`)**: `darkmown catalog --llms` prints a compact markdown cheatsheet generated from the same data. It is the artifact you stuff into a model's system prompt. Every build also writes it to `dist/llms.txt`, followed by a one-line **index of every page on your site** (title, absolute URL, description) and a pointer to `llms-full.txt`.
+- **Corpus (`llms-full.txt`)**: `darkmown catalog --llms-full` prints the complete reference the index points at: every directive with its full syntax template and example, every clause, action, pipe and operator, every frontmatter key, and **every compile-error code with its cause and fix**. An AI edit loop that hits `[WD201]` can resolve it from the same fetch it learned the syntax from. Every build writes it to `dist/llms-full.txt`, with the **full source text of every page** appended.
 - **GBNF grammar** — [`grammar/wd-directives.gbnf`](grammar/wd-directives.gbnf) is a generated [GBNF](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md) grammar for `.wd` directive lines. Point llama.cpp (or any grammar-constrained decoder) at it to make invalid directive lines — JS idioms like `cart.filter(...)`, HTML muscle-memory like `::: card class="…"` — literally unrepresentable during generation. Regenerate with `node scripts/gen-grammar.mjs`.
 
 ```sh
 darkmown catalog --llms > system-prompt.md   # paste into a model's context
-darkmown build                               # also emits dist/llms.txt
+darkmown catalog --llms-full                 # the complete reference + error codes
+darkmown build                               # also emits dist/llms.txt + dist/llms-full.txt
 ```
 
 Because the catalog, cheatsheet, grammar, and error `example`s are all generated from the compiler's own tables, they cannot drift from what actually compiles (enforced by tests).

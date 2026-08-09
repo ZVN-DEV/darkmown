@@ -38,6 +38,7 @@ import {
 import { LOOP_EXAMPLE } from "./compiler/loops.js";
 import { AUDIO_EXAMPLE, EMBED_EXAMPLE, VIDEO_EXAMPLE } from "./compiler/media.js";
 import { PREDICATE_JOINERS, PREDICATE_OPS } from "./compiler/predicates.js";
+import { SCHEMA_TYPES } from "./compiler/schema.js";
 import { COMPUTED_EXAMPLE, STATE_EXAMPLE, STORE_EXAMPLE, THEME_EXAMPLE } from "./compiler/state.js";
 import {
   CAROUSEL_EXAMPLE,
@@ -82,6 +83,8 @@ import { ERROR_AREAS, errorCatalog } from "./errors.js";
  * @property {CatalogEntry[]} formatPipes The `{ value | pipe }` formatter whitelist.
  * @property {CatalogEntry[]} predicateOps Comparison operators for `where`/`:if`/`when`.
  * @property {string[]} predicateJoiners Logical joiners (`and`/`or`/`not`).
+ * @property {CatalogEntry[]} frontmatterKeys Frontmatter keys the framework reads.
+ * @property {string[]} schemaTypes The `schema:` JSON-LD types the compiler can populate.
  * @property {import("./errors.js").ErrorArea[]} errorAreas The `WDxxx` code blocks.
  * @property {import("./errors.js").ErrorEntry[]} errors Every stable compile-error
  *   code, with its cause and fix. A thrown error's message starts with its code
@@ -471,6 +474,92 @@ const PIPE_META = {
   join: { description: "Join a list into a string.", example: '{ tags | join:", " }' }
 };
 
+/**
+ * The frontmatter keys the framework itself reads: page identity, the shell's
+ * head, the feeds, and the opt-in structured data. Author-invented keys are
+ * still free (they read back as `{ meta.anything }`); these are the ones with
+ * BEHAVIOR attached, which is exactly what an AI author needs told.
+ *
+ * Every name here is drift-guarded in tests/catalog.test.js against the source
+ * that consumes it, so a renamed key cannot leave a stale entry behind.
+ * @type {CatalogEntry[]}
+ */
+const FRONTMATTER_KEYS = [
+  { name: "title", description: "Page title (<title>, og:title).", example: "title: My Page" },
+  {
+    name: "description",
+    description: "Meta description, og:description, RSS fallback.",
+    example: "description: What this page is about."
+  },
+  {
+    name: "image",
+    description: "Absolute URL of the social share image.",
+    example: "image: https://example.com/og.png"
+  },
+  { name: "lang", description: "Document language for <html lang>.", example: "lang: en" },
+  {
+    name: "site_url",
+    description:
+      "HOME PAGE ONLY: the site origin. Turns on sitemap.xml, rss.xml, and canonical URLs.",
+    example: "site_url: https://example.com"
+  },
+  {
+    name: "ai_crawlers",
+    description: "HOME PAGE ONLY: allow (default) or deny the AI crawlers named in robots.txt.",
+    example: "ai_crawlers: deny"
+  },
+  {
+    name: "date",
+    description: "Marks the page a post: RSS item, sitemap lastmod, og:type=article.",
+    example: "date: 2026-08-09"
+  },
+  {
+    name: "updated",
+    description: "Last revision date, for structured data.",
+    example: "updated: 2026-08-09"
+  },
+  {
+    name: "excerpt",
+    description: "Explicit RSS <description> for a post.",
+    example: "excerpt: A short summary."
+  },
+  {
+    name: "draft",
+    description: "Excluded from builds and feeds until published.",
+    example: "draft: true"
+  },
+  {
+    name: "html",
+    description: "Allow raw HTML in the markdown body (default false).",
+    example: "html: true"
+  },
+  {
+    name: "transitions",
+    description: "Opt into cross-document view transitions and link prerendering.",
+    example: "transitions: true"
+  },
+  {
+    name: "schema",
+    description: `Emit JSON-LD structured data. One, or a list, of: ${SCHEMA_TYPES.join(", ")}.`,
+    example: "schema: BlogPosting"
+  },
+  {
+    name: "author",
+    description: "Author name (or a list) for an article schema.",
+    example: "author: Ada Lovelace"
+  },
+  {
+    name: "organization",
+    description: "Organisation name for an Organization schema (defaults to the page title).",
+    example: "organization: Acme Inc"
+  },
+  {
+    name: "logo",
+    description: "Absolute logo URL for an Organization schema.",
+    example: "logo: https://example.com/logo.png"
+  }
+];
+
 /** One-line description per comparison operator. */
 /** @type {Record<string, string>} */
 const OP_DESC = {
@@ -522,6 +611,8 @@ export function directiveCatalog() {
       example: op === "contains" ? 'p.tags contains "sale"' : `p.price ${op} 50`
     })),
     predicateJoiners: [...PREDICATE_JOINERS],
+    frontmatterKeys: FRONTMATTER_KEYS.map((key) => ({ ...key })),
+    schemaTypes: [...SCHEMA_TYPES],
     errorAreas: ERROR_AREAS.map((area) => ({ ...area })),
     errors: errorCatalog()
   };
@@ -531,12 +622,39 @@ export function directiveCatalog() {
 export const CATALOG_ACTION_TOKENS = ACTION_OPS.map((a) => a.token);
 
 /**
+ * One page of a built site, as it appears in the generated `llms.txt` index and
+ * `llms-full.txt` corpus.
+ * @typedef {object} SitePage
+ * @property {string} title
+ * @property {string} url Absolute URL when the site declared `site_url`, else the route path.
+ * @property {string} description "" when the page has no `description:`.
+ * @property {string} [body] The page's source body (frontmatter stripped). Only
+ *   the corpus carries it; the index omits it.
+ */
+
+/**
+ * The site a generated llms file describes. Plain data, passed in by the builder
+ * (the only layer that knows the routes), so this module stays a pure renderer.
+ * @typedef {object} SiteCorpus
+ * @property {string} title
+ * @property {string} description
+ * @property {string} url Site origin, or "" when the home page set no `site_url`.
+ * @property {SitePage[]} pages Every emitted route, in route order.
+ */
+
+/**
  * Render the catalog as a compact llms.txt-style markdown cheatsheet — the
  * artifact an app pastes into a small model's system prompt. Generated entirely
  * from {@link directiveCatalog}, so it can never disagree with what compiles.
+ *
+ * When a `site` is supplied (the build always supplies one) the cheatsheet is
+ * followed by an INDEX of the site's pages and a pointer to `llms-full.txt`,
+ * which is the llms.txt convention: a short index, with the complete corpus one
+ * fetch away.
+ * @param {SiteCorpus} [site] The built site to index.
  * @returns {string}
  */
-export function llmsText() {
+export function llmsText(site) {
   const cat = directiveCatalog();
   const out = [];
   out.push(`# Darkmown .wd cheatsheet (v${cat.version})`);
@@ -587,6 +705,12 @@ export function llmsText() {
   );
   out.push("");
 
+  out.push("## Page frontmatter");
+  for (const key of cat.frontmatterKeys) {
+    out.push(`- \`${key.name}\`: ${key.description} e.g. \`${key.example}\``);
+  }
+  out.push("");
+
   out.push("## Rules");
   out.push("- `.md` never gets directives — the `.wd` extension is the feature gate.");
   out.push("- One loop syntax (`@loop … into … @endloop`), one interpolation syntax (`{ name }`).");
@@ -597,5 +721,117 @@ export function llmsText() {
       " the line, and a fix. Read the message; it tells you exactly what to write."
   );
   out.push("");
+
+  if (site) {
+    out.push(`## ${site.title}`);
+    if (site.description) {
+      out.push("");
+      out.push(`> ${site.description}`);
+    }
+    out.push("");
+    out.push("### Pages");
+    for (const page of site.pages) {
+      out.push(`- [${page.title}](${page.url})${page.description ? `: ${page.description}` : ""}`);
+    }
+    out.push("");
+    out.push(
+      "The full text of every page above, plus the complete Darkmown authoring reference " +
+        "and every compile-error code, is at /llms-full.txt."
+    );
+    out.push("");
+  }
+  return out.join("\n");
+}
+
+/**
+ * Render `llms-full.txt`: the COMPLETE corpus that `llms.txt` indexes. Where the
+ * cheatsheet is one line per directive, this carries the full syntax template,
+ * description, example, and reactivity for every one, plus every compile-error
+ * code with its cause and fix: and then the full source text of every page on
+ * the site. Same generator, same catalog, so index and corpus cannot disagree.
+ * @param {SiteCorpus} [site] The built site whose pages form the corpus.
+ * @returns {string}
+ */
+export function llmsFullText(site) {
+  const cat = directiveCatalog();
+  const out = [];
+  out.push(`# Darkmown ${site ? `${site.title} ` : ""}full reference (v${cat.version})`);
+  out.push("");
+  out.push("The complete corpus indexed by /llms.txt: every `.wd` directive with its full");
+  out.push("syntax, every clause, action, format pipe and operator, every stable compile-error");
+  out.push("code, and the full source text of every page on this site. Every example compiles.");
+  out.push("");
+
+  out.push("## Directives");
+  for (const d of cat.directives) {
+    out.push("");
+    out.push(`### ${d.name} (${d.kind}, ${d.reactive})`);
+    out.push(d.description);
+    out.push("");
+    out.push("```");
+    out.push(d.syntax);
+    out.push(d.example);
+    out.push("```");
+  }
+  out.push("");
+
+  out.push("## @loop clauses (this fixed order, all optional)");
+  for (const c of cat.loopClauses) {
+    out.push(`- \`${c.syntax}\`: ${c.description} e.g. \`${c.example}\``);
+  }
+  out.push("");
+
+  out.push("## Loop row variables (inside a loop body)");
+  for (const v of cat.loopVariables) {
+    out.push(`- \`${v.name}\`: ${v.description}`);
+  }
+  out.push("");
+
+  out.push("## Button / :effect / :every actions (chain with `;`)");
+  for (const a of cat.actionOps) {
+    out.push(`- \`${a.syntax}\`: ${a.description} e.g. \`${a.example}\``);
+  }
+  out.push("");
+
+  out.push("## Format pipes  `{ value | name:arg }`");
+  for (const p of cat.formatPipes) {
+    out.push(`- \`${p.name}\`: ${p.description} e.g. \`${p.example}\``);
+  }
+  out.push("");
+
+  out.push("## Predicate operators (where / :if / `.class when`)");
+  for (const o of cat.predicateOps) {
+    out.push(`- \`${o.name}\`: ${o.description} e.g. \`${o.example}\``);
+  }
+  out.push(`Join conditions with ${cat.predicateJoiners.map((j) => `\`${j}\``).join(" / ")}.`);
+  out.push("");
+
+  out.push("## Page frontmatter");
+  for (const key of cat.frontmatterKeys) {
+    out.push(`- \`${key.name}\`: ${key.description} e.g. \`${key.example}\``);
+  }
+  out.push("");
+
+  out.push("## Compile error codes");
+  for (const area of cat.errorAreas) {
+    out.push(`### ${area.range} ${area.title}`);
+    for (const err of cat.errors.filter((e) => e.area === area.name)) {
+      out.push(`- **${err.code} ${err.title}**: ${err.cause} Fix: ${err.fix}`);
+    }
+    out.push("");
+  }
+
+  if (site) {
+    out.push(`## ${site.title}: full page text`);
+    for (const page of site.pages) {
+      out.push("");
+      out.push(`### ${page.title}`);
+      out.push(`URL: ${page.url}`);
+      if (page.description) out.push(`Description: ${page.description}`);
+      out.push("");
+      out.push((page.body || "").trim());
+    }
+    out.push("");
+  }
   return out.join("\n");
 }

@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverApiRoutes } from "./api-runner.js";
-import { llmsText } from "./catalog.js";
+import { llmsFullText, llmsText } from "./catalog.js";
 import { buildCollections } from "./compiler/collections.js";
 import { compilePage, parseFrontmatter } from "./compiler.js";
 import { createPaths, routesDir, shelfDir } from "./config.js";
 import {
   absoluteUrl,
+  aiCrawlerPolicy,
   buildRobots,
   buildRss,
   buildSitemap,
@@ -129,6 +130,7 @@ function buildFull(cwd, paths, options) {
   // the feed during the loop.
   const identity = siteIdentity(routes);
   const feedLink = feedLinkFor(identity, routes);
+  const titles = routeTitles(routes);
   /** @type {RouteManifestEntry[]} */
   const manifest = [];
 
@@ -148,7 +150,7 @@ function buildFull(cwd, paths, options) {
   const mapRoutes = {};
 
   for (const route of routes) {
-    const built = buildRoute(route, cwd, paths, collections, feedLink, warned);
+    const built = buildRoute(route, cwd, paths, collections, feedLink, warned, identity, titles);
     manifest.push(...built.mapEntry.pages);
     if (built.notFoundHtml !== undefined) notFoundHtml = built.notFoundHtml;
     for (const entry of built.mapEntry.pages) {
@@ -162,7 +164,7 @@ function buildFull(cwd, paths, options) {
   // minimal page so a 404 is always available.
   fs.writeFileSync(path.join(paths.distRoot, "404.html"), notFoundHtml ?? defaultNotFoundHtml());
 
-  emitGlobalFiles(manifest, paths);
+  emitGlobalFiles(manifest, paths, routes, identity);
 
   // Crawler files + feeds. robots.txt is ALWAYS emitted; sitemap.xml + rss.xml
   // need the home `site_url` (else a loud, actionable build hint). Drafts are
@@ -223,6 +225,7 @@ function buildIncremental(cwd, paths, options, changed) {
   const collections = buildCollections(routes, paths);
   const identity = siteIdentity(routes);
   const feedLink = feedLinkFor(identity, routes);
+  const titles = routeTitles(routes);
   // The feed <link> is embedded in EVERY page's head, so a change to it
   // (site_url/title set or cleared, the first dated post appearing) fans out to
   // the whole site — that is a full rebuild, not a partial one.
@@ -248,7 +251,7 @@ function buildIncremental(cwd, paths, options, changed) {
   const rebuilt = [...affected].sort();
   for (const routePath of rebuilt) {
     const route = /** @type {Route} */ (byRoute.get(routePath));
-    const built = buildRoute(route, cwd, paths, collections, feedLink, warned);
+    const built = buildRoute(route, cwd, paths, collections, feedLink, warned, identity, titles);
     // A shrunk pagination leaves stale `/page/N/` outputs behind — remove any
     // previously-emitted page this rebuild no longer produces.
     const kept = new Set(built.mapEntry.pages.map((entry) => entry.route));
@@ -276,7 +279,7 @@ function buildIncremental(cwd, paths, options, changed) {
       if (entry.route !== route.route) extraRoutes.push({ ...route, route: entry.route });
     }
   }
-  emitGlobalFiles(manifest, paths);
+  emitGlobalFiles(manifest, paths, routes, identity);
   const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths, options.quietFeedHints);
   writeDepMap(paths, feedLink, map.routes);
 
@@ -299,10 +302,13 @@ function buildIncremental(cwd, paths, options, changed) {
  * @param {Map<string, import("./compiler/collections.js").CollectionRow[]>} collections
  * @param {{ href: string, title: string } | undefined} feedLink
  * @param {Set<string>} warned Cross-route dedupe set for emitted hints.
+ * @param {SiteIdentity} identity Resolved site identity (its `siteUrl` is what
+ *   makes a canonical URL possible).
+ * @param {Map<string, string>} titles Route path → page title, for breadcrumbs.
  * @returns {{ mapEntry: DepMapEntry, notFoundHtml: string | undefined }}
  */
-function buildRoute(route, cwd, paths, collections, feedLink, warned) {
-  const compiled = compileRoutePages(route, paths, collections, feedLink);
+function buildRoute(route, cwd, paths, collections, feedLink, warned, identity, titles) {
+  const compiled = compileRoutePages(route, paths, collections, feedLink, identity, titles);
   /** @type {RouteManifestEntry[]} */
   const entries = [];
   /** @type {string | undefined} */
@@ -348,6 +354,83 @@ function buildRoute(route, cwd, paths, collections, feedLink, warned) {
 }
 
 /**
+ * Every emitted route's page title, keyed by route path. The breadcrumb builder
+ * reads it so a crumb names the page's REAL title, and so an ancestor segment
+ * with no page behind it (`/vs/` when only `/vs/markdoc/` exists) is skipped
+ * rather than linked into a 404.
+ * @param {Route[]} routes
+ * @returns {Map<string, string>}
+ */
+function routeTitles(routes) {
+  return new Map(
+    routes.map((route) => [
+      route.route,
+      typeof route.meta.title === "string" && route.meta.title.trim()
+        ? route.meta.title.trim()
+        : route.route
+    ])
+  );
+}
+
+/**
+ * The breadcrumb trail for a route: the home page, then each ancestor route that
+ * actually exists, then the page itself. Emitted only for genuinely nested
+ * routes (two or more path segments) and only when the site has an origin to
+ * build absolute crumb URLs from; a top-level page's trail would be nothing but
+ * "Home > this page", which restates the page and helps nobody.
+ * @param {string} routePath Route path (trailing-slashed).
+ * @param {Map<string, string>} titles
+ * @param {string} siteUrl Site origin ("" when the home page set no `site_url`).
+ * @returns {{ name: string, url: string }[]}
+ */
+function breadcrumbTrail(routePath, titles, siteUrl) {
+  const segments = routePath.split("/").filter(Boolean);
+  if (!siteUrl || segments.length < 2) return [];
+  /** @type {{ name: string, url: string }[]} */
+  const trail = [];
+  let prefix = "/";
+  const home = titles.get("/");
+  if (home) trail.push({ name: home, url: absoluteUrl(siteUrl, "/") });
+  for (const segment of segments) {
+    prefix += `${segment}/`;
+    const title = titles.get(prefix);
+    if (title) trail.push({ name: title, url: absoluteUrl(siteUrl, prefix) });
+  }
+  // One crumb is just the home page (or just this page), not a trail.
+  return trail.length >= 2 ? trail : [];
+}
+
+/**
+ * Assemble the site corpus the generated `llms.txt` indexes and `llms-full.txt`
+ * carries in full: every emitted route's title, absolute URL (route path when
+ * the site has no origin), description, and source body. The body is read here
+ * rather than kept from the compile because it is the AUTHORED markdown, which
+ * is what an AI reader wants, not the rendered HTML.
+ * @param {Route[]} routes
+ * @param {SiteIdentity} identity
+ * @returns {import("./catalog.js").SiteCorpus}
+ */
+function siteCorpus(routes, identity) {
+  const pages = routes
+    .filter((route) => route.route !== "/404/")
+    .map((route) => {
+      const { body } = parseFrontmatter(fs.readFileSync(route.file, "utf8"), route.file);
+      return {
+        title: typeof route.meta.title === "string" ? route.meta.title : route.route,
+        url: identity.siteUrl ? absoluteUrl(identity.siteUrl, route.route) : route.route,
+        description: typeof route.meta.description === "string" ? route.meta.description : "",
+        body
+      };
+    });
+  return {
+    title: identity.title,
+    description: identity.description,
+    url: identity.siteUrl,
+    pages
+  };
+}
+
+/**
  * Write the global manifest files derived from the (whole-site) route manifest:
  * `routes.json` and the Cloudflare `_headers`. One emit path for full and
  * incremental builds keeps them consistent by construction.
@@ -360,15 +443,22 @@ function buildRoute(route, cwd, paths, collections, feedLink, warned) {
  * and any future path covered.
  * @param {RouteManifestEntry[]} manifest
  * @param {Paths} paths
+ * @param {Route[]} routes The emitted source routes, for the llms.txt corpus.
+ * @param {SiteIdentity} identity
  * @returns {void}
  */
-function emitGlobalFiles(manifest, paths) {
+function emitGlobalFiles(manifest, paths, routes, identity) {
   fs.writeFileSync(path.join(paths.distRoot, "routes.json"), JSON.stringify(manifest, null, 2));
   fs.writeFileSync(path.join(paths.distRoot, "_headers"), renderCloudflareHeaders(manifest));
-  // `llms.txt` is the compact `.wd` cheatsheet an AI authoring tool fetches to
-  // prime a small model. It depends only on the framework version, so it re-emits
-  // identically on every build — cheap, and always present next to the site.
-  fs.writeFileSync(path.join(paths.distRoot, "llms.txt"), llmsText());
+  // The llms.txt pair, following the convention: `llms.txt` is the INDEX (the
+  // compact `.wd` cheatsheet an AI authoring tool fetches to prime a small
+  // model, plus a one-line-per-page map of the site), and `llms-full.txt` is the
+  // COMPLETE corpus (full directive reference, every compile-error code, and the
+  // full source text of every page). Both are generated from the same catalog
+  // and the same route list, so the index can never disagree with the corpus.
+  const corpus = siteCorpus(routes, identity);
+  fs.writeFileSync(path.join(paths.distRoot, "llms.txt"), llmsText(corpus));
+  fs.writeFileSync(path.join(paths.distRoot, "llms-full.txt"), llmsFullText(corpus));
 }
 
 /**
@@ -376,7 +466,7 @@ function emitGlobalFiles(manifest, paths) {
  * when rss.xml will actually be emitted: the home set `site_url` AND there is at
  * least one dated post. A stale `<link>` to a missing feed would 404 for
  * aggregators.
- * @param {{ siteUrl: string, title: string, description: string }} identity
+ * @param {SiteIdentity} identity
  * @param {Route[]} routes
  * @returns {{ href: string, title: string } | undefined}
  */
@@ -543,9 +633,11 @@ function copyChangedAsset(file, cwd, paths) {
  * @param {Paths} paths
  * @param {Map<string, import("./compiler/collections.js").CollectionRow[]>} collections
  * @param {{ href: string, title: string } | undefined} feedLink
+ * @param {SiteIdentity} identity
+ * @param {Map<string, string>} titles Route path → page title, for breadcrumbs.
  * @returns {{ pages: EmittedPage[], deps: Set<string>, collections: Set<string> }}
  */
-function compileRoutePages(route, paths, collections, feedLink) {
+function compileRoutePages(route, paths, collections, feedLink, identity, titles) {
   /** @type {Set<string>} */
   const deps = new Set();
   /** @type {Set<string>} */
@@ -555,10 +647,20 @@ function compileRoutePages(route, paths, collections, feedLink) {
     for (const name of page.collectionsUsed) used.add(name);
     for (const source of page.assets.files.keys()) deps.add(source);
   };
+  // The page's own place on the deployed site: origin + the route it is written
+  // to. This is what the shell turns into `<link rel="canonical">` and `og:url`,
+  // so it is deliberately the SAME route string the sitemap and every internal
+  // link use, one canonical form, agreed on by construction.
+  const siteFor = (/** @type {string} */ routePath) => ({
+    url: identity.siteUrl,
+    route: routePath,
+    breadcrumbs: breadcrumbTrail(routePath, titles, identity.siteUrl)
+  });
   // First compile (discovery): page 1 with a placeholder pager. If the page has
   // no `paginate`, this is the only compile and we emit it as-is.
   const first = compilePage(route.file, paths, {
     feed: feedLink,
+    site: siteFor(route.route),
     collections,
     vars: { page: pagerVars(route.route, 1, 1) }
   });
@@ -578,8 +680,12 @@ function compileRoutePages(route, paths, collections, feedLink) {
   /** @type {EmittedPage[]} */
   const pages = [];
   for (let n = 1; n <= total; n++) {
+    // Each paginated page canonicalises to ITSELF (`/blog/page/2/`), never to
+    // page 1: they hold different content, and pointing them all at page 1
+    // would ask Google to drop pages 2..N from the index entirely.
     const page = compilePage(route.file, paths, {
       feed: feedLink,
+      site: siteFor(pageRoute(route.route, n)),
       collections,
       vars: { page: pagerVars(route.route, n, total) }
     });
@@ -625,14 +731,25 @@ function pagerVars(baseRoute, current, total) {
 }
 
 /**
+ * Site-wide metadata resolved from the home page's frontmatter.
+ * @typedef {object} SiteIdentity
+ * @property {string} siteUrl Absolute origin without a trailing slash, or "".
+ * @property {string} title Site title (also the RSS channel title).
+ * @property {string} description Site description (also the RSS channel description).
+ * @property {string} aiCrawlers `"allow"` or `"deny"`, from `ai_crawlers:`.
+ */
+
+/**
  * Resolve the site's identity from the HOME route's frontmatter — the single
  * place site-wide metadata lives this cycle (no config loader). `site_url` is
- * the absolute origin (no trailing slash) that triggers and prefixes the feeds;
- * `title`/`description` double as the RSS channel fields. A site with no `/`
- * route, or a home page without `site_url`, yields an empty `siteUrl` and the
- * feeds are skipped (robots still emits).
+ * the absolute origin (no trailing slash) that triggers and prefixes the feeds
+ * and every page's canonical URL; `title`/`description` double as the RSS
+ * channel fields; `ai_crawlers` sets the robots.txt policy for the named AI
+ * crawlers. A site with no `/` route, or a home page without `site_url`, yields
+ * an empty `siteUrl`: the feeds and canonical tags are skipped (robots still
+ * emits, since its AI-crawler policy does not depend on an origin).
  * @param {Route[]} routes
- * @returns {{ siteUrl: string, title: string, description: string }}
+ * @returns {SiteIdentity}
  */
 function siteIdentity(routes) {
   const home = routes.find((route) => route.route === "/");
@@ -642,7 +759,8 @@ function siteIdentity(routes) {
   return {
     siteUrl: read("site_url").replace(/\/$/, ""),
     title: read("title") || "Darkmown",
-    description: read("description")
+    description: read("description"),
+    aiCrawlers: aiCrawlerPolicy(meta, home ? home.file : undefined)
   };
 }
 
@@ -666,7 +784,7 @@ function hasDatedPost(routes) {
  * else `lastmodFor(file)` (git last-commit date → file mtime). RSS items are the
  * routes with a `date:`, newest first, capped at {@link RSS_ITEM_LIMIT}.
  * @param {Route[]} routes Emitted (post-draft-filter) routes.
- * @param {{ siteUrl: string, title: string, description: string }} identity
+ * @param {SiteIdentity} identity
  * @param {Paths} paths
  * @param {boolean} [quietHints] Suppress the site_url/placeholder feed hints — set
  *   on dev-server rebuilds so they print once per session (at the initial build)
@@ -675,7 +793,10 @@ function hasDatedPost(routes) {
  * @returns {{ sitemap: number | null, rss: number | null }}
  */
 function emitFeeds(routes, identity, paths, quietHints = false) {
-  fs.writeFileSync(path.join(paths.distRoot, "robots.txt"), buildRobots(identity.siteUrl));
+  fs.writeFileSync(
+    path.join(paths.distRoot, "robots.txt"),
+    buildRobots(identity.siteUrl, identity.aiCrawlers)
+  );
 
   if (!identity.siteUrl) {
     if (!quietHints) {

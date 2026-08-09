@@ -3,6 +3,7 @@ title: Typed frontmatter with a four-line schema
 description: Drop a _schema.wd in a collection and every entry is validated at build time — missing fields, wrong types, and typos all fail the build.
 date: 2026-06-29
 excerpt: A typo'd frontmatter key used to ship silently. With a collection schema, titel instead of title fails the build with a file and line.
+schema: BlogPosting
 tags: [collections, schema, dx]
 ---
 

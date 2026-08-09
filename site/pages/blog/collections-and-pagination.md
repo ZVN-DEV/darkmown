@@ -3,6 +3,7 @@ title: Collections and pagination, with zero ceremony
 description: Any folder under site/pages is a queryable collection. Loop it by name, sort it, paginate it — all at build time, all zero-JS.
 date: 2026-06-28
 excerpt: This very page is an entry in a collection. The list you came from is one @loop over a folder — no content root, no marker file, no config.
+schema: BlogPosting
 tags: [collections, content]
 ---
 

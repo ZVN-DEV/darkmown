@@ -3,6 +3,7 @@ title: Shipping feeds without a config file
 description: Site identity lives in the home page frontmatter — one site_url field turns on sitemap.xml and rss.xml.
 date: 2026-06-26
 excerpt: One reserved frontmatter field on the home page — site_url — turns on the whole feeds story. No config loader, no plugin.
+schema: BlogPosting
 tags: [feeds, seo]
 ---
 

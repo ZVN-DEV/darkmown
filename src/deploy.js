@@ -109,7 +109,14 @@ function ensurePlatformConfig(cwd, target) {
     buildCommand: "npm run build",
     outputDirectory: "dist",
     cleanUrls: true,
-    trailingSlash: false,
+    // Darkmown routes are trailing-slashed everywhere: `routeFromFile` produces
+    // `/docs/`, that is what routes.json, the sitemap, the canonical tag, and
+    // every generated link use, and the build writes `dist/docs/index.html`.
+    // `trailingSlash: false` would make the host 308 every one of those URLs to
+    // a different form, so every internal navigation costs a redirect hop and
+    // the sitemap advertises URLs that redirect. `true` makes the host agree
+    // with the framework's own canonical form.
+    trailingSlash: true,
     headers: [
       {
         source: "/(.*)",
