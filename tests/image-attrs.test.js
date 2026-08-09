@@ -13,8 +13,10 @@ import test from "node:test";
 import { compilePage } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
 
-// A minimal but valid PNG: signature + IHDR carrying the dimensions. image-size
-// reads width/height from the IHDR, so this is enough for a dimension fixture.
+// A minimal but valid PNG: signature + IHDR carrying the dimensions. The
+// measurer (src/compiler/image-size.js — see tests/image-size.test.js for the
+// per-format parser suite) reads width/height straight from the IHDR, so this
+// is enough for a dimension fixture.
 function makePng(w, h) {
   const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const ihdr = Buffer.alloc(25);
@@ -27,11 +29,14 @@ function makePng(w, h) {
   return Buffer.concat([sig, ihdr]);
 }
 
-function project(pageBody, images = {}) {
+function project(pageBody, images = {}, extraFiles = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-imgattrs-"));
   fs.mkdirSync(path.join(root, "site/_"), { recursive: true });
   for (const [name, [w, h]] of Object.entries(images)) {
     fs.writeFileSync(path.join(root, "site/_", name), makePng(w, h));
+  }
+  for (const [name, contents] of Object.entries(extraFiles)) {
+    fs.writeFileSync(path.join(root, "site/_", name), contents);
   }
   const file = path.join(root, "site/pages/index.wd");
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -81,6 +86,38 @@ test("remote images are enhanced for loading but not measured (no disk read, no 
   assert.match(remote, /loading="lazy"/);
   assert.doesNotMatch(remote, /width=/, "cannot measure a remote file");
   assert.doesNotMatch(remote, /height=/);
+});
+
+test("a vector source is measured too — the demo logo is a viewBox-only SVG", () => {
+  // The shelf's real logo has no width/height on its root, so its size comes
+  // from the viewBox. Guards the non-raster path end to end, not just in the
+  // parser unit suite.
+  const html = project(
+    "![Logo](/__wd/media/logo.svg)",
+    {},
+    {
+      "logo.svg": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"></svg>'
+    }
+  );
+  const logo = img(html, 0);
+  assert.match(logo, /width="32"/);
+  assert.match(logo, /height="32"/);
+});
+
+test("an unsupported image format degrades gracefully — no dimensions, no throw", () => {
+  // A real file that reads fine but whose format we do not parse (a BMP). It
+  // must behave exactly like a missing file: safe attrs, no invented size.
+  const html = project(
+    "![Icon](/__wd/media/icon.bmp)",
+    {},
+    {
+      "icon.bmp": Buffer.from([0x42, 0x4d, 0x46, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0x36, 0, 0, 0])
+    }
+  );
+  const icon = img(html, 0);
+  assert.doesNotMatch(icon, /width=/);
+  assert.doesNotMatch(icon, /height=/);
+  assert.match(icon, /decoding="async"/);
 });
 
 test("a missing local file degrades gracefully — no dimensions, no throw", () => {

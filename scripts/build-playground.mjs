@@ -1,9 +1,10 @@
 // Bundle the browser playground: the framework's fs-free `compileFromMemory`
 // plus markdown-it and a common-language highlight.js subset, compiled to ONE
 // self-contained ESM asset shipped as the playground page's colocated script
-// (`site/pages/playground/index.js`). Node builtins the compile path touches
-// (`node:path`, `node:crypto`) and the Node-only `image-size` are aliased to
-// tiny browser shims (the memory compile never actually reads files or images).
+// (`site/pages/playground/index.js`). The Node builtins the compile path
+// touches (`node:path`, `node:crypto`) are aliased to tiny browser shims; the
+// image measurer needs no shim, since it is first-party pure JS over a
+// Uint8Array (the memory compile never actually reads an image anyway).
 //
 // The bundle is COMMITTED, so `npm run build` needs no bundler. Rebuild it with
 // `npm run build:playground` whenever the compiler or this entry changes.
@@ -34,7 +35,6 @@ const result = await build({
   alias: {
     "node:path": path.join(shims, "path.js"),
     "node:crypto": path.join(shims, "crypto.js"),
-    "image-size": path.join(shims, "image-size.js"),
     // A smaller, common-languages-only highlight.js keeps the bundle sane; the
     // playground only ever highlights mainstream languages in fenced code.
     "highlight.js": "highlight.js/lib/common"
