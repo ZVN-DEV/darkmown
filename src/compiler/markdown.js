@@ -7,7 +7,7 @@
 
 import MarkdownIt from "markdown-it";
 import { highlightCode } from "../highlight.js";
-import { LOOP_META, wdError } from "./context.js";
+import { LOOP_META, recordRead, wdError } from "./context.js";
 import { applyPipeline, fmtAttr, validatePipes } from "./format.js";
 import {
   escapeHtml,
@@ -288,6 +288,7 @@ function resolveBindingHtml(expr, ctx) {
   const key = resolveStateKey(head, ctx);
   if (key) {
     ctx.comp.assets.runtime = true;
+    recordRead(ctx, key, expr);
     const initial = getPath(ctx.comp.state.get(key), segs.slice(1));
     const rest = segs.slice(1).join(".");
     const pathAttr = rest ? ` data-wd-path="${escapeHtml(rest)}"` : "";

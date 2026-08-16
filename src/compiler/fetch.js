@@ -7,7 +7,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, lineOf, wdError } from "./context.js";
+import { at, lineOf, recordSymbol, wdError } from "./context.js";
 import {
   escapeHtml,
   resolveStateKey,
@@ -123,6 +123,7 @@ export function handleFetch(line, ctx, index) {
   // (collision-checked); the derived keys are seeded directly.
   const key = declareState(name, null, ctx);
   ctx.comp.fetchKeys.add(key);
+  recordSymbol(ctx, index, { kind: "fetch", name: key, detail: `${key} from "${url}"` });
   /** @type {Record<string, unknown>} */
   const seeds = { [key]: null };
   for (const [suffix, seed] of [

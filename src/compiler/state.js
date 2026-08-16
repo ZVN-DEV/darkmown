@@ -8,7 +8,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, lineOf, wdError } from "./context.js";
+import { at, lineOf, recordSymbol, wdError } from "./context.js";
 import { astOf, evalAst } from "./expr-ast.js";
 import { escapeHtml, parseStateValue, safeScriptJson } from "./interpolation.js";
 import { compileComputedExpr } from "./predicates.js";
@@ -42,6 +42,7 @@ export function handleState(line, ctx, index) {
     });
   const value = parseStateValue(match[2], at(ctx, index));
   const key = declareState(match[1], value, ctx);
+  recordSymbol(ctx, index, { kind: "state", name: key, detail: `${key} = ${match[2].trim()}` });
   const persistAttr = match[3] ? ` data-wd-persist="${key}"` : "";
   return `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
 }
@@ -101,6 +102,7 @@ export function handleStore(line, ctx, index) {
     );
   const value = parseStateValue(match[2], at(ctx, index));
   const name = declareStore(match[1], value, ctx);
+  recordSymbol(ctx, index, { kind: "store", name, detail: `${name} = ${match[2].trim()}` });
   const ephemeral = match[3] ? " data-wd-store-ephemeral" : "";
   return `<script type="application/json" data-wd-store="${name}"${ephemeral}>${safeScriptJson(value)}</script>`;
 }
@@ -195,6 +197,7 @@ export function handleComputed(line, ctx, index) {
   // folds to null, never throws — so parse-failure above is the only error path.
   const initial = evalAst(ast, undefined, ctx.comp);
   const key = declareState(match[1], initial ?? null, ctx);
+  recordSymbol(ctx, index, { kind: "computed", name: key, detail: `${key} = ${match[2].trim()}` });
   return `<span data-wd-computed data-wd-computed-key="${key}" data-wd-computed-expr="${escapeHtml(JSON.stringify(ast))}"></span><script type="application/json" data-wd-state>${safeScriptJson({ [key]: initial ?? null })}</script>`;
 }
 
@@ -227,5 +230,10 @@ export function handleTheme(line, ctx, index) {
   const name = match[1] || "theme";
   const seed = match[2] != null ? parseStateValue(match[2], at(ctx, index)) : "auto";
   const storeName = declareStore(name, seed, ctx);
+  recordSymbol(ctx, index, {
+    kind: "theme",
+    name: storeName,
+    detail: `${storeName} = ${JSON.stringify(seed)}`
+  });
   return `<script type="application/json" data-wd-store="${storeName}">${safeScriptJson(seed)}</script><span data-wd-theme="${storeName}" hidden></span>`;
 }

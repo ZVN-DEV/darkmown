@@ -9,7 +9,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, lineOf, nestedCtx, wdError } from "./context.js";
+import { at, lineOf, nestedCtx, recordSymbol, wdError } from "./context.js";
 import { validateFetchUrl } from "./fetch.js";
 import {
   escapeHtml,
@@ -73,6 +73,12 @@ export function handleForm(line, bodyLines, ctx, index) {
   }
   const key = declareState(into, null, ctx);
   declareErrorState(key, ctx);
+  recordSymbol(ctx, index, {
+    kind: "form",
+    name: key,
+    target: key,
+    detail: `:form action="${rawAction}" into ${into}`
+  });
   const actionAttrs = action
     ? ` action="${escapeHtml(action)}" method="${escapeHtml(method)}"`
     : "";
@@ -96,6 +102,7 @@ export function handleInput(line, ctx, index) {
       example: INPUT_EXAMPLE
     });
   const attrs = [`name="${escapeHtml(match[1])}"`];
+  recordSymbol(ctx, index, { kind: "field", name: match[1], detail: `:input ${match[1]}` });
   let type = "text";
   let placeholder;
   let hasAria = false;
@@ -175,6 +182,12 @@ export function handleBind(line, ctx, index) {
       { code: "WD406", file: ctx.file }
     );
   }
+  recordSymbol(ctx, index, {
+    kind: "field",
+    name: match[1],
+    target: key,
+    detail: `:bind ${match[1]}`
+  });
   ctx.comp.assets.runtime = true;
   let type = "text";
   let placeholder;
@@ -326,6 +339,7 @@ export function handleSlider(line, ctx, index) {
   const valueAttr =
     initial === undefined || initial === null ? "" : ` value="${escapeHtml(String(initial))}"`;
   const ariaAttr = ` aria-label="${escapeHtml(ariaLabel || humanizeName(name))}"`;
+  recordSymbol(ctx, index, { kind: "field", name, target: key, detail: `:slider ${name}` });
   return `${seed}<input type="range" data-wd-bind-input="${key}" min="${escapeHtml(min)}" max="${escapeHtml(max)}" step="${escapeHtml(step)}"${valueAttr}${ariaAttr}>`;
 }
 
@@ -348,6 +362,7 @@ export function handleSubmit(line, ctx, index) {
         example: SUBMIT_EXAMPLE
       }
     );
+  recordSymbol(ctx, index, { kind: "field", name: "submit", detail: line.trim() });
   return `<button type="submit">${escapeHtml(match[1])}</button>`;
 }
 
@@ -374,6 +389,7 @@ export function handleTextarea(line, ctx, index) {
     });
   }
   const attrs = [`name="${escapeHtml(match[1])}"`];
+  recordSymbol(ctx, index, { kind: "field", name: match[1], detail: `:textarea ${match[1]}` });
   let placeholder;
   let hasAria = false;
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
@@ -441,6 +457,7 @@ export function handleSelect(line, optionLines, ctx, index) {
     });
   }
   const attrs = [`name="${escapeHtml(match[1])}"`];
+  recordSymbol(ctx, index, { kind: "field", name: match[1], detail: `:select ${match[1]}` });
   let hasAria = false;
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)|([A-Za-z-]+)/g;
   for (const token of (match[2] || "").matchAll(re)) {
@@ -518,6 +535,7 @@ export function handleChoiceGroup(line, optionLines, ctx, kind, index) {
     });
   }
   const name = match[1];
+  recordSymbol(ctx, index, { kind: "field", name, detail: `:${kind} ${name}` });
   const flags = [];
   let ariaLabel = null;
   let ariaDescribedby = null;

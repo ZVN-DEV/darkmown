@@ -7,7 +7,7 @@
 // multi-line directive bodies with nesting + fence awareness.
 // ---------------------------------------------------------------------------
 
-import { at, lineOf, wdError } from "./context.js";
+import { at, lineOf, stampBlockEnd, wdError } from "./context.js";
 import {
   handleBind,
   handleButton,
@@ -84,7 +84,9 @@ export function compileBody(lines, ctx) {
       flush();
       const block = scanBlock(lines, i, /^@loop\s/, "@endloop", ctx);
       const split = splitEmptyBranch(block.body);
+      const loopAt = ctx.comp.symbols.length;
       out.push(handleLoop(line, split.body, split.empty, ctx, i, split.emptyStart));
+      stampBlockEnd(ctx, loopAt, block.end);
       i = block.end;
       continue;
     }
@@ -227,7 +229,9 @@ export function compileBody(lines, ctx) {
     if (/^:if\s/.test(line)) {
       flush();
       const block = scanConditional(lines, i, ctx);
+      const ifAt = ctx.comp.symbols.length;
       out.push(handleIf(line, block.truthy, block.falsy, ctx, i, block.falsyStart));
+      stampBlockEnd(ctx, ifAt, block.end);
       i = block.end;
       continue;
     }

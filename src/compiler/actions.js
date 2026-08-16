@@ -9,7 +9,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, lineOf, wdError } from "./context.js";
+import { at, lineOf, recordSymbol, wdError } from "./context.js";
 import {
   escapeHtml,
   resolveStateKey,
@@ -45,6 +45,14 @@ export function handleButton(line, ctx, index) {
     });
   ctx.comp.assets.runtime = true;
   const action = parseAction(match[2], ctx);
+  for (const a of Array.isArray(action) ? action : [action])
+    recordSymbol(ctx, index, {
+      kind: "action",
+      name: a.target,
+      target: a.target,
+      op: a.op,
+      detail: `:button "${match[1]}" -> ${match[2].trim()}`
+    });
   if (Array.isArray(action)) {
     return `<button type="button" data-wd-actions="${escapeHtml(JSON.stringify(action))}">${escapeHtml(match[1])}</button>`;
   }
@@ -92,6 +100,14 @@ export function handleEffect(line, ctx, index) {
   const watch = [key, ...segs.slice(1)].join(".");
   const action = parseAction(match[2], ctx);
   const actions = Array.isArray(action) ? action : [action];
+  for (const a of actions)
+    recordSymbol(ctx, index, {
+      kind: "action",
+      name: a.target,
+      target: a.target,
+      op: a.op,
+      detail: `:effect ${watch} -> ${match[2].trim()}`
+    });
   return `<script type="application/json" data-wd-effect>${safeScriptJson({ watch, actions })}</script>`;
 }
 
@@ -142,6 +158,14 @@ export function handleEvery(line, ctx, index) {
   ctx.comp.assets.runtime = true;
   const action = parseAction(match[2], ctx);
   const actions = Array.isArray(action) ? action : [action];
+  for (const a of actions)
+    recordSymbol(ctx, index, {
+      kind: "action",
+      name: a.target,
+      target: a.target,
+      op: a.op,
+      detail: `:every ${match[1]} -> ${match[2].trim()}`
+    });
   return `<script type="application/json" data-wd-every>${safeScriptJson({ ms, actions })}</script>`;
 }
 

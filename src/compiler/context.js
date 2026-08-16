@@ -81,6 +81,33 @@
  *   read threads through — the real filesystem by default, or an in-memory map
  *   for `compileFromMemory`. Set once by `createCompilation` and reached via
  *   `ctx.comp.reader` in the directive handlers (includes, loop data).
+ * @property {Symbol[]} symbols Every declared thing this compile saw, in source
+ *   order, recorded by {@link recordSymbol} from the handler that parsed it.
+ *   Surfaced on {@link CompiledPage} so a tool layer can answer "what is in this
+ *   page?" without parsing `.wd` a second time.
+ */
+
+/**
+ * One declared thing in a page, as the compiler saw it.
+ *
+ * `kind` is the directive family; `name` is what an author would call the thing
+ * and is what `refs` matches on. `detail` is a short human string in the same
+ * vocabulary the model writes, never a serialized AST: the tool layer's job is
+ * to hand back text a model can nearly paste, and translation is where small
+ * models lose.
+ *
+ * @typedef {object} Symbol
+ * @property {"state" | "store" | "computed" | "theme" | "fetch" | "action" | "loop" | "form" | "field" | "if" | "include" | "read"} kind
+ * @property {string} name The symbol's own name, or the thing it targets.
+ * @property {string} [detail] Short source-shaped description, e.g. `cart append p`.
+ * @property {boolean} [reactive] For loops: whether it stays reactive at runtime.
+ * @property {string} [target] For actions: the state key written.
+ * @property {string} [op] For actions: the validated action token.
+ * @property {string} file Absolute path of the file the symbol was declared in.
+ * @property {number} [endLine] For a block directive (`@loop`, `:if`), the
+ *   1-based line its closer sits on, so a tool can address the whole block.
+ * @property {number | null} line 1-based line in that file, or null for a read
+ *   recorded by {@link recordRead} (see there for why prose reads carry no line).
  */
 
 /**
@@ -137,6 +164,8 @@
  *   `@loop` recorded, or null. The builder reads it to multiply routes.
  * @property {Set<string>} deps Absolute source-file dependencies of this compile.
  * @property {Set<string>} collectionsUsed Collection names this compile looped.
+ * @property {Symbol[]} symbols Every declared thing the compile saw, in
+ *   source order. See {@link recordSymbol}.
  */
 
 /**
@@ -150,6 +179,8 @@
  *   `@loop` recorded, or null. The builder reads it to multiply routes.
  * @property {Set<string>} deps Absolute source-file dependencies of this compile.
  * @property {Set<string>} collectionsUsed Collection names this compile looped.
+ * @property {Symbol[]} symbols Every declared thing the compile saw, in
+ *   source order. See {@link recordSymbol}.
  */
 
 /**
@@ -270,8 +301,83 @@ export function createCompilation(reader) {
     collections: new Map(),
     pagination: null,
     deps: new Set(),
-    collectionsUsed: new Set()
+    collectionsUsed: new Set(),
+    symbols: []
   };
+}
+
+/**
+ * Record one declared thing as the handler that owns it parses it.
+ *
+ * This is the compiler telling a tool layer what is in a page, rather than a
+ * tool layer parsing `.wd` a second time. A shadow parser drifts, and the day it
+ * disagrees with `compilePage` it tells a model something true about a file that
+ * will not compile.
+ *
+ * Called from the `handle*` functions, where the 0-based `index` is live, so
+ * every symbol carries a real `file:line`. Include bodies share the parent's
+ * `Compilation` but compile under their own `ctx.file`, so attribution stays
+ * correct with no extra plumbing.
+ *
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index into the current body slice.
+ * @param {Omit<Symbol, "file" | "line">} sym
+ * @returns {Symbol} The pushed record, so a caller whose reactive/static decision
+ *   happens in a later branch can stamp it rather than duplicate that logic.
+ */
+export function recordSymbol(ctx, index, sym) {
+  const record = { ...sym, file: ctx.file, line: lineOf(ctx, index) };
+  ctx.comp.symbols.push(record);
+  return record;
+}
+
+/**
+ * Record where a block directive CLOSES, so a tool layer can address the whole
+ * construct rather than only its opening line.
+ *
+ * Measured need, not speculation: with only the opener line recorded, the 1.5B
+ * targeted a `@loop` for replacement and swapped out its header, leaving the
+ * `@endloop` behind. That produced `[WD010] Stray "@endloop"` as the single
+ * most common compile failure of the round-4 tool run. A `@loop` is three or
+ * more lines and a tool has to be able to say so.
+ *
+ * The dispatcher owns this because only it has the block's extent, from
+ * `scanBlock`/`scanConditional`. `at` is the index the block handler's own
+ * symbol was pushed to; nested symbols recorded while compiling the body land
+ * after it and are left alone.
+ *
+ * @param {Ctx} ctx
+ * @param {number} at Index into `ctx.comp.symbols` the block handler wrote to.
+ * @param {number} endIndex 0-based body index of the closing line.
+ * @returns {void}
+ */
+export function stampBlockEnd(ctx, at, endIndex) {
+  const sym = ctx.comp.symbols[at];
+  if (sym) sym.endLine = lineOf(ctx, endIndex);
+}
+
+/**
+ * Record that a page READS a state key through an interpolation.
+ *
+ * Deliberately line-less. Prose is rendered a chunk at a time by markdown-it, so
+ * no 0-based body `index` is in scope at the point a `{ name }` binding resolves,
+ * and threading one through the markdown layer would mean tracking source
+ * positions inside a renderer that does not care about them.
+ *
+ * Instead the compiler records the two things only it can know: that the
+ * expression resolved to this state key, and the exact expression text. The tool
+ * layer locates the line by searching the file for that compiler-supplied
+ * string, which is a substring search for a known needle rather than a second
+ * parser. Duplicates (a static loop re-renders its body once per row) are the
+ * caller's to fold.
+ *
+ * @param {Ctx} ctx
+ * @param {string} key Resolved state key.
+ * @param {string} expr The binding expression as authored, e.g. `cart | count`.
+ * @returns {void}
+ */
+export function recordRead(ctx, key, expr) {
+  ctx.comp.symbols.push({ kind: "read", name: key, detail: expr, file: ctx.file, line: null });
 }
 
 /**

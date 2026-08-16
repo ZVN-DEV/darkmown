@@ -6,7 +6,7 @@
 // string fill used for the initial paint (text binds, per-row `:if`, meta).
 // ---------------------------------------------------------------------------
 
-import { at, createScope, lineOf, nestedCtx, wdError } from "./context.js";
+import { at, createScope, lineOf, nestedCtx, recordSymbol, wdError } from "./context.js";
 import { serializeExpr } from "./expr-ast.js";
 import { applyPipeline, stagesFromAttr } from "./format.js";
 import { resolveInclude } from "./includes.js";
@@ -296,6 +296,15 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
     sortable: clauses.sortable,
     paginate: clauses.paginate
   };
+  // Stamped by whichever branch below resolves the source. `reactive` is the one
+  // fact a tool layer cannot recover from the source text alone, and it is the
+  // fact that decides whether the page ships the runtime.
+  const loopSymbol = recordSymbol(ctx, index, {
+    kind: "loop",
+    name: itemName,
+    detail: line.replace(/^@loop\s+/, "@loop "),
+    reactive: Boolean((where && where.refsState) || clauses.refsState)
+  });
   // The loop body starts on the line after the opener; nested errors in it (and
   // in the empty branch, via `opts.emptyStart`) report the true file line. The
   // opener's location rides on the body ctx so a reactive loop nested inside this
@@ -362,6 +371,9 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
     if (key) {
       if (opts.paginate) throw paginateOnlyCollections(ctx);
       const fullKey = segs.length > 1 ? `${key}.${segs.slice(1).join(".")}` : key;
+      loopSymbol.reactive = true;
+      loopSymbol.name = itemName;
+      loopSymbol.target = fullKey;
       return reactiveLoop(fullKey, itemName, bodyLines, bodyCtx, opts);
     }
     // A bare name matching a collection (any `site/pages/<name>/` subdir) resolves
@@ -382,6 +394,7 @@ export function handleLoop(line, bodyLines, emptyLines, ctx, index, emptyStart =
         );
       }
       if (opts.paginate) throw paginateOnlyCollections(ctx);
+      loopSymbol.reactive = true;
       return itemRelativeLoop(segs.slice(1).join("."), itemName, bodyLines, bodyCtx, opts);
     }
   }

@@ -206,6 +206,7 @@ export function compilePage(file, context, options = {}) {
     meta: compiled.meta,
     deps: compiled.deps,
     collectionsUsed: compiled.collectionsUsed,
+    symbols: compiled.symbols,
     html: `<!doctype html>
 <html lang="${escapeHtml(lang)}">
 <head>
@@ -391,7 +392,8 @@ export function compileDocument(
     warnings: comp.warnings,
     pagination: comp.pagination,
     deps: comp.deps,
-    collectionsUsed: comp.collectionsUsed
+    collectionsUsed: comp.collectionsUsed,
+    symbols: comp.symbols
   };
 }
 

@@ -11,7 +11,7 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, createScope, LOOP_META, lineOf, nestedCtx, wdError } from "./context.js";
+import { at, createScope, LOOP_META, lineOf, nestedCtx, recordSymbol, wdError } from "./context.js";
 import { astOf, serializeExpr } from "./expr-ast.js";
 import { resolveInclude, scopedSkinFor, stampScope } from "./includes.js";
 import {
@@ -68,6 +68,7 @@ export function handleInclude(line, ctx, index) {
     ctx.comp.reader
   );
   const args = parseIncludeArgs(match[2] || "", ctx);
+  recordSymbol(ctx, index, { kind: "include", name: match[1], detail: `@include ${match[1]}` });
   const childScope = createScope(ctx.scope, args);
   // Thread the reactive-nesting depth (and the enclosing loop opener, so a depth
   // error names the right opener) into the include, exactly as `loopItem` is —
@@ -288,6 +289,7 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
   const truthyCtx = nestedCtx(ctx, index + 1);
   const falsyCtx = nestedCtx(ctx, falsyStart);
   const condition = line.replace(/^:if\s+/, "").trim();
+  recordSymbol(ctx, index, { kind: "if", name: condition, detail: `:if ${condition}` });
   // Fast path: a bare truthy dotted path (`:if open`, `:if item.done`). Keeps the
   // existing markup/behavior identical. Anything with operators (`>`, `==`, `and`,
   // `not`, …) falls through to the predicate path below.
