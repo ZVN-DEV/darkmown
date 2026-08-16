@@ -5,6 +5,9 @@
 export { buildSite } from "./builder.js";
 export type { RouteManifestEntry, Paths, Assets } from "./builder.js";
 
+export { directiveCatalog, llmsText } from "./catalog.js";
+export type { DirectiveCatalog, DirectiveEntry, CatalogEntry, Reactivity } from "./catalog.js";
+
 export {
   compilePage,
   compileDocument,

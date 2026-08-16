@@ -506,8 +506,16 @@ test("dev server returns a 500 with the stack when serving throws", async () => 
   }
 });
 
+// Every deadline below is generous on purpose. A dev rebuild spawns a child
+// `node cli.js build`, and `npm test` runs ~45 test files concurrently, several
+// of which are also spawning processes — so the wait here is bounded by machine
+// load, not by anything the dev server decides. A tight deadline does not make
+// a real hang fail faster in any way that matters; it just makes a loaded
+// laptop report a bug that is not there.
+const DEV_WAIT_MS = 30_000;
+
 // Wait for the next SSE event of a given type to arrive on an open connection.
-function waitForSseEvent(origin, urlPath, eventName, { timeout = 8000 } = {}) {
+function waitForSseEvent(origin, urlPath, eventName, { timeout = DEV_WAIT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.get(`${origin}${urlPath}`, (res) => {
       let data = "";
@@ -530,6 +538,37 @@ function waitForSseEvent(origin, urlPath, eventName, { timeout = 8000 } = {}) {
   });
 }
 
+/**
+ * Wait until the dev server has stopped logging for `quiet` ms.
+ *
+ * `fs.watch` on macOS is backed by FSEvents, which delivers a short history of
+ * events that happened just BEFORE the watcher was created — so the files
+ * `init` scaffolded land in the dev server's first debounce window. That first
+ * rebuild is a correct FULL rebuild (one of the replayed paths is the watched
+ * directory itself, which is the "no attributable file" signal), and a test
+ * that writes a file immediately measures that rebuild instead of its own.
+ */
+async function settled(capturedIo, { quiet = 250, timeout = DEV_WAIT_MS } = {}) {
+  const deadline = Date.now() + timeout;
+  let seen = -1;
+  while (Date.now() < deadline) {
+    const now = capturedIo.out.log.length + capturedIo.out.warn.length;
+    if (now === seen) return;
+    seen = now;
+    await new Promise((r) => setTimeout(r, quiet));
+  }
+}
+
+/** Poll until `predicate` holds, so a late log line is waited for, not raced. */
+async function waitUntil(predicate, describe, { timeout = DEV_WAIT_MS } = {}) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  assert.fail(describe());
+}
+
 test("dev server rebuilds on a file change and broadcasts a reload to SSE clients", async () => {
   const root = freshDir("dev-rebuild");
   await run(["init", "."], capture(root).env);
@@ -541,6 +580,11 @@ test("dev server rebuilds on a file change and broadcasts a reload to SSE client
   try {
     handle = await run(["dev"], c.env);
     const origin = originOf(handle.server);
+
+    // Let the scaffold's replayed watch events drain first (see `settled`), so
+    // what follows measures this test's own edit.
+    await settled(c);
+    c.out.log.length = 0;
 
     // Open an SSE client first so the rebuild broadcast (cli.js broadcast +
     // reload path) has a recipient.
@@ -555,10 +599,12 @@ test("dev server rebuilds on a file change and broadcasts a reload to SSE client
 
     const data = await reloadPromise;
     assert.match(data, /event: reload/, "a successful rebuild broadcasts reload");
-    assert.match(
-      c.stdout(),
-      /Rebuilt 1 of \d+ routes \(\/\) into dist/,
-      "a site content change rebuilds only the affected route"
+    // The broadcast goes out one statement before the log line, so poll rather
+    // than assume the line has landed.
+    await waitUntil(
+      () => /Rebuilt 1 of \d+ routes \(\/\) into dist/.test(c.stdout()),
+      () =>
+        `a site content change rebuilds only the affected route. log=${JSON.stringify(c.out.log)} warn=${JSON.stringify(c.out.warn)}`
     );
   } finally {
     if (prevPort === undefined) delete process.env.PORT;
@@ -583,6 +629,12 @@ test("dev server runs a FULL child rebuild for a src/ change (never incremental)
     handle = await run(["dev"], c.env);
     const origin = originOf(handle.server);
 
+    // Drain the scaffold's replayed watch events, which themselves take the
+    // full-rebuild path — without this the assertions below would pass whether
+    // or not the src/ watcher did anything.
+    await settled(c);
+    c.out.log.length = 0;
+
     const reloadPromise = waitForSseEvent(origin, "/__wd/dev-events", "reload");
     await new Promise((r) => setTimeout(r, 50));
 
@@ -590,7 +642,10 @@ test("dev server runs a FULL child rebuild for a src/ change (never incremental)
 
     const data = await reloadPromise;
     assert.match(data, /event: reload/);
-    assert.match(c.stdout(), /Built \d+ routes/, "a src/ change runs the full rebuild");
+    await waitUntil(
+      () => /Built \d+ routes/.test(c.stdout()),
+      () => `a src/ change runs the full rebuild. log=${JSON.stringify(c.out.log)}`
+    );
     assert.doesNotMatch(c.stdout(), /Rebuilt \d+ of/, "the incremental path is never taken");
   } finally {
     if (prevPort === undefined) delete process.env.PORT;
@@ -610,6 +665,12 @@ test("dev server rebuild on a broken change broadcasts builderror to SSE clients
   try {
     handle = await run(["dev"], c.env);
     const origin = originOf(handle.server);
+
+    // Drain the scaffold's replayed watch events; they rebuild successfully, so
+    // without this the broken write can be coalesced into a window that already
+    // started and the failure under test is never the one observed.
+    await settled(c);
+    c.out.log.length = 0;
 
     const errPromise = waitForSseEvent(origin, "/__wd/dev-events", "builderror");
     await new Promise((r) => setTimeout(r, 50));

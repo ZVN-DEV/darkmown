@@ -677,6 +677,28 @@ darkmown catalog --llms-full            # the complete reference + every error c
 
 Compile errors help here too: every corrective `Use:` hint ends with a concrete `— e.g. <valid line>`, and each thrown error carries a structured `err.wd = { file, line, hint, example }` mirror alongside its message — so an edit-and-retry loop gets the fix without parsing prose.
 
+### Agent tools
+
+`@zvndev/darkmown/tools` turns that same description into six functions a model calls instead of rewriting a whole file. Everything runs in memory over a plain `{ path: contents }` object, so a full compile is milliseconds:
+
+- **`outline(files, entry)`** lists what the page declares, with line numbers and block spans.
+- **`refs(files, entry, name)`** finds every declare, write, and read of one symbol.
+- **`deps(files, entry)`** reports what the page pulls in, and what pulls it in.
+- **`grammar(categories)`** returns only the cheatsheet rows this edit needs.
+- **`apply(files, entry, edits)`** makes a targeted edit, addressed by `line`, `symbol`, or `anchor`.
+- **`validate(files, entry)`** compiles it for real, or says exactly what broke.
+
+Every tool answers `{ ok, text, data }`, and a refusal carries a sentence the model can act on rather than throwing. `Session` holds the files so `apply` and `outline` always see one snapshot:
+
+```js
+import { Session } from "@zvndev/darkmown/tools";
+
+const session = new Session({ "site/pages/index.wd": source }, "site/pages/index.wd");
+session.call("outline", {});
+session.call("apply", { edits: [{ op: "replace", symbol: "state:count", text: ":state count = 5" }] });
+session.call("validate", {});
+```
+
 ## Compile error codes
 
 Every author-facing compile error opens with a stable `WDxxx` code, so it is searchable and matchable by tooling without parsing prose:

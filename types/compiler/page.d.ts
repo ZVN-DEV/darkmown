@@ -2,13 +2,15 @@
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader }} [options]
+ * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader }} [options]
  *   When a site-wide RSS feed is emitted (the home page set `site_url` and the
  *   site has dated posts), `feed` carries its absolute href + title so every page
- *   links it. `collections` is the build-time collection index a bare-name
- *   `@loop` resolves against; `vars` seeds the document scope (the pager `page`
- *   object on a paginated route). `reader` is the source reader (fs-backed by
- *   default via `src/compiler.js`; in-memory for `compileFromMemory`).
+ *   links it. `site` carries the origin + this page's own route (and its resolved
+ *   breadcrumb trail) so the shell can state a canonical URL. `collections` is the
+ *   build-time collection index a bare-name `@loop` resolves against; `vars` seeds
+ *   the document scope (the pager `page` object on a paginated route). `reader` is
+ *   the source reader (fs-backed by default via `src/compiler.js`; in-memory for
+ *   `compileFromMemory`).
  * @returns {CompiledPage}
  */
 export function compilePage(file: string, context: Paths, options?: {
@@ -16,6 +18,7 @@ export function compilePage(file: string, context: Paths, options?: {
         href: string;
         title: string;
     };
+    site?: SiteContext;
     collections?: Map<string, import("./collections.js").CollectionRow[]>;
     vars?: Record<string, unknown>;
     reader?: import("./reader.js").Reader;
@@ -86,7 +89,7 @@ export function compileFile(file: string, context: Paths, stack: string[], scope
  * @param {Record<string, string> | Map<string, string>} files Project-relative
  *   path → source content.
  * @param {string} entryPath Project-relative path of the page to compile.
- * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
+ * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
  *   Same shell options as {@link compilePage}; `cwd` overrides the virtual
  *   project root the relative keys resolve against (defaults to `/`).
  * @returns {CompiledPage}
@@ -96,10 +99,34 @@ export function compileFromMemory(files: Record<string, string> | Map<string, st
         href: string;
         title: string;
     };
+    site?: SiteContext;
     collections?: Map<string, import("./collections.js").CollectionRow[]>;
     vars?: Record<string, unknown>;
     cwd?: string;
 }): CompiledPage;
+/**
+ * Where this page sits on a real, deployed site: the origin the home page
+ * declared with `site_url`, the concrete route this page is written to, and the
+ * breadcrumb trail the builder resolved from the routes that actually exist.
+ * Supplied by `src/builder.js`, the only layer that knows all three.
+ */
+export type SiteContext = {
+    /**
+     * Absolute site origin, e.g. `https://example.com`.
+     */
+    url: string;
+    /**
+     * Public route path for THIS page (trailing-slashed).
+     */
+    route: string;
+    /**
+     * Resolved crumb trail.
+     */
+    breadcrumbs?: {
+        name: string;
+        url: string;
+    }[] | undefined;
+};
 export type Paths = import("./context.js").Paths;
 export type Meta = import("./context.js").Meta;
 export type Scope = import("./context.js").Scope;

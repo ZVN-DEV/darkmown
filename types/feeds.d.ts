@@ -109,13 +109,56 @@ export function buildRss(channel: {
     feedUrl: string;
 }, items: RssItem[]): string;
 /**
- * Build `robots.txt`. Always allows everything (hidden/draft routes are never
- * built, so there's nothing to `Disallow`). The `Sitemap:` line is included
- * ONLY when `siteUrl` is set — a sitemap URL is only meaningful with an origin.
+ * Build `robots.txt`. The wildcard group always allows everything (hidden/draft
+ * routes are never built, so there's nothing to `Disallow`), then every
+ * {@link AI_CRAWLERS} token is named explicitly with the site's declared policy.
+ * The `Sitemap:` line is included ONLY when `siteUrl` is set: a sitemap URL is
+ * only meaningful with an origin.
  * @param {string} [siteUrl] Absolute origin, or "" / undefined to omit the line.
+ * @param {string} [policy] `"allow"` (default) or `"deny"`, from the home page's
+ *   `ai_crawlers:` frontmatter. Validated by the caller ({@link aiCrawlerPolicy}).
  * @returns {string} The robots.txt body (trailing newline).
  */
-export function buildRobots(siteUrl?: string): string;
+export function buildRobots(siteUrl?: string, policy?: string): string;
+/**
+ * Validate the home page's `ai_crawlers:` frontmatter into a policy string.
+ * Absent means `allow` (the status quo the wildcard group already grants). A
+ * value that is neither `allow` nor `deny` throws rather than defaulting: the
+ * likely intent behind a typo like `ai_crawlers: block` is to opt OUT, and
+ * silently allowing instead would be exactly the wrong failure direction.
+ * @param {import("./compiler.js").Meta} meta Home page frontmatter.
+ * @param {string} [file] Home page source path, for the error message.
+ * @returns {string} One of {@link AI_CRAWLER_POLICIES}.
+ */
+export function aiCrawlerPolicy(meta: import("./compiler.js").Meta, file?: string): string;
+/**
+ * The AI crawler and answer-engine robots.txt tokens Darkmown names explicitly.
+ *
+ * EVERY token here is copied from its own operator's published documentation
+ * (checked 2026-08-09): none are guessed, inferred from a log, or carried over
+ * from a third-party list. A wrong token is worse than a missing one: it looks
+ * like a policy the site is stating and is silently ignored by everybody.
+ *
+ * `Allow: /` for these is not a permission change (the `User-agent: *` group
+ * already allows them); it is an explicit, machine-readable statement of intent,
+ * which is what a publisher wants when the goal is to BE cited by answer engines.
+ * The same list is what `ai_crawlers: deny` turns into `Disallow: /`, which is
+ * the only form that actually changes anything.
+ *
+ * The `note` is written into the generated file next to the group. Search
+ * crawling, model training, and live user-triggered fetches are DIFFERENT
+ * permissions from the same operator, and a future reader editing robots.txt by
+ * hand needs to see that before collapsing a group.
+ * @type {{ operator: string, docs: string, note: string, agents: string[] }[]}
+ */
+export const AI_CRAWLERS: {
+    operator: string;
+    docs: string;
+    note: string;
+    agents: string[];
+}[];
+/** The accepted `ai_crawlers:` frontmatter values. */
+export const AI_CRAWLER_POLICIES: string[];
 /** Most-recent-first RSS post cap — a feed is a recent window, not an archive. */
 export const RSS_ITEM_LIMIT: 20;
 export type Route = import("./router.js").Route;

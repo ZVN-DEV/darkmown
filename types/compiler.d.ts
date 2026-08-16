@@ -4,7 +4,7 @@
  * a different source (see `compileFromMemory`).
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {import("./config.js").Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, collections?: Map<string, import("./compiler/collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./compiler/reader.js").Reader }} [options]
+ * @param {{ feed?: { href: string, title: string }, site?: import("./compiler/page.js").SiteContext, collections?: Map<string, import("./compiler/collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./compiler/reader.js").Reader }} [options]
  * @returns {CompiledPage}
  */
 export function compilePage(file: string, context: import("./config.js").Paths, options?: {
@@ -12,6 +12,7 @@ export function compilePage(file: string, context: import("./config.js").Paths, 
         href: string;
         title: string;
     };
+    site?: import("./compiler/page.js").SiteContext;
     collections?: Map<string, import("./compiler/collections.js").CollectionRow[]>;
     vars?: Record<string, unknown>;
     reader?: import("./compiler/reader.js").Reader;

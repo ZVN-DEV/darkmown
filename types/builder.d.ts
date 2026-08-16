@@ -118,6 +118,27 @@ export type EmittedPage = {
     assets: import("./compiler.js").Assets;
     warnings: string[];
 };
+/**
+ * Site-wide metadata resolved from the home page's frontmatter.
+ */
+export type SiteIdentity = {
+    /**
+     * Absolute origin without a trailing slash, or "".
+     */
+    siteUrl: string;
+    /**
+     * Site title (also the RSS channel title).
+     */
+    title: string;
+    /**
+     * Site description (also the RSS channel description).
+     */
+    description: string;
+    /**
+     * `"allow"` or `"deny"`, from `ai_crawlers:`.
+     */
+    aiCrawlers: string;
+};
 export type Paths = import("./config.js").Paths;
 export type Assets = import("./compiler.js").Assets;
 export type Meta = import("./compiler.js").Meta;

@@ -1118,6 +1118,39 @@ darkmown build                               # also emits dist/llms.txt + dist/l
 
 Because the catalog, cheatsheet, grammar, and error `example`s are all generated from the compiler's own tables, they cannot drift from what actually compiles (enforced by tests).
 
+### Agent tools
+
+`@zvndev/darkmown/tools` is the same language description turned into a **tool surface**: six functions a model calls instead of rewriting a whole file. Everything runs in memory against a plain `{ path: contents }` object, so a full compile is milliseconds and "check after every edit" is affordable rather than aspirational.
+
+| Tool | Answers |
+| --- | --- |
+| `outline(files, entry)` | What is declared in this page, with line numbers and block spans. |
+| `refs(files, entry, name)` | Every place a symbol is declared, written, or read. |
+| `deps(files, entry)` | What this page pulls in, and which pages pull it in. |
+| `grammar(categories)` | Only the cheatsheet rows this edit needs. |
+| `apply(files, entry, edits)` | A targeted edit, addressed by `line`, `symbol`, or `anchor`. |
+| `validate(files, entry)` | Compiles it for real, or says exactly what broke. |
+
+Every tool answers the same shape, `{ ok, text, data }`, and a refusal always carries a sentence the model can act on rather than throwing. `Session` holds the files so `apply` and `outline` are guaranteed to be looking at one snapshot, and records a `history` of calls:
+
+```js
+import { Session, parseToolCall } from "@zvndev/darkmown/tools";
+
+const session = new Session({ "site/pages/index.wd": source }, "site/pages/index.wd");
+
+session.call("outline", {});
+//   :7       state     count = 0
+//   :12-14   loop      @loop /products.json into p
+
+session.call("apply", {
+  edits: [{ op: "replace", symbol: "state:count", text: ":state count = 5" }]
+});
+session.call("validate", {});
+//   compiles. reactive (ships the runtime), 0 skins.
+```
+
+`toolPrompt()` renders the tool list for a system prompt, and `parseToolCall(reply)` reads a call back out of a model's answer (brace-counting and string-aware, because the one thing a Darkmown edit reliably contains is `{ count }`).
+
 ## Editor support
 
 A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown.

@@ -20,6 +20,10 @@
       "types": "./types/catalog.d.ts",
       "default": "./src/catalog.js"
     },
+    "./tools": {
+      "types": "./types/tools/index.d.ts",
+      "default": "./src/tools/index.js"
+    },
     "./package.json": "./package.json"
   },
   "types": "./types/index.d.ts",
