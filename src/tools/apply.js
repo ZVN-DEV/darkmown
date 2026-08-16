@@ -130,14 +130,15 @@ export function resolveTarget(source, edit, symbols) {
     }
     // A block directive spans its whole construct. Replacing a `@loop` means
     // replacing the loop, not decapitating it and stranding the `@endloop`,
-    // which was the most common compile failure of the round-4 tool run.
-    // `line` is nullable on a Symbol (a prose read the compiler could not
-    // locate), but a definition hit always has one, and an unlocatable symbol
-    // is not addressable anyway.
-    const at = hits[0].line;
-    if (at == null) {
-      return { ok: false, error: `"${edit.symbol}" has no line to address; use an anchor.` };
-    }
+    // which is the most common way a symbol-targeted edit breaks a file.
+    //
+    // `line` is nullable on a Symbol — a prose read the compiler could not
+    // locate carries none — but `candidates` above already excluded every one
+    // of those, so a hit always has a line. The cast records that guarantee
+    // instead of re-checking it: the check that used to sit here could not be
+    // reached, and unreachable error paths are worse than none, because they
+    // read as handled cases and are never exercised.
+    const at = /** @type {number} */ (hits[0].line);
     return { ok: true, from: at, to: hits[0].endLine ?? at };
   }
 

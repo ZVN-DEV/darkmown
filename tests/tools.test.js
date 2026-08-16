@@ -15,6 +15,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { grammarCost } from "../src/tools/grammar.js";
 import {
   apply,
   deps,
@@ -367,4 +368,205 @@ test("an unknown category is refused with the list of real ones", () => {
   const r = grammar(["nonsense"]);
   assert.equal(r.ok, false);
   for (const c of grammar().data.categories) assert.match(r.text, new RegExp(c));
+});
+
+// ---------------------------------------------------------------------------
+// The rest of the refusal surface.
+//
+// Every case below is a sentence a model reads and has to recover from in one
+// turn, which is the only reason these paths exist. A refusal that does not say
+// what would have worked costs the same tokens as a crash.
+// ---------------------------------------------------------------------------
+
+test("apply refuses a line past the end, and says how to append", () => {
+  const r = apply(files(), ENTRY, [{ op: "replace", line: 9999, text: "x" }]);
+  assert.equal(r.ok, false);
+  assert.match(r.text, /outside the file/);
+  // The recovery is spelled as a call it can copy, not described.
+  assert.match(r.text, /"op": "insert_after"/);
+});
+
+test("apply refuses an unknown symbol by listing the real ones", () => {
+  const r = apply(files(), ENTRY, [{ op: "replace", symbol: "state:nope", text: "x" }]);
+  assert.equal(r.ok, false);
+  assert.match(r.text, /state:count/);
+  assert.match(r.text, /store:cart/);
+});
+
+test("apply refuses an ambiguous symbol and says how to qualify it", () => {
+  // `items` is both a declared store and a loop variable, so a bare name has
+  // two homes. Guessing one silently edits the wrong construct.
+  const page = [
+    "# Two",
+    "",
+    ":store items = []",
+    "",
+    "@loop /products.json into items",
+    "- { items.name }",
+    "@endloop"
+  ].join("\n");
+  const r = apply({ [ENTRY]: page, "site/_/products.json": "[]" }, ENTRY, [
+    { op: "replace", symbol: "items", text: ":store items = [1]" }
+  ]);
+  assert.equal(r.ok, false);
+  assert.match(r.text, /ambiguous/);
+  assert.match(r.text, /kind:name/);
+});
+
+test("apply refuses an anchor that appears more than once", () => {
+  const page = "# Hi\n\nSame line\n\nSame line\n";
+  const r = apply({ [ENTRY]: page }, ENTRY, [{ op: "replace", anchor: "Same line", text: "x" }]);
+  assert.equal(r.ok, false);
+  assert.match(r.text, /appears 2 times/);
+  assert.match(r.text, /3, 5/); // the lines, so it can pick one
+});
+
+test("apply refuses an edit that says nothing about where it goes", () => {
+  const r = apply(files(), ENTRY, [{ op: "replace", text: "x" }]);
+  assert.equal(r.ok, false);
+  for (const form of [/"line": 7/, /"symbol"/, /"anchor"/]) assert.match(r.text, form);
+});
+
+test("apply refuses a write with no text", () => {
+  const r = apply(files(), ENTRY, [{ op: "replace", line: 7 }]);
+  assert.equal(r.ok, false);
+  assert.match(r.text, /needs "text"/);
+});
+
+test("apply refuses a symbol target when the file does not compile", () => {
+  // Symbols come from a compile, so on a broken file there are none to resolve
+  // against. Saying "no such symbol" would send the model looking for a typo
+  // that is not there; the real fix is the compile error.
+  const r = apply({ [ENTRY]: BROKEN }, ENTRY, [
+    { op: "replace", symbol: "state:count", text: "x" }
+  ]);
+  assert.equal(r.ok, false);
+  assert.match(r.text, /does not compile/);
+  assert.match(r.text, /target a line/);
+});
+
+test("apply does insert_after, insert_before and delete", () => {
+  const after = apply(files(), ENTRY, [{ op: "insert_after", line: 7, text: ":state seen = 0" }]);
+  assert.equal(after.ok, true);
+  assert.match(after.data.files[ENTRY].split("\n")[7], /:state seen = 0/);
+
+  const before = apply(files(), ENTRY, [{ op: "insert_before", line: 7, text: ":state seen = 0" }]);
+  assert.equal(before.ok, true);
+  assert.match(before.data.files[ENTRY].split("\n")[6], /:state seen = 0/);
+
+  const gone = apply(files(), ENTRY, [{ op: "delete", line: 7 }]);
+  assert.equal(gone.ok, true);
+  assert.doesNotMatch(gone.data.files[ENTRY], /:state count/);
+});
+
+test("apply targets a whole block, not just its opening line", () => {
+  // Replacing a `@loop` by name has to take the `@endloop` with it, or the
+  // edit strands a closer and the next compile fails on the model's behalf.
+  const r = apply(files(), ENTRY, [{ op: "replace", symbol: "loop:p", text: "No products yet." }]);
+  assert.equal(r.ok, true);
+  assert.doesNotMatch(r.data.files[ENTRY], /@endloop/);
+  assert.match(r.data.files[ENTRY], /No products yet\./);
+});
+
+test("outline reports a compile failure rather than an empty page", () => {
+  const r = outline({ [ENTRY]: BROKEN }, ENTRY);
+  assert.equal(r.ok, false);
+  assert.match(r.text, /@loop/);
+});
+
+test("outline says so when a page declares nothing", () => {
+  const r = outline({ "site/pages/about.wd": "# About\n\nJust prose.\n" }, "site/pages/about.wd");
+  assert.equal(r.ok, true);
+  assert.match(r.text, /no directives/);
+});
+
+test("deps names a page it could not read, instead of dropping it", () => {
+  // A project where one page is broken still has a real answer for the others.
+  // Silently skipping it would report "included by nothing" as though it were
+  // established, when it is actually unknown.
+  const r = deps({ ...files(), "site/pages/broken.wd": BROKEN }, ENTRY);
+  assert.equal(r.ok, true);
+  assert.match(r.text, /does not compile/);
+  assert.deepEqual(r.data.broken, ["site/pages/broken.wd"]);
+});
+
+test("deps finds the pages that include this one", () => {
+  const partial = "site/_/nav.wd";
+  const project = {
+    [partial]: "- [Home](/)\n",
+    "site/pages/index.wd": `# Home\n\n@include /nav.wd\n`,
+    "site/pages/about.wd": `# About\n\n@include /nav.wd\n`
+  };
+  const r = deps(project, partial);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.usedBy.length, 2);
+  assert.match(r.text, /included by/);
+});
+
+test("parseToolCall is not fooled by braces or quotes inside a string", () => {
+  // An escaped quote must not close the string, or the brace counter resumes
+  // inside it and cuts the object short.
+  const r = parseToolCall('{"tool":"apply","args":{"text":"say \\"} { \\" out loud"}}');
+  assert.equal(r.ok, true);
+  assert.equal(r.call.args.text, 'say "} { " out loud');
+});
+
+test("parseToolCall refuses an object that is never closed", () => {
+  const r = parseToolCall('{"tool": "outline", "args": {');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /never closed/);
+});
+
+test("validate refuses a call with no files at all", () => {
+  const r = validate(null, ENTRY);
+  assert.equal(r.ok, false);
+  assert.equal(r.data.code, "TOOL_ARGS");
+});
+
+test("grammarCost measures what asking for one category saves", () => {
+  // The tool exists to spend fewer tokens on syntax the edit does not touch,
+  // so the saving is measured rather than asserted.
+  const cost = grammarCost(["state"]);
+  assert.ok(cost.sliceChars > 0);
+  assert.ok(cost.fullChars > cost.sliceChars);
+  assert.equal(cost.saved, cost.fullChars - cost.sliceChars);
+  assert.ok(cost.savedPct > 0 && cost.savedPct < 100);
+});
+
+test("apply edits by anchor, spanning every line the anchor covers", () => {
+  const r = apply(files(), ENTRY, [
+    { op: "replace", anchor: ':button "Add one" -> count++', text: ':button "Add" -> count += 2' }
+  ]);
+  assert.equal(r.ok, true);
+  assert.match(r.data.files[ENTRY], /count \+= 2/);
+  assert.doesNotMatch(r.data.files[ENTRY], /Add one/);
+
+  // A multi-line anchor replaces the whole span, not just its first line.
+  const multi = apply(files(), ENTRY, [
+    { op: "replace", anchor: ":state count = 0\n:store cart = []", text: ":state count = 7" }
+  ]);
+  assert.equal(multi.ok, true);
+  assert.doesNotMatch(multi.data.files[ENTRY], /:store cart/);
+});
+
+test("outline covers every file in the project, entry first", () => {
+  // Two includes, so the listing has to order files that are neither the entry
+  // nor each other's neighbour. Whatever else moves, the entry leads: it is the
+  // file being edited, and a model reads the first block.
+  const project = {
+    "site/_/nav.wd": ":state open = false\n",
+    "site/_/foot.wd": ":state year = 2026\n",
+    [ENTRY]: "# Home\n\n@include /nav.wd\n\n@include /foot.wd\n"
+  };
+  const r = outline(project, ENTRY);
+  assert.equal(r.ok, true);
+  const files_ = r.text.split("\n").filter((l) => /^\S.*\(\d+ lines\)/.test(l));
+  assert.equal(files_.length, 3);
+  assert.match(files_[0], /index\.wd/);
+  // The two includes are listed in a stable order, so a second call to outline
+  // never hands the model a different picture of the same project.
+  assert.deepEqual(
+    files_.slice(1).map((l) => l.trim().split(" ")[0]),
+    ["_/foot.wd", "_/nav.wd"]
+  );
 });
