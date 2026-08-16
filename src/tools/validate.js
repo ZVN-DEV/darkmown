@@ -19,6 +19,28 @@
 import { compileFromMemory } from "../compiler.js";
 
 /**
+ * Reduce any path the compiler hands back to the caller's own key form.
+ *
+ * The caller addresses files with POSIX keys (`site/pages/index.wd`), but
+ * `compileFromMemory` resolves them against its virtual root with
+ * `path.resolve`, which is PLATFORM-NATIVE: on Windows the same file comes back
+ * as `C:\site\pages\index.wd`. Comparing that to the caller's keys matches
+ * nothing, so every symbol gets filed under a path that is not in the project
+ * and every symbol-targeted edit fails. The virtual root is not a real
+ * filesystem and its separator is an accident of the host, so normalising here
+ * is the fix rather than a workaround.
+ *
+ * @param {string} p
+ * @returns {string}
+ */
+export function posixKey(p) {
+  return String(p ?? "")
+    .replace(/\\/g, "/")
+    .replace(/^[A-Za-z]:/, "")
+    .replace(/^\/+/, "");
+}
+
+/**
  * Shorten a virtual absolute path to what the author would call the file.
  * The model never saw `/site/pages/`, so echoing it back is noise it may copy.
  * @param {string} p
@@ -26,11 +48,13 @@ import { compileFromMemory } from "../compiler.js";
  */
 export function shortPath(p) {
   if (!p) return "";
-  return String(p)
-    .replace(/^\/?site\/pages\//, "")
-    .replace(/^\/?site\/_\//, "_/")
-    .replace(/^\//, "");
+  return posixKey(p)
+    .replace(/^site\/pages\//, "")
+    .replace(/^site\/_\//, "_/");
 }
+
+/** A virtual project path as it appears mid-sentence, either separator. */
+const EMBEDDED_PATH = /(?:[A-Za-z]:)?[\\/]?site[\\/](?:pages|_)[\\/][^\s,)]*/g;
 
 /**
  * The same shortening applied to paths EMBEDDED in a sentence.
@@ -41,13 +65,19 @@ export function shortPath(p) {
  * /site/pages/index.wd:3"). A model that is shown the virtual root will use it,
  * and the path it then writes resolves to nothing.
  *
+ * Whole tokens are matched and rewritten rather than separators being replaced
+ * globally, so a Windows path is normalised without touching anything else in
+ * the sentence.
+ *
  * @param {string} s
  * @returns {string}
  */
 function shortenPaths(s) {
-  return String(s ?? "")
-    .replace(/\/?site\/pages\//g, "")
-    .replace(/\/?site\/_\//g, "_/");
+  return String(s ?? "").replace(EMBEDDED_PATH, (match) => {
+    // A trailing `:3` line marker is part of the location, not the path.
+    const [, file, line] = /^(.*?)(:\d+)?$/.exec(match) ?? [];
+    return `${shortPath(file ?? match)}${line ?? ""}`;
+  });
 }
 
 /**

@@ -28,6 +28,7 @@ import {
   toolPrompt,
   validate
 } from "../src/tools/index.js";
+import { posixKey, shortPath } from "../src/tools/validate.js";
 
 const ENTRY = "site/pages/index.wd";
 
@@ -569,4 +570,45 @@ test("outline covers every file in the project, entry first", () => {
     files_.slice(1).map((l) => l.trim().split(" ")[0]),
     ["_/foot.wd", "_/nav.wd"]
   );
+});
+
+// ---------------------------------------------------------------------------
+// Windows.
+//
+// `compileFromMemory` resolves the caller's POSIX keys against its virtual root
+// with `path.resolve`, which is platform-native, so on Windows every path the
+// compiler hands back is `C:\site\pages\index.wd`. Comparing that to the keys
+// the caller passed matches nothing, and the whole surface fails in a way that
+// is invisible on a Mac: symbols file themselves under paths that are not in
+// the project, so every symbol-targeted edit reports "no symbol".
+//
+// These test the normalisation directly with Windows-shaped input, because the
+// bug reached CI precisely by being untestable on the machine it was written on.
+// ---------------------------------------------------------------------------
+
+test("a Windows-shaped compile path maps back to the caller's own key", () => {
+  for (const [native, expected] of [
+    ["C:\\site\\pages\\index.wd", "site/pages/index.wd"],
+    ["\\site\\pages\\docs\\index.wd", "site/pages/docs/index.wd"],
+    ["/site/pages/index.wd", "site/pages/index.wd"],
+    ["site/pages/index.wd", "site/pages/index.wd"]
+  ]) {
+    assert.equal(posixKey(native), expected, native);
+  }
+});
+
+test("shortPath reduces a Windows path to what the author calls the file", () => {
+  assert.equal(shortPath("C:\\site\\pages\\index.wd"), "index.wd");
+  assert.equal(shortPath("C:\\site\\_\\nav.wd"), "_/nav.wd");
+  assert.equal(shortPath("/site/pages/docs/index.wd"), "docs/index.wd");
+});
+
+test("a compile error names the file the same way on either platform", () => {
+  // The compiler's message embeds the path mid-sentence, and on Windows it
+  // embeds a Windows one. A model shown either form has to be able to use it.
+  const r = validate({ [ENTRY]: BROKEN }, ENTRY);
+  assert.equal(r.ok, false);
+  assert.match(r.text, /index\.wd:3/);
+  assert.doesNotMatch(r.text, /site[\\/]pages/);
+  assert.doesNotMatch(r.text, /[A-Za-z]:\\/);
 });

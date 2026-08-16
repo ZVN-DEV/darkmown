@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import { compileFromMemory } from "../compiler.js";
-import { shortPath } from "./validate.js";
+import { posixKey, shortPath } from "./validate.js";
 
 /** Longest a `detail` may be before it is elided. A multi-line JSON seed is
  *  otherwise the widest thing in the outline and tells the model nothing. */
@@ -47,8 +47,12 @@ function short(s) {
  * @returns {string}
  */
 function fileKeyOf(abs, files) {
-  const want = String(abs).replace(/^\//, "");
-  return Object.keys(files).find((k) => k.replace(/^\//, "") === want) ?? want;
+  // Both sides go through `posixKey`: the compiler's half is platform-native
+  // (a Windows host resolves the virtual root to `C:\site\pages\…`) and the
+  // caller's half is always POSIX, so comparing them raw matches on one
+  // platform and silently fails on the other.
+  const want = posixKey(abs);
+  return Object.keys(files).find((k) => posixKey(k) === want) ?? want;
 }
 
 /**
