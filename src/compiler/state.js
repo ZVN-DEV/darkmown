@@ -10,7 +10,7 @@
 
 import { at, lineOf, recordSymbol, wdError } from "./context.js";
 import { astOf, evalAst } from "./expr-ast.js";
-import { escapeHtml, parseStateValue, safeScriptJson } from "./interpolation.js";
+import { escapeHtml, parseStateValue, resolveStateKey, safeScriptJson } from "./interpolation.js";
 import { compileComputedExpr } from "./predicates.js";
 
 /**
@@ -22,7 +22,29 @@ export const STATE_EXAMPLE = ":state count = 0";
 export const STORE_EXAMPLE = ":store cart = []";
 export const COMPUTED_EXAMPLE = ":computed total = items.length * 4";
 export const THEME_EXAMPLE = ":theme";
-const STATE_USE = `Use: :state name = value [persist] — e.g. ${STATE_EXAMPLE}`;
+const STATE_USE = `Use: :state name = value [persist|ephemeral] — e.g. ${STATE_EXAMPLE}`;
+
+// ---------------------------------------------------------------------------
+// PERSISTENCE IS ONE VOCABULARY, NOT TWO.
+//
+// `persist` means "survives a reload" and `ephemeral` means "does not", on every
+// keyword that has a value. The keyword picks the DEFAULT — `:state` is
+// ephemeral, `:store` and `:theme` persist — and the token, when present, always
+// means what it says.
+//
+// It did not always. Each handler used to strip only its own token, so the other
+// one stayed glued to the value and `parseStateValue`'s bare-string fallback
+// turned it into data: `:store count = 0 persist` seeded the STRING "0 persist",
+// compiled green, and first failed later at `count++`, far from the line that
+// caused it. That is the one failure mode a compile-error repair loop cannot see,
+// which is why this is a vocabulary change and not a new error message: the
+// author wrote something unambiguous, so the compiler honours it instead of
+// asking again.
+//
+// Text that genuinely ends in one of these words still quotes to keep it, the
+// same escape hatch `:state` has always had.
+// ---------------------------------------------------------------------------
+const PERSISTENCE = String.raw`(?:\s+(persist|ephemeral))?`;
 
 /**
  * @param {string} line
@@ -31,7 +53,9 @@ const STATE_USE = `Use: :state name = value [persist] — e.g. ${STATE_EXAMPLE}`
  * @returns {string}
  */
 export function handleState(line, ctx, index) {
-  const match = line.match(/^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+persist)?$/);
+  const match = line.match(
+    new RegExp(String.raw`^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)${PERSISTENCE}$`)
+  );
   if (!match)
     throw wdError(`Malformed :state in ${at(ctx, index)}: ${line}. ${STATE_USE}`, {
       code: "WD201",
@@ -43,7 +67,7 @@ export function handleState(line, ctx, index) {
   const value = parseStateValue(match[2], at(ctx, index));
   const key = declareState(match[1], value, ctx);
   recordSymbol(ctx, index, { kind: "state", name: key, detail: `${key} = ${match[2].trim()}` });
-  const persistAttr = match[3] ? ` data-wd-persist="${key}"` : "";
+  const persistAttr = match[3] === "persist" ? ` data-wd-persist="${key}"` : "";
   return `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
 }
 
@@ -88,22 +112,24 @@ export function declareState(name, value, ctx) {
  * @returns {string}
  */
 export function handleStore(line, ctx, index) {
-  const match = line.match(/^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)(\s+ephemeral)?$/);
+  const match = line.match(
+    new RegExp(String.raw`^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)${PERSISTENCE}$`)
+  );
   if (!match)
     throw wdError(
-      `Malformed :store in ${at(ctx, index)}: ${line}. Use: :store name = value [ephemeral] — e.g. ${STORE_EXAMPLE}`,
+      `Malformed :store in ${at(ctx, index)}: ${line}. Use: :store name = value [persist|ephemeral] — e.g. ${STORE_EXAMPLE}`,
       {
         code: "WD205",
         file: ctx.file,
         line: lineOf(ctx, index),
-        hint: `:store name = value [ephemeral] — e.g. ${STORE_EXAMPLE}`,
+        hint: `:store name = value [persist|ephemeral] — e.g. ${STORE_EXAMPLE}`,
         example: STORE_EXAMPLE
       }
     );
   const value = parseStateValue(match[2], at(ctx, index));
   const name = declareStore(match[1], value, ctx);
   recordSymbol(ctx, index, { kind: "store", name, detail: `${name} = ${match[2].trim()}` });
-  const ephemeral = match[3] ? " data-wd-store-ephemeral" : "";
+  const ephemeral = match[3] === "ephemeral" ? " data-wd-store-ephemeral" : "";
   return `<script type="application/json" data-wd-store="${name}"${ephemeral}>${safeScriptJson(value)}</script>`;
 }
 
@@ -171,7 +197,26 @@ export function handleComputed(line, ctx, index) {
       hint: COMPUTED_EXAMPLE,
       example: COMPUTED_EXAMPLE
     });
-  const expr = compileComputedExpr(match[2].trim(), ctx);
+  const raw = match[2].trim();
+  // A trailing bare `persist`/`ephemeral` used to be swallowed into the
+  // expression and surface as WD234 "references unknown state \"persist\"",
+  // which names something the author never wrote and points the fix the wrong
+  // way: a repair loop reading it will declare a state called `persist`, which
+  // compiles and is nonsense. `resolveStateKey` is the same lookup the
+  // expression walker does, so a page that really does declare state by that
+  // name still compiles as an ordinary reference.
+  const stray = raw.match(/\s+(persist|ephemeral)$/);
+  if (stray && !resolveStateKey(stray[1], ctx)) {
+    const hint = `:computed values are derived, not stored, so they cannot ${stray[1] === "persist" ? "persist" : "be ephemeral"}. Persist the state they derive from instead — e.g. :state count = 0 persist`;
+    throw wdError(`Persistence token on :computed in ${at(ctx, index)}: ${line}. ${hint}`, {
+      code: "WD211",
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint,
+      example: COMPUTED_EXAMPLE
+    });
+  }
+  const expr = compileComputedExpr(raw, ctx);
   // Parse the validated expression to the compact AST the runtime walks. A parse
   // failure means the RHS is syntactically malformed (e.g. `|| <`) — a compile
   // error, not a silently-broken binding.
@@ -214,7 +259,9 @@ export function handleComputed(line, ctx, index) {
  * @returns {string}
  */
 export function handleTheme(line, ctx, index) {
-  const match = line.match(/^:theme(?:\s+([A-Za-z_$][\w$]*))?(?:\s*=\s*(.+))?$/);
+  const match = line.match(
+    new RegExp(String.raw`^:theme(?:\s+([A-Za-z_$][\w$]*))?(?:\s*=\s*(.+?))?${PERSISTENCE}$`)
+  );
   if (!match) {
     throw wdError(
       `Malformed :theme in ${at(ctx, index)}: ${line}. Use: :theme  (or  :theme name = "auto") — e.g. ${THEME_EXAMPLE}`,
@@ -235,5 +282,6 @@ export function handleTheme(line, ctx, index) {
     name: storeName,
     detail: `${storeName} = ${JSON.stringify(seed)}`
   });
-  return `<script type="application/json" data-wd-store="${storeName}">${safeScriptJson(seed)}</script><span data-wd-theme="${storeName}" hidden></span>`;
+  const ephemeral = match[3] === "ephemeral" ? " data-wd-store-ephemeral" : "";
+  return `<script type="application/json" data-wd-store="${storeName}"${ephemeral}>${safeScriptJson(seed)}</script><span data-wd-theme="${storeName}" hidden></span>`;
 }

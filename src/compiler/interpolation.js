@@ -154,7 +154,8 @@ export function parseStateValue(raw, where) {
         `Unbalanced JSON value "${shown}"${where ? ` in ${where}` : ""}: this opens "${open}" but ` +
           `never closes it. :state/:store/:theme accept a multi-line array/object, but the literal ` +
           `must balance (a "${close}" is missing) with no blank lines inside it. ` +
-          `Quote it for literal bracket text (e.g. = "[draft]").`,
+          `A persist/ephemeral token goes AFTER the closing "${close}" on the last line, ` +
+          `not on the declaration line. Quote it for literal bracket text (e.g. = "[draft]").`,
         { code: "WD004" }
       );
     }

@@ -774,15 +774,30 @@ You have { cart } items.
 
   The literal must balance with no blank line inside it (a blank line ends the value); an unterminated literal is a compile error. Quote genuinely literal bracket text — `:state tag = "[draft]"`.
 
+  A `persist`/`ephemeral` token goes **after the closing bracket on the last line**, not on the declaration line:
+
+  ```wd
+  :state products = [
+    {"name": "Mug"}
+  ] persist
+  ```
+
 The declared value is a **seed**: it is used only the first time, when the store is absent from storage. After that the persisted value wins, so visitors keep their data.
 
-### Opt out of persistence
+### Choosing persistence
 
-Add `ephemeral` for an in-memory store that resets on reload and does not sync across tabs:
+`persist` means "survives a reload" and `ephemeral` means "does not". Both are accepted on `:state`, `:store`, and `:theme`; the keyword only picks the default:
 
-```wd
-:store sidebarOpen = false ephemeral
-```
+| Declaration | Persisted? |
+| --- | --- |
+| `:state count = 0` | no (the default) |
+| `:state count = 0 persist` | yes, in localStorage for this page |
+| `:store cart = []` | yes (the default), and synced across tabs |
+| `:store sidebarOpen = false ephemeral` | no, in-memory for the session |
+
+Writing the token that matches the default is redundant but never wrong, so `:store cart = [] persist` compiles and means exactly what it says. If a value genuinely ends in one of these words, quote it: `:state note = "0 persist"` seeds the string.
+
+`:computed` takes neither: computed values are derived rather than stored, so persist the state they derive from instead (that mistake is a compile error, `WD211`).
 
 > **Pitfall:** A store name must be unique. Declaring the same name as both a `:store` and a `:state` on one page is a compile error.
 
@@ -1066,8 +1081,8 @@ import { compileFromMemory } from "@zvndev/darkmown";
 try {
   compileFromMemory({ "site/pages/index.wd": ":state x" }, "site/pages/index.wd");
 } catch (err) {
-  err.message; // "[WD201] Malformed :state in …/index.wd:1: :state x. Use: :state name = value [persist] — e.g. :state count = 0"
-  err.wd;      // { code: "WD201", file: "…/index.wd", line: 1, hint: ":state name = value [persist] — e.g. …", example: ":state count = 0" }
+  err.message; // "[WD201] Malformed :state in …/index.wd:1: :state x. Use: :state name = value [persist|ephemeral] — e.g. :state count = 0"
+  err.wd;      // { code: "WD201", file: "…/index.wd", line: 1, hint: ":state name = value [persist|ephemeral] — e.g. …", example: ":state count = 0" }
 }
 ```
 
@@ -1079,7 +1094,7 @@ Every author-facing compile error opens with a stable `WDxxx` code, so it is sea
 
 ```
 [WD201] Malformed :state in site/pages/index.wd:1: :state x.
-        Use: :state name = value [persist] — e.g. :state count = 0
+        Use: :state name = value [persist|ephemeral] — e.g. :state count = 0
 ```
 
 The full list lives in [`docs/errors.md`](docs/errors.md) — code, cause, fix, and a compilable example each. Codes are grouped by subsystem:

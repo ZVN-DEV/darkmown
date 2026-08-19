@@ -533,7 +533,9 @@ You have { cart } items.
 - The declared value is a **seed**, used only the first time — afterward the persisted value wins.
 - Same value grammar and the same button actions as `:state`.
 - An array/object seed may span **multiple lines** for readability — open the `[`/`{` on the directive line and let it run until it closes (no blank line inside; an unterminated literal is a compile error). Quote literal bracket text: `:state tag = "[draft]"`.
-- Add `ephemeral` for an in-memory store that resets on reload: `:store sidebarOpen = false ephemeral`.
+- On a multi-line seed, a `persist`/`ephemeral` token goes **after the closing bracket on the last line**, not on the declaration line.
+- `persist` means "survives a reload", `ephemeral` means "does not", and both are accepted on `:state`, `:store`, and `:theme`. The keyword only picks the default. `:store sidebarOpen = false ephemeral` is an in-memory store; `:state cart = [] persist` is a persisted one. Writing the token that matches the default is redundant but never wrong.
+- `:computed` takes neither: computed values are derived rather than stored, so persist the state they derive from instead (`WD211`).
 
 ## Forms and persistence
 

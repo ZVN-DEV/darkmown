@@ -12,6 +12,9 @@ import { expect, test } from "@playwright/test";
 //     A button labelled "Reset cart" runs `-> cart reset`.
 //   - An `:store draft = "" ephemeral` bound to an input (placeholder /draft/)
 //     and echoed as text so we can read it back after a reload.
+//   - A `#twins` section declaring `:state kept = 0 persist` and
+//     `:store also = 0 persist`, each with a counting button, proving the
+//     persistence token means the same thing on either keyword.
 
 test.describe("/store/ — global :store in a real browser", () => {
   test("loads the runtime (page is reactive)", async ({ page }) => {
@@ -72,6 +75,33 @@ test.describe("/store/ — global :store in a real browser", () => {
     // After reload the ephemeral value is gone (back to its seed).
     await page.reload();
     await expect(page.getByText("scratch note")).toBeHidden();
+  });
+
+  // The persistence vocabulary is one vocabulary: `persist` means "survives a
+  // reload" on :state and :store alike, and the keyword only picks the default.
+  // Before 2.6.0 `:store also = 0 persist` did not persist a number at all — the
+  // token folded into the value and seeded the STRING "0 persist", which
+  // compiled green and only failed on the first increment. This drives both
+  // halves through a real reload, which is the only place that is observable.
+  test("persist means the same thing on :state and on :store", async ({ page }) => {
+    await page.goto("/store/");
+    await page.getByRole("button", { name: "Count the state" }).click();
+    await page.getByRole("button", { name: "Count the state" }).click();
+    await page.getByRole("button", { name: "Count the store" }).click();
+
+    // Numbers, not strings: "0 persist" + 1 would render "0 persist1".
+    await expect(page.getByText(/Persisted :state: 2/)).toBeVisible();
+    await expect(page.getByText(/persisted :store: 1/)).toBeVisible();
+
+    const stored = await page.evaluate(() => ({
+      state: localStorage.getItem("wd:state:twins:kept"),
+      store: localStorage.getItem("wd:store:also")
+    }));
+    expect(JSON.parse(stored.store)).toBe(1);
+
+    await page.reload();
+    await expect(page.getByText(/Persisted :state: 2/)).toBeVisible();
+    await expect(page.getByText(/persisted :store: 1/)).toBeVisible();
   });
 
   test("reset returns a persisted store to its declared seed", async ({ page }) => {

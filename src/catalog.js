@@ -131,16 +131,17 @@ const DIRECTIVES = [
   {
     name: ":state",
     kind: "line",
-    syntax: ":state name = value [persist]",
-    description: "Declare page-scoped reactive state (persist keeps it across reloads).",
+    syntax: ":state name = value [persist|ephemeral]",
+    description:
+      "Declare page-scoped reactive state. Ephemeral by default; persist keeps it across reloads.",
     example: STATE_EXAMPLE,
     reactive: "reactive"
   },
   {
     name: ":store",
     kind: "line",
-    syntax: ":store name = value [ephemeral]",
-    description: "Declare a page-global store, persisted by default (ephemeral opts out).",
+    syntax: ":store name = value [persist|ephemeral]",
+    description: "Declare a page-global store. Persisted by default; ephemeral opts out.",
     example: STORE_EXAMPLE,
     reactive: "reactive"
   },

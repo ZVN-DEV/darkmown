@@ -7,7 +7,7 @@ concrete compilable `example`.
 
 ```
 [WD201] Malformed :state in site/pages/index.wd:1: :state x.
-        Use: :state name = value [persist] — e.g. :state count = 0
+        Use: :state name = value [persist|ephemeral] — e.g. :state count = 0
 ```
 
 Codes are grouped by subsystem, and a shipped code is permanent: it is never
@@ -82,16 +82,17 @@ free number in their block.
 
 | Code | Error | Cause | Fix | Example |
 | --- | --- | --- | --- | --- |
-| `WD201` | Malformed `:state` | The line does not read `:state name = value [persist]`. | Give the state a name and an initial value. | `:state count = 0` |
+| `WD201` | Malformed `:state` | The line does not read `:state name = value [persist\|ephemeral]`. | Give the state a name and an initial value. | `:state count = 0` |
 | `WD202` | `:state` inside a reactive loop | State cannot be declared per row; a loop body has no place to hold it. | Declare the state outside the loop. |  |
 | `WD203` | `:state` collides with a `:store` | A page-global store already owns that name. | Rename one of them, or use the store everywhere. | `:store cart = []` |
 | `WD204` | `:state` declared twice | The same name is declared twice in one section scope. | Remove the duplicate, or scope one declaration to its own `::: section`. |  |
-| `WD205` | Malformed `:store` | The line does not read `:store name = value [ephemeral]`. | Give the store a name and an initial value. | `:store cart = []` |
+| `WD205` | Malformed `:store` | The line does not read `:store name = value [persist\|ephemeral]`. | Give the store a name and an initial value. | `:store cart = []` |
 | `WD206` | `:store` declared twice | Stores are page-global, so a second declaration is ambiguous. | Declare the store once and reference it everywhere else. | `:store cart = []` |
 | `WD207` | `:store` collides with a `:state` | A `:state` of the same name is already declared on the page. | Rename one of them, or use the store everywhere. | `:store cart = []` |
 | `WD208` | Malformed `:computed` | The line does not read `:computed name = <expression>`. | Give the computed value a name and a right-hand expression. | `:computed total = items.length * 4` |
 | `WD209` | Malformed `:computed` expression | The right-hand side passes the character whitelist but is not a real expression. | Write a complete expression over declared state, numbers, and operators. | `:computed total = items.length * 4` |
 | `WD210` | Malformed `:theme` | The line does not read `:theme [name] [= "auto"]`. | Use a bare `:theme`, or name the store and seed it. | `:theme` |
+| `WD211` | Persistence token on `:computed` | The expression ends in a bare `persist` or `ephemeral`, which is swallowed into it. | Computed values are derived, not stored. Persist the state they derive from instead. | `:computed total = items.length * 4` |
 | `WD220` | Malformed `where` condition | A `where` condition is not `operand <op> operand`. | Compare a loop-item field with a value using a whitelisted operator. |  |
 | `WD221` | Unsupported `where` operand | An operand is not an item field, a state name, a number, or a quoted string. | Use one of those four operand forms. |  |
 | `WD222` | Disallowed `where` path | An operand path contains `constructor`, `prototype`, or `__proto__`. | Compare an ordinary data field. |  |

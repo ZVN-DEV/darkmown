@@ -52,4 +52,25 @@ clean.
 
 Draft says: **{ draft }**
 
+## One vocabulary, either keyword
+
+`persist` means "survives a reload" and `ephemeral` means "does not". Both are
+accepted on `:state`, `:store`, and `:theme`. The **keyword** only picks the
+default, and the **token** always means what it says. So these two counters
+behave identically, and each one states its intent on the line itself.
+
+::: section #twins
+:state kept = 0 persist
+:store also = 0 persist
+
+Persisted `:state`: **{ kept }**, persisted `:store`: **{ also }**
+
+:button "Count the state" -> kept++
+:button "Count the store" -> also++
+
+Bump both, reload, and the pair comes back. Writing the token that already
+matches the default is redundant but never wrong, which is the point: a
+declaration you can read without remembering which keyword defaults which way.
+:::
+
 </main>

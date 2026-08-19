@@ -367,7 +367,7 @@ const ENTRIES = [
   {
     code: "WD201",
     title: "Malformed `:state`",
-    cause: "The line does not read `:state name = value [persist]`.",
+    cause: "The line does not read `:state name = value [persist|ephemeral]`.",
     fix: "Give the state a name and an initial value.",
     example: STATE_EXAMPLE
   },
@@ -393,7 +393,7 @@ const ENTRIES = [
   {
     code: "WD205",
     title: "Malformed `:store`",
-    cause: "The line does not read `:store name = value [ephemeral]`.",
+    cause: "The line does not read `:store name = value [persist|ephemeral]`.",
     fix: "Give the store a name and an initial value.",
     example: STORE_EXAMPLE
   },
@@ -431,6 +431,13 @@ const ENTRIES = [
     cause: 'The line does not read `:theme [name] [= "auto"]`.',
     fix: "Use a bare `:theme`, or name the store and seed it.",
     example: THEME_EXAMPLE
+  },
+  {
+    code: "WD211",
+    title: "Persistence token on `:computed`",
+    cause: "The expression ends in a bare `persist` or `ephemeral`, which is swallowed into it.",
+    fix: "Computed values are derived, not stored. Persist the state they derive from instead.",
+    example: COMPUTED_EXAMPLE
   },
   {
     code: "WD220",
@@ -1109,7 +1116,7 @@ export function errorsMarkdown() {
   out.push("");
   out.push("```");
   out.push("[WD201] Malformed :state in site/pages/index.wd:1: :state x.");
-  out.push("        Use: :state name = value [persist] — e.g. :state count = 0");
+  out.push("        Use: :state name = value [persist|ephemeral] — e.g. :state count = 0");
   out.push("```");
   out.push("");
   out.push(
