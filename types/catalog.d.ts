@@ -48,6 +48,18 @@ export function llmsFullText(site?: SiteCorpus): string;
 /** The action tokens the catalog exposes — used by the drift guard. */
 export const CATALOG_ACTION_TOKENS: string[];
 /**
+ * The same vocabulary with each token's SHAPE, for `src/grammar.js`. The GBNF
+ * `action-op` rule used to be a hand-written string listing all fourteen
+ * alternatives; it is now generated from this, so the grammar and the catalog
+ * cannot list different ops.
+ * @type {{ token: string, place: "suffix" | "infix", operand: "none" | "required" | "optional" }[]}
+ */
+export const CATALOG_ACTION_GRAMMAR: {
+    token: string;
+    place: "suffix" | "infix";
+    operand: "none" | "required" | "optional";
+}[];
+/**
  * One page of a built site, as it appears in the generated `llms.txt` index and
  * `llms-full.txt` corpus.
  */

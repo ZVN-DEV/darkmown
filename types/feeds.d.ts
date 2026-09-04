@@ -76,15 +76,57 @@ export function firstParagraph(body: string): string;
  */
 export function rssDescription(meta: import("./compiler.js").Meta, file: string, body: string): string;
 /**
+ * Validate a frontmatter `date:` into a sitemap `<lastmod>` value, or "" when it
+ * is not one.
+ *
+ * This is the only feed value that used to be neither validated nor escaped, and
+ * both halves mattered: `date: 2026<bad&"q"` made the whole document
+ * unparseable, so NOTHING got indexed, and the far likelier `date: Jan 5, 2026`
+ * was silently truncated to `Jan 5, 202` by a blind 10-character slice. Returning
+ * "" (rather than guessing) lets the caller omit the element and say so — a
+ * sitemap entry with no `<lastmod>` is valid; one with a bogus date is not.
+ * @param {string} raw Trimmed frontmatter `date:` value.
+ * @returns {string} `yyyy-mm-dd`, or "" when `raw` is not a real calendar date.
+ */
+export function sitemapDate(raw: string): string;
+/**
  * Build `sitemap.xml` from the emitted (post-draft-filter) routes. One `<url>`
  * per route — reactive pages included (they're indexable HTML) — with `<loc>` =
- * `site_url` + path and `<lastmod>` from the supplied date. The `/404/` route is
+ * `site_url` + path and `<lastmod>` from the supplied date. An empty `lastmod`
+ * omits the element rather than emitting a blank one. The `/404/` route is
  * excluded by the caller before this point. No `<priority>`/`<changefreq>` —
  * Google ignores them and they invite bit-rot.
  * @param {DatedRoute[]} entries Absolute loc + ISO lastmod, in route order.
  * @returns {string} The full XML document (trailing newline).
  */
 export function buildSitemap(entries: DatedRoute[]): string;
+/**
+ * Build a `<sitemapindex>` — the document that points at the numbered sitemap
+ * shards. No `<lastmod>` per shard: it would have to be the max over the shard's
+ * entries, which is a number nobody consumes and one more thing to keep true.
+ * @param {string[]} locs Absolute URLs of the shard files, in order.
+ * @returns {string} The full XML document (trailing newline).
+ */
+export function buildSitemapIndex(locs: string[]): string;
+/**
+ * Plan the sitemap file(s) a set of entries needs.
+ *
+ * At or under {@link SITEMAP_URL_LIMIT} that is one `sitemap.xml`, byte-identical
+ * to what every site got before. Over it, the entries shard into
+ * `sitemap-1.xml`, `sitemap-2.xml`, … and `sitemap.xml` becomes the
+ * `<sitemapindex>` pointing at them — so `robots.txt` keeps naming
+ * `/sitemap.xml` and every existing submission stays valid.
+ *
+ * Returned rather than written so the split is a pure function the tests can
+ * drive with 50,001 synthetic entries without building 50,001 pages.
+ * @param {DatedRoute[]} entries
+ * @param {string} siteUrl Absolute origin, for the index's shard URLs.
+ * @returns {{ file: string, xml: string }[]} Shards first, `sitemap.xml` last.
+ */
+export function sitemapDocuments(entries: DatedRoute[], siteUrl: string): {
+    file: string;
+    xml: string;
+}[];
 /**
  * An RSS item — a dated post in feed order.
  * @typedef {object} RssItem
@@ -132,6 +174,26 @@ export function buildRobots(siteUrl?: string, policy?: string): string;
  */
 export function aiCrawlerPolicy(meta: import("./compiler.js").Meta, file?: string): string;
 /**
+ * Resolve the site's RSS item cap from the HOME page's `rss_limit:` frontmatter.
+ *
+ * Darkmown has no config file by design: site-wide settings live in the home
+ * page's frontmatter next to `site_url` / `ai_crawlers`, and this is one of them.
+ * Absent means {@link RSS_ITEM_LIMIT}. A value that is not a positive integer
+ * THROWS rather than silently falling back, for the same reason `ai_crawlers`
+ * does: `rss_limit: 0` and `rss_limit: all` are both attempts to state a policy,
+ * and quietly publishing 20 items instead is the wrong failure direction.
+ * @param {import("./compiler.js").Meta} meta Home page frontmatter.
+ * @param {string} [file] Home page source path, for the error message.
+ * @returns {number} A positive integer.
+ */
+export function rssItemLimit(meta: import("./compiler.js").Meta, file?: string): number;
+/**
+ * The sitemap protocol's hard cap: 50,000 `<url>` entries per sitemap file. Over
+ * it, Google rejects the document outright — so a large site must split into
+ * numbered sitemaps behind a `<sitemapindex>`.
+ */
+export const SITEMAP_URL_LIMIT: 50000;
+/**
  * The AI crawler and answer-engine robots.txt tokens Darkmown names explicitly.
  *
  * EVERY token here is copied from its own operator's published documentation
@@ -159,7 +221,11 @@ export const AI_CRAWLERS: {
 }[];
 /** The accepted `ai_crawlers:` frontmatter values. */
 export const AI_CRAWLER_POLICIES: string[];
-/** Most-recent-first RSS post cap — a feed is a recent window, not an archive. */
+/**
+ * The DEFAULT most-recent-first RSS post cap — a feed is a recent window, not an
+ * archive. Overridable per site with `rss_limit:` on the home page
+ * ({@link rssItemLimit}).
+ */
 export const RSS_ITEM_LIMIT: 20;
 export type Route = import("./router.js").Route;
 /**

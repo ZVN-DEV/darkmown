@@ -48,8 +48,8 @@ export function stripRuntimeComments(source: string): string;
  * header, the later block wins. So we emit the catch-all `/*` first (baseline
  * security headers + the reactive CSP, which since 2.1 is eval-free and satisfies
  * every page), then one block per static route that re-states the same eval-free
- * CSP as defense-in-depth. Reactive routes need no override — the catch-all
- * already carries the eval-free CSP.
+ * CSP as defense-in-depth, and finally a block for any reactive route a static
+ * route's glob would otherwise shadow (see below).
  *
  * Clean URLs mean a route like `/docs/` is served at both `/docs` and `/docs/`,
  * so each static route emits a path glob (`/docs`, `/docs/*`) that covers both.
@@ -138,6 +138,10 @@ export type SiteIdentity = {
      * `"allow"` or `"deny"`, from `ai_crawlers:`.
      */
     aiCrawlers: string;
+    /**
+     * Most-recent-first RSS item cap, from `rss_limit:`.
+     */
+    rssLimit: number;
 };
 export type Paths = import("./config.js").Paths;
 export type Assets = import("./compiler.js").Assets;

@@ -60,6 +60,23 @@ export function resolveStateKey(name: string, ctx: Ctx): string | null;
  */
 export function interpolateLeaf(value: unknown, expr: string, ctx: Ctx): string;
 /**
+ * Render the INITIAL value of a reactive binding (`data-wd-bind` /
+ * `data-wd-each`) as text.
+ *
+ * Identical to {@link interpolateLeaf} except for arrays: the runtime paints a
+ * bind by assigning to `textContent`, which coerces `["a", "b"]` with `String()`
+ * to `"a,b"`, and the loop row-template fill already agrees (it escapes through
+ * `String()` too). `interpolateLeaf`'s `", "` join is the STATIC contract — the
+ * documented `{ meta.tags }` behavior for a value nothing will ever repaint — so
+ * the two cannot share one rule. Painting the static form here made the first
+ * reactive render silently rewrite `"a, b"` to `"a,b"`.
+ * @param {unknown} value
+ * @param {string} expr
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+export function interpolateBound(value: unknown, expr: string, ctx: Ctx): string;
+/**
  * JSON-encode a value for an inline `<script>`, escaping `<` to stay HTML-safe.
  * @param {unknown} value
  * @returns {string}

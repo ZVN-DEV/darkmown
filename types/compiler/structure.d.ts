@@ -40,7 +40,10 @@ export function handleCarousel(line: string, bodyLines: string[], ctx: Ctx, inde
  */
 export function handleIf(line: string, truthyLines: string[], falsyLines: string[], ctx: Ctx, index: number, falsyStart?: number): string;
 /**
- * Render the documentation-demo directives (`:try`, `:note`, `:sprint`).
+ * Render the documentation-demo directive `:try` (the "Try it" card the homepage
+ * uses). `:note` and `:sprint` lived here too and were deleted: nothing in the
+ * site, the docs, or the public directive set used them, and a directive the
+ * catalog does not list is a trap for an AI author that discovers it in source.
  * @param {string} line
  * @param {Ctx} ctx
  * @returns {string}

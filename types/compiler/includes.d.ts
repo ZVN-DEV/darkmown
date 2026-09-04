@@ -82,11 +82,25 @@ export function collectColocatedAssets(file: string, context: Paths, assets: Ass
  */
 export function resolveInclude(spec: string, fromFile: string, context: Paths, allowAny: boolean, loc: string, reader: import("./reader.js").Reader): string;
 /**
- * @param {string} file
+ * Whether an absolute path is inside the `site/pages` / `site/_` sandbox.
+ *
+ * Two modes, both used by {@link resolveInclude}. Without a `reader` the check is
+ * LEXICAL — the path exactly as written — which is what rejects `../` traversal
+ * and a sibling directory that merely shares the root's prefix
+ * (`site/pages-secret/` is not inside `site/pages/`, hence the `path.sep`
+ * boundary). With a `reader` it re-runs against the CANONICAL paths, closing the
+ * symlink hole: a link inside `site/pages` pointing at `../../secret.md` is
+ * lexically fine and still escapes the sandbox. Both sides are canonicalized,
+ * because a project root can itself live under a symlinked parent (macOS
+ * `/tmp` → `/private/tmp`), where realpathing only the file would reject every
+ * legitimate include.
+ * @param {string} file Absolute path to the include target.
  * @param {Paths} context
+ * @param {import("./reader.js").Reader} [reader] When given, also check the
+ *   canonical (symlink-resolved) path. Requires `file` to exist.
  * @returns {boolean}
  */
-export function isAllowedInclude(file: string, context: Paths): boolean;
+export function isAllowedInclude(file: string, context: Paths, reader?: import("./reader.js").Reader): boolean;
 /**
  * Warn when a plain `.md` file contains `.wd`-only syntax that stays inert.
  * @param {string} body

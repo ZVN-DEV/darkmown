@@ -8,12 +8,18 @@ export function compilePredicate(raw: string, itemName: string, ctx: Ctx): Predi
 /**
  * Evaluate a compiled predicate against a row at build time by walking its AST —
  * the same closed evaluator the runtime uses, so the fold matches. No eval.
+ *
+ * `what` names the CONSTRUCT the body came from. Three directives share this
+ * evaluator (`@loop … where`, `::: … .class when`, `:if`), and the warning used
+ * to say "@loop where predicate … treating the row as excluded" for all of
+ * them — pointing an author at a loop they never wrote when a `:if` folded.
  * @param {string} body
  * @param {unknown} item
  * @param {Ctx} ctx
+ * @param {string} [what] Directive label, e.g. `":if"`. Defaults to `@loop where`.
  * @returns {boolean}
  */
-export function evalPredicate(body: string, item: unknown, ctx: Ctx): boolean;
+export function evalPredicate(body: string, item: unknown, ctx: Ctx, what?: string): boolean;
 /**
  * Compile a `::: … .class when <predicate>`. Allows `:if`-style bare truthy
  * paths and `where`-style `left <op> right` conditions joined by `and`/`or`.
