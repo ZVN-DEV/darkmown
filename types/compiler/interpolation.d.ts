@@ -114,6 +114,12 @@ export function stripQuotes(value?: string): string;
  */
 export function humanizeName(name: string): string;
 /**
+ * True for a value that must never be applied to a bound `href`/`src`.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function unsafeUrlValue(value: unknown): boolean;
+/**
  * Escape a value for safe inclusion in HTML text and attribute contexts.
  * @param {unknown} value
  * @returns {string}

@@ -31,8 +31,13 @@ export function handleStore(line: string, ctx: Ctx, index: number): string;
  */
 export function declareStore(name: string, value: unknown, ctx: Ctx): string;
 /**
- * Seed a `<name>_error` state key (null) if absent. Shared by :fetch and the
- * round-trip :form so error fallbacks have a key to bind.
+ * Seed the `<name>_error` / `<name>_error_body` pair (null) if absent. Shared by
+ * `:fetch` and the round-trip `:form` so error fallbacks have a key to bind.
+ *
+ * `_error` is what the server SAID — its JSON `error`/`message` field when the
+ * body has one, else `HTTP <status>`. `_error_body` is the whole parsed body,
+ * so a page can render field-level errors (`{ signup_error_body.fields.email }`)
+ * without a colocated script.
  * @param {string} key
  * @param {Ctx} ctx
  * @returns {void}
@@ -65,4 +70,5 @@ export const STATE_EXAMPLE: ":state count = 0";
 export const STORE_EXAMPLE: ":store cart = []";
 export const COMPUTED_EXAMPLE: ":computed total = items.length * 4";
 export const THEME_EXAMPLE: ":theme";
+export const URL_STATE_EXAMPLE: ":state q = \"\" from-url";
 export type Ctx = import("./context.js").Ctx;

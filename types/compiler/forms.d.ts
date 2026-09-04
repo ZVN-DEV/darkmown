@@ -53,7 +53,13 @@ export function handleTextarea(line: string, ctx: Ctx, index: number): string;
 /**
  * `:select name [required]` followed by `- Label` list lines → a `<select>` with
  * one `<option>` per label (value === label). Derives an aria-label from the
- * humanized name when none is given. Captured by FormData like the other fields.
+ * humanized name when none is given.
+ *
+ * Inside a `:form` it is a form field captured by FormData, exactly as before.
+ * Outside one it is a control two-way bound to a declared `:state` of that name
+ * (see the `inForm` note at the top of this file): the seed selects the matching
+ * option, changing the control writes the state, and changing the state moves
+ * the control.
  * @param {string} line
  * @param {string[]} optionLines The following `- Label` lines consumed by dispatch.
  * @param {Ctx} ctx
@@ -71,6 +77,11 @@ export function handleSelect(line: string, optionLines: string[], ctx: Ctx, inde
  * groups capture a single value like `:input`. Flags: `required` (radio → the
  * group; not emitted on checkboxes, where "at least one" has no native HTML form),
  * `disabled` (whole group), `autofocus` (first control).
+ *
+ * OUTSIDE a `:form` (see the `inForm` note at the top of this file) both bind to
+ * a declared `:state` of that name instead: a `:radio` group binds the STRING of
+ * the chosen option, and a `:checkbox` binds a BOOLEAN, so it takes exactly one
+ * option — the label to show beside it.
  * @param {string} line
  * @param {string[]} optionLines The following `- Label` lines consumed by dispatch.
  * @param {Ctx} ctx

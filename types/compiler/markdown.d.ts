@@ -52,11 +52,42 @@ export type Binding = {
      * Where the value came from, and
      * therefore what the non-inline positions may do with it: `static` is a
      * build-time value and always safe to substitute; `state` is `:state`/`:store`
-     * and can only be painted once; `row` is a reactive `@loop` row, whose ONE
-     * template serves every row, so it cannot be substituted at all.
+     * and paints its seed then binds; `row` is a reactive `@loop` row, whose ONE
+     * template serves every row, so it paints nothing and binds per row.
      */
     kind: "static" | "state" | "row";
+    /**
+     * For `state`: the fully-qualified state key.
+     */
+    key?: string | undefined;
+    /**
+     * For `state`/`row`: the dotted sub-path under it ("" for the whole value).
+     */
+    path?: string | undefined;
+    /**
+     * For `row`: the per-row meta variable (`index`, `number`, …).
+     */
+    meta?: string | undefined;
 };
 export type Meta = import("./context.js").Meta;
 export type Ctx = import("./context.js").Ctx;
+/**
+ * One reactive binding found in a destination: the serialized template part the
+ * runtime evaluates, plus the build-time text to paint for it.
+ */
+export type PendingAttr = {
+    /**
+     *   `s` = state key + sub-path, `i` = loop-row sub-path, `m` = row meta variable.
+     */
+    part: ["s", string, string] | ["i", string] | ["m", string];
+    /**
+     * Build-time paint ("" for anything per-row).
+     */
+    text: string;
+    /**
+     * The author's own `{ … }` source, restored when the
+     * `](…)` turned out not to be a link after all.
+     */
+    raw: string;
+};
 import MarkdownIt from "markdown-it";

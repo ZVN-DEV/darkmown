@@ -1,4 +1,29 @@
 /**
+ * Peel the leading run of whitelisted accessibility attributes off `rest`.
+ *
+ * Stops at the first token that does not open like an attribute (a `.class`, a
+ * `#id`, a `->`, or the end of the line) and hands that remainder back. A token
+ * that DOES open like an attribute but is misspelt, unquoted, or outside the
+ * whitelist is a compile error — never silently skipped.
+ * @param {string} rest Everything from the cursor to the end of the line.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @param {string} what Directive label for the message, e.g. `:button`.
+ * @returns {{ attrs: [string, string][], rest: string }}
+ */
+export function takeA11yAttrs(rest: string, ctx: Ctx, index: number, what: string): {
+    attrs: [string, string][];
+    rest: string;
+};
+/**
+ * Serialize validated attribute pairs into an HTML attribute string. The NAME
+ * came through {@link A11Y_ATTR_NAME} so it is inert; the VALUE is author text
+ * and is escaped.
+ * @param {[string, string][]} attrs
+ * @returns {string}
+ */
+export function a11yAttrHtml(attrs: [string, string][]): string;
+/**
  * @param {string} line
  * @param {Ctx} ctx
  * @param {number} index 0-based line index for `file:line` errors.
@@ -54,6 +79,9 @@ export function renderDemoDirective(line: string, ctx: Ctx): string;
  */
 export const INCLUDE_EXAMPLE: "@include /header.wd";
 export const CONTAINER_EXAMPLE: "::: card .featured";
+export const CONTAINER_A11Y_EXAMPLE: "::: card .note role=\"region\" aria-label=\"Notes\"";
 export const IF_EXAMPLE: ":if count > 0";
 export const CAROUSEL_EXAMPLE: ":carousel autoplay=3000";
+/** The corrective `Use:` tail every attribute error carries. */
+export const A11Y_ATTR_USE: "role=\"\u2026\", aria-\u2026=\"\u2026\", or title=\"\u2026\" (quoted static text)";
 export type Ctx = import("./context.js").Ctx;

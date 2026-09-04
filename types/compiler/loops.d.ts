@@ -34,6 +34,26 @@ export function astAt(code: string, ctx: Ctx, index: number, what: string): any[
  */
 export function handleLoop(line: string, bodyLines: string[], emptyLines: string[] | null, ctx: Ctx, index: number, emptyStart?: number): string;
 /**
+ * Splice two adjacent tables into one, in the two shapes a `.wd` body produces:
+ *
+ * 1. Two tables that carry the SAME markup before `<tbody>` — one compiled row
+ *    body per loop row. Their `<tbody>` contents concatenate. Requiring the
+ *    prefixes to match is what keeps a header that interpolates the row (a
+ *    genuinely different table per row) from losing every header but the first.
+ * 2. A HEADER-ONLY table (a `<thead>` and no `<tbody>`: what `| Name | N |` +
+ *    `|---|---|` in the prose above a loop compiles to) followed by a BODY-ONLY
+ *    table (a `<tbody>` and no `<thead>`: what a loop over bare `|…|` rows now
+ *    emits). The body moves inside the header's table.
+ *
+ * Exported because both seams matter: the loop's own row seam (case 1) and the
+ * body-level seam between flushed prose and a handler's output (case 2), which
+ * `compileBody` owns.
+ * @param {string} prev
+ * @param {string} next
+ * @returns {string | null} The spliced HTML, or null when they do not merge.
+ */
+export function spliceTables(prev: string, next: string): string | null;
+/**
  * @param {string} str
  * @param {number} start
  * @param {string} tag
