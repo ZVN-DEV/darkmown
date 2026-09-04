@@ -7,7 +7,7 @@ Darkmown is a Markdown-native web framework. You build sites by writing `.md` an
 - `.md` files are plain CommonMark. Directives stay inert text.
 - `.wd` files are the same Markdown **plus directives** (state, loops, conditionals, includes, forms).
 - To make a `.md` page interactive, **rename it to `.wd`**. ⚠️ Renaming means the old `.md` is **gone** — never leave both `index.md` and `index.wd`, that is a fatal `Duplicate route` build error. Upgrade = delete the `.md`, create the `.wd`.
-- Static pages ship **zero** JavaScript; a page loads the ~7.7 KB gzipped runtime (CI-enforced under 8 KB) only if it declares reactive behavior.
+- Static pages ship **zero** JavaScript; a page loads the ~6.4 KB gzipped runtime (CI-enforced under 8 KB) only if it declares reactive behavior.
 
 ### ⚠️ Raw HTML is escaped by default (since 2.0.0)
 
@@ -155,7 +155,7 @@ Count: { count } · Total: { total }
 | Reset to the declared seed | `name reset` |
 | Re-run a `:fetch` | `name refetch` |
 
-Targets can be dotted paths (`cart.count++`). Values are JSON literals. `:button` takes **no attributes** (no `class`, no `id`, no `aria-*`). For a link styled as a button, write `[Get started](/start/){.btn}` or raw HTML `<a class="btn" href="…">` (raw HTML needs `html: true`).
+Targets can be dotted paths (`cart.count++`). Values are JSON literals. A `:button` and a `:::` container header accept exactly three static attributes, written before the `->`: `role="…"`, `aria-…="…"`, and `title="…"` (e.g. `:button "Menu" aria-expanded="false" aria-controls="m" -> open toggle`, `::: card .note role="region" aria-label="Notes"`). Anything else (`class=`, `id=`, `style=`, `onclick=`, `data-…=`) is a compile error; style with `.class` tokens and act with `->` actions. For a link styled as a button, write `[Get started](/start/){.btn}` or raw HTML `<a class="btn" href="…">` (raw HTML needs `html: true`).
 
 **Per-row actions (inside a reactive `@loop … into item`):** two actions reference the current row instead of a JSON literal.
 ```wd

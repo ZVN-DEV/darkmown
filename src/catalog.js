@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
+import { gzipSync } from "node:zlib";
 import { BUTTON_EXAMPLE, EFFECT_EXAMPLE, EVERY_EXAMPLE } from "./compiler/actions.js";
 import { LOOP_META } from "./compiler/context.js";
 import { FETCH_EXAMPLE } from "./compiler/fetch.js";
@@ -115,7 +116,8 @@ const DIRECTIVES = [
   {
     name: ":::",
     kind: "block",
-    syntax: "::: [tag] [.class …] [#id] [.class when <pred>] … :::",
+    syntax:
+      '::: [tag] [.class …] [#id] [.class when <pred>] [role="…"] [aria-…="…"] [title="…"] … :::',
     description: "Group content in a section/div/nav/main with classes, ids, and reactive classes.",
     example: CONTAINER_EXAMPLE,
     reactive: "either"
@@ -131,9 +133,9 @@ const DIRECTIVES = [
   {
     name: ":state",
     kind: "line",
-    syntax: ":state name = value [persist|ephemeral]",
+    syntax: ":state name = value [persist|ephemeral] [from-url]",
     description:
-      "Declare page-scoped reactive state. Ephemeral by default; persist keeps it across reloads.",
+      "Declare page-scoped reactive state. Ephemeral by default; persist keeps it across reloads, from-url mirrors it into the query string.",
     example: STATE_EXAMPLE,
     reactive: "reactive"
   },
@@ -189,7 +191,7 @@ const DIRECTIVES = [
   {
     name: ":button",
     kind: "line",
-    syntax: ':button "Label" -> action[; action…]',
+    syntax: ':button "Label" [role="…"] [aria-…="…"] [title="…"] -> action[; action…]',
     description: "A button that runs one or more state actions on click.",
     example: BUTTON_EXAMPLE,
     reactive: "reactive"
@@ -222,25 +224,28 @@ const DIRECTIVES = [
     name: ":select",
     kind: "block",
     syntax: ':select name [required]  then "- Label" lines',
-    description: "A dropdown; one <option> per following - Label line.",
+    description:
+      "A dropdown; one <option> per following - Label line. Inside a :form it is a form field; outside one it binds a :state of that name.",
     example: SELECT_EXAMPLE,
-    reactive: "static"
+    reactive: "either"
   },
   {
     name: ":checkbox",
     kind: "block",
     syntax: ':checkbox name [required]  then "- Label" lines',
-    description: "A checkbox group that captures every checked value.",
+    description:
+      "In a :form, a checkbox group capturing every checked value; outside one, a single box bound to a boolean :state.",
     example: CHECKBOX_EXAMPLE,
-    reactive: "static"
+    reactive: "either"
   },
   {
     name: ":radio",
     kind: "block",
     syntax: ':radio name [required]  then "- Label" lines',
-    description: "A radio group that captures a single value.",
+    description:
+      "A radio group capturing a single value. Inside a :form it is a form field; outside one it binds a :state of that name.",
     example: RADIO_EXAMPLE,
-    reactive: "static"
+    reactive: "either"
   },
   {
     name: ":submit",
@@ -634,16 +639,22 @@ const OP_DESC = {
 /**
  * The shipped reactive runtime's human-readable gzip size, for the cheatsheet.
  *
- * The single source of truth for the NUMBER is `.size-snapshot.json`
- * (`runtime.gzip`), but that file is a repo artifact and is NOT in the published
- * tarball (see `package.json`'s `files`), so reading it here would throw for
- * every npm consumer whose `darkmown build` emits `dist/llms.txt`. It is
- * therefore a literal that `tests/size-prose.test.js` derives from the snapshot
- * and asserts against this generated text — the same guard that already keeps
- * README.md, AGENTS.md and the docs site honest. The cheatsheet used to say
- * "~8 KB" (the BUDGET, not the size) and escaped that guard entirely.
+ * MEASURED, not written down. `src/runtime.min.js` is the exact artifact
+ * `emitRuntime` copies to `/__wd/runtime.js`, and it ships inside the published
+ * tarball, so gzipping it answers the question the same way in this repo and in
+ * a consumer's `node_modules`. `.size-snapshot.json` records the same number for
+ * the size gate, but that file is a repo artifact and is NOT published, so
+ * reading it here would throw for every npm consumer whose `darkmown build`
+ * emits `dist/llms.txt`.
+ *
+ * Before 2.7 this was a hand-maintained literal kept honest by
+ * `tests/size-prose.test.js`. Deriving it removes the drift instead of policing
+ * it — and that test now cross-checks the measurement against the snapshot.
+ * The cheatsheet is the artifact an app pastes into a model's system prompt, so
+ * a wrong number here is the one that gets repeated back at users; it once said
+ * "~8 KB", which was the BUDGET, not the size.
  */
-const RUNTIME_SIZE = "~7.7 KB";
+const RUNTIME_SIZE = `~${(gzipSync(fs.readFileSync(new URL("runtime.min.js", import.meta.url))).length / 1000).toFixed(1)} KB`;
 
 /**
  * Block openers close explicitly; these are the closers and the mid-block

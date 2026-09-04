@@ -476,7 +476,7 @@ test("a real directive never trips the unknown-directive warning", () => {
   // wrong problem for a token spelled correctly.
   for (const line of [
     ":slider volume = 50 min=0 max=100 step=1",
-    ":slider", // the bare opener: still a real directive, just missing its name
+    ":theme", // bare and complete: the theme store needs no argument
     ":carousel\n::: slide\nhi\n:::\n:endcarousel"
   ]) {
     assert.deepEqual(
@@ -485,6 +485,19 @@ test("a real directive never trips the unknown-directive warning", () => {
       line
     );
   }
+});
+
+test("a directive that is bare but INCOMPLETE is an error, not a warning", () => {
+  // A keyword alone used to fall through to prose with the warning suppressed,
+  // so `:slider` rendered as the literal text `:slider`. It now reaches the
+  // directive's own handler and throws that directive's coded malformed error —
+  // the whole family is covered in tests/body-bare-directives.test.js.
+  const root = fixture();
+  write(root, "site/pages/index.wd", ":slider\n");
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
+    /\[WD409\] Malformed :slider/
+  );
 });
 
 test("a deleted directive DOES trip it — :note and :sprint are no longer .wd syntax", () => {

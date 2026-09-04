@@ -17,6 +17,7 @@ import {
   stripQuotes,
   validatePath
 } from "./interpolation.js";
+import { a11yAttrHtml, takeA11yAttrs } from "./structure.js";
 
 /**
  * @typedef {import("./context.js").Ctx} Ctx
@@ -25,7 +26,7 @@ import {
 
 // A concrete, compilable :button line for the malformed hint + directive catalog.
 export const BUTTON_EXAMPLE = ':button "Add one" -> count++';
-const BUTTON_USE = `Use: :button "Label" -> action — e.g. ${BUTTON_EXAMPLE}`;
+const BUTTON_USE = `Use: :button "Label" [role="…"] [aria-…="…"] [title="…"] -> action — e.g. ${BUTTON_EXAMPLE}`;
 
 /**
  * @param {string} line
@@ -34,8 +35,8 @@ const BUTTON_USE = `Use: :button "Label" -> action — e.g. ${BUTTON_EXAMPLE}`;
  * @returns {string}
  */
 export function handleButton(line, ctx, index) {
-  const match = line.match(/^:button\s+"([^"]+)"\s*->\s*(.+)$/);
-  if (!match)
+  /** @returns {never} */
+  const malformed = () => {
     throw wdError(`Malformed :button in ${at(ctx, index)}: ${line}. ${BUTTON_USE}`, {
       code: "WD301",
       file: ctx.file,
@@ -43,18 +44,32 @@ export function handleButton(line, ctx, index) {
       hint: BUTTON_USE.slice("Use: ".length),
       example: BUTTON_EXAMPLE
     });
+  };
+  // Label first, then any whitelisted accessibility attributes, then `->` and
+  // the action chain. The attributes are peeled BEFORE the arrow is looked for,
+  // so a value containing `->` (`aria-label="a -> b"`) cannot split the line in
+  // the wrong place, and a rejected attribute reports the whitelist rather than
+  // "malformed :button".
+  const head = line.match(/^:button\s+"([^"]+)"\s*([\s\S]*)$/);
+  if (!head) return malformed();
+  const taken = takeA11yAttrs(head[2], ctx, index, ":button");
+  const arrow = taken.rest.match(/^->\s*(.+)$/);
+  if (!arrow) return malformed();
+  /** @type {[string, string]} */
+  const match = [head[1], arrow[1]];
   ctx.comp.assets.runtime = true;
-  const action = parseAction(match[2], ctx);
+  const action = parseAction(match[1], ctx);
   for (const a of Array.isArray(action) ? action : [action])
     recordSymbol(ctx, index, {
       kind: "action",
       name: a.target,
       target: a.target,
       op: a.op,
-      detail: `:button "${match[1]}" -> ${match[2].trim()}`
+      detail: `:button "${match[0]}" -> ${match[1].trim()}`
     });
+  const a11y = a11yAttrHtml(taken.attrs);
   if (Array.isArray(action)) {
-    return `<button type="button" data-wd-actions="${escapeHtml(JSON.stringify(action))}">${escapeHtml(match[1])}</button>`;
+    return `<button type="button"${a11y} data-wd-actions="${escapeHtml(JSON.stringify(action))}">${escapeHtml(match[0])}</button>`;
   }
   const valueAttr =
     action.value === undefined
@@ -64,7 +79,7 @@ export function handleButton(line, ctx, index) {
   // id verbatim (`a"onmouseover=…:count`), so it needs the same escaping the
   // neighbouring `id=` has always had — otherwise the id closes the attribute and
   // whatever follows becomes a live one.
-  return `<button type="button" data-wd-action="${action.op}" data-wd-target="${escapeHtml(action.target)}"${valueAttr}>${escapeHtml(match[1])}</button>`;
+  return `<button type="button"${a11y} data-wd-action="${action.op}" data-wd-target="${escapeHtml(action.target)}"${valueAttr}>${escapeHtml(match[0])}</button>`;
 }
 
 // Concrete, compilable examples for the effect / every hint tails + catalog.
@@ -72,6 +87,47 @@ export function handleButton(line, ctx, index) {
 // :computed for derived values. `searches++` is the canonical watch-and-act.)
 export const EFFECT_EXAMPLE = ":effect query -> searches++";
 const EFFECT_USE = `Use: :effect watchedState -> action[; action…] (actions use the :button vocabulary) — e.g. ${EFFECT_EXAMPLE}`;
+
+// ---------------------------------------------------------------------------
+// `:every` and `:effect` are PAGE-LEVEL registrations, not per-row ones.
+//
+// A reactive `@loop` compiles its body once into a `<template>` and the runtime
+// clones that template per list item, so a timer or a watcher written inside the
+// body is registered once per row: three rows meant three intervals, and a row
+// removed from the list left its interval running, so a single tick advanced a
+// counter by the number of rows the page had EVER shown. There is no correct
+// per-row meaning to give either directive — an effect watches a top-level state
+// key and an action targets one, neither can name the row — so the placement is
+// refused at compile time rather than repaired at runtime.
+//
+// Mirrors `declareState`'s WD202 check: `ctx.loopItem` is set only inside a
+// REACTIVE loop body (a static unroll passes the row through `ctx.scope`), which
+// is exactly the case that clones. It is inherited by everything nested in that
+// body, so a nested loop and an `:if`/each-if branch are covered by the same test.
+// ---------------------------------------------------------------------------
+
+/**
+ * Refuse a `:every`/`:effect` written inside a reactive `@loop` body.
+ * @param {string} what The directive keyword, for the message.
+ * @param {string} onList The same directive rewritten to act on the whole list,
+ *   which is what the author almost always meant.
+ * @param {string} example The directive's compilable example, for the hint tail.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @returns {void}
+ */
+function rejectInReactiveLoop(what, onList, example, ctx, index) {
+  if (!ctx.loopItem) return;
+  const hint =
+    `declare ${what} once outside the loop — at page level, or inside the ::: section — and act on the ` +
+    `whole list (${onList}) — e.g. ${example}`;
+  throw wdError(
+    `${what} cannot be used inside a reactive @loop body in ${at(ctx, index)}. ` +
+      `Each row is cloned from the loop template, so every row would register its own ` +
+      `timer/watcher and a removed row's would keep firing. Use: ${hint}`,
+    { code: "WD315", file: ctx.file, line: lineOf(ctx, index), hint, example }
+  );
+}
 
 /**
  * Parse `:effect <watched> -> <actions>` into a zero-output marker the runtime
@@ -84,6 +140,7 @@ const EFFECT_USE = `Use: :effect watchedState -> action[; action…] (actions us
  * @returns {string}
  */
 export function handleEffect(line, ctx, index) {
+  rejectInReactiveLoop(":effect", ":effect query -> rows refetch", EFFECT_EXAMPLE, ctx, index);
   const match = line.match(/^:effect\s+([A-Za-z_$][\w$.]*)\s*->\s*(.+)$/);
   if (!match)
     throw wdError(`Malformed :effect in ${at(ctx, index)}: ${line}. ${EFFECT_USE}`, {
@@ -142,6 +199,7 @@ function parseDuration(raw) {
  * @returns {string}
  */
 export function handleEvery(line, ctx, index) {
+  rejectInReactiveLoop(":every", ":every 5s -> rows refetch", EVERY_EXAMPLE, ctx, index);
   const match = line.match(/^:every\s+(\S+)\s*->\s*(.+)$/);
   if (!match)
     throw wdError(`Malformed :every in ${at(ctx, index)}: ${line}. ${EVERY_USE}`, {

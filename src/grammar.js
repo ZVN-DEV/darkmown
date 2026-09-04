@@ -99,7 +99,11 @@ export function generateGrammar() {
   // Structured directives.
   lines.push('dir-loop ::= "@loop" sp operand sp "into" sp ident loop-clauses');
   lines.push('dir-if ::= ":if" sp ( condition (sp joiner sp condition)* | path )');
-  lines.push('dir-button ::= ":button" sp dqstring sp "->" sp action-chain');
+  // The label, then the accessibility attributes the compiler whitelists, then
+  // the arrow. Attributes are OPTIONAL and repeatable; the whitelist is spelled
+  // out here (rather than left to `restofline`) so a constrained model can emit
+  // `role`/`aria-…`/`title` and cannot invent `onclick=` or `class=`.
+  lines.push('dir-button ::= ":button" sp dqstring ( sp a11y-attr )* sp "->" sp action-chain');
   lines.push('dir-container ::= ":::" restofline');
   lines.push("");
 
@@ -148,6 +152,11 @@ export function generateGrammar() {
   lines.push('binding ::= "{" wsopt path pipe-chain wsopt "}"');
   lines.push('pipe-chain ::= ( wsopt "|" wsopt pipe ( ":" value )* )*');
   lines.push(`pipe ::= ${alt(cat.formatPipes.map((p) => p.name))}`);
+  lines.push("");
+
+  // Accessibility attributes (`::: ` headers and `:button` share the whitelist).
+  lines.push('a11y-attr ::= a11y-name "=" dqstring');
+  lines.push('a11y-name ::= "role" | "title" | "aria-" [a-z] [a-z0-9-]*');
   lines.push("");
 
   // Terminals.

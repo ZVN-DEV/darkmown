@@ -7,7 +7,7 @@ closer ::= "@endloop" | "@empty" | ":endif" | ":endform" | ":endcarousel" | ":::
 
 dir-loop ::= "@loop" sp operand sp "into" sp ident loop-clauses
 dir-if ::= ":if" sp ( condition (sp joiner sp condition)* | path )
-dir-button ::= ":button" sp dqstring sp "->" sp action-chain
+dir-button ::= ":button" sp dqstring ( sp a11y-attr )* sp "->" sp action-chain
 dir-container ::= ":::" restofline
 
 dir-include ::= "@include" restofline
@@ -50,6 +50,9 @@ action-op ::= "++" | "--" | sp "+=" sp value | sp "-=" sp value | sp "=" sp valu
 binding ::= "{" wsopt path pipe-chain wsopt "}"
 pipe-chain ::= ( wsopt "|" wsopt pipe ( ":" value )* )*
 pipe ::= "money" | "number" | "percent" | "round" | "date" | "time" | "datetime" | "upper" | "lower" | "capitalize" | "truncate" | "trim" | "pluralize" | "default" | "sum" | "avg" | "min" | "max" | "count" | "join"
+
+a11y-attr ::= a11y-name "=" dqstring
+a11y-name ::= "role" | "title" | "aria-" [a-z] [a-z0-9-]*
 
 operand ::= path | dqstring | number
 value ::= dqstring | number | path

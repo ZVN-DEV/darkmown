@@ -31,6 +31,9 @@ import { compileWhen, evalPredicate } from "./predicates.js";
 // Concrete, compilable structure examples for the hint tails + the catalog.
 export const INCLUDE_EXAMPLE = "@include /header.wd";
 export const CONTAINER_EXAMPLE = "::: card .featured";
+// The same header carrying the accessibility attributes the whitelist allows —
+// the WD650/WD651 hint tail, so a rejected attribute shows the accepted shape.
+export const CONTAINER_A11Y_EXAMPLE = '::: card .note role="region" aria-label="Notes"';
 export const IF_EXAMPLE = ":if count > 0";
 export const CAROUSEL_EXAMPLE = ":carousel autoplay=3000";
 const INCLUDE_USE = `Use: @include /partial.wd [with key="value"] — e.g. ${INCLUDE_EXAMPLE}`;
@@ -42,6 +45,105 @@ const INCLUDE_USE = `Use: @include /partial.wd [with key="value"] — e.g. ${INC
 // `.main` skin selectors keep working. Fixed compiler-owned constants — never
 // author-supplied — so no tag-injection surface; classes/ids still escape.
 const SEMANTIC_CONTAINER_TAGS = new Set(["nav", "main"]);
+
+// ---------------------------------------------------------------------------
+// The accessibility attribute whitelist, shared by `::: container` headers and
+// `:button` lines.
+//
+// A disclosure widget, a tab list, a menu, or a semantic table needs `role` and
+// `aria-*` on the elements the compiler emits, and until now neither directive
+// accepted any attribute at all — so those patterns simply could not be built
+// (audit 8.3). This opens exactly three shapes and nothing else:
+//
+//   role="…"       one ARIA role
+//   aria-*="…"     any `aria-` attribute
+//   title="…"      the native advisory title
+//
+// The value is STATIC quoted text; it is HTML-escaped on emit. There is no
+// `{ state }` interpolation in an attribute value in this pass — a reactive
+// `aria-expanded` would need a runtime attribute binding, which does not exist.
+// Everything else (`onclick`, `style`, `href`, `class`, `data-*`, `id=`) is a
+// compile error naming the whitelist, so the directive surface cannot quietly
+// become "arbitrary HTML attributes".
+// ---------------------------------------------------------------------------
+
+/** The corrective `Use:` tail every attribute error carries. */
+export const A11Y_ATTR_USE = 'role="…", aria-…="…", or title="…" (quoted static text)';
+
+// `aria-` plus at least one lowercase letter; `role`/`title` exactly. Names are
+// matched against this whitelist, so an emitted name can never carry markup.
+const A11Y_ATTR_NAME = /^(?:role|title|aria-[a-z][a-z0-9-]*)$/;
+
+// One `name="value"` pair at the cursor. The value cannot contain `"`, so the
+// pair always ends where it looks like it ends.
+const ATTR_PAIR = /^([A-Za-z][A-Za-z0-9-]*)="([^"]*)"/;
+// Anything that OPENS like an attribute, so a rejected one gets the whitelist
+// error rather than the generic "unexpected token".
+const ATTR_START = /^([A-Za-z][A-Za-z0-9-]*)\s*=/;
+
+/**
+ * Peel the leading run of whitelisted accessibility attributes off `rest`.
+ *
+ * Stops at the first token that does not open like an attribute (a `.class`, a
+ * `#id`, a `->`, or the end of the line) and hands that remainder back. A token
+ * that DOES open like an attribute but is misspelt, unquoted, or outside the
+ * whitelist is a compile error — never silently skipped.
+ * @param {string} rest Everything from the cursor to the end of the line.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line` errors.
+ * @param {string} what Directive label for the message, e.g. `:button`.
+ * @returns {{ attrs: [string, string][], rest: string }}
+ */
+export function takeA11yAttrs(rest, ctx, index, what) {
+  /** @type {[string, string][]} */
+  const attrs = [];
+  let s = rest.trim();
+  for (let start = s.match(ATTR_START); start; start = s.match(ATTR_START)) {
+    // The NAME is checked before the quoting, so `onclick=x` reports the
+    // whitelist (the attribute is the problem) rather than sending the author
+    // off to add quotes to something that will still be rejected.
+    if (!A11Y_ATTR_NAME.test(start[1])) {
+      throw wdError(
+        `Attribute "${start[1]}" is not allowed in ${what} at ${at(ctx, index)}. ` +
+          `Only accessibility attributes are: ${A11Y_ATTR_USE}`,
+        {
+          code: "WD650",
+          file: ctx.file,
+          line: lineOf(ctx, index),
+          hint: A11Y_ATTR_USE,
+          example: CONTAINER_A11Y_EXAMPLE
+        }
+      );
+    }
+    const pair = s.match(ATTR_PAIR);
+    if (!pair) {
+      throw wdError(
+        `Attribute "${start[1]}" in ${what} at ${at(ctx, index)} needs a double-quoted value. Use: ${A11Y_ATTR_USE}`,
+        {
+          code: "WD651",
+          file: ctx.file,
+          line: lineOf(ctx, index),
+          hint: A11Y_ATTR_USE,
+          example: CONTAINER_A11Y_EXAMPLE
+        }
+      );
+    }
+    attrs.push([pair[1], pair[2]]);
+    s = s.slice(pair[0].length).trim();
+  }
+  return { attrs, rest: s };
+}
+
+/**
+ * Serialize validated attribute pairs into an HTML attribute string. The NAME
+ * came through {@link A11Y_ATTR_NAME} so it is inert; the VALUE is author text
+ * and is escaped.
+ * @param {[string, string][]} attrs
+ * @returns {string}
+ */
+export function a11yAttrHtml(attrs) {
+  return attrs.map(([name, value]) => ` ${name}="${escapeHtml(value)}"`).join("");
+}
 
 /**
  * @param {string} line
@@ -138,6 +240,8 @@ export function handleContainer(header, bodyLines, ctx, index) {
   const eachClasses = [];
   /** @type {[string, any[]][]} Global state-driven class bindings (data-wd-class): [class, exprAST]. */
   const stateClasses = [];
+  /** @type {[string, string][]} Whitelisted accessibility attributes: [name, value]. */
+  const a11y = [];
   let id = "";
   // Leading tag/name token (anything not starting with . or #). "section" keeps
   // the <section> tag; a whitelisted semantic landmark (`nav`/`main`) emits that
@@ -166,6 +270,16 @@ export function handleContainer(header, bodyLines, ctx, index) {
       rest = rest.slice((m ? m[0] : rest).length).trim();
       continue;
     }
+    // `role="…"` / `aria-…="…"` / `title="…"`, in any position among the class
+    // and id tokens. A token that opens like an attribute but is not on the
+    // whitelist throws here rather than reaching the generic unexpected-token
+    // error, so the message names what IS allowed.
+    const taken = takeA11yAttrs(rest, ctx, index, `container "::: ${header.trim()}"`);
+    if (taken.attrs.length) {
+      a11y.push(...taken.attrs);
+      rest = taken.rest;
+      continue;
+    }
     const cm = rest.match(/^\.([A-Za-z_][\w-]*)/);
     if (!cm)
       throw wdError(
@@ -176,7 +290,10 @@ export function handleContainer(header, bodyLines, ctx, index) {
     rest = rest.slice(cm[0].length).trim();
     // Optional `when <predicate>` makes the class reactive. The predicate runs to
     // the next ` .`/` #` token or the end of the header.
-    const whenMatch = rest.match(/^when\s+(.+?)(?=\s+[.#]|$)/);
+    // The predicate runs to the next ` .`/` #` token, the next ATTRIBUTE token,
+    // or the end of the header — without the attribute stop, `.live when a == b
+    // role="status"` swallowed the attribute into the predicate.
+    const whenMatch = rest.match(/^when\s+(.+?)(?=\s+[.#]|\s+[A-Za-z][A-Za-z0-9-]*\s*=|$)/);
     if (whenMatch) {
       rest = rest.slice(whenMatch[0].length).trim();
       const compiled = compileWhen(whenMatch[1].trim(), ctx);
@@ -201,6 +318,7 @@ export function handleContainer(header, bodyLines, ctx, index) {
   }
   const idAttr = explicitId ? ` id="${escapeHtml(id)}"` : "";
   const classAttr = extraClass.length ? ` class="${escapeHtml(extraClass.join(" "))}"` : "";
+  const a11yAttr = a11yAttrHtml(a11y);
   let classBind = "";
   if (eachClasses.length) {
     ctx.comp.assets.runtime = true;
@@ -210,7 +328,7 @@ export function handleContainer(header, bodyLines, ctx, index) {
     ctx.comp.assets.runtime = true;
     classBind += ` data-wd-class="${escapeHtml(JSON.stringify(stateClasses))}"`;
   }
-  return `<${tag}${idAttr}${classAttr}${classBind}>\n${inner}\n</${tag}>`;
+  return `<${tag}${idAttr}${classAttr}${a11yAttr}${classBind}>\n${inner}\n</${tag}>`;
 }
 
 /**
@@ -289,7 +407,10 @@ function fetchLiveAttr(key, sourceLines, ctx) {
 export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart = index + 1) {
   const truthyCtx = nestedCtx(ctx, index + 1);
   const falsyCtx = nestedCtx(ctx, falsyStart);
-  const condition = line.replace(/^:if\s+/, "").trim();
+  // `\s*` (not `\s+`) so a BARE `:if` yields an empty condition and lands on the
+  // malformed-`:if` error below, instead of falling through with the literal
+  // text `:if` as its condition and reporting a baffling unsupported operand.
+  const condition = line.replace(/^:if\s*/, "").trim();
   recordSymbol(ctx, index, { kind: "if", name: condition, detail: `:if ${condition}` });
   // Fast path: a bare truthy dotted path (`:if open`, `:if item.done`). Keeps the
   // existing markup/behavior identical. Anything with operators (`>`, `==`, `and`,

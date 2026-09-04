@@ -714,6 +714,18 @@ function loopOverData(rows, itemName, bodyLines, ctx, opts) {
 function staticUnroll(rows, itemName, bodyLines, ctx, empty = null, emptyStart = 0) {
   if (rows.length === 0 && empty)
     return ctx.compileBody(empty, { ...nestedCtx(ctx, emptyStart), loopMeta: true });
+  // A body of BARE table rows (`| { p.name } | { p.n } |`, no `|---|` of its
+  // own) is the natural way to write the rows of a table whose header sits in
+  // the prose above the loop. Markdown needs a header to see a table at all, so
+  // each row compiled to a `<p>| Alpha | 3 |</p>` paragraph. Compile every row
+  // under a SYNTHESIZED header instead — the row seam then splices the one-row
+  // tables into one, and the synthetic `<thead>` is stripped off the result, so
+  // the loop emits a body-only `<table><tbody>…</tbody></table>` that the
+  // body-level seam splices onto the author's header table.
+  const pipe = pipeRowShape(bodyLines);
+  const lines = pipe
+    ? [pipeHeader(pipe.columns), pipeSeparator(pipe.columns), ...bodyLines]
+    : bodyLines;
   const out = [];
   const count = rows.length;
   for (let i = 0; i < count; i++) {
@@ -724,14 +736,82 @@ function staticUnroll(rows, itemName, bodyLines, ctx, empty = null, emptyStart =
       $last: i === count - 1,
       $count: count
     };
+    /** @type {Ctx} */
     const rowCtx = {
-      ...ctx,
+      // The two synthesized lines shift every real body line by 2, so shift the
+      // slice offset back by 2 — a warning raised inside a row still reports the
+      // line the author actually wrote.
+      ...(pipe ? nestedCtx(ctx, -2) : ctx),
       loopMeta: true,
       scope: createScope(ctx.scope, { [itemName]: rows[i], ...meta })
     };
-    out.push(ctx.compileBody(bodyLines, rowCtx));
+    out.push(ctx.compileBody(lines, rowCtx));
   }
-  return joinRows(out);
+  const html = joinRows(out);
+  return pipe ? html.replace(/<thead>[\s\S]*?<\/thead>\n?/, "") : html;
+}
+
+// One synthesized markdown table header + separator, wide enough for the body
+// rows underneath. The cells are never rendered (the `<thead>` is stripped back
+// off), they exist only so markdown-it recognises the rows as a table.
+/** @param {number} columns @returns {string} */
+const pipeHeader = (columns) => `|${" c |".repeat(columns)}`;
+/** @param {number} columns @returns {string} */
+const pipeSeparator = (columns) => `|${" --- |".repeat(columns)}`;
+
+/**
+ * Whether a loop body is a run of BARE markdown table rows — every non-blank
+ * line a `|…|` row, and no `|---|` separator of its own — and how many columns
+ * the first row has.
+ *
+ * A body that carries its own separator is a COMPLETE table per row; that shape
+ * already works (each row compiles to a one-row table and the row seam splices
+ * their `<tbody>`s), so it is deliberately not claimed here.
+ * @param {string[]} bodyLines
+ * @returns {{ columns: number } | null}
+ */
+function pipeRowShape(bodyLines) {
+  const rows = bodyLines.filter((line) => line.trim());
+  if (!rows.length || !rows.every((line) => line.trim().startsWith("|"))) return null;
+  if (rows.some((line) => /^\s*\|[\s:|-]+\|\s*$/.test(line))) return null;
+  return { columns: cellCount(rows[0]) };
+}
+
+/**
+ * Cells in one markdown table row. Counts `|` exactly the way markdown-it does
+ * — a backslash escapes the next character — so the synthesized header has the
+ * same column count markdown-it will read off the body rows.
+ * @param {string} row
+ * @returns {number}
+ */
+function cellCount(row) {
+  const inner = row.trim().replace(/^\|/, "").replace(/\|$/, "");
+  let cells = 1;
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "\\") i++;
+    else if (inner[i] === "|") cells++;
+  }
+  return cells;
+}
+
+/**
+ * The compile error for a REACTIVE `@loop` over bare table rows. The runtime
+ * clones each row out of a `<template>` into a `<div data-wd-loop-piece>`, and a
+ * `<div>` cannot live inside a `<table>`, so there is no correct HTML to emit —
+ * it used to ship silent `<p>| … |</p>` paragraphs instead.
+ * @param {Ctx} ctx
+ * @returns {Error}
+ */
+function reactiveTableRows(ctx) {
+  const opener = ctx.loopOpener ?? { at: ctx.file, line: "" };
+  const hint =
+    "a static source (a JSON file, a frontmatter list, or a collection) for a markdown table, " +
+    "or build reactive rows from containers (`::: trow` / `::: td`) instead of `|` cells";
+  return wdError(
+    `A reactive @loop cannot build markdown table rows in ${opener.at}: "${opener.line}". ` +
+      `A reactive row is cloned into a <div>, which cannot live inside a <table>. Use: ${hint}.`,
+    { code: "WD191", file: ctx.file, hint }
+  );
 }
 
 // The block tags a static unroll stitches back together across a row seam. Each
@@ -772,26 +852,46 @@ function spliceRow(prev, next) {
       return `${left.slice(0, -(tag.length + 3)).trimEnd()}\n${right.slice(tag.length + 2).trimStart()}`;
     }
   }
-  return spliceTable(left, right) ?? `${prev}\n${next}`;
+  return spliceTables(prev, next) ?? `${prev}\n${next}`;
 }
 
 /**
- * Splice two single-row tables into one by concatenating their `<tbody>`
- * contents. Only when both carry the SAME markup before `<tbody>`: a header that
- * interpolates the row is genuinely a table per row, and merging would drop it.
- * @param {string} left
- * @param {string} right
+ * Splice two adjacent tables into one, in the two shapes a `.wd` body produces:
+ *
+ * 1. Two tables that carry the SAME markup before `<tbody>` — one compiled row
+ *    body per loop row. Their `<tbody>` contents concatenate. Requiring the
+ *    prefixes to match is what keeps a header that interpolates the row (a
+ *    genuinely different table per row) from losing every header but the first.
+ * 2. A HEADER-ONLY table (a `<thead>` and no `<tbody>`: what `| Name | N |` +
+ *    `|---|---|` in the prose above a loop compiles to) followed by a BODY-ONLY
+ *    table (a `<tbody>` and no `<thead>`: what a loop over bare `|…|` rows now
+ *    emits). The body moves inside the header's table.
+ *
+ * Exported because both seams matter: the loop's own row seam (case 1) and the
+ * body-level seam between flushed prose and a handler's output (case 2), which
+ * `compileBody` owns.
+ * @param {string} prev
+ * @param {string} next
  * @returns {string | null} The spliced HTML, or null when they do not merge.
  */
-function spliceTable(left, right) {
+export function spliceTables(prev, next) {
+  const left = prev.trimEnd();
+  const right = next.trimStart();
   if (!left.endsWith("</table>") || !right.startsWith("<table>")) return null;
   const rightBody = right.indexOf("<tbody>");
+  if (rightBody === -1) return null;
   const leftBody = left.lastIndexOf("</tbody>");
-  if (rightBody === -1 || leftBody === -1) return null;
-  if (left.slice(0, left.indexOf("<tbody>")) !== right.slice(0, rightBody)) return null;
-  const head = left.slice(0, leftBody).trimEnd();
   const tail = right.slice(rightBody + "<tbody>".length).trimStart();
-  return `${head}\n${tail}`;
+  if (leftBody === -1) {
+    // Case 2: a header-only table absorbs the body-only table's rows. Both
+    // halves must be exactly that — a right side with its own `<thead>` is a
+    // complete table of its own and stays separate.
+    if (!left.includes("<thead>") || right.includes("<thead>")) return null;
+    return `${left.slice(0, left.lastIndexOf("</table>")).trimEnd()}\n<tbody>\n${tail}`;
+  }
+  // Case 1: same header, concatenated bodies.
+  if (left.slice(0, left.indexOf("<tbody>")) !== right.slice(0, rightBody)) return null;
+  return `${left.slice(0, leftBody).trimEnd()}\n${tail}`;
 }
 
 /**
@@ -807,6 +907,7 @@ function spliceTable(left, right) {
  */
 function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   assertReactiveDepth(ctx);
+  if (pipeRowShape(bodyLines)) throw reactiveTableRows(ctx);
   ctx.comp.assets.runtime = true;
   /** @type {Ctx} */
   const templateCtx = {
@@ -975,6 +1076,7 @@ function loopClauseAttrs(c) {
  */
 function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
   assertReactiveDepth(ctx);
+  if (pipeRowShape(bodyLines)) throw reactiveTableRows(ctx);
   /** @type {Ctx} */
   // loopKey: undefined — an item-relative loop's source is a path off the outer
   // row, not a top-level state key, so a per-row `remove` inside it has no valid

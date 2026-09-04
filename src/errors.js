@@ -62,9 +62,16 @@ import {
 } from "./compiler/forms.js";
 import { LOOP_EXAMPLE } from "./compiler/loops.js";
 import { EMBED_EXAMPLE, VIDEO_EXAMPLE } from "./compiler/media.js";
-import { COMPUTED_EXAMPLE, STATE_EXAMPLE, STORE_EXAMPLE, THEME_EXAMPLE } from "./compiler/state.js";
+import {
+  COMPUTED_EXAMPLE,
+  STATE_EXAMPLE,
+  STORE_EXAMPLE,
+  THEME_EXAMPLE,
+  URL_STATE_EXAMPLE
+} from "./compiler/state.js";
 import {
   CAROUSEL_EXAMPLE,
+  CONTAINER_A11Y_EXAMPLE,
   CONTAINER_EXAMPLE,
   IF_EXAMPLE,
   INCLUDE_EXAMPLE
@@ -369,6 +376,13 @@ const ENTRIES = [
       "A `:if` or `::: … when` condition folded a build-time value the expression re-parser cannot read back.",
     fix: 'Use simpler operands — a field path, a declared `:state`, a plain number, or a `"string"`.'
   },
+  {
+    code: "WD191",
+    title: "Reactive `@loop` over markdown table rows",
+    cause:
+      "A `@loop` whose body is bare `| … |` cells resolves to a reactive source, and a reactive row is cloned into a `<div>`, which cannot live inside a `<table>`.",
+    fix: "Loop a static source (a JSON file, a frontmatter list, or a collection) for a markdown table, or build reactive rows from containers (`::: trow` / `::: td`) instead of `|` cells."
+  },
 
   // --- WD2xx: state and expressions ----------------------------------------
   {
@@ -442,8 +456,9 @@ const ENTRIES = [
   {
     code: "WD211",
     title: "Persistence token on `:computed`",
-    cause: "The expression ends in a bare `persist` or `ephemeral`, which is swallowed into it.",
-    fix: "Computed values are derived, not stored. Persist the state they derive from instead.",
+    cause:
+      "The expression ends in a bare `persist`, `ephemeral`, or `from-url`, which is swallowed into it.",
+    fix: "Computed values are derived, not stored. Put the token on the state they derive from instead.",
     example: COMPUTED_EXAMPLE
   },
   {
@@ -557,6 +572,21 @@ const ENTRIES = [
     fix: "Derive it with `:computed`, or quote the text to keep it literal.",
     example: COMPUTED_EXAMPLE
   },
+  {
+    code: "WD260",
+    title: "`from-url` on a keyword that cannot take it",
+    cause:
+      "`:store` and `:theme` are shared by every page and every tab, while a query parameter belongs to one page's address, so the two cannot mean the same thing.",
+    fix: "Declare the value with `:state … from-url`, or drop the token.",
+    example: URL_STATE_EXAMPLE
+  },
+  {
+    code: "WD261",
+    title: "Conflicting persistence modifiers",
+    cause: "A declaration carries `persist` and `ephemeral` at once, or repeats the same modifier.",
+    fix: "Pick one: `persist` keeps the value across reloads, `ephemeral` drops it.",
+    example: STATE_EXAMPLE
+  },
 
   // --- WD3xx: actions ------------------------------------------------------
   {
@@ -649,6 +679,14 @@ const ENTRIES = [
     title: "Unsupported action literal",
     cause: "The action value is not a quoted string, number, boolean, null, or valid JSON.",
     fix: "Quote strings and use valid JSON for arrays and objects."
+  },
+  {
+    code: "WD315",
+    title: "`:every`/`:effect` inside a reactive `@loop`",
+    cause:
+      "A reactive loop clones its body per row, so the timer or watcher would be registered once per row and a removed row's would keep firing.",
+    fix: "Declare it once outside the loop — at page level or inside the `:::` section — and act on the whole list.",
+    example: EVERY_EXAMPLE
   },
 
   // --- WD4xx: forms and fields ---------------------------------------------
@@ -842,6 +880,32 @@ const ENTRIES = [
     example: RADIO_EXAMPLE
   },
 
+  {
+    code: "WD450",
+    title: "Bound field with no state",
+    cause:
+      "A `:select`/`:radio`/`:checkbox` outside a `:form` names state that is not declared, so there is nothing for it to bind to.",
+    fix: "Declare the state first, or move the field inside a `:form`, where the name is a form field instead.",
+    example: SELECT_EXAMPLE
+  },
+  {
+    code: "WD451",
+    title: "Bound `:checkbox` with several options",
+    cause:
+      "A `:checkbox` bound to state carries one true/false, so a list of options has no meaning.",
+    fix: "Give it one `- Label` line, or use a `:radio` group for a set of choices.",
+    example: CHECKBOX_EXAMPLE
+  },
+
+  {
+    code: "WD452",
+    title: "File field in a GET form",
+    cause:
+      'A `:form` contains an `<input type=file>` and declares `method="get"`. A GET request has no body, so only the file\'s name would travel.',
+    fix: 'Drop `method="get"` — a `:form` posts by default, and a form with a file field is submitted as multipart.',
+    example: FORM_EXAMPLE
+  },
+
   // --- WD5xx: data fetching and URL safety ---------------------------------
   {
     code: "WD501",
@@ -985,6 +1049,21 @@ const ENTRIES = [
     cause:
       "An `@include` chain reaches a file that is already being compiled, so the compile would never terminate.",
     fix: "Break the loop: remove the `@include` that points back, or move the shared content into a third file both sides include."
+  },
+  {
+    code: "WD650",
+    title: "Attribute is not on the accessibility whitelist",
+    cause:
+      "A `::: ` container header or a `:button` carries an attribute outside the accessibility whitelist (`onclick=`, `style=`, `href=`, `class=`, `data-…=`).",
+    fix: 'Keep only `role="…"`, `aria-…="…"`, and `title="…"`; style with `.class` tokens and act with `->` actions.',
+    example: CONTAINER_A11Y_EXAMPLE
+  },
+  {
+    code: "WD651",
+    title: "Accessibility attribute has no quoted value",
+    cause: "An attribute in a container header or a `:button` is missing its double-quoted value.",
+    fix: 'Write the value in double quotes, e.g. `role="region"`.',
+    example: CONTAINER_A11Y_EXAMPLE
   },
 
   // --- WD7xx: media and embeds ---------------------------------------------

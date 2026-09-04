@@ -33,12 +33,44 @@ import {
   handleTheme,
   renderDemoDirective
 } from "./directives.js";
-import { handleLoop } from "./loops.js";
+import { handleLoop, spliceTables } from "./loops.js";
 import { renderProse } from "./markdown.js";
 
 /**
  * @typedef {import("./context.js").Ctx} Ctx
  */
+
+// The directives that REQUIRE arguments, mapped to the handler that owns their
+// `Use:` hint. Each entry is called with the bare line and an empty body, and
+// every one of them throws — the block openers included, because their argument
+// check runs before they ever look at a body. `:theme` and `:carousel` are
+// deliberately absent: both are valid bare, and both dispatchers already accept
+// `(?:\s|$)`.
+/** @type {Record<string, (line: string, ctx: Ctx, index: number) => unknown>} */
+const BARE_DIRECTIVE = {
+  "@include": (line, ctx, i) => handleInclude(line, ctx, i),
+  "@loop": (line, ctx, i) => handleLoop(line, [], null, ctx, i),
+  ":state": (line, ctx, i) => handleState(line, ctx, i),
+  ":store": (line, ctx, i) => handleStore(line, ctx, i),
+  ":fetch": (line, ctx, i) => handleFetch(line, ctx, i),
+  ":computed": (line, ctx, i) => handleComputed(line, ctx, i),
+  ":effect": (line, ctx, i) => handleEffect(line, ctx, i),
+  ":every": (line, ctx, i) => handleEvery(line, ctx, i),
+  ":video": (line, ctx, i) => handleMedia(line, "video", ctx, i),
+  ":audio": (line, ctx, i) => handleMedia(line, "audio", ctx, i),
+  ":embed": (line, ctx, i) => handleEmbed(line, ctx, i),
+  ":form": (line, ctx, i) => handleForm(line, [], ctx, i),
+  ":input": (line, ctx, i) => handleInput(line, ctx, i),
+  ":textarea": (line, ctx, i) => handleTextarea(line, ctx, i),
+  ":select": (line, ctx, i) => handleSelect(line, [], ctx, i),
+  ":checkbox": (line, ctx, i) => handleChoiceGroup(line, [], ctx, "checkbox", i),
+  ":radio": (line, ctx, i) => handleChoiceGroup(line, [], ctx, "radio", i),
+  ":bind": (line, ctx, i) => handleBind(line, ctx, i),
+  ":slider": (line, ctx, i) => handleSlider(line, ctx, i),
+  ":submit": (line, ctx, i) => handleSubmit(line, ctx, i),
+  ":button": (line, ctx, i) => handleButton(line, ctx, i),
+  ":if": (line, ctx, i) => handleIf(line, [], [], ctx, i)
+};
 
 /**
  * Parse a `.wd` body line-by-line into HTML, mixing directives and prose.
@@ -57,12 +89,26 @@ export function compileBody(lines, ctx) {
   let proseStart = 0;
   let fence = null;
 
+  // Append one chunk, splicing it into the previous one when the seam between
+  // them is a table split in half. Markdown only sees a table when a header row
+  // is followed by a `|---|` separator, so `| Name | N |` + `|---|---|` in the
+  // prose ABOVE a loop compiles to a header-only table, and the loop's rows
+  // compile separately: the two halves have to be stitched back together here,
+  // where prose output and handler output meet. Every other seam falls through
+  // to the plain newline join, so all other output is byte-identical.
+  const push = (/** @type {string} */ html) => {
+    const last = out.length - 1;
+    const merged = last >= 0 ? spliceTables(out[last], html) : null;
+    if (merged === null) out.push(html);
+    else out[last] = merged;
+  };
+
   const flush = () => {
     if (!prose.length) return;
     const text = prose.join("\n");
     const start = proseStart;
     prose = [];
-    if (text.trim()) out.push(renderProse(text, ctx, start));
+    if (text.trim()) push(renderProse(text, ctx, start));
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -81,9 +127,23 @@ export function compileBody(lines, ctx) {
       continue;
     }
 
+    // A directive name ALONE on a line is a mistake with one obvious fix: it is
+    // missing its arguments. Every dispatcher below requires a space after the
+    // keyword, so such a line used to fall through to prose — and because
+    // `KNOWN_DIRECTIVE` accepted `(?:\s|$)`, even the "looks like a directive"
+    // warning was suppressed. `:state` on its own rendered as the literal text
+    // `:state` with nothing said about it. Hand the line to the directive's OWN
+    // handler with an empty body: it throws its own coded malformed error with
+    // its own `Use:` hint, so there is exactly one place that owns each hint.
+    const bare = line.match(/^([@:][a-z]+)\s*$/);
+    if (bare && Object.hasOwn(BARE_DIRECTIVE, bare[1])) {
+      flush();
+      BARE_DIRECTIVE[bare[1]](line, ctx, i);
+    }
+
     if (/^@include\s/.test(line)) {
       flush();
-      out.push(handleInclude(line, ctx, i));
+      push(handleInclude(line, ctx, i));
       continue;
     }
     if (/^@loop\s/.test(line)) {
@@ -91,7 +151,7 @@ export function compileBody(lines, ctx) {
       const block = scanBlock(lines, i, /^@loop\s/, "@endloop", ctx);
       const split = splitEmptyBranch(block.body);
       const loopAt = ctx.comp.symbols.length;
-      out.push(handleLoop(line, split.body, split.empty, ctx, i, split.emptyStart));
+      push(handleLoop(line, split.body, split.empty, ctx, i, split.emptyStart));
       stampBlockEnd(ctx, loopAt, block.end);
       i = block.end;
       continue;
@@ -105,84 +165,84 @@ export function compileBody(lines, ctx) {
           file: ctx.file
         });
       const block = scanContainer(lines, i, ctx);
-      out.push(handleContainer(container[1].trim(), block.body, ctx, i));
+      push(handleContainer(container[1].trim(), block.body, ctx, i));
       i = block.end;
       continue;
     }
     if (/^:state\s/.test(line)) {
       flush();
       const v = joinValueDirective(lines, i);
-      out.push(handleState(v.line, ctx, i));
+      push(handleState(v.line, ctx, i));
       i = v.end;
       continue;
     }
     if (/^:store\s/.test(line)) {
       flush();
       const v = joinValueDirective(lines, i);
-      out.push(handleStore(v.line, ctx, i));
+      push(handleStore(v.line, ctx, i));
       i = v.end;
       continue;
     }
     if (/^:fetch\s/.test(line)) {
       flush();
-      out.push(handleFetch(line, ctx, i));
+      push(handleFetch(line, ctx, i));
       continue;
     }
     if (/^:computed\s/.test(line)) {
       flush();
-      out.push(handleComputed(line, ctx, i));
+      push(handleComputed(line, ctx, i));
       continue;
     }
     if (/^:effect\s/.test(line)) {
       flush();
-      out.push(handleEffect(line, ctx, i));
+      push(handleEffect(line, ctx, i));
       continue;
     }
     if (/^:every\s/.test(line)) {
       flush();
-      out.push(handleEvery(line, ctx, i));
+      push(handleEvery(line, ctx, i));
       continue;
     }
     if (/^:theme(?:\s|$)/.test(line)) {
       flush();
       const v = joinValueDirective(lines, i);
-      out.push(handleTheme(v.line, ctx, i));
+      push(handleTheme(v.line, ctx, i));
       i = v.end;
       continue;
     }
     const media = line.match(/^:(video|audio)\s/);
     if (media) {
       flush();
-      out.push(handleMedia(line, /** @type {"video" | "audio"} */ (media[1]), ctx, i));
+      push(handleMedia(line, /** @type {"video" | "audio"} */ (media[1]), ctx, i));
       continue;
     }
     if (/^:embed\s/.test(line)) {
       flush();
-      out.push(handleEmbed(line, ctx, i));
+      push(handleEmbed(line, ctx, i));
       continue;
     }
     if (/^:form\s/.test(line)) {
       flush();
       const block = scanBlock(lines, i, /^:form\s/, ":endform", ctx);
-      out.push(handleForm(line, block.body, ctx, i));
+      push(handleForm(line, block.body, ctx, i));
       i = block.end;
       continue;
     }
     if (/^:carousel(?:\s|$)/.test(line)) {
       flush();
       const block = scanBlock(lines, i, /^:carousel(?:\s|$)/, ":endcarousel", ctx);
-      out.push(handleCarousel(line, block.body, ctx, i));
+      push(handleCarousel(line, block.body, ctx, i));
       i = block.end;
       continue;
     }
     if (/^:input\s/.test(line)) {
       flush();
-      out.push(handleInput(line, ctx, i));
+      push(handleInput(line, ctx, i));
       continue;
     }
     if (/^:textarea\s/.test(line)) {
       flush();
-      out.push(handleTextarea(line, ctx, i));
+      push(handleTextarea(line, ctx, i));
       continue;
     }
     if (/^:select\s/.test(line)) {
@@ -193,7 +253,7 @@ export function compileBody(lines, ctx) {
         opts.push(lines[j]);
         j++;
       }
-      out.push(handleSelect(line, opts, ctx, i));
+      push(handleSelect(line, opts, ctx, i));
       i = j - 1;
       continue;
     }
@@ -206,7 +266,7 @@ export function compileBody(lines, ctx) {
         opts.push(lines[j]);
         j++;
       }
-      out.push(
+      push(
         handleChoiceGroup(line, opts, ctx, /** @type {"checkbox" | "radio"} */ (choiceMatch[1]), i)
       );
       i = j - 1;
@@ -214,29 +274,29 @@ export function compileBody(lines, ctx) {
     }
     if (/^:bind\s/.test(line)) {
       flush();
-      out.push(handleBind(line, ctx, i));
+      push(handleBind(line, ctx, i));
       continue;
     }
     if (/^:slider\s/.test(line)) {
       flush();
-      out.push(handleSlider(line, ctx, i));
+      push(handleSlider(line, ctx, i));
       continue;
     }
     if (/^:submit\s/.test(line)) {
       flush();
-      out.push(handleSubmit(line, ctx, i));
+      push(handleSubmit(line, ctx, i));
       continue;
     }
     if (/^:button\s/.test(line)) {
       flush();
-      out.push(handleButton(line, ctx, i));
+      push(handleButton(line, ctx, i));
       continue;
     }
     if (/^:if\s/.test(line)) {
       flush();
       const block = scanConditional(lines, i, ctx);
       const ifAt = ctx.comp.symbols.length;
-      out.push(handleIf(line, block.truthy, block.falsy, ctx, i, block.falsyStart));
+      push(handleIf(line, block.truthy, block.falsy, ctx, i, block.falsyStart));
       stampBlockEnd(ctx, ifAt, block.end);
       i = block.end;
       continue;
@@ -244,7 +304,7 @@ export function compileBody(lines, ctx) {
     const demo = renderDemoDirective(line, ctx);
     if (demo) {
       flush();
-      out.push(demo);
+      push(demo);
       continue;
     }
     if (/^@repeat\b/.test(line)) {
@@ -287,7 +347,7 @@ export function compileBody(lines, ctx) {
 // warning that would have said so is suppressed. (`:note`/`:sprint` were deleted
 // from the demo handler and are gone from here for exactly that reason.)
 const KNOWN_DIRECTIVE =
-  /^(?:@(?:include|loop|empty|endloop)|:(?:state|store|fetch|computed|effect|every|theme|video|audio|embed|form|endform|input|textarea|select|checkbox|radio|bind|slider|submit|button|carousel|endcarousel|if|endif|else|try))(?:\s|$)/;
+  /^(?:(?:@(?:include|loop|empty|endloop)|:(?:state|store|fetch|computed|effect|every|theme|video|audio|embed|form|endform|input|textarea|select|checkbox|radio|bind|slider|submit|button|carousel|endcarousel|if|endif|else))(?:\s|$)|:try\s)/;
 /**
  * @param {string} line
  * @param {Ctx} ctx

@@ -29,10 +29,12 @@ import {
   COMPUTED_EXAMPLE,
   STATE_EXAMPLE,
   STORE_EXAMPLE,
-  THEME_EXAMPLE
+  THEME_EXAMPLE,
+  URL_STATE_EXAMPLE
 } from "../src/compiler/state.js";
 import {
   CAROUSEL_EXAMPLE,
+  CONTAINER_A11Y_EXAMPLE,
   CONTAINER_EXAMPLE,
   IF_EXAMPLE,
   INCLUDE_EXAMPLE
@@ -85,6 +87,7 @@ const SOURCES = new Map(
 const NOT_SCANNED = {
   "runtime.js":
     "browser reactive core: it renders compiled output and never authors compile errors",
+  "runtime.min.js": "the committed esbuild build of runtime.js: same throws, minified",
   "errors.js": "the registry itself: it lists every code as data",
   "cli.js": "CLI argument failures use CliError, which the CLI prints without a stack",
   "api-runner.js": "request-time handler-contract TypeErrors, not compile-time authoring errors"
@@ -196,6 +199,7 @@ test("documented examples are drawn from the compiler's own example constants", 
     CAROUSEL_EXAMPLE,
     CHECKBOX_EXAMPLE,
     COMPUTED_EXAMPLE,
+    CONTAINER_A11Y_EXAMPLE,
     CONTAINER_EXAMPLE,
     EFFECT_EXAMPLE,
     EMBED_EXAMPLE,
@@ -214,6 +218,7 @@ test("documented examples are drawn from the compiler's own example constants", 
     SUBMIT_EXAMPLE,
     TEXTAREA_EXAMPLE,
     THEME_EXAMPLE,
+    URL_STATE_EXAMPLE,
     VIDEO_EXAMPLE
   ]);
   for (const entry of errorCatalog()) {

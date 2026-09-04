@@ -333,7 +333,14 @@ const SHIPPED = [
   // K2: `refetch` reached the grammar only because the rule was hand-written;
   // it is now derived from the catalog, so this proves the derivation.
   [':button "Refresh" -> board refetch', "refetch action"],
-  [':button "Save" -> settings merge patch; open toggle', "chained actions"]
+  [':button "Save" -> settings merge patch; open toggle', "chained actions"],
+
+  // The accessibility whitelist: `role`/`aria-…`/`title` sit between the label
+  // and the arrow, so a constrained model can label a button for a screen
+  // reader without inventing an attribute the compiler would reject.
+  [':button "Save" role="menuitem" -> open = true', "button with role"],
+  [':button "Menu" aria-expanded="false" aria-controls="m" -> open toggle', "button with aria"],
+  [':button "Save" title="Saves the draft" -> open = true', "button with title"]
 ];
 
 test("the grammar parses every shipped directive form", () => {
@@ -354,7 +361,10 @@ test("the grammar parser is not vacuous — it rejects non-Darkmown lines", () =
     ":else iff x == 1", // typo'd else-if
     "@loop rows into r where", // where with no condition
     "{ p.price | bogus }", // unknown format pipe
-    ":state count = 0 extra" // trailing junk after a generic directive… see below
+    ":state count = 0 extra", // trailing junk after a generic directive… see below
+    ':button "Save" onclick="x()" -> count++', // an event handler is not on the whitelist
+    ':button "Save" class="danger" -> count++', // styling is `.class` on a container, not here
+    ':button "Save" role=menuitem -> count++' // an unquoted attribute value
   ];
   const accepted = REJECTED.filter(parses);
   // `:state … restofline` is deliberately free-form, so that last line IS legal.

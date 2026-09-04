@@ -78,6 +78,7 @@ free number in their block.
 | `WD123` | Missing required frontmatter field | A collection entry omits a field the schema requires. | Add the field to the entry, or mark it optional with `?` in the schema. |  |
 | `WD124` | Frontmatter field has the wrong type | An entry's value does not match its schema type. | Fix the entry's value, or widen the type in `_schema.wd`. |  |
 | `WD190` | Expression could not be compiled | A `:if` or `::: … when` condition folded a build-time value the expression re-parser cannot read back. | Use simpler operands — a field path, a declared `:state`, a plain number, or a `"string"`. |  |
+| `WD191` | Reactive `@loop` over markdown table rows | A `@loop` whose body is bare `\| … \|` cells resolves to a reactive source, and a reactive row is cloned into a `<div>`, which cannot live inside a `<table>`. | Loop a static source (a JSON file, a frontmatter list, or a collection) for a markdown table, or build reactive rows from containers (`::: trow` / `::: td`) instead of `\|` cells. |  |
 
 ## WD2xx — State & expressions
 
@@ -93,7 +94,7 @@ free number in their block.
 | `WD208` | Malformed `:computed` | The line does not read `:computed name = <expression>`. | Give the computed value a name and a right-hand expression. | `:computed total = items.length * 4` |
 | `WD209` | Malformed `:computed` expression | The right-hand side passes the character whitelist but is not a real expression. | Write a complete expression over declared state, numbers, and operators. | `:computed total = items.length * 4` |
 | `WD210` | Malformed `:theme` | The line does not read `:theme [name] [= "auto"]`. | Use a bare `:theme`, or name the store and seed it. | `:theme` |
-| `WD211` | Persistence token on `:computed` | The expression ends in a bare `persist` or `ephemeral`, which is swallowed into it. | Computed values are derived, not stored. Persist the state they derive from instead. | `:computed total = items.length * 4` |
+| `WD211` | Persistence token on `:computed` | The expression ends in a bare `persist`, `ephemeral`, or `from-url`, which is swallowed into it. | Computed values are derived, not stored. Put the token on the state they derive from instead. | `:computed total = items.length * 4` |
 | `WD220` | Malformed `where` condition | A `where` condition is not `operand <op> operand`. | Compare a loop-item field with a value using a whitelisted operator. |  |
 | `WD221` | Unsupported `where` operand | An operand is not an item field, a state name, a number, or a quoted string. | Use one of those four operand forms. |  |
 | `WD222` | Disallowed `where` path | An operand path contains `constructor`, `prototype`, or `__proto__`. | Compare an ordinary data field. |  |
@@ -111,6 +112,8 @@ free number in their block.
 | `WD234` | Unknown state in `:computed` | The expression references a name that is not declared state. | Declare it with `:state`, `:store`, or `:fetch` first. | `:computed total = items.length * 4` |
 | `WD250` | Reserved state declaration name | A `:state`/`:store`/`:computed`/`:fetch`/`:form`/`:slider`/`:theme` name is `__proto__`, `constructor`, or `prototype`, which the runtime's state object inherits rather than owns. | Rename the key — any other name works. | `:state count = 0` |
 | `WD251` | State seeded from another state | A `:state`/`:store` value is a bare name that is already declared state, so it would be stored as that literal text and never track the value. | Derive it with `:computed`, or quote the text to keep it literal. | `:computed total = items.length * 4` |
+| `WD260` | `from-url` on a keyword that cannot take it | `:store` and `:theme` are shared by every page and every tab, while a query parameter belongs to one page's address, so the two cannot mean the same thing. | Declare the value with `:state … from-url`, or drop the token. | `:state q = "" from-url` |
+| `WD261` | Conflicting persistence modifiers | A declaration carries `persist` and `ephemeral` at once, or repeats the same modifier. | Pick one: `persist` keeps the value across reloads, `ephemeral` drops it. | `:state count = 0` |
 
 ## WD3xx — Button, effect & timer actions
 
@@ -130,6 +133,7 @@ free number in their block.
 | `WD312` | `merge` operand is unknown state | The right-hand name of a `merge` is not declared state. | Declare it first, or pass an inline object literal. |  |
 | `WD313` | Unsupported `merge` operand | The operand is neither a state key nor an inline object literal. | Merge a declared object state, or an inline `{…}` literal. |  |
 | `WD314` | Unsupported action literal | The action value is not a quoted string, number, boolean, null, or valid JSON. | Quote strings and use valid JSON for arrays and objects. |  |
+| `WD315` | `:every`/`:effect` inside a reactive `@loop` | A reactive loop clones its body per row, so the timer or watcher would be registered once per row and a removed row's would keep firing. | Declare it once outside the loop — at page level or inside the `:::` section — and act on the whole list. | `:every 5s -> seconds++` |
 
 ## WD4xx — Forms & form fields
 
@@ -162,6 +166,9 @@ free number in their block.
 | `WD425` | Unknown `:checkbox`/`:radio` flag | The bare flag is not `required`, `disabled`, or `autofocus`. | Use a supported flag. | `:checkbox toppings` |
 | `WD426` | Unknown `:checkbox`/`:radio` attribute | The attribute is not `aria-label` or `aria-describedby`. | Use a supported attribute. | `:checkbox toppings` |
 | `WD427` | `:checkbox`/`:radio` has no options | No `- Label` lines follow the opener. | Add one `- Label` line per option directly beneath it. | `:radio size` |
+| `WD450` | Bound field with no state | A `:select`/`:radio`/`:checkbox` outside a `:form` names state that is not declared, so there is nothing for it to bind to. | Declare the state first, or move the field inside a `:form`, where the name is a form field instead. | `:select topic` |
+| `WD451` | Bound `:checkbox` with several options | A `:checkbox` bound to state carries one true/false, so a list of options has no meaning. | Give it one `- Label` line, or use a `:radio` group for a set of choices. | `:checkbox toppings` |
+| `WD452` | File field in a GET form | A `:form` contains an `<input type=file>` and declares `method="get"`. A GET request has no body, so only the file's name would travel. | Drop `method="get"` — a `:form` posts by default, and a form with a file field is submitted as multipart. | `:form into contact` |
 
 ## WD5xx — Data fetching & URL safety
 
@@ -193,6 +200,8 @@ free number in their block.
 | `WD610` | Unsafe `:try` href | The href has control characters, or a scheme outside http/https/mailto. | Use a relative URL, or an `http:`, `https:`, or `mailto:` URL. |  |
 | `WD611` | Protocol-relative `:try` href | A `//host` href inherits whatever scheme the page was served over. | Write `http:` or `https:` explicitly. |  |
 | `WD612` | Include cycle | An `@include` chain reaches a file that is already being compiled, so the compile would never terminate. | Break the loop: remove the `@include` that points back, or move the shared content into a third file both sides include. |  |
+| `WD650` | Attribute is not on the accessibility whitelist | A `::: ` container header or a `:button` carries an attribute outside the accessibility whitelist (`onclick=`, `style=`, `href=`, `class=`, `data-…=`). | Keep only `role="…"`, `aria-…="…"`, and `title="…"`; style with `.class` tokens and act with `->` actions. | `::: card .note role="region" aria-label="Notes"` |
+| `WD651` | Accessibility attribute has no quoted value | An attribute in a container header or a `:button` is missing its double-quoted value. | Write the value in double quotes, e.g. `role="region"`. | `::: card .note role="region" aria-label="Notes"` |
 
 ## WD7xx — Media & embeds
 
