@@ -424,7 +424,9 @@ function reportAndGate(dir, { srcDir, srcUrlPrefix, threshold }) {
     finalize();
     const show = process.env.WD_COV_SHOW;
     if (show && url.includes(show)) {
-      console.error(`  uncovered lines in ${url.slice(url.lastIndexOf("/src/") + 5)}: ${missed.join(", ") || "none"}`);
+      console.error(
+        `  uncovered lines in ${url.slice(url.lastIndexOf("/src/") + 5)}: ${missed.join(", ") || "none"}`
+      );
     }
     return { total, hit };
   };

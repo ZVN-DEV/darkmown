@@ -12,6 +12,7 @@
 // directive's `Use:` hint — one owner per hint, no second copy to drift.
 
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import { directiveCatalog } from "../src/catalog.js";
 import { compileFromMemory } from "../src/compiler.js";
@@ -60,7 +61,8 @@ for (const name of NEEDS_ARGUMENTS) {
     assert.match(error.message, /^\[WD\d{3}\]/, `uncoded error for ${name}: ${error.message}`);
     assert.match(error.wd.code, /^WD\d{3}$/);
     // 2. It points at the offending line.
-    assert.equal(error.wd.file, "/proj/site/pages/index.wd");
+    // compileFromMemory resolves cwd on the host, so Windows reports D:\proj\...
+    assert.equal(error.wd.file, path.resolve("/proj", "site/pages/index.wd"));
     // 3. It tells the author what the line should have looked like. The hint is
     //    the directive's own, so it can never drift from what compiles.
     assert.ok(
