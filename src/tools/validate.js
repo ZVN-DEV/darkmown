@@ -147,13 +147,23 @@ export function validate(files, entry) {
   // load-bearing: whether the page went reactive. A brochure page that quietly
   // starts shipping the runtime is a regression the framework cares about more
   // than almost anything else, and it is invisible in the HTML.
-  const skins = Object.keys(compiled.assets?.skins ?? {}).length;
+  // `assets.skins` is a SET (see Assets in src/compiler/context.js). `Object.keys`
+  // on one is always `[]`, so this reported "0 skins" for every page that had any.
+  const skins = compiled.assets?.skins?.size ?? 0;
   const facts = [
     compiled.assets?.runtime ? "reactive (ships the runtime)" : "static (ships zero JavaScript)",
     `${skins} skin${skins === 1 ? "" : "s"}`
   ];
-  const lines = [`compiles. ${facts.join(", ")}.`];
-  for (const w of compiled.warnings ?? []) lines.push(`  warning: ${w}`);
+  // Warnings are the silent-failure class — interpolation the compiler could not
+  // bind, a directive that will render as literal text. They are not errors, so
+  // `ok` stays true, but a model that only reads the first line has to SEE them:
+  // the count goes in the headline, ahead of the facts, and each one is listed.
+  const warnings = [...(compiled.warnings ?? [])];
+  const count = warnings.length;
+  const headline = count
+    ? `compiles with ${count} warning${count === 1 ? "" : "s"}. ${facts.join(", ")}.`
+    : `compiles. ${facts.join(", ")}.`;
+  const lines = [headline, ...warnings.map((warning) => `- ${warning}`)];
 
   return {
     ok: true,
@@ -161,7 +171,7 @@ export function validate(files, entry) {
     data: {
       runtime: Boolean(compiled.assets?.runtime),
       skins,
-      warnings: [...(compiled.warnings ?? [])],
+      warnings,
       title: compiled.meta?.title ?? null,
       html: compiled.html
     }

@@ -20,6 +20,8 @@ in `darkmown dev` and on every host. Loading and error states are handled inline
 npx darkmown deploy vercel       # or: npx darkmown deploy cloudflare
 ```
 
+Or one-click, after pushing this repo to GitHub (replace `YOUR_REPO_URL` in both links with your repository URL):
+
 [![Deploy to Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=YOUR_REPO_URL)
 &nbsp;
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=YOUR_REPO_URL)

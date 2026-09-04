@@ -71,7 +71,7 @@ function routeIsReactive(distRoot, route) {
  */
 export function serve(distRoot, url, res) {
   const file = resolvePublicFile(distRoot, url || "/");
-  if (!file || !fs.existsSync(file)) {
+  if (!file || !isServableFile(file)) {
     res.writeHead(404, {
       "content-type": "text/html; charset=utf-8",
       ...htmlSecurityHeaders(distRoot, url)
@@ -89,7 +89,43 @@ export function serve(distRoot, url, res) {
     ? { "content-type": type, ...htmlSecurityHeaders(distRoot, url) }
     : { "content-type": type };
   res.writeHead(200, headers);
-  fs.createReadStream(file).pipe(res);
+  pipeFile(file, res);
+}
+
+/**
+ * Whether a resolved path is something we can actually stream back: a regular
+ * file. A DIRECTORY is the case that matters — `fs.existsSync` says yes to one,
+ * and handing it to a read stream is an `EISDIR` on an unhandled `error` event,
+ * which takes the whole server process down. Treating it as a miss answers 404
+ * instead. Anything unstattable (absent, or a parent the process cannot read)
+ * is a miss too.
+ * @param {string} file Absolute path inside the build output.
+ * @returns {boolean}
+ */
+export function isServableFile(file) {
+  return Boolean(fs.statSync(file, { throwIfNoEntry: false })?.isFile());
+}
+
+/**
+ * Stream a built file to the response with an `error` handler attached.
+ *
+ * `fs.createReadStream(file).pipe(res)` has none, so ANY read failure — a file
+ * deleted by a rebuild between the stat and the open, a permission error, a
+ * path that turned out not to be a regular file — is an unhandled `error` event
+ * and an immediate process exit. Here it answers instead: a 500 when the
+ * response has not started, and a clean end when it has (the status is already
+ * on the wire by then, so the truncated body is all we can signal with).
+ * @param {string} file Absolute path to the file to stream.
+ * @param {http.ServerResponse} res Response to write to.
+ * @returns {void}
+ */
+export function pipeFile(file, res) {
+  const stream = fs.createReadStream(file);
+  stream.on("error", () => {
+    if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+    res.end("500 Internal Server Error");
+  });
+  stream.pipe(res);
 }
 
 /**
@@ -112,6 +148,14 @@ export function resolvePublicFile(distRoot, url) {
   const requested = path.resolve(distRoot, `.${base}`);
   const root = path.resolve(distRoot);
   if (requested !== root && !requested.startsWith(`${root}${path.sep}`)) return null;
+  // `path.extname` reports an extension for any dotted LAST SEGMENT, so a clean
+  // route like `/v1.2/`, `/node.js/` or `/2024.01/` looked like a file request
+  // and skipped the `index.html` join above — resolving to the DIRECTORY. Fix it
+  // where the answer is knowable (on disk) rather than by guessing from the
+  // string: a directory serves its `index.html`, exactly like every other route.
+  if (fs.statSync(requested, { throwIfNoEntry: false })?.isDirectory()) {
+    return path.join(requested, "index.html");
+  }
   return requested;
 }
 

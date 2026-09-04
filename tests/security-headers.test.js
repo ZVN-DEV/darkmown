@@ -166,6 +166,88 @@ test("renderCloudflareHeaders overrides static routes with the eval-free CSP and
   assert.match(out, new RegExp(`/docs\\n {2}Content-Security-Policy: ${escapeRe(STATIC_CSP)}`));
 });
 
+/**
+ * Resolve `_headers` the way Cloudflare Pages does, and answer WHICH block won.
+ *
+ * Comparing the resolved CSP *value* would be vacuous today: `STATIC_CSP` and
+ * `REACTIVE_CSP` are byte-identical since 2.1, so a shadowed route "passes" no
+ * matter which block claims it. The oracle is therefore the winning block's
+ * PATTERN — which stays a real assertion if the two policies ever diverge again.
+ * @param {string} text The generated `_headers` file.
+ * @param {string} requestPath The path a visitor asks for.
+ * @returns {string | undefined} The pattern of the last block that matched.
+ */
+function winningPattern(text, requestPath) {
+  let winner;
+  for (const block of text.trim().split("\n\n")) {
+    const [pattern, ...lines] = block.split("\n");
+    if (!lines.some((line) => line.includes("Content-Security-Policy:"))) continue;
+    // Cloudflare's globs: `*` matches any run of characters, including `/`.
+    const re = new RegExp(`^${pattern.split("*").map(escapeRe).join(".*")}$`);
+    if (re.test(requestPath)) winner = pattern; // later block wins
+  }
+  return winner;
+}
+
+test("a static route's glob does not shadow a reactive route nested under it", () => {
+  const manifest = [
+    { route: "/", file: "site/pages/index.md", assets: { skins: [], scripts: [], runtime: false } },
+    {
+      route: "/docs/",
+      file: "site/pages/docs/index.md",
+      assets: { skins: [], scripts: [], runtime: false }
+    },
+    {
+      route: "/docs/guide/",
+      file: "site/pages/docs/guide/index.wd",
+      assets: { skins: [], scripts: [], runtime: true }
+    },
+    {
+      route: "/app/",
+      file: "site/pages/app/index.wd",
+      assets: { skins: [], scripts: [], runtime: true }
+    }
+  ];
+  const out = renderCloudflareHeaders(manifest);
+
+  // The static parent's `/docs/*` DOES match the nested reactive route, and
+  // later blocks win — so without a re-statement the reactive route silently
+  // resolves to its parent's policy. It must land on a block of its own.
+  assert.equal(winningPattern(out, "/docs/guide/"), "/docs/guide/*");
+  assert.equal(winningPattern(out, "/docs/guide"), "/docs/guide");
+  // The static parent itself is unaffected.
+  assert.equal(winningPattern(out, "/docs/"), "/docs/*");
+  // A reactive route no static glob covers still needs no block of its own —
+  // the catch-all already carries its policy, and `_headers` stays small.
+  assert.equal(winningPattern(out, "/app/"), "/*");
+  assert.doesNotMatch(out, /^\/app\/\*$/m);
+
+  // And the policy the shadowed route resolves to is its own.
+  const block = out.split("\n\n").find((b) => b.startsWith("/docs/guide/*\n"));
+  assert.match(block, new RegExp(`Content-Security-Policy: ${escapeRe(REACTIVE_CSP)}`));
+});
+
+test("a real build's _headers gives a nested reactive route its own block", () => {
+  const root = fixture();
+  write(root, "site/pages/index.md", "# Home\n\nStatic.");
+  write(root, "site/pages/docs/index.md", "# Docs\n\nStatic parent.");
+  write(
+    root,
+    "site/pages/docs/guide/index.wd",
+    [":state count = 0", "Count: { count }", ':button "Increment" -> count++'].join("\n")
+  );
+  buildSite(root);
+
+  const out = fs.readFileSync(path.join(root, "dist/_headers"), "utf8");
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "dist/routes.json"), "utf8"));
+  assert.equal(
+    manifest.find((entry) => entry.route === "/docs/guide/").assets.runtime,
+    true,
+    "the nested route really is reactive"
+  );
+  assert.equal(winningPattern(out, "/docs/guide/"), "/docs/guide/*");
+});
+
 // ---------------------------------------------------------------------------
 // End-to-end: a real build writes dist/_headers.
 // ---------------------------------------------------------------------------

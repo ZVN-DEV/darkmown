@@ -191,9 +191,42 @@ export function rssDescription(meta, file, body) {
 }
 
 /**
+ * The `<lastmod>` form the sitemap protocol accepts: W3C Datetime, of which
+ * `yyyy-mm-dd` is the shortest legal spelling. Anchored at the start so a full
+ * ISO timestamp (`2026-01-05T10:00:00Z`) matches on its date half.
+ */
+const W3C_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Validate a frontmatter `date:` into a sitemap `<lastmod>` value, or "" when it
+ * is not one.
+ *
+ * This is the only feed value that used to be neither validated nor escaped, and
+ * both halves mattered: `date: 2026<bad&"q"` made the whole document
+ * unparseable, so NOTHING got indexed, and the far likelier `date: Jan 5, 2026`
+ * was silently truncated to `Jan 5, 202` by a blind 10-character slice. Returning
+ * "" (rather than guessing) lets the caller omit the element and say so — a
+ * sitemap entry with no `<lastmod>` is valid; one with a bogus date is not.
+ * @param {string} raw Trimmed frontmatter `date:` value.
+ * @returns {string} `yyyy-mm-dd`, or "" when `raw` is not a real calendar date.
+ */
+export function sitemapDate(raw) {
+  const day = String(raw ?? "")
+    .trim()
+    .slice(0, 10);
+  if (!W3C_DATE.test(day)) return "";
+  // The shape is right; is it a real day? `new Date("2026-02-30")` does NOT
+  // throw — V8 rolls it forward to March 2 — so the only honest check is a round
+  // trip: a genuine calendar date formats back to the string it came from.
+  const parsed = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day ? day : "";
+}
+
+/**
  * Build `sitemap.xml` from the emitted (post-draft-filter) routes. One `<url>`
  * per route — reactive pages included (they're indexable HTML) — with `<loc>` =
- * `site_url` + path and `<lastmod>` from the supplied date. The `/404/` route is
+ * `site_url` + path and `<lastmod>` from the supplied date. An empty `lastmod`
+ * omits the element rather than emitting a blank one. The `/404/` route is
  * excluded by the caller before this point. No `<priority>`/`<changefreq>` —
  * Google ignores them and they invite bit-rot.
  * @param {DatedRoute[]} entries Absolute loc + ISO lastmod, in route order.
@@ -201,17 +234,82 @@ export function rssDescription(meta, file, body) {
  */
 export function buildSitemap(entries) {
   const urls = entries
-    .map(
-      (entry) =>
-        `  <url>\n    <loc>${escapeXml(entry.loc)}</loc>\n` +
-        `    <lastmod>${entry.lastmod}</lastmod>\n  </url>`
-    )
+    .map((entry) => {
+      const lines = ["  <url>", `    <loc>${escapeXml(entry.loc)}</loc>`];
+      // Escaped even though `sitemapDate` already guarantees a safe value:
+      // this builder is exported and called directly, so the guarantee has to
+      // live where the string is written, not only in one caller.
+      if (entry.lastmod) lines.push(`    <lastmod>${escapeXml(entry.lastmod)}</lastmod>`);
+      lines.push("  </url>");
+      return lines.join("\n");
+    })
     .join("\n");
   return (
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
     `${urls}\n</urlset>\n`
   );
+}
+
+/**
+ * The sitemap protocol's hard cap: 50,000 `<url>` entries per sitemap file. Over
+ * it, Google rejects the document outright — so a large site must split into
+ * numbered sitemaps behind a `<sitemapindex>`.
+ */
+export const SITEMAP_URL_LIMIT = 50000;
+
+/**
+ * Build a `<sitemapindex>` — the document that points at the numbered sitemap
+ * shards. No `<lastmod>` per shard: it would have to be the max over the shard's
+ * entries, which is a number nobody consumes and one more thing to keep true.
+ * @param {string[]} locs Absolute URLs of the shard files, in order.
+ * @returns {string} The full XML document (trailing newline).
+ */
+export function buildSitemapIndex(locs) {
+  const entries = locs
+    .map((loc) => `  <sitemap>\n    <loc>${escapeXml(loc)}</loc>\n  </sitemap>`)
+    .join("\n");
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+    `${entries}\n</sitemapindex>\n`
+  );
+}
+
+/**
+ * Plan the sitemap file(s) a set of entries needs.
+ *
+ * At or under {@link SITEMAP_URL_LIMIT} that is one `sitemap.xml`, byte-identical
+ * to what every site got before. Over it, the entries shard into
+ * `sitemap-1.xml`, `sitemap-2.xml`, … and `sitemap.xml` becomes the
+ * `<sitemapindex>` pointing at them — so `robots.txt` keeps naming
+ * `/sitemap.xml` and every existing submission stays valid.
+ *
+ * Returned rather than written so the split is a pure function the tests can
+ * drive with 50,001 synthetic entries without building 50,001 pages.
+ * @param {DatedRoute[]} entries
+ * @param {string} siteUrl Absolute origin, for the index's shard URLs.
+ * @returns {{ file: string, xml: string }[]} Shards first, `sitemap.xml` last.
+ */
+export function sitemapDocuments(entries, siteUrl) {
+  if (entries.length <= SITEMAP_URL_LIMIT) {
+    return [{ file: "sitemap.xml", xml: buildSitemap(entries) }];
+  }
+  /** @type {{ file: string, xml: string }[]} */
+  const shards = [];
+  for (let i = 0; i < entries.length; i += SITEMAP_URL_LIMIT) {
+    shards.push({
+      file: `sitemap-${shards.length + 1}.xml`,
+      xml: buildSitemap(entries.slice(i, i + SITEMAP_URL_LIMIT))
+    });
+  }
+  return [
+    ...shards,
+    {
+      file: "sitemap.xml",
+      xml: buildSitemapIndex(shards.map((shard) => absoluteUrl(siteUrl, `/${shard.file}`)))
+    }
+  ];
 }
 
 /**
@@ -392,5 +490,38 @@ export function aiCrawlerPolicy(meta, file) {
   );
 }
 
-/** Most-recent-first RSS post cap — a feed is a recent window, not an archive. */
+/**
+ * The DEFAULT most-recent-first RSS post cap — a feed is a recent window, not an
+ * archive. Overridable per site with `rss_limit:` on the home page
+ * ({@link rssItemLimit}).
+ */
 export const RSS_ITEM_LIMIT = 20;
+
+/**
+ * Resolve the site's RSS item cap from the HOME page's `rss_limit:` frontmatter.
+ *
+ * Darkmown has no config file by design: site-wide settings live in the home
+ * page's frontmatter next to `site_url` / `ai_crawlers`, and this is one of them.
+ * Absent means {@link RSS_ITEM_LIMIT}. A value that is not a positive integer
+ * THROWS rather than silently falling back, for the same reason `ai_crawlers`
+ * does: `rss_limit: 0` and `rss_limit: all` are both attempts to state a policy,
+ * and quietly publishing 20 items instead is the wrong failure direction.
+ * @param {import("./compiler.js").Meta} meta Home page frontmatter.
+ * @param {string} [file] Home page source path, for the error message.
+ * @returns {number} A positive integer.
+ */
+export function rssItemLimit(meta, file) {
+  const raw = meta.rss_limit;
+  if (raw === undefined) return RSS_ITEM_LIMIT;
+  const text = String(raw).trim();
+  // `Number("")` is 0 and `Number("12px")` is NaN — both fail the guard below,
+  // so an empty or non-numeric value lands on the same actionable error.
+  const value = Number(text);
+  if (Number.isInteger(value) && value > 0) return value;
+  const hint = "rss_limit: 20";
+  throw wdError(
+    `Invalid rss_limit "${text}"${file ? ` in ${file}` : ""}. ` +
+      `Use a positive whole number of items: ${hint}.`,
+    { code: "WD950", file, hint }
+  );
+}

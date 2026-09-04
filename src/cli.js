@@ -19,7 +19,7 @@ import {
 } from "./dev.js";
 import { discoverRoutes, isDraft, outputPathForRoute } from "./router.js";
 import { availableTemplates, initProject } from "./scaffold.js";
-import { contentType, resolvePublicFile, serve } from "./statics.js";
+import { contentType, isServableFile, pipeFile, resolvePublicFile, serve } from "./statics.js";
 
 const cliPath = fileURLToPath(import.meta.url);
 
@@ -329,7 +329,10 @@ function startPreviewServer({ cwd, log, error }) {
  */
 function serveDev(distRoot, url, res, draftFiles, buildError) {
   const file = resolvePublicFile(distRoot, url);
-  if (!file || !fs.existsSync(file)) {
+  // `isServableFile`, not `existsSync`: a route whose last segment contains a
+  // dot (`/v1.2/`) resolves to a DIRECTORY, and streaming one is an unhandled
+  // EISDIR that kills the dev server. It is a miss here, like any other.
+  if (!file || !isServableFile(file)) {
     // An HTML route with no dist output while the last build FAILED is almost
     // certainly unbuilt because of that failure — serve the compile error (the
     // SSE overlay replays it too), not the misleading "hidden or not created"
@@ -353,7 +356,7 @@ function serveDev(distRoot, url, res, draftFiles, buildError) {
     return;
   }
   res.writeHead(200, { "content-type": contentType(file) });
-  fs.createReadStream(file).pipe(res);
+  pipeFile(file, res);
 }
 
 /**

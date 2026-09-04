@@ -135,8 +135,14 @@ test("a dev build records per-route deps: page, include, colocated skin, loop da
   const root = site();
   devBuild(root);
   const map = depMap(root);
-  assert.equal(map.version, 1);
+  assert.equal(map.version, 2);
   assert.deepEqual(map.feed, { href: "https://example.com/rss.xml", title: "Home" });
+  // The whole-site inputs no per-route dependency graph can see: the origin
+  // every canonical URL is built from, and every route's title (which the
+  // DESCENDANTS' breadcrumbs name).
+  assert.equal(map.site.url, "https://example.com");
+  assert.equal(map.site.titles["/blog/"], "Blog");
+  assert.equal(map.site.titles["/blog/hello/"], "Hello");
 
   const about = map.routes["/about/"];
   assert.equal(about.file, "site/pages/about.wd");

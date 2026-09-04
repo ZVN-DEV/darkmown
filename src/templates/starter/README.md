@@ -16,7 +16,7 @@ One command (it builds, then prints your live URL — log in if prompted):
 npx darkmown deploy vercel       # or: npx darkmown deploy cloudflare
 ```
 
-Or one-click, after pushing this repo to GitHub (replace `YOUR_REPO_URL`):
+Or one-click, after pushing this repo to GitHub (replace `YOUR_REPO_URL` in both links with your repository URL):
 
 [![Deploy to Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=YOUR_REPO_URL)
 &nbsp;

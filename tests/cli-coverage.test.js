@@ -400,6 +400,59 @@ test("run('dev') serves dist with the dev client injected, SSE + api, then close
   }
 });
 
+test("run('dev') serves a dotted route instead of dying on it", async () => {
+  const root = freshDir("dev-dotted");
+  await run(["init", "."], capture(root).env);
+  // A last path segment containing a dot (`/v1.2/`, `/node.js/`) makes
+  // `path.extname` report a bogus extension, so the URL used to resolve to the
+  // DIRECTORY and `createReadStream(dir).pipe(res)` killed the dev server with
+  // an unhandled EISDIR. One request, whole process gone.
+  fs.mkdirSync(path.join(root, "site/pages/v1.2"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "site/pages/v1.2/index.md"),
+    "---\ntitle: V1.2\n---\n\n# Release 1.2\n"
+  );
+  fs.mkdirSync(path.join(root, "site/pages/node.js"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "site/pages/node.js/index.md"),
+    "---\ntitle: Node\n---\n\n# Node guide\n"
+  );
+
+  const c = capture(root);
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["dev"], c.env);
+    const origin = originOf(handle.server);
+
+    const dotted = await httpGet(origin, "/v1.2/");
+    assert.equal(dotted.status, 200);
+    assert.match(dotted.body, /Release 1\.2/);
+    assert.match(
+      dotted.body,
+      /__wd\/dev-client\.js/,
+      "it is still an HTML route, dev client and all"
+    );
+
+    const bare = await httpGet(origin, "/v1.2");
+    assert.equal(bare.status, 200);
+    assert.match(bare.body, /Release 1\.2/);
+
+    const nodejs = await httpGet(origin, "/node.js/");
+    assert.equal(nodejs.status, 200);
+    assert.match(nodejs.body, /Node guide/);
+
+    // The request AFTER them is the real assertion: the server is still alive.
+    const home = await httpGet(origin, "/");
+    assert.equal(home.status, 200);
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
+  }
+});
+
 test("run('dev') builds + serves draft pages, bannering only the draft", async () => {
   const root = freshDir("dev-drafts");
   await run(["init", "."], capture(root).env);
@@ -480,9 +533,16 @@ test("run('dev') records a broken initial build and replays it to SSE clients", 
 });
 
 test("dev server returns a 500 with the stack when serving throws", async () => {
-  // A request URL that resolves to an existing `.html` PATH which is actually a
-  // directory makes serveDev's fs.readFileSync throw EISDIR; the handler's
-  // try/catch converts that into a 500 text/plain response (cli.js 202-205).
+  // The request handler recomputes the draft route set per HTML request, so a
+  // source tree that no longer discovers (here: `about.md` AND `about.wd`, one
+  // route from two files) throws inside the promise chain — and the handler's
+  // .catch turns it into a clean 500 text/plain with the stack, never a hung
+  // socket or a Node crash (cli.js's serveDev catch path).
+  //
+  // A DIRECTORY named `trap.html` used to be the trigger here. It no longer is:
+  // a directory is now a miss (404) before any read is attempted, which is the
+  // fix for the dotted-route crash — so this reaches the same 500 through a
+  // failure that is genuinely exceptional rather than merely mis-shaped.
   const root = freshDir("dev-500");
   await run(["init", "."], capture(root).env);
 
@@ -491,14 +551,13 @@ test("dev server returns a 500 with the stack when serving throws", async () => 
   let handle;
   try {
     handle = await run(["dev"], capture(root).env);
-    // Create the trap AFTER the dev server's initial build (which wipes dist).
-    // dist/trap.html as a directory: existsSync → true, endsWith(".html") → true,
-    // readFileSync(dir) → throws EISDIR, caught by the handler → 500.
-    fs.mkdirSync(path.join(root, "dist", "trap.html"), { recursive: true });
+    // Planted AFTER the initial build, so the server starts healthy.
+    fs.writeFileSync(path.join(root, "site/pages/about.wd"), "---\ntitle: Dupe\n---\n\nDupe.\n");
     const origin = originOf(handle.server);
-    const res = await httpGet(origin, "/trap.html");
+    const res = await httpGet(origin, "/");
     assert.equal(res.status, 500, "a throw inside the handler becomes a 500");
     assert.match(res.headers["content-type"], /text\/plain/);
+    assert.match(res.body, /WD901/, "the response carries the real error, not a blank 500");
   } finally {
     if (prevPort === undefined) delete process.env.PORT;
     else process.env.PORT = prevPort;

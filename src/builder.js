@@ -11,11 +11,12 @@ import {
   aiCrawlerPolicy,
   buildRobots,
   buildRss,
-  buildSitemap,
   lastmodFor,
-  RSS_ITEM_LIMIT,
   rfc822,
-  rssDescription
+  rssDescription,
+  rssItemLimit,
+  sitemapDate,
+  sitemapDocuments
 } from "./feeds.js";
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
 import { HIGHLIGHT_CSS } from "./highlight.js";
@@ -58,7 +59,7 @@ export const DEP_MAP_FILE = ".wd-dev-deps.json";
 
 // Bumped whenever the map's shape changes, so a stale map from an older
 // Darkmown falls back to a full rebuild instead of being misread.
-const DEP_MAP_VERSION = 1;
+const DEP_MAP_VERSION = 2;
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -154,7 +155,7 @@ function buildFull(cwd, paths, options) {
     manifest.push(...built.mapEntry.pages);
     if (built.notFoundHtml !== undefined) notFoundHtml = built.notFoundHtml;
     for (const entry of built.mapEntry.pages) {
-      if (entry.route !== route.route) extraRoutes.push({ ...route, route: entry.route });
+      if (entry.route !== route.route) extraRoutes.push(paginatedRoute(route, entry.route));
     }
     mapRoutes[route.route] = built.mapEntry;
   }
@@ -169,8 +170,9 @@ function buildFull(cwd, paths, options) {
   // Crawler files + feeds. robots.txt is ALWAYS emitted; sitemap.xml + rss.xml
   // need the home `site_url` (else a loud, actionable build hint). Drafts are
   // already filtered out of `routes`, so neither feed can ever see one. The
-  // paginated 2+ routes are indexable HTML too, so they join the sitemap (RSS is
-  // dated-posts-only, which they are not, so it's unaffected).
+  // paginated 2+ routes are indexable HTML too, so they join the sitemap; RSS is
+  // dated-posts-only and `paginatedRoute` drops the listing's `date:`, so a
+  // dated listing syndicates once instead of once per generated page.
   const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths, options.quietFeedHints);
 
   // Page-colocated static assets (images, SVG, fonts, …) copy last, so the guard
@@ -187,7 +189,7 @@ function buildFull(cwd, paths, options) {
     emitCloudflareWorker(paths, apiDir, apiRoutes);
   }
 
-  if (options.depMap) writeDepMap(paths, feedLink, mapRoutes);
+  if (options.depMap) writeDepMap(paths, feedLink, siteInputs(identity, titles), mapRoutes);
 
   return { routes: manifest, distRoot: paths.distRoot, feeds };
 }
@@ -198,9 +200,11 @@ function buildFull(cwd, paths, options) {
  * Correctness first — returns null (→ full rebuild) on ANY uncertainty: no/stale
  * dependency map, a route added/removed/renamed, a deleted changed file, a
  * changed file no dependency graph accounts for, or a change to the site-wide
- * feed link every page embeds. The global outputs (`routes.json`, `_headers`,
- * robots/sitemap/rss, the dep map) are re-emitted from the merged manifest every
- * time so a partial rebuild can never leave them inconsistent.
+ * feed link or `site_url` every page embeds. A renamed route does not fall back:
+ * the pages whose breadcrumbs name it simply join the rebuild set. The global
+ * outputs (`routes.json`, `_headers`, robots/sitemap/rss, the dep map) are
+ * re-emitted from the merged manifest every time so a partial rebuild can never
+ * leave them inconsistent.
  * @param {string} cwd
  * @param {Paths} paths
  * @param {{ target?: string, includeDrafts?: boolean, quietFeedHints?: boolean }} options
@@ -232,6 +236,17 @@ function buildIncremental(cwd, paths, options, changed) {
   if (JSON.stringify(feedLink ?? null) !== JSON.stringify(map.feed ?? null)) {
     return fullFallback(changed, "the site feed link changed");
   }
+  // `site_url` is the second whole-site value baked into every page (its
+  // `<link rel="canonical">` and `og:url`), and it is read from the HOME page's
+  // frontmatter — so editing one file invalidates every other one. Rebuilding a
+  // subset would leave `dist/` internally contradictory: a sitemap re-emitted at
+  // the new origin over canonicals still pointing at the old one.
+  if (identity.siteUrl !== map.site.url) {
+    return fullFallback(
+      changed,
+      "site_url changed, and every page's canonical URL is built from it"
+    );
+  }
 
   /** @type {Set<string>} */
   const affected = new Set();
@@ -243,6 +258,29 @@ function buildIncremental(cwd, paths, options, changed) {
     if (!hits) return fullFallback(changed, `"${file}" is not in the dependency map`);
     for (const routePath of hits) affected.add(routePath);
     copyChangedAsset(file, cwd, paths);
+  }
+
+  // The third whole-site value: page TITLES. A nested page's breadcrumb JSON-LD
+  // names its ANCESTORS, so renaming `/guides/` rewrites `/guides/setup/`'s
+  // markup while only `/guides/` is ever in the changed set — the one way this
+  // build could ship a stale page and still report success.
+  //
+  // Which pages name a renamed route is ASKED OF `breadcrumbTrail` rather than
+  // re-derived here, so the fan-out cannot drift from what the compile actually
+  // emits: no trail (a top-level route, or a site with no `site_url`) means
+  // there is nothing to invalidate, and the rebuild set stays minimal.
+  /** @type {Set<string>} */
+  const renamedCrumbs = new Set();
+  for (const [routePath, title] of titles) {
+    if (title === map.site.titles[routePath]) continue;
+    renamedCrumbs.add(absoluteUrl(identity.siteUrl, routePath));
+    affected.add(routePath);
+  }
+  if (renamedCrumbs.size > 0) {
+    for (const candidate of Object.keys(map.routes)) {
+      const trail = breadcrumbTrail(candidate, titles, identity.siteUrl);
+      if (trail.some((crumb) => renamedCrumbs.has(crumb.url))) affected.add(candidate);
+    }
   }
 
   const byRoute = new Map(routes.map((route) => [route.route, route]));
@@ -276,12 +314,12 @@ function buildIncremental(cwd, paths, options, changed) {
   for (const route of routes) {
     for (const entry of map.routes[route.route].pages) {
       manifest.push(entry);
-      if (entry.route !== route.route) extraRoutes.push({ ...route, route: entry.route });
+      if (entry.route !== route.route) extraRoutes.push(paginatedRoute(route, entry.route));
     }
   }
   emitGlobalFiles(manifest, paths, routes, identity);
   const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths, options.quietFeedHints);
-  writeDepMap(paths, feedLink, map.routes);
+  writeDepMap(paths, feedLink, siteInputs(identity, titles), map.routes);
 
   return {
     routes: manifest,
@@ -492,12 +530,12 @@ function relPosix(cwd, file) {
  * unreadable, or from an incompatible version — every one of which means the
  * incremental build cannot trust its picture of the site and must go full.
  * @param {Paths} paths
- * @returns {{ version: number, feed: { href: string, title: string } | null, routes: Record<string, DepMapEntry> } | null}
+ * @returns {{ version: number, feed: { href: string, title: string } | null, site: { url: string, titles: Record<string, string> }, routes: Record<string, DepMapEntry> } | null}
  */
 function readDepMap(paths) {
   try {
     const map = JSON.parse(fs.readFileSync(path.join(paths.distRoot, DEP_MAP_FILE), "utf8"));
-    if (map && map.version === DEP_MAP_VERSION && map.routes) return map;
+    if (map && map.version === DEP_MAP_VERSION && map.routes && map.site) return map;
   } catch {
     /* absent or corrupt — full rebuild */
   }
@@ -508,14 +546,32 @@ function readDepMap(paths) {
  * Persist the dependency map for the next incremental build.
  * @param {Paths} paths
  * @param {{ href: string, title: string } | undefined} feedLink
+ * @param {{ url: string, titles: Record<string, string> }} site {@link siteInputs}.
  * @param {Record<string, DepMapEntry>} mapRoutes
  * @returns {void}
  */
-function writeDepMap(paths, feedLink, mapRoutes) {
+function writeDepMap(paths, feedLink, site, mapRoutes) {
   fs.writeFileSync(
     path.join(paths.distRoot, DEP_MAP_FILE),
-    JSON.stringify({ version: DEP_MAP_VERSION, feed: feedLink ?? null, routes: mapRoutes })
+    JSON.stringify({ version: DEP_MAP_VERSION, feed: feedLink ?? null, site, routes: mapRoutes })
   );
+}
+
+/**
+ * The WHOLE-SITE compile inputs recorded in the dependency map: the values baked
+ * into a page that do NOT come from that page's own dependency graph, and so can
+ * never appear in `routesAffectedBy`.
+ *
+ * `url` is `site_url` (every page's canonical + `og:url`); `titles` is every
+ * route's title, because a nested page's breadcrumb JSON-LD names its ANCESTORS.
+ * The next incremental build diffs both against the site it discovers, which is
+ * the only way it can know that editing page A invalidated page B.
+ * @param {SiteIdentity} identity
+ * @param {Map<string, string>} titles
+ * @returns {{ url: string, titles: Record<string, string> }}
+ */
+function siteInputs(identity, titles) {
+  return { url: identity.siteUrl, titles: Object.fromEntries(titles) };
 }
 
 /**
@@ -701,6 +757,25 @@ function compileRoutePages(route, paths, collections, feedLink, identity, titles
 }
 
 /**
+ * A generated `/page/<n>/` route, for the feed pass: the same source route at
+ * its own public path, with the listing's frontmatter MINUS `date:`.
+ *
+ * Dropping the date is the whole point. A listing page is not a post; cloning
+ * its `date:` onto every generated page republished the listing as N duplicate
+ * items in `rss.xml` (a `paginate 1` over three entries produced three
+ * identical feed items). The sitemap still dates these pages — from the listing
+ * SOURCE FILE via `lastmodFor`, which is what they actually are.
+ * @param {Route} route The listing's source route.
+ * @param {string} routePath The generated page's public route path.
+ * @returns {Route}
+ */
+function paginatedRoute(route, routePath) {
+  const meta = { ...route.meta };
+  delete meta.date;
+  return { ...route, route: routePath, meta };
+}
+
+/**
  * The output route for page `n` of a paginated listing: page 1 keeps the
  * listing's own clean route; pages 2+ live at `/<route>/page/<n>/`.
  * @param {string} baseRoute Listing route (trailing-slashed).
@@ -737,6 +812,7 @@ function pagerVars(baseRoute, current, total) {
  * @property {string} title Site title (also the RSS channel title).
  * @property {string} description Site description (also the RSS channel description).
  * @property {string} aiCrawlers `"allow"` or `"deny"`, from `ai_crawlers:`.
+ * @property {number} rssLimit Most-recent-first RSS item cap, from `rss_limit:`.
  */
 
 /**
@@ -760,7 +836,8 @@ function siteIdentity(routes) {
     siteUrl: read("site_url").replace(/\/$/, ""),
     title: read("title") || "Darkmown",
     description: read("description"),
-    aiCrawlers: aiCrawlerPolicy(meta, home ? home.file : undefined)
+    aiCrawlers: aiCrawlerPolicy(meta, home ? home.file : undefined),
+    rssLimit: rssItemLimit(meta, home ? home.file : undefined)
   };
 }
 
@@ -780,9 +857,11 @@ function hasDatedPost(routes) {
  * (every non-404 route) and rss.xml (dated posts only). Returns the URL/item
  * counts (`null` when a feed was skipped) for the CLI build summary.
  *
- * The sitemap `<lastmod>` for each route is the frontmatter `date:` if present,
- * else `lastmodFor(file)` (git last-commit date → file mtime). RSS items are the
- * routes with a `date:`, newest first, capped at {@link RSS_ITEM_LIMIT}.
+ * The sitemap `<lastmod>` for each route is the frontmatter `date:` if present
+ * AND a real date, else `lastmodFor(file)` (git last-commit date → file mtime);
+ * see {@link routeLastmod}. Over 50,000 URLs the sitemap shards behind an index
+ * ({@link writeSitemap}). RSS items are the routes with a `date:`, newest first,
+ * capped at the home page's `rss_limit:` (default 20).
  * @param {Route[]} routes Emitted (post-draft-filter) routes.
  * @param {SiteIdentity} identity
  * @param {Paths} paths
@@ -822,15 +901,14 @@ function emitFeeds(routes, identity, paths, quietHints = false) {
   // not a post. Filter it out once; both feeds work off the result.
   const feedable = routes.filter((route) => route.route !== "/404/");
 
-  // Sitemap: one <url> per emitted route (404 excluded above).
+  // Sitemap: one <url> per emitted route (404 excluded above). A frontmatter
+  // `date:` wins, but only when it IS a date — an unparseable one warns and
+  // omits `<lastmod>` rather than emitting garbage that invalidates the file.
   const sitemapEntries = feedable.map((route) => ({
     loc: absoluteUrl(identity.siteUrl, route.route),
-    lastmod:
-      typeof route.meta.date === "string" && route.meta.date.trim()
-        ? String(route.meta.date).trim().slice(0, 10)
-        : lastmodFor(route.file)
+    lastmod: routeLastmod(route)
   }));
-  fs.writeFileSync(path.join(paths.distRoot, "sitemap.xml"), buildSitemap(sitemapEntries));
+  writeSitemap(paths, sitemapEntries, identity.siteUrl);
 
   // RSS: dated posts only, newest first, capped. The `date:` is the "this is a
   // post" signal. With no dated post there is nothing to syndicate, so rss.xml
@@ -839,7 +917,7 @@ function emitFeeds(routes, identity, paths, quietHints = false) {
   const posts = feedable
     .filter((route) => typeof route.meta.date === "string" && route.meta.date.trim())
     .sort((a, b) => String(b.meta.date).localeCompare(String(a.meta.date)))
-    .slice(0, RSS_ITEM_LIMIT);
+    .slice(0, identity.rssLimit);
   if (posts.length === 0) return { sitemap: sitemapEntries.length, rss: null };
 
   const items = posts.map((route) => {
@@ -865,6 +943,52 @@ function emitFeeds(routes, identity, paths, quietHints = false) {
   );
 
   return { sitemap: sitemapEntries.length, rss: items.length };
+}
+
+/**
+ * The sitemap `<lastmod>` for one route: its frontmatter `date:` when that is a
+ * real `yyyy-mm-dd` date, else the source file's git/mtime date. A `date:` the
+ * sitemap protocol cannot accept is NOT coerced — `Jan 5, 2026` used to ship as
+ * `Jan 5, 202`, and a `&` or `<` in the value made the entire document
+ * unparseable, so nothing was indexed at all. It warns with the route and the
+ * offending value, and the entry goes out without a `<lastmod>` (which is valid).
+ * @param {Route} route
+ * @returns {string} `yyyy-mm-dd`, or "" to omit the element.
+ */
+function routeLastmod(route) {
+  const raw = typeof route.meta.date === "string" ? route.meta.date.trim() : "";
+  if (!raw) return lastmodFor(route.file);
+  const valid = sitemapDate(raw);
+  if (valid) return valid;
+  console.warn(
+    `hint: sitemap <lastmod> omitted for ${route.route} — date: "${raw}" is not a date. ` +
+      "Use: date: 2026-01-05 (yyyy-mm-dd)."
+  );
+  return "";
+}
+
+/**
+ * Write `sitemap.xml` and, over the protocol's 50,000-URL cap, the numbered
+ * shards it indexes. Any shard a PREVIOUS build wrote and this one does not is
+ * deleted first: a site that shrinks back under the cap (or loses a shard's
+ * worth of pages) must not leave an orphan `sitemap-3.xml` behind, still listed
+ * nowhere and still crawlable.
+ * @param {Paths} paths
+ * @param {import("./feeds.js").DatedRoute[]} entries
+ * @param {string} siteUrl
+ * @returns {void}
+ */
+function writeSitemap(paths, entries, siteUrl) {
+  const documents = sitemapDocuments(entries, siteUrl);
+  const fresh = new Set(documents.map((doc) => doc.file));
+  for (const name of fs.readdirSync(paths.distRoot)) {
+    if (/^sitemap-\d+\.xml$/.test(name) && !fresh.has(name)) {
+      fs.rmSync(path.join(paths.distRoot, name), { force: true });
+    }
+  }
+  for (const doc of documents) {
+    fs.writeFileSync(path.join(paths.distRoot, doc.file), doc.xml);
+  }
 }
 
 /**
@@ -1054,8 +1178,8 @@ export function stripRuntimeComments(source) {
  * header, the later block wins. So we emit the catch-all `/*` first (baseline
  * security headers + the reactive CSP, which since 2.1 is eval-free and satisfies
  * every page), then one block per static route that re-states the same eval-free
- * CSP as defense-in-depth. Reactive routes need no override — the catch-all
- * already carries the eval-free CSP.
+ * CSP as defense-in-depth, and finally a block for any reactive route a static
+ * route's glob would otherwise shadow (see below).
  *
  * Clean URLs mean a route like `/docs/` is served at both `/docs` and `/docs/`,
  * so each static route emits a path glob (`/docs`, `/docs/*`) that covers both.
@@ -1072,6 +1196,26 @@ export function renderCloudflareHeaders(manifest) {
     if (entry.assets.runtime) continue; // reactive routes keep the catch-all (eval-free) CSP
     for (const pattern of cloudflarePathPatterns(entry.route)) {
       blocks.push([pattern, [`  Content-Security-Policy: ${STATIC_CSP}`]]);
+    }
+  }
+
+  // A static route's `/docs/*` glob also matches every route NESTED under it,
+  // including a reactive `/docs/guide/` — and later blocks win, so that route
+  // was silently resolving to the static policy from its parent. It is a no-op
+  // only while the two policies happen to be identical. A shadowed reactive
+  // route therefore re-states its own policy AFTER the static globs, so the
+  // route always lands on the policy its own manifest entry declares.
+  const shadowingRoutes = manifest
+    .filter((entry) => !entry.assets.runtime && entry.route !== "/")
+    .map((entry) => entry.route);
+  for (const entry of manifest) {
+    if (!entry.assets.runtime) continue;
+    const shadowed = shadowingRoutes.some(
+      (parent) => entry.route !== parent && entry.route.startsWith(parent)
+    );
+    if (!shadowed) continue;
+    for (const pattern of cloudflarePathPatterns(entry.route)) {
+      blocks.push([pattern, [`  Content-Security-Policy: ${REACTIVE_CSP}`]]);
     }
   }
 
@@ -1250,14 +1394,22 @@ function subjectMatchesTag(subject, tag) {
 
 /**
  * Copy non-page shelf assets (JSON data, media) into `dist/__wd`.
+ *
+ * `.md`/`.wd` are include SOURCES, and `.skin`/`.js` are compiler INPUTS with
+ * their own emit path (`emitAssets` writes the compiled CSS to `/__wd/styles/`
+ * and the script to `/__wd/scripts/`). Publishing the sources verbatim to
+ * `/__wd/media/` alongside them shipped a second, unreferenced copy that no
+ * incremental rebuild ever refreshed — a stale duplicate of the styling, live on
+ * the deployed site. The page-asset sweep already skips all four; this now
+ * matches it.
  * @param {Paths} paths
  * @returns {void}
  */
 function emitShelfAssets(paths) {
   if (!fs.existsSync(paths.shelfRoot)) return;
   for (const file of walk(paths.shelfRoot)) {
-    const ext = path.extname(file);
-    if ([".md", ".wd"].includes(ext)) continue;
+    const ext = path.extname(file).toLowerCase();
+    if ([".md", ".wd", ".skin", ".js"].includes(ext)) continue;
     const rel = path.relative(paths.shelfRoot, file);
     const folder = ext === ".json" ? "__wd/data" : "__wd/media";
     const out = path.join(paths.distRoot, folder, rel);

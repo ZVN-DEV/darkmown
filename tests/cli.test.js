@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initProject } from "../src/scaffold.js";
+import { availableTemplates, initProject } from "../src/scaffold.js";
 
 const cli = path.resolve("src/cli.js");
 
@@ -42,6 +42,28 @@ test("init scaffolds without overwriting and uses publishable dependency spec", 
   assert.equal(fs.existsSync(path.join(target, "site/pages/index.skin")), true);
   assert.equal(fs.existsSync(path.join(target, "site/_/nav.wd")), true);
   assert.equal(fs.existsSync(path.join(target, "README.md")), true);
+});
+
+test("every scaffolded README tells the reader to replace the deploy-button placeholder", () => {
+  // The one-click buttons are unusable as shipped: their URL is the literal
+  // `YOUR_REPO_URL`. A button that silently does nothing useful is worse than
+  // no button, so a template that ships one must also say what to swap in.
+  for (const template of availableTemplates()) {
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), `darkmown-readme-${template}-`));
+    initProject(target, { template });
+    const readme = fs.readFileSync(path.join(target, "README.md"), "utf8");
+    if (!readme.includes("YOUR_REPO_URL")) continue; // a template may ship no buttons
+    assert.match(
+      readme,
+      /replace `YOUR_REPO_URL`[^\n]*/,
+      `${template}/README.md ships a placeholder deploy button with no instruction to replace it`
+    );
+    // The instruction has to come BEFORE the buttons it is about.
+    assert.ok(
+      readme.indexOf("replace `YOUR_REPO_URL`") < readme.indexOf("[![Deploy to Vercel]"),
+      `${template}/README.md explains the placeholder after the buttons`
+    );
+  }
 });
 
 test("serve binds to loopback by default and reports HOST overrides", async () => {
@@ -116,6 +138,14 @@ test("init in the current directory prints a direct next step", () => {
   assert.doesNotMatch(output, /cd \. &&/);
 });
 
+// `darkmown dev` runs a FULL site build before it prints its banner, and
+// `npm test` runs the whole suite concurrently — so this wait is bounded by
+// machine load, not by anything the server decides. 5s fired on a loaded CI
+// runner, and `node --test` has no retry. Matches the 30s the dev-server waits
+// in tests/cli-coverage.test.js already use; `WD_BANNER_WAIT_MS` overrides it
+// for a deliberately slower box.
+const BANNER_WAIT_MS = Number(process.env.WD_BANNER_WAIT_MS || 30_000);
+
 /**
  * @param {string} cwd
  * @param {"dev" | "serve"} command
@@ -134,7 +164,7 @@ function readServerBanner(cwd, command, banner, env) {
     let settled = false;
     const timer = setTimeout(() => {
       settle(new Error(`Timed out waiting for ${command} banner. Output: ${output}`));
-    }, 5000);
+    }, BANNER_WAIT_MS);
 
     const settle = (error) => {
       if (settled) return;
