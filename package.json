@@ -30,7 +30,9 @@
   "scripts": {
     "build": "node src/cli.js build",
     "build:playground": "node scripts/build-playground.mjs",
+    "build:runtime": "node scripts/build-runtime.mjs",
     "runtime:size": "node scripts/size-check.mjs",
+    "predev": "node scripts/build-runtime.mjs",
     "dev": "node src/cli.js dev",
     "test": "node --test tests/*.test.js",
     "test:cov": "node scripts/test-coverage-gate.mjs 100",
@@ -45,7 +47,7 @@
     "format:check": "biome format .",
     "size:check": "node scripts/size-check.mjs",
     "prepare": "husky || true",
-    "prepublish:check": "npm run typecheck && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
+    "prepublish:check": "npm run typecheck && node scripts/build-runtime.mjs --check && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
     "prepublishOnly": "npm run prepublish:check",
     "og": "node scripts/og-image.mjs",
     "bench:build": "node scripts/bench-build.mjs"
@@ -55,6 +57,8 @@
   },
   "files": [
     "src",
+    "src/runtime.min.js",
+    "src/runtime.min.js.map",
     "types",
     "grammar",
     "site",

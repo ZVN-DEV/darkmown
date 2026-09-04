@@ -90,6 +90,13 @@ export const NOT_MEASURED = new Map([
       " runtime in a browser."
   ],
   [
+    "runtime.min.js",
+    "GENERATED artifact: the minified runtime that `emitRuntime` copies to" +
+      " /__wd/runtime.js, built from runtime.js by scripts/build-runtime.mjs. Node never" +
+      " imports it. Enforced net: tests/runtime-min.test.js boots these exact bytes in a vm" +
+      " and the Playwright e2e job serves them to three engines."
+  ],
+  [
     "behaviors/carousel.js",
     "browser-only behavior module: emitted to the page and executed by the browser," +
       " never imported by Node. Enforced net: the Playwright e2e job."
@@ -128,20 +135,26 @@ export function scoreFile(file, total, hit) {
 
 /**
  * Aggregate per-file measurements into the report rows plus the weighted total.
- * Declared exclusions are dropped entirely; undeclared zero-line files are
- * collected in `undeclared` so the caller can fail and name them.
+ * Declared exclusions are dropped from the number; undeclared zero-line files
+ * are collected in `undeclared` so the caller can fail and name them; a declared
+ * exclusion that DOES report instrumented lines is collected in `measurable`,
+ * because its declaration is now hiding real (possibly poor) coverage data.
  * @param {{ file: string, total: number, hit: number }[]} measured
  * @param {Map<string, string>} [notMeasured]
  * @returns {{ rows: ReturnType<typeof scoreFile>[], undeclared: string[],
- *   totalLines: number, hitLines: number, aggregate: number }}
+ *   measurable: string[], totalLines: number, hitLines: number, aggregate: number }}
  */
 export function scoreCoverage(measured, notMeasured = NOT_MEASURED) {
   const rows = [];
   const undeclared = [];
+  const measurable = [];
   let totalLines = 0;
   let hitLines = 0;
   for (const { file, total, hit } of measured) {
-    if (notMeasured.has(file)) continue;
+    if (notMeasured.has(file)) {
+      if (total > 0) measurable.push(file);
+      continue;
+    }
     const row = scoreFile(file, total, hit);
     if (row.unmeasured) undeclared.push(file);
     totalLines += row.total;
@@ -153,6 +166,7 @@ export function scoreCoverage(measured, notMeasured = NOT_MEASURED) {
   return {
     rows,
     undeclared,
+    measurable,
     totalLines,
     hitLines,
     aggregate: totalLines ? (hitLines / totalLines) * 100 : 0
@@ -215,12 +229,19 @@ export function renderReport(report, opts = {}) {
 /**
  * The gate itself: every reason this run must exit non-zero, as printable lines.
  * An empty array means PASS.
- * @param {{ aggregate: number, undeclared: string[], stale: string[] }} report
+ * @param {{ aggregate: number, undeclared: string[], stale: string[],
+ *   measurable?: string[] }} report
  * @param {number} threshold
  * @returns {string[]}
  */
 export function gateFailures(report, threshold) {
   const failures = [];
+  for (const file of report.measurable ?? []) {
+    failures.push(
+      `FAIL: NOT_MEASURED lists src/${file}, but this run DID instrument it — the exclusion now hides` +
+        ` real coverage. Remove it from NOT_MEASURED so the file is scored.`
+    );
+  }
   for (const file of report.undeclared) {
     failures.push(
       `FAIL: src/${file} has ZERO instrumented lines — it is unmeasured, not 100%.` +
@@ -427,7 +448,7 @@ function reportAndGate(dir, { srcDir, srcUrlPrefix, threshold }) {
     return { file, ...lineRatio(url) };
   });
 
-  const { rows, undeclared, totalLines, hitLines, aggregate } = scoreCoverage(
+  const { rows, undeclared, measurable, totalLines, hitLines, aggregate } = scoreCoverage(
     measured,
     NOT_MEASURED
   );
@@ -445,7 +466,7 @@ function reportAndGate(dir, { srcDir, srcUrlPrefix, threshold }) {
   // --- 4. Gate ------------------------------------------------------------
 
   console.log("");
-  const failures = gateFailures({ aggregate, undeclared, stale }, threshold);
+  const failures = gateFailures({ aggregate, undeclared, stale, measurable }, threshold);
   if (failures.length) {
     for (const message of failures) console.error(message);
     process.exit(1);

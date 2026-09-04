@@ -2,8 +2,20 @@
 // Size guard for the shipped reactive runtime AND the pay-for-what-you-use
 // behavior modules. Gzips each artifact, compares it against the committed
 // `.size-snapshot.json`, prints the per-item byte delta so a PR surfaces any
-// growth, and exits non-zero if ANY item reaches its budget. Run `npm run build`
-// first (CI does) — the runtime is measured from `dist/`.
+// growth, and exits non-zero if ANY item reaches its budget.
+//
+// WHAT IS MEASURED: `src/runtime.min.js`, the committed esbuild artifact that
+// `emitRuntime` copies byte for byte to `dist/__wd/runtime.js`. Measuring the
+// source artifact instead of a build output means the gate needs no `npm run
+// build` and cannot be fooled by a stale `dist/`. Its freshness against
+// `src/runtime.js` is a separate, harder guard: `tests/runtime-min.test.js`
+// rebuilds it in memory and fails on a byte difference, and CI runs
+// `scripts/build-runtime.mjs --check`. The runtime path itself comes from the
+// snapshot's `runtime.file`, so even that is single-sourced.
+//
+// The readable source is also printed, comment-stripped, as an UNGATED
+// reference line: it is what the runtime used to ship as, and the gap between
+// the two numbers is what minification bought.
 //
 // SINGLE SOURCE OF TRUTH: `.size-snapshot.json` holds BOTH the baselines
 // (`runtime.gzip`, `behaviors.<name>.gzip`) and the hard ceilings (`.budget`).
@@ -31,13 +43,14 @@ import zlib from "node:zlib";
 import { stripRuntimeComments } from "../src/builder.js";
 
 const FALLBACK_BUDGET = 8192; // only if .size-snapshot.json is missing runtime.budget
+const FALLBACK_RUNTIME = "src/runtime.min.js"; // only if the snapshot is missing runtime.file
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 /**
- * Gzipped size of a file, measured EXACTLY as it ships (JSDoc stripped, the way
- * `emitRuntime`/`emitBehaviors` emit it).
+ * Gzipped size of a file, measured EXACTLY as it ships: the minified runtime
+ * verbatim, a behavior module comment-stripped the way `emitBehaviors` emits it.
  * @param {string} file Absolute path.
- * @param {boolean} [strip] Strip comments first (behaviors: yes; built runtime: no).
+ * @param {boolean} [strip] Strip comments first (behaviors: yes; minified runtime: no).
  * @returns {number} Bytes.
  */
 export function measureFile(file, strip = false) {
@@ -94,17 +107,19 @@ export function unbudgetedBehaviors(snapshotBehaviors, onDisk) {
 }
 
 function main() {
-  const runtimePath = path.join(repoRoot, "dist", "__wd", "runtime.js");
   const snapshotPath = path.join(repoRoot, ".size-snapshot.json");
-
-  if (!fs.existsSync(runtimePath)) {
-    console.error(`size:check — ${runtimePath} not found. Run \`npm run build\` first.`);
-    process.exit(1);
-  }
-
   const snapshot = fs.existsSync(snapshotPath)
     ? JSON.parse(fs.readFileSync(snapshotPath, "utf8"))
     : null;
+
+  const runtimeFile =
+    typeof snapshot?.runtime?.file === "string" ? snapshot.runtime.file : FALLBACK_RUNTIME;
+  const runtimePath = path.join(repoRoot, runtimeFile);
+
+  if (!fs.existsSync(runtimePath)) {
+    console.error(`size:check — ${runtimePath} not found. Run \`npm run build:runtime\` first.`);
+    process.exit(1);
+  }
 
   let failed = false;
   const fail = (/** @type {string} */ message) => {
@@ -118,6 +133,14 @@ function main() {
   const runtime = scoreItem("runtime", measureFile(runtimePath), budget, snapshot?.runtime?.gzip);
   console.log(runtime.line);
   if (runtime.failed) fail(/** @type {string} */ (runtime.error));
+
+  // Reference only, never gated: the readable source comment-stripped, which is
+  // what shipped before the runtime was minified. Keeping it on the report makes
+  // every PR show what minification is still buying.
+  const sourcePath = path.join(repoRoot, "src", "runtime.js");
+  if (fs.existsSync(sourcePath)) {
+    console.log(`runtime source (comment-stripped, not gated): ${measureFile(sourcePath, true)} B`);
+  }
 
   // --- behaviors ----------------------------------------------------------
   // Pay-for-what-you-use modules each carry their OWN budget, separate from the

@@ -46,7 +46,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # The same five gates the stable release runs, in the same order, so a
+      # The same gates the stable release runs, in the same order, so a
       # canary is never held to a lower standard than a tag. Single-Node here
       # rather than release.yml's 20/22/24 matrix: ci.yml is running that full
       # matrix (plus Windows, macOS, and three browser engines) against this
@@ -54,6 +54,9 @@ jobs:
       # the publish below, not to re-derive what CI already knows.
       - run: npm run typecheck
       - run: npm run test:cov
+      # The shipped runtime is a committed esbuild artifact (src/runtime.min.js).
+      # Publishing a stale one would ship a runtime that is not this source.
+      - run: node scripts/build-runtime.mjs --check
       - run: npm run build
       - run: npm run runtime:size
       - run: npm audit --audit-level=high

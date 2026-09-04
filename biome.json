@@ -11,6 +11,8 @@
       "tests/**",
       "scripts/**",
       "!dist",
+      "!src/runtime.min.js",
+      "!src/runtime.min.js.map",
       "!node_modules",
       "!site",
       "!types",

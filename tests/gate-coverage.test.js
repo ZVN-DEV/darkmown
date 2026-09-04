@@ -225,3 +225,33 @@ test("importing the gate module does not spawn the test suite", () => {
   );
   assert.match(source, /process\.argv\[1\][\s\S]{0,120}import\.meta\.url\) main\(\);/);
 });
+
+test("a declared exclusion that reports instrumented lines fails the gate instead of hiding them", () => {
+  // The exclusion list exists for files V8 genuinely cannot instrument here. The
+  // day one of them becomes importable (say, the runtime grows a Node entry), its
+  // real coverage would silently vanish behind the declaration.
+  const declared = new Map([["runtime.js", "vm string, not instrumented"]]);
+  const report = scoreCoverage(
+    [
+      { file: "runtime.js", total: 40, hit: 12 },
+      { file: "builder.js", total: 10, hit: 10 }
+    ],
+    declared
+  );
+  assert.deepEqual(report.measurable, ["runtime.js"]);
+  assert.deepEqual(report.undeclared, []);
+  assert.equal(report.aggregate, 100, "the excluded file stays out of the number itself");
+  const failures = gateFailures({ ...report, stale: [] }, 100);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /NOT_MEASURED lists src\/runtime\.js, but this run DID instrument it/);
+  // Control: the same declaration over a file that really has zero lines is fine.
+  const quiet = scoreCoverage(
+    [
+      { file: "runtime.js", total: 0, hit: 0 },
+      { file: "builder.js", total: 10, hit: 10 }
+    ],
+    declared
+  );
+  assert.deepEqual(quiet.measurable, []);
+  assert.deepEqual(gateFailures({ ...quiet, stale: [] }, 100), []);
+});

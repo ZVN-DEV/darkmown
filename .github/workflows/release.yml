@@ -23,6 +23,9 @@ jobs:
       - run: npm run typecheck
       # Zero-dep node:test coverage; matches the CI line coverage gate.
       - run: npm run test:cov
+      # The shipped runtime is a committed esbuild artifact (src/runtime.min.js).
+      # Publishing a stale one would ship a runtime that is not this source.
+      - run: node scripts/build-runtime.mjs --check
       - run: npm run build
       - run: npm run runtime:size
       - run: npm audit --audit-level=high

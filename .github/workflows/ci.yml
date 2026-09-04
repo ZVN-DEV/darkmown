@@ -209,7 +209,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
+      # What ships is src/runtime.min.js, a COMMITTED esbuild artifact that the
+      # builder copies byte for byte to dist/__wd/runtime.js. So this job needs
+      # no `npm run build` (the build job covers that on three OSes) — but it
+      # does need the artifact to still match its source, or the number measured
+      # below would be the size of a runtime nobody is running. Same input +
+      # same exact-pinned esbuild = same bytes, which is what makes this a real
+      # check rather than a formality. It also runs inside `npm test`
+      # (tests/runtime-min.test.js); this step is here so the failure is named.
+      - name: runtime min artifact is not stale
+        run: node scripts/build-runtime.mjs --check
       # Delegates to scripts/size-check.mjs, which reads the budget from
       # .size-snapshot.json (the single source of truth) — no hardcoded number
       # here to drift out of sync. It reports the gzip size + delta and fails at

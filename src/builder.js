@@ -1259,14 +1259,37 @@ function defaultNotFoundHtml() {
 }
 
 /**
+ * Emit the shipped reactive runtime as `/__wd/runtime.js`, plus its sourcemap as
+ * `/__wd/runtime.js.map`.
+ *
+ * What ships is `src/runtime.min.js`, the COMMITTED esbuild artifact built by
+ * `scripts/build-runtime.mjs` — copied byte for byte, never re-derived here.
+ * Two reasons it is a copy and not a build step:
+ *
+ * 1. `darkmown build` runs on a consumer's machine from the published tarball,
+ *    where esbuild does not exist. The bytes have to be generated in the repo,
+ *    committed, and shipped.
+ * 2. The gzip budget in `.size-snapshot.json` measures `src/runtime.min.js`. If
+ *    the build could regenerate it, the number the budget gates and the number
+ *    in git could differ and nobody would notice.
+ *
+ * So a change to `src/runtime.js` reaches a page only after `npm run
+ * build:runtime`. That is enforced, not trusted: `tests/runtime-min.test.js`
+ * rebuilds in memory and fails on any difference, and CI runs
+ * `build-runtime.mjs --check`.
+ *
+ * The map is emitted alongside because the file the browser downloads is now
+ * minified: without it a stack trace from a real page is unreadable. It carries
+ * the original source inline (`sourcesContent`) and is fetched only when devtools
+ * is open, so it costs a page nothing.
  * @param {Paths} paths
  * @returns {void}
  */
 function emitRuntime(paths) {
   const out = path.join(paths.distRoot, "__wd/runtime.js");
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  const source = fs.readFileSync(path.join(moduleDir, "runtime.js"), "utf8");
-  fs.writeFileSync(out, stripRuntimeComments(source));
+  fs.copyFileSync(path.join(moduleDir, "runtime.min.js"), out);
+  fs.copyFileSync(path.join(moduleDir, "runtime.min.js.map"), `${out}.map`);
 }
 
 /**
@@ -1393,15 +1416,27 @@ function subjectMatchesTag(subject, tag) {
 }
 
 /**
+ * Whether a `.skin`/`.js` file is the colocated asset of a page or include: a
+ * `.wd` or `.md` with the same basename sits beside it.
+ * @param {string} file Absolute path of the asset.
+ * @returns {boolean}
+ */
+function hasColocatedPage(file) {
+  const base = file.slice(0, -path.extname(file).length);
+  return fs.existsSync(`${base}.wd`) || fs.existsSync(`${base}.md`);
+}
+
+/**
  * Copy non-page shelf assets (JSON data, media) into `dist/__wd`.
  *
- * `.md`/`.wd` are include SOURCES, and `.skin`/`.js` are compiler INPUTS with
- * their own emit path (`emitAssets` writes the compiled CSS to `/__wd/styles/`
- * and the script to `/__wd/scripts/`). Publishing the sources verbatim to
- * `/__wd/media/` alongside them shipped a second, unreferenced copy that no
- * incremental rebuild ever refreshed — a stale duplicate of the styling, live on
- * the deployed site. The page-asset sweep already skips all four; this now
- * matches it.
+ * `.md`/`.wd` are include SOURCES. A `.skin`/`.js` that sits next to a `.wd`/`.md`
+ * of the same basename is a COLOCATED compiler input with its own emit path
+ * (`emitAssets` writes the compiled CSS to `/__wd/styles/` and the script to
+ * `/__wd/scripts/`); publishing that source verbatim to `/__wd/media/` shipped a
+ * second, unreferenced copy that no incremental rebuild ever refreshed. A
+ * STANDALONE `.skin`/`.js` (no sibling page) is a plain shelf asset the docs
+ * promise at `/__wd/media/<path>` (`<script src="/__wd/media/lib/helper.js">`),
+ * so it is still published.
  * @param {Paths} paths
  * @returns {void}
  */
@@ -1409,7 +1444,8 @@ function emitShelfAssets(paths) {
   if (!fs.existsSync(paths.shelfRoot)) return;
   for (const file of walk(paths.shelfRoot)) {
     const ext = path.extname(file).toLowerCase();
-    if ([".md", ".wd", ".skin", ".js"].includes(ext)) continue;
+    if (ext === ".md" || ext === ".wd") continue;
+    if ((ext === ".skin" || ext === ".js") && hasColocatedPage(file)) continue;
     const rel = path.relative(paths.shelfRoot, file);
     const folder = ext === ".json" ? "__wd/data" : "__wd/media";
     const out = path.join(paths.distRoot, folder, rel);
