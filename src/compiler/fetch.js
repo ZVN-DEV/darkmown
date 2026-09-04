@@ -140,7 +140,7 @@ export function handleFetch(line, ctx, index) {
   const attr = (n, v) =>
     v != null && v !== false && v !== "" ? ` data-wd-fetch-${n}="${escapeHtml(v)}"` : "";
   const marker =
-    `<span data-wd-fetch data-wd-fetch-key="${key}" data-wd-fetch-url="${escapeHtml(url)}"` +
+    `<span data-wd-fetch data-wd-fetch-key="${escapeHtml(key)}" data-wd-fetch-url="${escapeHtml(url)}"` +
     attr("method", opts.method && opts.method.toUpperCase()) +
     attr("when", opts.when === "visible" ? "visible" : "") +
     attr("timeout", opts.timeout) +

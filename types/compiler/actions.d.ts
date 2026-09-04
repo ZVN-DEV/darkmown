@@ -36,6 +36,6 @@ export const BUTTON_EXAMPLE: ":button \"Add one\" -> count++";
 export const EFFECT_EXAMPLE: ":effect query -> searches++";
 export const EVERY_EXAMPLE: ":every 5s -> seconds++";
 export const ACTION_EXAMPLE: "count++";
-export const ACTION_USE: "Use: name++, name--, n += k, n -= k, name = v, flag toggle, list append/prepend v, list toggle v, list remove v, x clear, obj merge other, obj delete key, name reset — chain with \";\" — e.g. count++";
+export const ACTION_USE: "Use: name++, name--, n += k, n -= k, name = v, flag toggle, list append/prepend v, list toggle v, list remove v, x clear, obj merge other, obj delete key, name reset, name refetch — chain with \";\" — e.g. count++";
 export type Ctx = import("./context.js").Ctx;
 export type Action = import("./context.js").Action;

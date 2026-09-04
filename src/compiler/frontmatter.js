@@ -16,9 +16,15 @@ import { stripQuotes } from "./interpolation.js";
  * Split a raw file into its frontmatter `meta` and `body`. `bodyLine` is the
  * 0-based file line index the body starts on (the number of lines the
  * frontmatter block consumed) so compile errors can report true file lines.
+ *
+ * `quotedKeys` names the fields the author wrote with quotes. Quotes are syntax,
+ * not content, so `meta` never carries them — but "the author quoted it" is the
+ * only signal that `sku: "007"` is the TEXT 007 and not the number 7, and the
+ * typed-collection coercion needs it. Additive: existing destructuring of
+ * `{ meta, body, bodyLine }` is unaffected.
  * @param {string} raw Full file contents.
  * @param {string} [file] Source path, used only for error messages.
- * @returns {{ meta: Meta, body: string, bodyLine: number }}
+ * @returns {{ meta: Meta, body: string, bodyLine: number, quotedKeys: Set<string> }}
  */
 export function parseFrontmatter(raw, file) {
   // A file authored on Windows (or checked out with git's autocrlf) arrives
@@ -28,7 +34,7 @@ export function parseFrontmatter(raw, file) {
   // in the reader keeps the direct callers (builder.js reads route frontmatter
   // straight off disk for feeds) on the same footing. Idempotent on LF input.
   raw = normalizeNewlines(raw);
-  if (!raw.startsWith("---\n")) return { meta: {}, body: raw, bodyLine: 0 };
+  if (!raw.startsWith("---\n")) return { meta: {}, body: raw, bodyLine: 0, quotedKeys: new Set() };
   const end = raw.indexOf("\n---", 3);
   if (end === -1) {
     const where = file ? ` in ${file}` : "";
@@ -44,11 +50,16 @@ export function parseFrontmatter(raw, file) {
   const bodyLine = raw.slice(0, bodyStart).split("\n").length - 1;
   /** @type {Meta} */
   const meta = {};
+  /** @type {Set<string>} */
+  const quotedKeys = new Set();
   for (const line of front.split("\n")) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (match) meta[match[1]] = parseFrontmatterValue(match[2]);
+    if (!match) continue;
+    const parsed = parseFrontmatterValue(match[2]);
+    meta[match[1]] = parsed.value;
+    if (parsed.quoted) quotedKeys.add(match[1]);
   }
-  return { meta, body, bodyLine };
+  return { meta, body, bodyLine, quotedKeys };
 }
 
 /**
@@ -86,13 +97,23 @@ export function warnLikelyFrontmatter(raw, file, comp) {
 // Block sequences (`- item` on following lines) are intentionally out of scope —
 // the parser stays single-pass and line-based.
 /**
+ * Parse one frontmatter value, reporting whether the author QUOTED it.
+ *
+ * The inline-array branch tracks `quoted` per item already (an item is a string
+ * either way, so the flag only guards whitespace trimming); the scalar branch
+ * did not, and downstream that made `sku: "007"` indistinguishable from
+ * `sku: 007`. Both are `"007"` here, but only the first is text the author
+ * pinned, so only the second is a candidate for numeric coercion.
  * @param {string} raw
- * @returns {FrontmatterValue}
+ * @returns {{ value: FrontmatterValue, quoted: boolean }}
  */
 function parseFrontmatterValue(raw) {
   const value = raw.trim();
-  if (value.startsWith("[") && value.endsWith("]")) return parseInlineArray(value);
-  return stripQuotes(value);
+  if (value.startsWith("[") && value.endsWith("]"))
+    return { value: parseInlineArray(value), quoted: false };
+  const quote = value[0];
+  const quoted = value.length >= 2 && (quote === '"' || quote === "'") && value.endsWith(quote);
+  return { value: stripQuotes(value), quoted };
 }
 
 /**

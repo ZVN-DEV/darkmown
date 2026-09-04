@@ -51,17 +51,23 @@ export function compileBody(lines, ctx) {
   const out = [];
   /** @type {string[]} */
   let prose = [];
+  // The slice index the pending prose run starts at, so a warning raised while
+  // rendering it (an unbindable value in a link destination or in raw HTML)
+  // reports the offending line and not the top of the file.
+  let proseStart = 0;
   let fence = null;
 
   const flush = () => {
     if (!prose.length) return;
     const text = prose.join("\n");
+    const start = proseStart;
     prose = [];
-    if (text.trim()) out.push(renderProse(text, ctx));
+    if (text.trim()) out.push(renderProse(text, ctx, start));
   };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (!prose.length) proseStart = i;
     const fenceMatch = line.match(/^(```+|~~~+)/);
     if (fence) {
       prose.push(line);
@@ -253,7 +259,10 @@ export function compileBody(lines, ctx) {
         { code: "WD009", file: ctx.file, hint: "@loop items into item ... @endloop" }
       );
     }
-    if (/^(@endloop|:endif|:endfor|:endform|:else)\s*$/.test(line)) {
+    // `:endcarousel` joins the family: a closer with no opener is a mistake with
+    // one obvious fix, and the vague "matches none" warning it used to get named
+    // the wrong problem ("check the spelling") for a token spelled correctly.
+    if (/^(@endloop|:endif|:endfor|:endform|:endcarousel|:else)\s*$/.test(line)) {
       throw wdError(`Stray "${line.trim()}" with no matching opener in ${ctx.file}`, {
         code: "WD010",
         file: ctx.file
@@ -273,8 +282,12 @@ export function compileBody(lines, ctx) {
 // throw: prose legitimately contains `@` and `:`, so the match is deliberately
 // narrow (lowercase token + boundary; emoji shortcodes, times, and `@user`
 // followed by punctuation do not match).
+// Keep this in step with the dispatch above: a name listed here but no longer
+// handled is the worst outcome — the line renders as literal text AND the
+// warning that would have said so is suppressed. (`:note`/`:sprint` were deleted
+// from the demo handler and are gone from here for exactly that reason.)
 const KNOWN_DIRECTIVE =
-  /^(?:@(?:include|loop|empty|endloop)|:(?:state|store|fetch|computed|effect|every|theme|video|audio|embed|form|endform|input|textarea|select|checkbox|radio|bind|submit|button|if|endif|else|try|note|sprint))(?:\s|$)/;
+  /^(?:@(?:include|loop|empty|endloop)|:(?:state|store|fetch|computed|effect|every|theme|video|audio|embed|form|endform|input|textarea|select|checkbox|radio|bind|slider|submit|button|carousel|endcarousel|if|endif|else|try))(?:\s|$)/;
 /**
  * @param {string} line
  * @param {Ctx} ctx

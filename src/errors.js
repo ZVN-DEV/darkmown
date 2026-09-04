@@ -362,6 +362,13 @@ const ENTRIES = [
     cause: "An entry's value does not match its schema type.",
     fix: "Fix the entry's value, or widen the type in `_schema.wd`."
   },
+  {
+    code: "WD190",
+    title: "Expression could not be compiled",
+    cause:
+      "A `:if` or `::: … when` condition folded a build-time value the expression re-parser cannot read back.",
+    fix: 'Use simpler operands — a field path, a declared `:state`, a plain number, or a `"string"`.'
+  },
 
   // --- WD2xx: state and expressions ----------------------------------------
   {
@@ -532,6 +539,22 @@ const ENTRIES = [
     title: "Unknown state in `:computed`",
     cause: "The expression references a name that is not declared state.",
     fix: "Declare it with `:state`, `:store`, or `:fetch` first.",
+    example: COMPUTED_EXAMPLE
+  },
+  {
+    code: "WD250",
+    title: "Reserved state declaration name",
+    cause:
+      "A `:state`/`:store`/`:computed`/`:fetch`/`:form`/`:slider`/`:theme` name is `__proto__`, `constructor`, or `prototype`, which the runtime's state object inherits rather than owns.",
+    fix: "Rename the key — any other name works.",
+    example: STATE_EXAMPLE
+  },
+  {
+    code: "WD251",
+    title: "State seeded from another state",
+    cause:
+      "A `:state`/`:store` value is a bare name that is already declared state, so it would be stored as that literal text and never track the value.",
+    fix: "Derive it with `:computed`, or quote the text to keep it literal.",
     example: COMPUTED_EXAMPLE
   },
 
@@ -1063,6 +1086,12 @@ const ENTRIES = [
     title: "Unknown `ai_crawlers` policy",
     cause: "The home page's `ai_crawlers:` is neither `allow` nor `deny`.",
     fix: "Write `ai_crawlers: allow` or `ai_crawlers: deny` (absent means allow)."
+  },
+  {
+    code: "WD950",
+    title: "Invalid `rss_limit`",
+    cause: "The home page's `rss_limit:` is not a positive whole number of items.",
+    fix: "Write `rss_limit: 20` (absent means 20)."
   }
 ];
 

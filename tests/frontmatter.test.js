@@ -166,7 +166,12 @@ test("the unterminated-frontmatter error names the file when given one", () => {
 
 test("a file with no frontmatter at all is left untouched (no error)", () => {
   const raw = "Just a plain body, no leading fence.";
-  assert.deepEqual(parseFrontmatter(raw), { meta: {}, body: raw, bodyLine: 0 });
+  assert.deepEqual(parseFrontmatter(raw), {
+    meta: {},
+    body: raw,
+    bodyLine: 0,
+    quotedKeys: new Set()
+  });
 });
 
 test("parseFrontmatter reports the 0-based file line the body starts on", () => {
@@ -240,3 +245,63 @@ function write(root, file, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content);
 }
+
+// ---------------------------------------------------------------------------
+// quotedKeys — the parser's record of which values the author QUOTED.
+//
+// Quotes are syntax, not content, so `meta` never carries them. But "the author
+// quoted it" is the only signal that `sku: "007"` is the text 007 rather than
+// the number 7, and the typed-collection coercion has no other way to know.
+// ---------------------------------------------------------------------------
+
+test("quotedKeys names every quoted scalar and nothing else", () => {
+  const { meta, quotedKeys } = parseFrontmatter(
+    [
+      "---",
+      'sku: "007"',
+      "count: 42",
+      "single: 'abc'",
+      "bare: hello",
+      'empty: ""',
+      "---",
+      "",
+      "body"
+    ].join("\n")
+  );
+  assert.deepEqual([...quotedKeys].sort(), ["empty", "single", "sku"]);
+  // The VALUES are unchanged: the quotes are stripped exactly as before.
+  assert.equal(meta.sku, "007");
+  assert.equal(meta.single, "abc");
+  assert.equal(meta.bare, "hello");
+  assert.equal(meta.empty, "");
+});
+
+test("an inline array is never reported as a quoted scalar", () => {
+  const { meta, quotedKeys } = parseFrontmatter(
+    ["---", 'tags: ["a", "b"]', "---", "", "body"].join("\n")
+  );
+  assert.deepEqual(meta.tags, ["a", "b"]);
+  assert.equal(quotedKeys.has("tags"), false);
+});
+
+test("a MISMATCHED quote is not treated as quoted", () => {
+  // `stripQuotes` is lenient (it peels one leading and one trailing quote of
+  // either kind), so the flag needs its own, stricter test: an unbalanced value
+  // is not the author pinning a string.
+  const { quotedKeys } = parseFrontmatter(["---", 'sku: "007', "---", "", "b"].join("\n"));
+  assert.equal(quotedKeys.has("sku"), false);
+});
+
+test("a lone quote character is not a quoted value", () => {
+  const { meta, quotedKeys } = parseFrontmatter(["---", 'q: "', "---", "", "b"].join("\n"));
+  assert.equal(quotedKeys.has("q"), false);
+  assert.equal(meta.q, "");
+});
+
+test("a frontmatter line that is not a `key: value` pair is skipped, not crashed on", () => {
+  const { meta, quotedKeys } = parseFrontmatter(
+    ["---", "title: T", "- a block sequence item", "---", "", "body"].join("\n")
+  );
+  assert.deepEqual(meta, { title: "T" });
+  assert.equal(quotedKeys.size, 0);
+});

@@ -149,7 +149,7 @@ test("every catalog action token appears in the WD311 hint (ACTION_USE)", () => 
   // a one-line edit to src/compiler/actions.js. The allowlist below is asserted
   // to stay MINIMAL, so the day that edit lands this test fails until the entry
   // is pruned — a known gap can never quietly become a permanent exemption.
-  const KNOWN_HINT_GAPS = new Set(["refetch"]);
+  const KNOWN_HINT_GAPS = new Set();
   for (const token of CATALOG_ACTION_TOKENS) {
     if (KNOWN_HINT_GAPS.has(token)) continue;
     assert.ok(ACTION_USE.includes(token), `action token "${token}" missing from ACTION_USE`);

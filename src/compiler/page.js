@@ -427,7 +427,9 @@ export function compileFile(
   const real = comp.reader.realpath(file);
   if (stack.includes(real)) {
     throw wdError(
-      `[WD612] Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`,
+      // No literal `[WD612]` here: wdError prefixes the code itself, and the
+      // hardcoded copy printed it twice (`[WD612] [WD612] Include cycle …`).
+      `Include cycle detected: ${[...stack, real].map((p) => path.basename(p)).join(" -> ")}`,
       { code: "WD612", file }
     );
   }

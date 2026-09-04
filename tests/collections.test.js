@@ -671,3 +671,102 @@ test("a collection loop that filters to zero rows renders the @empty branch", ()
   assert.match(page.html, /Nothing here\./);
   assert.doesNotMatch(page.html, /Real/);
 });
+
+// ---------------------------------------------------------------------------
+// QUOTES ARE THE ESCAPE HATCH FROM NUMERIC COERCION.
+//
+// A collection row coerces bare scalars so `where p.featured == true` and
+// numeric sorts behave like a JSON loop. That coercion used to run AFTER the
+// frontmatter parser had already stripped the author's quotes, so it could not
+// tell `sku: "007"` from `sku: 007` and turned both into the number 7. With a
+// `_schema.wd` declaring `sku: string` the collection then became UNBUILDABLE,
+// and the WD124 blamed the author for a string they did in fact write.
+// Zero-padded ids, ISBNs, zip codes, SKUs, episode numbers and `x.y0` versions
+// all live in that gap.
+// ---------------------------------------------------------------------------
+
+const NUMERIC_LOOKING = [
+  ["007", "a zero-padded id"],
+  ["1.10", "a trailing-zero version"],
+  ["01234", "a leading-zero zip code"],
+  ["0", "a single zero"],
+  ["-0", "a signed zero"]
+];
+
+for (const [value, why] of NUMERIC_LOOKING) {
+  test(`a QUOTED "${value}" stays the string it was written as (${why})`, () => {
+    const root = fixture();
+    post(root, "entry", ["title: Entry", "date: 2026-01-01", `sku: "${value}"`]);
+    const { collections } = indexFor(root);
+    const [row] = collections.get("blog");
+    assert.strictEqual(row.sku, value);
+  });
+
+  test(`an UNQUOTED ${value} still coerces to a number (documented behavior)`, () => {
+    // The coercion is the feature; the quotes are the opt-out. Both halves are
+    // asserted so a future fix cannot quietly disable one of them.
+    const root = fixture();
+    post(root, "entry", ["title: Entry", "date: 2026-01-01", `sku: ${value}`]);
+    const { collections } = indexFor(root);
+    const [row] = collections.get("blog");
+    assert.strictEqual(row.sku, Number(value));
+  });
+}
+
+test("a quoted numeric field satisfies a `string` schema instead of failing the build", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/blog/_schema.wd",
+    ["---", "title: string", "date: date", "sku: string", "---"].join("\n")
+  );
+  post(root, "entry", ["title: Entry", "date: 2026-01-01", 'sku: "007"']);
+  const { collections } = indexFor(root);
+  assert.strictEqual(collections.get("blog")[0].sku, "007");
+});
+
+test("the page <title> and the listing row agree on a quoted numeric value", () => {
+  // The bug's sharpest edge: the entry page rendered `007` from `meta.title`
+  // while the collection listing rendered `7` for the same field.
+  const root = fixture();
+  write(
+    root,
+    "site/pages/index.wd",
+    ["@loop blog into post", "- { post.title }", "@endloop"].join("\n")
+  );
+  post(root, "entry", ['title: "007"', "date: 2026-01-01"]);
+  const paths = createPaths(root);
+  const { collections } = indexFor(root);
+  const entry = compilePage(path.join(root, "site/pages/blog/entry.md"), paths).html;
+  const listing = compilePage(path.join(root, "site/pages/index.wd"), paths, { collections }).html;
+  assert.match(entry, /<title>007<\/title>/);
+  assert.match(listing, /<li>007<\/li>/);
+});
+
+test("quoted true/false stay strings, unquoted stay booleans", () => {
+  const root = fixture();
+  post(root, "entry", ["title: Entry", "date: 2026-01-01", 'flag: "true"', "real: false"]);
+  const { collections } = indexFor(root);
+  const [row] = collections.get("blog");
+  assert.strictEqual(row.flag, "true");
+  assert.strictEqual(row.real, false);
+});
+
+test("single quotes work as the escape hatch too", () => {
+  const root = fixture();
+  post(root, "entry", ["title: Entry", "date: 2026-01-01", "sku: '007'"]);
+  const { collections } = indexFor(root);
+  assert.strictEqual(collections.get("blog")[0].sku, "007");
+});
+
+test("a .wd entry's quoted numeric field is protected too (not just .md)", () => {
+  // `rowFor` reads every entry, not only the ones with a `.md` excerpt fallback.
+  const root = fixture();
+  write(
+    root,
+    "site/pages/blog/entry.wd",
+    ["---", "title: Entry", "date: 2026-01-01", 'sku: "007"', "---", "", "# Entry"].join("\n")
+  );
+  const { collections } = indexFor(root);
+  assert.strictEqual(collections.get("blog")[0].sku, "007");
+});

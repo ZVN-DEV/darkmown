@@ -60,7 +60,11 @@ export function handleButton(line, ctx, index) {
     action.value === undefined
       ? ""
       : ` data-wd-value="${escapeHtml(JSON.stringify(action.value))}"`;
-  return `<button type="button" data-wd-action="${action.op}" data-wd-target="${action.target}"${valueAttr}>${escapeHtml(match[1])}</button>`;
+  // The target is a STATE KEY, and a section-scoped key carries the `::: name #id`
+  // id verbatim (`a"onmouseover=…:count`), so it needs the same escaping the
+  // neighbouring `id=` has always had — otherwise the id closes the attribute and
+  // whatever follows becomes a live one.
+  return `<button type="button" data-wd-action="${action.op}" data-wd-target="${escapeHtml(action.target)}"${valueAttr}>${escapeHtml(match[1])}</button>`;
 }
 
 // Concrete, compilable examples for the effect / every hint tails + catalog.
@@ -173,7 +177,7 @@ export function handleEvery(line, ctx, index) {
 // than the schematic `name++`. The action vocabulary the directive catalog draws
 // from lives here (the parser branches below), mirrored compactly in ACTION_USE.
 export const ACTION_EXAMPLE = "count++";
-export const ACTION_USE = `Use: name++, name--, n += k, n -= k, name = v, flag toggle, list append/prepend v, list toggle v, list remove v, x clear, obj merge other, obj delete key, name reset — chain with ";" — e.g. ${ACTION_EXAMPLE}`;
+export const ACTION_USE = `Use: name++, name--, n += k, n -= k, name = v, flag toggle, list append/prepend v, list toggle v, list remove v, x clear, obj merge other, obj delete key, name reset, name refetch — chain with ";" — e.g. ${ACTION_EXAMPLE}`;
 
 /**
  * Parse a `:button` action expression into a validated `{ op, target, value }`,
@@ -252,10 +256,16 @@ function parseSingleAction(expression, raw, ctx) {
     if (toggle[2] === undefined) return { op: "toggle", target };
     return { op: "member-toggle", target, value: parseActionLiteral(toggle[2], ctx) };
   }
-  const prepend = expression.match(new RegExp(`^(${PATH})\\s+(?:append|prepend)\\s+(.+)$`));
-  if (prepend) {
-    const op = expression.includes(" prepend ") ? "prepend" : "append";
-    return { op, target: resolveTarget(prepend[1]), value: parseActionLiteral(prepend[2], ctx) };
+  // Capture the OPERATOR, never search the whole expression for it: scanning for
+  // " prepend " made `list append "we prepend things"` compile to
+  // data-wd-action="prepend", so the operand silently chose the operator.
+  const listAdd = expression.match(new RegExp(`^(${PATH})\\s+(append|prepend)\\s+(.+)$`));
+  if (listAdd) {
+    return {
+      op: listAdd[2],
+      target: resolveTarget(listAdd[1]),
+      value: parseActionLiteral(listAdd[3], ctx)
+    };
   }
   // Per-row: remove the current row from the list being looped — `todos remove todo`.
   // Disambiguation: operand IS the loop item name → `remove` (current row);

@@ -46,6 +46,80 @@ const STATE_USE = `Use: :state name = value [persist|ephemeral] — e.g. ${STATE
 // ---------------------------------------------------------------------------
 const PERSISTENCE = String.raw`(?:\s+(persist|ephemeral))?`;
 
+// ---------------------------------------------------------------------------
+// A DECLARATION NAME IS A KEY ON THE RUNTIME'S STATE OBJECT, SO IT OBEYS THE
+// SAME PROTOTYPE RULE AS A PATH SEGMENT.
+//
+// `getPath`/`validatePath` already reject `__proto__`/`constructor`/`prototype`
+// as path SEGMENTS. The declaration NAME had no such guard, so
+// `:state __proto__ = {"polluted": true}` compiled clean and seeded
+// `{"__proto__":{...}}`; the runtime boots with `Object.assign(state, …)`, which
+// writes through `[[Set]]` and therefore fires the inherited `__proto__` setter —
+// hijacking the prototype of the runtime's own state object, so every undeclared
+// key then resolves through injected data. Same three names, same reason, now
+// enforced at every point a key enters `comp.state`.
+// ---------------------------------------------------------------------------
+const RESERVED_NAMES = ["__proto__", "constructor", "prototype"];
+
+/**
+ * Reject a declaration name that would land on `Object.prototype` rather than on
+ * the state object itself. Called from {@link declareState}/{@link declareStore},
+ * so every declaring directive (`:state`, `:store`, `:computed`, `:theme`,
+ * `:fetch`, `:form … into`, `:slider … =`) is covered at one choke point.
+ * @param {string} name
+ * @param {string} directive The directive that declared it, for the message.
+ * @param {Ctx} ctx
+ * @returns {void}
+ */
+function rejectReservedName(name, directive, ctx) {
+  if (!RESERVED_NAMES.includes(name)) return;
+  const hint = `rename the key — "${name}" is inherited from Object.prototype, not owned by the state object, so writing it corrupts every other key`;
+  throw wdError(
+    `${directive} name "${name}" is not allowed in ${ctx.file}. Use: ${hint} — e.g. ${STATE_EXAMPLE}`,
+    { code: "WD250", file: ctx.file, hint, example: STATE_EXAMPLE }
+  );
+}
+
+/**
+ * Reject a seed that is a BARE NAME already declared as state.
+ *
+ * `:state title = Hello world` storing the literal string is a feature — a
+ * headline should not need quotes. But `:state b = a`, where `a` is declared
+ * state, reads as "seed b from a" and silently stores the one-character STRING
+ * "a" instead: the page compiles, renders the letter a, and nothing ever points
+ * at the line that caused it. That is the silent class, so the compiler asks
+ * once rather than guessing. A name that is NOT declared state keeps the
+ * bare-string behavior, and quoting keeps it in every case.
+ *
+ * Only a single bare identifier qualifies — `Hello world`, `2 apples`, and
+ * `a plan` are ordinary text and never trip this.
+ * @param {unknown} value The parsed seed.
+ * @param {string} raw The raw right-hand side, as written.
+ * @param {string} directive `:state` or `:store`, for the message.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line`.
+ * @returns {void}
+ */
+function rejectStateSeed(value, raw, directive, ctx, index) {
+  // Test the RAW right-hand side, not the parsed value: quoting is the escape
+  // hatch, and `"count"` parses to the same string a bare `count` does.
+  const bare = raw.trim();
+  if (typeof value !== "string" || !/^[A-Za-z_$][\w$]*$/.test(bare)) return;
+  const key = resolveStateKey(bare, ctx);
+  if (!key) return;
+  const hint = `:computed name = ${bare} to derive it (or quote it — "${bare}" — to keep the literal text)`;
+  throw wdError(
+    `${directive} seed "${bare}" in ${at(ctx, index)} names the declared state "${key}", but a seed is stored verbatim, so this would hold the text "${bare}" and never track it. Use: ${hint} — e.g. ${COMPUTED_EXAMPLE}`,
+    {
+      code: "WD251",
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint,
+      example: COMPUTED_EXAMPLE
+    }
+  );
+}
+
 /**
  * @param {string} line
  * @param {Ctx} ctx
@@ -65,9 +139,10 @@ export function handleState(line, ctx, index) {
       example: STATE_EXAMPLE
     });
   const value = parseStateValue(match[2], at(ctx, index));
+  rejectStateSeed(value, match[2], ":state", ctx, index);
   const key = declareState(match[1], value, ctx);
   recordSymbol(ctx, index, { kind: "state", name: key, detail: `${key} = ${match[2].trim()}` });
-  const persistAttr = match[3] === "persist" ? ` data-wd-persist="${key}"` : "";
+  const persistAttr = match[3] === "persist" ? ` data-wd-persist="${escapeHtml(key)}"` : "";
   return `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
 }
 
@@ -79,6 +154,7 @@ export function handleState(line, ctx, index) {
  * @returns {string} The fully-qualified state key.
  */
 export function declareState(name, value, ctx) {
+  rejectReservedName(name, ":state", ctx);
   if (ctx.loopItem)
     throw wdError(`State cannot be declared inside a reactive @loop body (${ctx.file})`, {
       code: "WD202",
@@ -127,10 +203,11 @@ export function handleStore(line, ctx, index) {
       }
     );
   const value = parseStateValue(match[2], at(ctx, index));
+  rejectStateSeed(value, match[2], ":store", ctx, index);
   const name = declareStore(match[1], value, ctx);
   recordSymbol(ctx, index, { kind: "store", name, detail: `${name} = ${match[2].trim()}` });
   const ephemeral = match[3] === "ephemeral" ? " data-wd-store-ephemeral" : "";
-  return `<script type="application/json" data-wd-store="${name}"${ephemeral}>${safeScriptJson(value)}</script>`;
+  return `<script type="application/json" data-wd-store="${escapeHtml(name)}"${ephemeral}>${safeScriptJson(value)}</script>`;
 }
 
 /**
@@ -143,6 +220,7 @@ export function handleStore(line, ctx, index) {
  * @returns {string} The store name (also its bare state key).
  */
 export function declareStore(name, value, ctx) {
+  rejectReservedName(name, ":store", ctx);
   if (ctx.comp.stores.has(name))
     throw wdError(
       `Store "${name}" is declared twice in ${ctx.file}. Use: :store name = value — e.g. ${STORE_EXAMPLE}`,
@@ -243,7 +321,7 @@ export function handleComputed(line, ctx, index) {
   const initial = evalAst(ast, undefined, ctx.comp);
   const key = declareState(match[1], initial ?? null, ctx);
   recordSymbol(ctx, index, { kind: "computed", name: key, detail: `${key} = ${match[2].trim()}` });
-  return `<span data-wd-computed data-wd-computed-key="${key}" data-wd-computed-expr="${escapeHtml(JSON.stringify(ast))}"></span><script type="application/json" data-wd-state>${safeScriptJson({ [key]: initial ?? null })}</script>`;
+  return `<span data-wd-computed data-wd-computed-key="${escapeHtml(key)}" data-wd-computed-expr="${escapeHtml(JSON.stringify(ast))}"></span><script type="application/json" data-wd-state>${safeScriptJson({ [key]: initial ?? null })}</script>`;
 }
 
 /**
@@ -283,5 +361,5 @@ export function handleTheme(line, ctx, index) {
     detail: `${storeName} = ${JSON.stringify(seed)}`
   });
   const ephemeral = match[3] === "ephemeral" ? " data-wd-store-ephemeral" : "";
-  return `<script type="application/json" data-wd-store="${storeName}"${ephemeral}>${safeScriptJson(seed)}</script><span data-wd-theme="${storeName}" hidden></span>`;
+  return `<script type="application/json" data-wd-store="${escapeHtml(storeName)}"${ephemeral}>${safeScriptJson(seed)}</script><span data-wd-theme="${escapeHtml(storeName)}" hidden></span>`;
 }

@@ -7,11 +7,12 @@
 
 import MarkdownIt from "markdown-it";
 import { highlightCode } from "../highlight.js";
-import { LOOP_META, recordRead, wdError } from "./context.js";
+import { LOOP_META, lineOf, recordRead, wdError } from "./context.js";
 import { applyPipeline, fmtAttr, validatePipes } from "./format.js";
 import {
   escapeHtml,
   getPath,
+  interpolateBound,
   interpolateLeaf,
   lookupVar,
   resolveStateKey
@@ -29,6 +30,7 @@ import {
 const md = new MarkdownIt({ html: false, highlight: highlightCode });
 md.use(bindingPlugin);
 md.use(attrsPlugin);
+md.use(rawHtmlPlugin);
 md.use(anchorPlugin);
 
 // Raw HTML in markdown is escaped by default: a stray `<script>` or `onerror=`
@@ -50,63 +52,196 @@ export function selectMd(meta) {
     mdRawHtml = new MarkdownIt({ html: true, highlight: highlightCode });
     mdRawHtml.use(bindingPlugin);
     mdRawHtml.use(attrsPlugin);
+    mdRawHtml.use(rawHtmlPlugin);
     mdRawHtml.use(anchorPlugin);
   }
   return mdRawHtml;
 }
 
 /**
+ * Render one prose chunk.
  * @param {string} text
  * @param {Ctx} ctx
+ * @param {number} [index] 0-based line index the chunk starts at in the current
+ *   `compileBody` slice, so a warning about a binding inside it reports the true
+ *   `file:line`. Defaults to the top of the slice.
  * @returns {string}
  */
-export function renderProse(text, ctx) {
-  text = resolveDestinationBindings(text, ctx);
+export function renderProse(text, ctx, index = 0) {
+  text = resolveDestinationBindings(text, ctx, index);
   return (ctx.md ?? md).render(text, {
-    resolveBinding: (/** @type {string} */ expr) => resolveBindingHtml(expr, ctx),
+    resolveBinding: (/** @type {string} */ expr) => resolveBinding(expr, ctx),
+    // Raw-HTML interpolation needs the compile context AND the chunk's offset,
+    // and markdown-it's env is the only channel into a core rule.
+    wd: { ctx, index },
     headingSlugs: ctx.comp.headingSlugs
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE SILENT-FAILURE CLASS: interpolation that markdown never sees.
+//
+// `{ name }` is an INLINE rule, so it only fires where markdown-it is parsing
+// inline content. Three positions are not inline content, and in all three the
+// framework used to emit the author's braces verbatim with no error and no
+// warning:
+//
+//   1. A link/image destination. `[a]({ x })` worked (one special case), but
+//      `[a](/p/{ x }/)` did not: `{ … }` contains spaces, a markdown destination
+//      may not, so the link never forms and the WHOLE construct degrades to the
+//      literal text `[a](/p/value/)`.
+//   2. An attribute inside raw HTML (`<a href="{ x }">`, `html: true`). The tag
+//      is one opaque `html_inline` token; nothing inside it is ever parsed.
+//   3. The body of a raw `html_block` (`<div>{ x }</div>`).
+//
+// Every build-time value now resolves in all three. A REACTIVE value cannot —
+// there is no `data-wd-attr` in the runtime, and a destination has no node to
+// bind — so instead of failing silently it WARNS with the file:line, paints the
+// initial value where painting is possible, and names the two workarounds.
+// ---------------------------------------------------------------------------
+
+/**
+ * Warn (non-fatal) that a reactive value landed somewhere it cannot bind.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index of the offending line in the slice.
+ * @param {string} expr The binding source text, without braces.
+ * @param {"destination" | "html"} where Which position it landed in.
+ * @param {boolean} painted Whether the initial value was written into the output.
+ * @returns {void}
+ */
+function warnUnbindable(ctx, index, expr, where, painted) {
+  const position =
+    where === "destination"
+      ? "a link/image destination"
+      : "raw HTML (an attribute or an html block)";
+  const outcome = painted
+    ? "its build-time value is painted once and then never updates"
+    : "it stays literal text";
+  ctx.comp.warnings.push(
+    `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" is reactive, but ${position} cannot bind, so ${outcome}. ` +
+      `Move the value into ordinary text (where { ${expr} } does bind), or update it from a colocated .js with wd.subscribe.`
+  );
 }
 
 /**
  * Pre-resolve `{ expr }` interpolations sitting in a markdown link/image
  * destination — the `](…)` slot — so a build-time `@loop` (or any static scope)
- * can drive an href/src. A markdown destination cannot contain the spaces inside
- * `{ … }`, so markdown-it would otherwise never form the link; substituting the
- * static value here lets the normal link/image parser run. Only build-time
- * (static-scope) values are substituted — reactive `:state`/reactive-loop
- * bindings resolve to `null` and are left untouched (they cannot live in a
- * destination). Issue #19.
+ * can drive an href/src.
+ *
+ * A markdown destination cannot contain the spaces inside `{ … }`, so markdown-it
+ * would never form the link; substituting the value here first lets the normal
+ * link/image parser run, and validateLink still vets the assembled URL. Every
+ * `{ … }` in the destination is substituted, not just one at the very start —
+ * `/products/{ p.slug }/` is the shape a collection listing actually writes.
+ *
+ * Fenced code is skipped: a docs page showing `[{ p.name }](/p/{ p.slug }/)`
+ * inside a ```` ```wd ```` block is DOCUMENTING the syntax, not using it.
  * @param {string} text
  * @param {Ctx} ctx
+ * @param {number} index 0-based line index the chunk starts at.
  * @returns {string}
  */
-function resolveDestinationBindings(text, ctx) {
-  return text.replace(
-    /(\]\(\s*)\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g,
-    (whole, prefix, expr) => {
-      const raw = resolveBindingRaw(expr, ctx);
-      return raw == null ? whole : prefix + raw;
+function resolveDestinationBindings(text, ctx, index) {
+  const lines = text.split("\n");
+  /** @type {string | null} */
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const fenceMatch = lines[i].match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
+      continue;
     }
-  );
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      continue;
+    }
+    lines[i] = lines[i].replace(/\]\(([^)\n]*)\)/g, (whole, dest) => {
+      const filled = dest.replace(
+        /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g,
+        (/** @type {string} */ brace, /** @type {string} */ expr) => {
+          const found = resolveBinding(expr, ctx);
+          if (!found) return brace; // not in scope — leave the author's text alone
+          if (found.kind === "row") {
+            // One template serves every row, so a per-row value cannot become a
+            // single build-time href. Painting row 1's value into all of them
+            // would be worse than leaving it visible.
+            warnUnbindable(ctx, index + i, expr, "destination", false);
+            return brace;
+          }
+          if (found.kind === "state") warnUnbindable(ctx, index + i, expr, "destination", true);
+          return found.text;
+        }
+      );
+      return filled === dest ? whole : `](${filled})`;
+    });
+  }
+  return lines.join("\n");
 }
 
 /**
- * Resolve `{ expr }` to its raw static value (a plain string) for use in a
- * destination, or `null` when the binding is reactive or not in build-time
- * scope. Mirrors the static branch of {@link resolveBindingHtml} but returns the
- * unescaped value (markdown-it normalizes the URL).
- * @param {string} expr
- * @param {Ctx} ctx
- * @returns {string | null}
+ * markdown-it plugin (core rule): resolve `{ expr }` inside RAW HTML — the
+ * opaque `html_inline` tokens a tag becomes and the `html_block` tokens a
+ * block-level element becomes, both of which only exist on an `html: true` page.
+ * Values are HTML-escaped, which is correct in both positions a brace can sit
+ * in (an attribute value and element text), so no tag-position analysis is
+ * needed.
+ *
+ * `.md` files never reach this: `compileFile` renders them with no
+ * `resolveBinding` in the env, and this rule is a no-op without it — the
+ * extension stays the feature gate.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
  */
-function resolveBindingRaw(expr, ctx) {
-  const segs = expr.split(".");
-  const found = lookupVar(ctx.scope, segs[0]);
-  if (!found.found) return null;
-  const resolved = getPath(found.value, segs.slice(1));
-  const leaf = interpolateLeaf(resolved, expr, ctx);
-  return leaf == null ? null : String(leaf);
+function rawHtmlPlugin(mdInstance) {
+  mdInstance.core.ruler.push("wd_raw_html", (state) => {
+    const wd = state.env?.wd;
+    if (!wd) return false;
+    for (const block of state.tokens) {
+      const line = wd.index + (block.map ? block.map[0] : 0);
+      if (block.type === "html_block") {
+        block.content = fillRawHtml(block.content, wd.ctx, line);
+        continue;
+      }
+      // Inline children carry no line map, so count the line breaks walked past:
+      // one softbreak/hardbreak per source newline inside the block. Keeps the
+      // warning on the author's actual line, not the top of the paragraph.
+      let offset = 0;
+      for (const child of block.children ?? []) {
+        if (child.type === "softbreak" || child.type === "hardbreak") offset++;
+        // `child.meta.wdText` marks a token THIS layer already produced (a
+        // resolved binding). Its content is DATA, not template: without the skip,
+        // a state value that happens to read `{ meta.title }` would be resolved a
+        // second time and leak whatever `title` holds into the page.
+        else if (child.type === "html_inline" && child.meta?.wdText === undefined)
+          child.content = fillRawHtml(child.content, wd.ctx, line + offset);
+      }
+    }
+    return false;
+  });
+}
+
+/**
+ * Substitute every `{ expr }` in a raw-HTML fragment with its escaped value.
+ * @param {string} html
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index of the fragment, for warnings.
+ * @returns {string}
+ */
+function fillRawHtml(html, ctx, index) {
+  return html.replace(
+    /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g,
+    (brace, /** @type {string} */ expr) => {
+      const found = resolveBinding(expr, ctx);
+      if (!found) return brace;
+      if (found.kind === "row") {
+        warnUnbindable(ctx, index, expr, "html", false);
+        return brace;
+      }
+      if (found.kind === "state") warnUnbindable(ctx, index, expr, "html", true);
+      return escapeHtml(found.text);
+    }
+  );
 }
 
 /**
@@ -126,11 +261,16 @@ function bindingPlugin(mdInstance) {
     );
     if (!match) return false;
     const resolve = state.env?.resolveBinding;
-    const html = resolve ? resolve(match[1].trim()) : null;
-    if (typeof html !== "string") return false;
+    const found = resolve ? resolve(match[1].trim()) : null;
+    if (!found) return false;
     if (!silent) {
       const token = state.push("html_inline", "", 0);
-      token.content = html;
+      token.content = found.html;
+      // The heading-anchor rule reads this back: an id must be a slug of what the
+      // reader SEES, and what the reader sees here is `found.text`, not the
+      // markup carrying it. Marking the token also keeps genuine author HTML
+      // (`## Hi <b>x</b>`) contributing nothing, exactly as before.
+      token.meta = { wdText: found.text };
     }
     state.pos += match[0].length;
     return true;
@@ -223,8 +363,9 @@ export function slugify(text) {
  * so long pages are linkable without any JS. Duplicate slugs dedupe with
  * `-1`/`-2` suffixes; the counters live in `env.headingSlugs` so a page whose
  * prose renders in chunks (directives between headings) still dedupes across
- * the whole document. Bindings and inline HTML inside a heading contribute no
- * slug text — only literal text and inline code do.
+ * the whole document. A `{ name }` binding contributes its resolved text (its
+ * initial value when reactive); author-written inline HTML still contributes
+ * none, so only text the reader actually reads shapes the id.
  * @param {MarkdownIt} mdInstance
  * @returns {void}
  */
@@ -237,6 +378,12 @@ function anchorPlugin(mdInstance) {
       let text = "";
       for (const child of tokens[i + 1].children ?? []) {
         if (child.type === "text" || child.type === "code_inline") text += child.content;
+        // A `{ name }` binding is real heading text — without it every
+        // interpolated heading on a site slugged to the same `section`,
+        // `section-1`, `section-2`, which is what darkmown.com/blog/ shipped.
+        // Reactive bindings contribute their INITIAL value: the id has to be
+        // stable and crawlable, so it is minted once at build time.
+        else if (child.meta?.wdText) text += child.meta.wdText;
       }
       const base = slugify(text);
       const seen = counts.get(base) ?? 0;
@@ -248,13 +395,29 @@ function anchorPlugin(mdInstance) {
 }
 
 /**
- * Resolve a `{ name.path }` binding to HTML: loop item span, static value, or
- * a reactive bind span. Returns null when nothing in scope matches.
+ * A resolved `{ name.path }` binding.
+ * @typedef {object} Binding
+ * @property {string} html What the inline rule emits: a `data-wd-each` /
+ *   `data-wd-bind` span for a reactive value, the escaped value for a static one.
+ * @property {string} text The PLAIN resolved text (unescaped, no markup) — a
+ *   reactive value's initial paint. This is what a link destination, a raw-HTML
+ *   attribute, and a heading slug need; `html` is unusable in all three.
+ * @property {"static" | "state" | "row"} kind Where the value came from, and
+ *   therefore what the non-inline positions may do with it: `static` is a
+ *   build-time value and always safe to substitute; `state` is `:state`/`:store`
+ *   and can only be painted once; `row` is a reactive `@loop` row, whose ONE
+ *   template serves every row, so it cannot be substituted at all.
+ */
+
+/**
+ * Resolve a `{ name.path }` binding: loop item span, static value, or a reactive
+ * bind span. Returns null when nothing in scope matches, which every caller
+ * treats as "leave the author's braces exactly as written".
  * @param {string} expr
  * @param {Ctx} ctx
- * @returns {string | null}
+ * @returns {Binding | null}
  */
-function resolveBindingHtml(expr, ctx) {
+function resolveBinding(expr, ctx) {
   const { path, stages } = validatePipes(expr, ctx);
   const segs = path.split(".");
   const head = segs[0];
@@ -270,19 +433,30 @@ function resolveBindingHtml(expr, ctx) {
         `"{ ${expr} }" uses the loop meta variable "${head}" outside a @loop in ${ctx.file}. Move it into a loop body, or rename your value.`,
         { code: "WD005", file: ctx.file }
       );
-    if (ctx.loopItem) return `<span data-wd-each-meta="${LOOP_META[head]}"${fmt}></span>`; // reactive: filled per row
+    if (ctx.loopItem)
+      // reactive: filled per row, so there is no single build-time text.
+      return {
+        html: `<span data-wd-each-meta="${LOOP_META[head]}"${fmt}></span>`,
+        text: "",
+        kind: "row"
+      };
     // static: the value is in scope (injected by staticUnroll); fall through.
   }
 
   if (ctx.loopItem && head === ctx.loopItem) {
     const rest = segs.slice(1).join(".");
-    return `<span data-wd-each${rest ? ` data-wd-path="${escapeHtml(rest)}"` : ""}${fmt}></span>`;
+    return {
+      html: `<span data-wd-each${rest ? ` data-wd-path="${escapeHtml(rest)}"` : ""}${fmt}></span>`,
+      text: "",
+      kind: "row"
+    };
   }
 
   const staticValue = lookupVar(ctx.scope, head);
   if (staticValue.found) {
     const resolved = getPath(staticValue.value, segs.slice(1));
-    return escapeHtml(interpolateLeaf(fold(resolved), expr, ctx));
+    const text = interpolateLeaf(fold(resolved), expr, ctx);
+    return { html: escapeHtml(text), text, kind: "static" };
   }
 
   const key = resolveStateKey(head, ctx);
@@ -292,7 +466,15 @@ function resolveBindingHtml(expr, ctx) {
     const initial = getPath(ctx.comp.state.get(key), segs.slice(1));
     const rest = segs.slice(1).join(".");
     const pathAttr = rest ? ` data-wd-path="${escapeHtml(rest)}"` : "";
-    return `<span data-wd-bind="${key}"${pathAttr}${fmt}>${escapeHtml(interpolateLeaf(fold(initial), expr, ctx))}</span>`;
+    // interpolateBound, not interpolateLeaf: the runtime repaints this node with
+    // textContent, so the initial paint has to use the runtime's own coercion or
+    // an array bind silently changes from "a, b" to "a,b" on first render.
+    const text = interpolateBound(fold(initial), expr, ctx);
+    return {
+      html: `<span data-wd-bind="${escapeHtml(key)}"${pathAttr}${fmt}>${escapeHtml(text)}</span>`,
+      text,
+      kind: "state"
+    };
   }
 
   return null;

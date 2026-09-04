@@ -95,26 +95,42 @@ function collectionNameOf(route) {
  */
 function rowFor(route, reader) {
   const slug = path.basename(route.file, path.extname(route.file));
+  // The router's `route.meta` stays the source of truth for the VALUES (it is
+  // parsed once, there), but it cannot carry which of them the author quoted —
+  // and that flag is the whole difference between the text "007" and the number
+  // 7. Read the entry once here for `quotedKeys` plus the excerpt body; the
+  // `.md` excerpt fallback already cost this read.
+  const { quotedKeys, body } = parseFrontmatter(reader.readText(route.file), route.file);
   /** @type {Record<string, unknown>} */
   const fields = {};
-  for (const [key, value] of Object.entries(route.meta)) fields[key] = coerceScalar(value);
+  for (const [key, value] of Object.entries(route.meta))
+    fields[key] = quotedKeys.has(key) ? value : coerceScalar(value);
   return {
     ...fields,
     url: route.route,
     slug: slug === "index" ? path.basename(path.dirname(route.file)) : slug,
-    excerpt: excerptFor(route, reader)
+    excerpt: excerptFor(route, body)
   };
 }
 
 /**
- * Coerce a frontmatter scalar to its natural type for querying. The frontmatter
- * parser yields scalars as STRINGS (`true`, `42` arrive as `"true"`, `"42"`), but
- * a collection loop should behave like a JSON loop, where `where p.featured ==
- * true` and numeric `sort`/comparisons just work. So a bare `true`/`false` becomes
- * a boolean and a numeric string becomes a number; quoted/other strings and
- * arrays pass through untouched. This coercion is scoped to collection rows only —
- * it never touches the global frontmatter parser (a `:state`/`{ meta.x }` value
- * keeps its existing string form).
+ * Coerce an UNQUOTED frontmatter scalar to its natural type for querying. The
+ * frontmatter parser yields scalars as STRINGS (`true`, `42` arrive as `"true"`,
+ * `"42"`), but a collection loop should behave like a JSON loop, where
+ * `where p.featured == true` and numeric `sort`/comparisons just work. So a bare
+ * `true`/`false` becomes a boolean and a numeric string becomes a number; other
+ * strings and arrays pass through untouched.
+ *
+ * QUOTED values never reach here — {@link rowFor} skips them by `quotedKeys`.
+ * They used to, because the parser strips quotes before anything downstream can
+ * see them, and the result was silent data loss with no escape hatch: `"007"`
+ * became 7, `"1.10"` became 1.1, `"01234"` became 1234, and a `_schema.wd`
+ * declaring `sku: string` then failed the whole build with a WD124 blaming the
+ * author for a string they had in fact written. Zero-padded ids, ISBNs, zip
+ * codes, SKUs and `x.y0` versions all live in that gap.
+ *
+ * This coercion is scoped to collection rows only — it never touches the global
+ * frontmatter parser (a `:state`/`{ meta.x }` value keeps its string form).
  * @param {unknown} value
  * @returns {unknown}
  */
@@ -130,14 +146,14 @@ function coerceScalar(value) {
  * (plain `.md` only) the first paragraph of its body, else "". Mirrors the RSS
  * description fallback so a collection card and the feed read the same snippet.
  * @param {Route} route
- * @param {import("./reader.js").Reader} reader Source reader for the `.md` body.
+ * @param {string} body The entry's body, already split from its frontmatter by
+ *   {@link rowFor} (which reads the file once for both this and `quotedKeys`).
  * @returns {string}
  */
-function excerptFor(route, reader) {
+function excerptFor(route, body) {
   const fromMeta = route.meta.excerpt;
   if (typeof fromMeta === "string" && fromMeta.trim()) return fromMeta.trim();
   if (path.extname(route.file) !== ".md") return "";
-  const { body } = parseFrontmatter(reader.readText(route.file), route.file);
   return firstParagraph(body);
 }
 

@@ -180,14 +180,23 @@ export function resolveInclude(spec, fromFile, context, allowAny, loc, reader) {
   }
   for (const candidate of candidates) {
     const resolved = path.resolve(candidate);
-    if (!isAllowedInclude(resolved, context)) {
+    const refuse = () => {
       throw wdError(`Include "${spec}" from ${loc} resolves outside site/pages or site/_`, {
         code: "WD601",
         file: fromFile
       });
-    }
+    };
+    // Lexical containment first: it is the only check available for a path that
+    // does not exist yet, and it is what rejects `../` traversal and a
+    // sibling-prefix directory (`site/pages-secret/`).
+    if (!isAllowedInclude(resolved, context)) refuse();
     if (!reader.exists(resolved)) continue;
     if (!allowAny && !pageIncludeExtensions.includes(path.extname(resolved))) continue;
+    // CANONICAL containment second: the lexical check reads the path as WRITTEN,
+    // so a symlink sitting inside `site/pages` and pointing anywhere on the disk
+    // passed it and leaked the target's bytes into the built page. Only reachable
+    // once the file exists, which is why it cannot replace the lexical check.
+    if (!isAllowedInclude(resolved, context, reader)) refuse();
     return resolved;
   }
   throw wdError(
@@ -197,13 +206,42 @@ export function resolveInclude(spec, fromFile, context, allowAny, loc, reader) {
 }
 
 /**
- * @param {string} file
+ * Whether an absolute path is inside the `site/pages` / `site/_` sandbox.
+ *
+ * Two modes, both used by {@link resolveInclude}. Without a `reader` the check is
+ * LEXICAL — the path exactly as written — which is what rejects `../` traversal
+ * and a sibling directory that merely shares the root's prefix
+ * (`site/pages-secret/` is not inside `site/pages/`, hence the `path.sep`
+ * boundary). With a `reader` it re-runs against the CANONICAL paths, closing the
+ * symlink hole: a link inside `site/pages` pointing at `../../secret.md` is
+ * lexically fine and still escapes the sandbox. Both sides are canonicalized,
+ * because a project root can itself live under a symlinked parent (macOS
+ * `/tmp` → `/private/tmp`), where realpathing only the file would reject every
+ * legitimate include.
+ * @param {string} file Absolute path to the include target.
  * @param {Paths} context
+ * @param {import("./reader.js").Reader} [reader] When given, also check the
+ *   canonical (symlink-resolved) path. Requires `file` to exist.
  * @returns {boolean}
  */
-export function isAllowedInclude(file, context) {
+export function isAllowedInclude(file, context, reader) {
   const roots = [context.routesRoot, context.shelfRoot].map((root) => path.resolve(root));
-  return roots.some((root) => file === root || file.startsWith(`${root}${path.sep}`));
+  /** @param {string} target @param {string[]} within */
+  const contains = (target, within) =>
+    within.some((root) => target === root || target.startsWith(`${root}${path.sep}`));
+  if (!contains(path.resolve(file), roots)) return false;
+  if (!reader) return true;
+  // A root that does not exist (a project with no `site/_`) has no canonical
+  // form; keep it as written rather than failing the whole check.
+  /** @param {string} target */
+  const canonical = (target) => {
+    try {
+      return reader.realpath(target);
+    } catch {
+      return target;
+    }
+  };
+  return contains(canonical(path.resolve(file)), roots.map(canonical));
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +269,9 @@ export function scanMarkdownHints(body, file, comp) {
       continue;
     }
     const hit = line.match(
-      /^(@include|@loop|@repeat|:state|:button|:if|:for|:try|:note|:sprint|:::)(\s|$)/
+      // `:note`/`:sprint` are gone from the `.wd` directive set, so naming them
+      // here would tell a `.md` author to rename a file to activate nothing.
+      /^(@include|@loop|@repeat|:state|:button|:if|:for|:try|:::)(\s|$)/
     );
     if (hit) {
       comp.warnings.push(

@@ -77,6 +77,7 @@ free number in their block.
 | `WD122` | Undeclared frontmatter field | A collection entry has a field the schema does not declare (often a typo). | Add the field to `_schema.wd`, or remove it from the entry. |  |
 | `WD123` | Missing required frontmatter field | A collection entry omits a field the schema requires. | Add the field to the entry, or mark it optional with `?` in the schema. |  |
 | `WD124` | Frontmatter field has the wrong type | An entry's value does not match its schema type. | Fix the entry's value, or widen the type in `_schema.wd`. |  |
+| `WD190` | Expression could not be compiled | A `:if` or `::: … when` condition folded a build-time value the expression re-parser cannot read back. | Use simpler operands — a field path, a declared `:state`, a plain number, or a `"string"`. |  |
 
 ## WD2xx — State & expressions
 
@@ -108,6 +109,8 @@ free number in their block.
 | `WD232` | Function call in `:computed` | Only the fixed `sum`/`avg`/`min`/`max`/`count` aggregates may look like calls. | Remove the call, or use one of the aggregates. |  |
 | `WD233` | Disallowed `:computed` path segment | A referenced path contains `constructor`, `prototype`, or `__proto__`. | Read an ordinary state path. |  |
 | `WD234` | Unknown state in `:computed` | The expression references a name that is not declared state. | Declare it with `:state`, `:store`, or `:fetch` first. | `:computed total = items.length * 4` |
+| `WD250` | Reserved state declaration name | A `:state`/`:store`/`:computed`/`:fetch`/`:form`/`:slider`/`:theme` name is `__proto__`, `constructor`, or `prototype`, which the runtime's state object inherits rather than owns. | Rename the key — any other name works. | `:state count = 0` |
+| `WD251` | State seeded from another state | A `:state`/`:store` value is a bare name that is already declared state, so it would be stored as that literal text and never track the value. | Derive it with `:computed`, or quote the text to keep it literal. | `:computed total = items.length * 4` |
 
 ## WD3xx — Button, effect & timer actions
 
@@ -220,6 +223,7 @@ free number in their block.
 | `WD905` | Deploy CLI not signed in | The platform CLI rejected the deploy with an authentication failure. | Run the platform login command, then re-run the deploy. |  |
 | `WD906` | Deploy command failed | The platform CLI exited non-zero for a reason other than authentication. | Read the CLI output above the error, fix the cause, and re-run. |  |
 | `WD907` | Unknown `ai_crawlers` policy | The home page's `ai_crawlers:` is neither `allow` nor `deny`. | Write `ai_crawlers: allow` or `ai_crawlers: deny` (absent means allow). |  |
+| `WD950` | Invalid `rss_limit` | The home page's `rss_limit:` is not a positive whole number of items. | Write `rss_limit: 20` (absent means 20). |  |
 
 ## Errors without a code
 

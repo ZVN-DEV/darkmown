@@ -82,7 +82,7 @@ export function handleForm(line, bodyLines, ctx, index) {
   const actionAttrs = action
     ? ` action="${escapeHtml(action)}" method="${escapeHtml(method)}"`
     : "";
-  return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: null })}</script><form data-wd-form="${key}"${actionAttrs}>${inner}</form>`;
+  return `<script type="application/json" data-wd-state>${safeScriptJson({ [key]: null })}</script><form data-wd-form="${escapeHtml(key)}"${actionAttrs}>${inner}</form>`;
 }
 
 /**
@@ -230,7 +230,7 @@ export function handleBind(line, ctx, index) {
   const initial = ctx.comp.state.get(key);
   const valueAttr =
     initial === undefined || initial === null ? "" : ` value="${escapeHtml(String(initial))}"`;
-  return `<input type="${escapeHtml(type)}" data-wd-bind-input="${key}"${valueAttr} ${attrs.join(" ")}>`;
+  return `<input type="${escapeHtml(type)}" data-wd-bind-input="${escapeHtml(key)}"${valueAttr} ${attrs.join(" ")}>`;
 }
 
 /**
@@ -318,7 +318,7 @@ export function handleSlider(line, ctx, index) {
         { code: "WD413", file: ctx.file, line: lineOf(ctx, index) }
       );
     key = declareState(name, value, ctx);
-    const persistAttr = persist ? ` data-wd-persist="${key}"` : "";
+    const persistAttr = persist ? ` data-wd-persist="${escapeHtml(key)}"` : "";
     seed = `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
   } else {
     if (persist)
@@ -340,7 +340,7 @@ export function handleSlider(line, ctx, index) {
     initial === undefined || initial === null ? "" : ` value="${escapeHtml(String(initial))}"`;
   const ariaAttr = ` aria-label="${escapeHtml(ariaLabel || humanizeName(name))}"`;
   recordSymbol(ctx, index, { kind: "field", name, target: key, detail: `:slider ${name}` });
-  return `${seed}<input type="range" data-wd-bind-input="${key}" min="${escapeHtml(min)}" max="${escapeHtml(max)}" step="${escapeHtml(step)}"${valueAttr}${ariaAttr}>`;
+  return `${seed}<input type="range" data-wd-bind-input="${escapeHtml(key)}" min="${escapeHtml(min)}" max="${escapeHtml(max)}" step="${escapeHtml(step)}"${valueAttr}${ariaAttr}>`;
 }
 
 /**

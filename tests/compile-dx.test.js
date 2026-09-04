@@ -384,6 +384,70 @@ test("deleting a row of a nested (item-relative) loop fails loud with a correcti
   );
 });
 
+// ---------------------------------------------------------------------------
+// The operator the author WROTE is the operator that ships.
+// ---------------------------------------------------------------------------
+
+test('`list append "…prepend…"` stays an append — the OPERAND cannot pick the operator', () => {
+  // The check used to search the whole expression for " prepend ", so a value
+  // that merely contained the word silently compiled to data-wd-action="prepend"
+  // and the item landed at the wrong end of the list. No error, no warning.
+  const root = fixture();
+  write(
+    root,
+    "site/pages/index.wd",
+    [":store list = []", ':button "A" -> list append "we prepend things"'].join("\n")
+  );
+  const html = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).html;
+  assert.match(html, /data-wd-action="append"/);
+  assert.doesNotMatch(html, /data-wd-action="prepend"/);
+  assert.match(html, /data-wd-value="&quot;we prepend things&quot;"/, "the value is intact");
+});
+
+test("`list prepend v` is still a prepend (control)", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/index.wd",
+    [":store list = []", ':button "B" -> list prepend "x"'].join("\n")
+  );
+  const html = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).html;
+  assert.match(html, /data-wd-action="prepend"/);
+});
+
+test("a value containing the word append does not turn a prepend into an append", () => {
+  const root = fixture();
+  write(
+    root,
+    "site/pages/index.wd",
+    [":store list = []", ':button "C" -> list prepend "we append things"'].join("\n")
+  );
+  const html = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).html;
+  assert.match(html, /data-wd-action="prepend"/);
+});
+
+// ---------------------------------------------------------------------------
+// One error, one code.
+// ---------------------------------------------------------------------------
+
+test("the include-cycle error prints its code exactly once", () => {
+  // `wdError` prefixes `[WDxxx]`, and page.js hardcoded a second copy in the
+  // message text, so the terminal showed `[WD612] [WD612] Include cycle …`.
+  const root = fixture();
+  write(root, "site/pages/index.wd", "@include /a.wd\n");
+  write(root, "site/_/a.wd", "@include /b.wd\n");
+  write(root, "site/_/b.wd", "@include /a.wd\n");
+  let err;
+  try {
+    compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  } catch (e) {
+    err = e;
+  }
+  assert.ok(err, "expected an include cycle to be detected");
+  assert.equal(err.message.match(/\[WD612\]/g).length, 1, err.message);
+  assert.match(err.message, /^\[WD612\] Include cycle detected: /);
+});
+
 function fixture() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "wd-compile-dx-"));
 }
@@ -393,3 +457,77 @@ function write(root, file, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content);
 }
+
+// ---------------------------------------------------------------------------
+// The "looks like a directive but matches none" warning must name only lines
+// that really match none.
+// ---------------------------------------------------------------------------
+
+/** Compile a body and return its non-fatal warnings. */
+function warningsOf(body) {
+  const root = fixture();
+  write(root, "site/pages/index.wd", body);
+  return compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).warnings;
+}
+
+test("a real directive never trips the unknown-directive warning", () => {
+  // KNOWN_DIRECTIVE is consulted only for lines that fell through to prose, so a
+  // name missing from it turns a directive typo into "check the spelling" — the
+  // wrong problem for a token spelled correctly.
+  for (const line of [
+    ":slider volume = 50 min=0 max=100 step=1",
+    ":slider", // the bare opener: still a real directive, just missing its name
+    ":carousel\n::: slide\nhi\n:::\n:endcarousel"
+  ]) {
+    assert.deepEqual(
+      warningsOf(`${line}\n`).filter((w) => w.includes("matches none")),
+      [],
+      line
+    );
+  }
+});
+
+test("a deleted directive DOES trip it — :note and :sprint are no longer .wd syntax", () => {
+  // The mirror image: a name left in KNOWN_DIRECTIVE after its handler is gone
+  // renders as literal text AND suppresses the warning that would have said so.
+  const warnings = warningsOf(':note "gone"\n:sprint min=1 max=2 roles="a"\n');
+  assert.equal(warnings.length, 2, warnings.join("\n"));
+  assert.match(warnings[0], /":note" looks like a directive but matches none/);
+  assert.match(warnings[1], /":sprint" looks like a directive but matches none/);
+});
+
+test("a stray :endcarousel is the same coded error every other stray closer gets", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", ":endcarousel\n");
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
+    /\[WD010\] Stray ":endcarousel" with no matching opener/
+  );
+});
+
+test("the WD311 action hint lists refetch, so it names the whole vocabulary", () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", [":state n = 0", ':button "Go" -> n frobnicate 1'].join("\n"));
+  let err;
+  try {
+    compilePage(path.join(root, "site/pages/index.wd"), createPaths(root));
+  } catch (e) {
+    err = e;
+  }
+  assert.ok(err, "expected an unsupported action to throw");
+  assert.match(err.message, /^\[WD311\] /);
+  assert.match(err.message, /refetch/, "WD311 under-reported the vocabulary it accepts");
+  assert.match(err.wd.hint, /refetch/, "the structured hint must agree with the message");
+});
+
+test("the op the hint names actually compiles", () => {
+  // A hint that lists something the compiler rejects is worse than an omission.
+  const root = fixture();
+  write(
+    root,
+    "site/pages/index.wd",
+    [':fetch board from "/api/board.json"', ':button "Refresh" -> board refetch'].join("\n")
+  );
+  const html = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).html;
+  assert.match(html, /data-wd-action="refetch" data-wd-target="board"/);
+});

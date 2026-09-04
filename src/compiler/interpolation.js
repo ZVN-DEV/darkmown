@@ -22,7 +22,14 @@ export function lookupVar(scope, name) {
   /** @type {Scope | null} */
   let current = scope;
   for (; current; current = current.parent) {
-    if (name in current.vars) return { found: true, value: current.vars[name] };
+    // `Object.hasOwn`, never `in`: a scope frame is a plain object, so `in` also
+    // answers true for every Object.prototype member. With it, `{ toString }`
+    // resolved to the inherited function and rendered
+    // "function toString() { [native code] }" into the page, and
+    // `@include /p.wd with v={ constructor }` leaked the Object constructor into
+    // the value pipeline. Own keys only — the scope holds exactly what the
+    // author put there.
+    if (Object.hasOwn(current.vars, name)) return { found: true, value: current.vars[name] };
   }
   return { found: false };
 }
@@ -110,6 +117,26 @@ export function interpolateLeaf(value, expr, ctx) {
     );
   }
   return String(value);
+}
+
+/**
+ * Render the INITIAL value of a reactive binding (`data-wd-bind` /
+ * `data-wd-each`) as text.
+ *
+ * Identical to {@link interpolateLeaf} except for arrays: the runtime paints a
+ * bind by assigning to `textContent`, which coerces `["a", "b"]` with `String()`
+ * to `"a,b"`, and the loop row-template fill already agrees (it escapes through
+ * `String()` too). `interpolateLeaf`'s `", "` join is the STATIC contract — the
+ * documented `{ meta.tags }` behavior for a value nothing will ever repaint — so
+ * the two cannot share one rule. Painting the static form here made the first
+ * reactive render silently rewrite `"a, b"` to `"a,b"`.
+ * @param {unknown} value
+ * @param {string} expr
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+export function interpolateBound(value, expr, ctx) {
+  return Array.isArray(value) ? String(value) : interpolateLeaf(value, expr, ctx);
 }
 
 // ---------------------------------------------------------------------------
