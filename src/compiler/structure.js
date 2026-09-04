@@ -248,7 +248,12 @@ export function handleContainer(header, bodyLines, ctx, index) {
   // real element AND keeps the name as a class hook (so `.nav`/`.main` skins
   // still cascade); any other name becomes a <div> and also a class. The tag is
   // always one of these fixed constants — never author text — so it can't inject.
-  const lead = rest.match(/^([^\s.#]\S*)/);
+  // …unless the header OPENS with an attribute (`::: role="region" .card`), which
+  // `^([^\s.#]\S*)` would otherwise swallow whole and emit as a class:
+  // `class="role=&quot;region&quot; card"`. An attribute in first position leaves
+  // the tag at its default and falls through to the token loop below, so both
+  // orders work — `::: nav role="navigation"` still gets the <nav> element.
+  const lead = ATTR_START.test(rest) ? null : rest.match(/^([^\s.#]\S*)/);
   let nameToken = "section";
   if (lead) {
     nameToken = lead[1];

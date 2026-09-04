@@ -322,7 +322,10 @@ export function compileBody(lines, ctx) {
     // `:endcarousel` joins the family: a closer with no opener is a mistake with
     // one obvious fix, and the vague "matches none" warning it used to get named
     // the wrong problem ("check the spelling") for a token spelled correctly.
-    if (/^(@endloop|:endif|:endfor|:endform|:endcarousel|:else)\s*$/.test(line)) {
+    // `@empty` too: it is a MID-block marker, consumed by `splitEmptyBranch` when
+    // it sits inside a `@loop`, so one reaching here has no loop to belong to and
+    // used to render as the literal text `@empty` with nothing said about it.
+    if (/^(@endloop|@empty|:endif|:endfor|:endform|:endcarousel|:else)\s*$/.test(line)) {
       throw wdError(`Stray "${line.trim()}" with no matching opener in ${ctx.file}`, {
         code: "WD010",
         file: ctx.file

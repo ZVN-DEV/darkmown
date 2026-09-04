@@ -71,6 +71,46 @@ test("::: aria values are HTML-escaped on emit", () => {
   assert.equal(tag, '<div class="card" aria-label="Tom &amp; Jerry &lt;b&gt;">');
 });
 
+test("an attribute in FIRST position is an attribute, not a class", () => {
+  // The lead-token match (`^([^\\s.#]\\S*)`) ran before the attribute scan, so it
+  // swallowed the whole `role="region"` token and emitted it as a class name:
+  // `class="role=&quot;region&quot; card"`.
+  assert.equal(
+    openTag(main('::: role="region" .card\nhi\n:::')),
+    '<section class="card" role="region">'
+  );
+  assert.equal(openTag(main('::: aria-label="x"\nhi\n:::')), '<section aria-label="x">');
+  assert.equal(
+    openTag(main('::: title="T" .a .b #i\nhi\n:::')),
+    '<section id="i" class="a b" title="T">'
+  );
+});
+
+test("a leading attribute leaves the tag at the same default a leading .class does", () => {
+  // `::: .card` has always been a <section>; an attribute in first position is
+  // the same "no name token" case and must not diverge.
+  assert.match(openTag(main("::: .card\nhi\n:::")), /^<section /);
+  assert.match(openTag(main('::: role="region"\nhi\n:::')), /^<section /);
+});
+
+test("a NAME still wins when it comes first", () => {
+  // The other order must be untouched: the semantic tag still applies.
+  assert.equal(
+    openTag(main('::: nav role="navigation"\nhi\n:::')),
+    '<nav class="nav" role="navigation">'
+  );
+  assert.equal(
+    openTag(main('::: card role="region"\nhi\n:::')),
+    '<div class="card" role="region">'
+  );
+});
+
+test("a rejected attribute in first position still reports the whitelist", () => {
+  // The skip must not turn a bad attribute into a silent class either.
+  assert.equal(thrown(() => main('::: onclick="x()" .card\nhi\n:::')).wd.code, "WD650");
+  assert.equal(thrown(() => main("::: role=region .card\nhi\n:::")).wd.code, "WD651");
+});
+
 test("a semantic container keeps its tag and takes attributes", () => {
   const tag = openTag(main('::: nav .menu role="navigation" aria-label="Main"\nhi\n:::'));
   assert.equal(tag, '<nav class="nav menu" role="navigation" aria-label="Main">');

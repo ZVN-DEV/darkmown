@@ -19,6 +19,7 @@ import {
   stripQuotes,
   unescapeHtml
 } from "./interpolation.js";
+import { encodeDest, unsafeUrlValue } from "./markdown.js";
 import { compilePredicate, evalPredicate } from "./predicates.js";
 
 /**
@@ -748,7 +749,11 @@ function staticUnroll(rows, itemName, bodyLines, ctx, empty = null, emptyStart =
     out.push(ctx.compileBody(lines, rowCtx));
   }
   const html = joinRows(out);
-  return pipe ? html.replace(/<thead>[\s\S]*?<\/thead>\n?/, "") : html;
+  // GLOBAL: one synthesized header per compiled row body, and the row seam does
+  // not always merge them into one table (a `@loop` whose rows are split by a
+  // structure the splice declines). Stripping only the first left the rest on
+  // the page as `<th>c</th>`.
+  return pipe ? html.replace(/<thead>[\s\S]*?<\/thead>\n?/g, "") : html;
 }
 
 // One synthesized markdown table header + separator, wide enough for the body
@@ -771,9 +776,20 @@ const pipeSeparator = (columns) => `|${" --- |".repeat(columns)}`;
  * @returns {{ columns: number } | null}
  */
 function pipeRowShape(bodyLines) {
-  const rows = bodyLines.filter((line) => line.trim());
-  if (!rows.length || !rows.every((line) => line.trim().startsWith("|"))) return null;
-  if (rows.some((line) => /^\s*\|[\s:|-]+\|\s*$/.test(line))) return null;
+  // TRAILING blank lines are harmless — nothing follows them to re-open a table —
+  // so they are trimmed off the shape test. A LEADING or INTERIOR blank line is
+  // not: a blank line ENDS a markdown table, so the synthesized header would only
+  // cover the run of rows before it and every later run would form its own table
+  // with a visible `| c | c |` header. The `^ {0,3}\|` test rejects both (a blank
+  // line has no pipe) and also rejects a 4-space-indented row, which markdown
+  // reads as an indented code block, not a table row. Filtering blanks out and
+  // trimming each line — what this used to do — hid all three cases and shipped
+  // `<th>c</th>` to the page.
+  let end = bodyLines.length;
+  while (end > 0 && !bodyLines[end - 1].trim()) end--;
+  const rows = bodyLines.slice(0, end);
+  if (!rows.length || !rows.every((line) => /^ {0,3}\|/.test(line))) return null;
+  if (rows.some((line) => /^ {0,3}\|[\s:|-]+\|\s*$/.test(line))) return null;
   return { columns: cellCount(rows[0]) };
 }
 
@@ -800,18 +816,52 @@ function cellCount(row) {
  * `<div>` cannot live inside a `<table>`, so there is no correct HTML to emit —
  * it used to ship silent `<p>| … |</p>` paragraphs instead.
  * @param {Ctx} ctx
+ * @param {Partial<LoopOpts> & { data?: unknown[] } | null | undefined} opts
+ * @param {string | null} sourceKey State key/path of the list, or null when the
+ *   source is a build-time list and a CLAUSE is what made the loop reactive.
  * @returns {Error}
  */
-function reactiveTableRows(ctx) {
+function reactiveTableRows(ctx, opts, sourceKey) {
   const opener = ctx.loopOpener ?? { at: ctx.file, line: "" };
-  const hint =
-    "a static source (a JSON file, a frontmatter list, or a collection) for a markdown table, " +
-    "or build reactive rows from containers (`::: trow` / `::: td`) instead of `|` cells";
+  // A loop whose SOURCE is a static list (`sourceKey === null` — a JSON file, a
+  // frontmatter list, a collection) is reactive only because a CLAUSE reads
+  // `:state`. Telling that author to "use a static source" points at the one
+  // thing already correct; the fix is in the clause, so name the state it reads.
+  const names = sourceKey === null ? clauseStateNames(opts) : [];
+  const quoted = names.map((name) => `"${name}"`).join(", ");
+  const why = names.length
+    ? ` The source is static; the clauses read :state ${quoted}, which is what makes the loop reactive.`
+    : "";
+  const hint = names.length
+    ? `drop ${quoted} from the clauses so the rows unroll at build time, or build reactive rows ` +
+      "from containers (`::: trow` / `::: td`) instead of `|` cells"
+    : "a static source (a JSON file, a frontmatter list, or a collection) for a markdown table, " +
+      "or build reactive rows from containers (`::: trow` / `::: td`) instead of `|` cells";
   return wdError(
     `A reactive @loop cannot build markdown table rows in ${opener.at}: "${opener.line}". ` +
-      `A reactive row is cloned into a <div>, which cannot live inside a <table>. Use: ${hint}.`,
+      `A reactive row is cloned into a <div>, which cannot live inside a <table>.${why} Use: ${hint}.`,
     { code: "WD191", file: ctx.file, hint }
   );
+}
+
+// The `S("name"…)` readers a compiled `where` predicate emits.
+const WHERE_STATE_RE = /\bS\("((?:[^"\\]|\\.)*)"/g;
+
+/**
+ * The declared-state names a loop's CLAUSES read: the `where` predicate's `S()`
+ * readers plus any `limit`/`offset`/`sort by` argument that is a state key.
+ * @param {Partial<LoopOpts> & { data?: unknown[] } | null | undefined} opts
+ * @returns {string[]}
+ */
+function clauseStateNames(opts) {
+  /** @type {Set<string>} */
+  const names = new Set();
+  for (const m of (opts?.where?.body ?? "").matchAll(WHERE_STATE_RE))
+    names.add(JSON.parse(`"${m[1]}"`));
+  for (const arg of [opts?.limit, opts?.offset]) if (arg?.kind === "key") names.add(arg.value);
+  if (opts?.sort?.keyKind === "key") names.add(opts.sort.key);
+  if (opts?.sort?.dirKind === "key") names.add(opts.sort.dir);
+  return [...names];
 }
 
 // The block tags a static unroll stitches back together across a row seam. Each
@@ -889,7 +939,15 @@ export function spliceTables(prev, next) {
     if (!left.includes("<thead>") || right.includes("<thead>")) return null;
     return `${left.slice(0, left.lastIndexOf("</table>")).trimEnd()}\n<tbody>\n${tail}`;
   }
-  // Case 1: same header, concatenated bodies.
+  // Case 2b: the left table already has a body — the author wrote a fixed row
+  // under the header before the loop. A right side with NO `<thead>` is body-only
+  // output (a loop over bare `|…|` rows, whose synthesized header was stripped),
+  // so its rows belong in that body whatever the header above them says. Without
+  // this the fixed row forced two tables.
+  if (!right.includes("<thead>")) return `${left.slice(0, leftBody).trimEnd()}\n${tail}`;
+  // Case 1: same header, concatenated bodies. A header that INTERPOLATES the row
+  // is genuinely a table per row, and merging would drop every header but the
+  // first — so two headered tables only merge when their headers are identical.
   if (left.slice(0, left.indexOf("<tbody>")) !== right.slice(0, rightBody)) return null;
   return `${left.slice(0, leftBody).trimEnd()}\n${tail}`;
 }
@@ -907,7 +965,7 @@ export function spliceTables(prev, next) {
  */
 function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   assertReactiveDepth(ctx);
-  if (pipeRowShape(bodyLines)) throw reactiveTableRows(ctx);
+  if (pipeRowShape(bodyLines)) throw reactiveTableRows(ctx, opts, key);
   ctx.comp.assets.runtime = true;
   /** @type {Ctx} */
   const templateCtx = {
@@ -1076,7 +1134,9 @@ function loopClauseAttrs(c) {
  */
 function itemRelativeLoop(path, itemName, bodyLines, ctx, opts) {
   assertReactiveDepth(ctx);
-  if (pipeRowShape(bodyLines)) throw reactiveTableRows(ctx);
+  // An item-relative loop's source IS the outer reactive row, so no clause can
+  // be the cause: the source branch of the hint is always the right one.
+  if (pipeRowShape(bodyLines)) throw reactiveTableRows(ctx, opts, path);
   /** @type {Ctx} */
   // loopKey: undefined — an item-relative loop's source is a path off the outer
   // row, not a top-level state key, so a per-row `remove` inside it has no valid
@@ -1160,8 +1220,77 @@ function withLoopKey(template, itemKey) {
  */
 function fillTemplateString(template, item, meta, comp) {
   // Resolve per-item :if regions first (recursively, so nested conditionals are
-  // pre-rendered for the initial paint), then fill text binds and meta markers.
-  return fillEachMeta(fillEachText(fillEachIfRegions(template, item, meta, comp), item), meta);
+  // pre-rendered for the initial paint), then fill text binds, meta markers and
+  // bound destinations.
+  return fillEachAttr(
+    fillEachMeta(fillEachText(fillEachIfRegions(template, item, meta, comp), item), meta),
+    item,
+    meta,
+    comp
+  );
+}
+
+// An open tag carrying a per-row bound destination. Attribute values are
+// HTML-escaped, so `>` cannot appear inside one and `[^>]*` cannot overrun the
+// tag.
+const EACH_ATTR_TAG = /<[a-zA-Z][a-zA-Z0-9-]*[^>]*\sdata-wd-each-attr="([^"]*)"[^>]*>/g;
+
+/**
+ * Fill a per-row bound destination (`data-wd-each-attr`) for the initial paint.
+ *
+ * The template is the one `attrBindPlugin` stamped: `[name, …parts]`, where a
+ * part is either a literal chunk or a reader — `["i", path]` off the row,
+ * `["m", name]` off the row meta, `["s", key, path]` off declared state. The
+ * build-time seed on the element is deliberately EMPTY for the reader parts (one
+ * template serves every row), so without this fill every painted row shipped the
+ * literal skeleton — `href="/p//"` — to a crawler and to a no-JS reader.
+ *
+ * The assembly mirrors the compile-time seed in `attrBindPlugin` exactly:
+ * `encodeDest` on each resolved value (a destination has no quoting, so an
+ * unencoded `)` or space breaks the link), then the scheme guard on the WHOLE
+ * assembled value, so a row that assembles to `javascript:…` paints empty.
+ * @param {string} str
+ * @param {unknown} item
+ * @param {Record<string, unknown>} meta
+ * @param {Compilation} comp
+ * @returns {string}
+ */
+function fillEachAttr(str, item, meta, comp) {
+  return str.replace(EACH_ATTR_TAG, (tag, template) => {
+    // The compiler serialized this template itself (`attrBindPlugin`), so the
+    // parse cannot fail, the shape is `[name, …parts]`, and `name` (`href`/`src`)
+    // is always already on the tag as the empty seed — the same
+    // compiler-wrote-it-so-it-parses contract the `data-wd-if-expr` AST next door
+    // relies on.
+    const [name, ...parts] =
+      /** @type {[string, ...(string | [string, string] | [string, string, string])[]]} */ (
+        JSON.parse(unescapeHtml(template))
+      );
+    let out = "";
+    for (const part of parts) {
+      if (typeof part === "string") {
+        out += part;
+        continue;
+      }
+      const value =
+        part[0] === "s"
+          ? getPath(comp.state.get(part[1]), part[2] ? part[2].split(".") : [])
+          : part[0] === "m"
+            ? meta[part[1]]
+            : getPath(item, part[1] ? part[1].split(".") : []);
+      out += encodeDest(value ?? "");
+    }
+    // Splice the value between the seed's own quotes: `name` never reaches a
+    // RegExp, and the closing quote is located on the ORIGINAL tag, so an escaped
+    // `&quot;` in the painted value cannot be mistaken for it.
+    const open = ` ${name}="`;
+    const start = tag.indexOf(open) + open.length;
+    return (
+      tag.slice(0, start) +
+      escapeHtml(unsafeUrlValue(out) ? "" : out) +
+      tag.slice(tag.indexOf('"', start))
+    );
+  });
 }
 
 /**

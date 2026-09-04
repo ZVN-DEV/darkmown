@@ -78,7 +78,7 @@ free number in their block.
 | `WD123` | Missing required frontmatter field | A collection entry omits a field the schema requires. | Add the field to the entry, or mark it optional with `?` in the schema. |  |
 | `WD124` | Frontmatter field has the wrong type | An entry's value does not match its schema type. | Fix the entry's value, or widen the type in `_schema.wd`. |  |
 | `WD190` | Expression could not be compiled | A `:if` or `::: … when` condition folded a build-time value the expression re-parser cannot read back. | Use simpler operands — a field path, a declared `:state`, a plain number, or a `"string"`. |  |
-| `WD191` | Reactive `@loop` over markdown table rows | A `@loop` whose body is bare `\| … \|` cells resolves to a reactive source, and a reactive row is cloned into a `<div>`, which cannot live inside a `<table>`. | Loop a static source (a JSON file, a frontmatter list, or a collection) for a markdown table, or build reactive rows from containers (`::: trow` / `::: td`) instead of `\|` cells. |  |
+| `WD191` | Reactive `@loop` over markdown table rows | A `@loop` whose body is bare `\| … \|` cells resolves to a reactive source, and a reactive row is cloned into a `<div>`, which cannot live inside a `<table>`. | Loop a static source (a JSON file, a frontmatter list, or a collection) for a markdown table — and if the source is already static, drop the `:state` the `where`/`limit`/`sort by` clause reads — or build reactive rows from containers (`::: trow` / `::: td`) instead of `\|` cells. |  |
 
 ## WD2xx — State & expressions
 

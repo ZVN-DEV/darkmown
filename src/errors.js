@@ -381,7 +381,7 @@ const ENTRIES = [
     title: "Reactive `@loop` over markdown table rows",
     cause:
       "A `@loop` whose body is bare `| … |` cells resolves to a reactive source, and a reactive row is cloned into a `<div>`, which cannot live inside a `<table>`.",
-    fix: "Loop a static source (a JSON file, a frontmatter list, or a collection) for a markdown table, or build reactive rows from containers (`::: trow` / `::: td`) instead of `|` cells."
+    fix: "Loop a static source (a JSON file, a frontmatter list, or a collection) for a markdown table — and if the source is already static, drop the `:state` the `where`/`limit`/`sort by` clause reads — or build reactive rows from containers (`::: trow` / `::: td`) instead of `|` cells."
   },
 
   // --- WD2xx: state and expressions ----------------------------------------

@@ -231,3 +231,172 @@ test("a reactive loop over NON-row content is untouched", () => {
   ]);
   assert.match(html, /data-wd-loop="shelf"/);
 });
+
+// ---------------------------------------------------------------------------
+// 5. The synthesized header must never reach the page
+// ---------------------------------------------------------------------------
+
+test("a blank line between loop rows does not leak the synthetic `| c | c |` header", () => {
+  // A blank line ENDS a markdown table, so the synthesized header only covered
+  // the rows before it and every later run formed its OWN table — with a visible
+  // `<th>c</th>` header that only the first strip removed.
+  const html = main(
+    [
+      "| A | B |",
+      "| --- | --- |",
+      "@loop /data.json into row",
+      "| { row.name } | { row.qty } |",
+      "",
+      "| x | y |",
+      "@endloop"
+    ],
+    { "site/_/data.json": SHELF }
+  );
+  assert.ok(!html.includes("<th>c</th>"), `the synthetic header leaked:\n${html}`);
+  assert.equal(count(html, "thead"), 1, `expected only the author's header:\n${html}`);
+});
+
+test("a 4-space-indented loop row does not leak the synthetic header", () => {
+  // Four leading spaces make the line an indented CODE BLOCK, not a table row,
+  // so the body was never rows at all — `pipeRowShape` used to trim the line and
+  // claim it anyway.
+  const html = main(
+    ["| A | B |", "| --- | --- |", "@loop /data.json into row", "    | { row.name } |", "@endloop"],
+    { "site/_/data.json": SHELF }
+  );
+  assert.ok(!html.includes("<th>c</th>"), `the synthetic header leaked:\n${html}`);
+  assert.equal(count(html, "thead"), 1);
+});
+
+test("a blank line inside a whole-table-in-loop body leaks nothing either", () => {
+  const html = main(["@loop /data.json into row", "| { row.name } |", "", "| x |", "@endloop"], {
+    "site/_/data.json": SHELF
+  });
+  assert.ok(!html.includes("<th>c</th>"), `the synthetic header leaked:\n${html}`);
+});
+
+test("a TRAILING blank line still unrolls into the table", () => {
+  // Nothing follows a trailing blank, so it cannot re-open a table: the shape is
+  // still claimed, and the rows still land in the author's table. (Refusing on
+  // ANY blank line would have regressed this.)
+  const html = main(
+    [
+      "| Item | Qty |",
+      "| --- | --- |",
+      "@loop /data.json into row",
+      "| { row.name } | { row.qty } |",
+      "",
+      "@endloop"
+    ],
+    { "site/_/data.json": SHELF }
+  );
+  assertOneTable(html, 3);
+  assert.ok(!html.includes("<th>c</th>"));
+});
+
+// ---------------------------------------------------------------------------
+// 6. A header that already has a body row of its own
+// ---------------------------------------------------------------------------
+
+test("a fixed row written under the header joins the looped rows in ONE table", () => {
+  const html = main(
+    [
+      "| Item | Qty |",
+      "| --- | --- |",
+      "| fixed | 0 |",
+      "@loop /data.json into row",
+      "| { row.name } | { row.qty } |",
+      "@endloop"
+    ],
+    { "site/_/data.json": SHELF }
+  );
+  assertOneTable(html, 4);
+  const body = html.slice(html.indexOf("<tbody>"));
+  // Source order is preserved: the hand-written row first, then the loop's.
+  assert.ok(
+    body.indexOf("<td>fixed</td>") < body.indexOf("<td>Ash</td>"),
+    `rows are out of order:\n${html}`
+  );
+});
+
+test("two tables that each have their OWN header still stay separate", () => {
+  // Negative control for the widened splice: merging them would silently drop
+  // the second header.
+  const html = main(["| A |", "| --- |", "| 1 |", "", "| B |", "| --- |", "| 2 |"], {
+    "site/_/data.json": SHELF
+  });
+  assert.equal(count(html, "table"), 2, `two headered tables merged:\n${html}`);
+});
+
+// ---------------------------------------------------------------------------
+// 7. WD191 names the RIGHT cause
+// ---------------------------------------------------------------------------
+
+test("WD191 blames the CLAUSE when the source is static", () => {
+  // "Use: a static source" is useless advice for `@loop /rows.json …` — the
+  // source is already static; the `where` reading `:state` is what made the loop
+  // reactive, so that is what the hint has to name.
+  const error = thrown(() =>
+    main(
+      [
+        ":state min = 0",
+        "",
+        "| N |",
+        "| --- |",
+        "@loop /data.json into p where p.qty > min",
+        "| { p.qty } |",
+        "@endloop"
+      ],
+      { "site/_/data.json": SHELF }
+    )
+  );
+  assert.equal(error.wd.code, "WD191");
+  assert.match(error.message, /The source is static; the clauses read :state "min"/);
+  assert.match(error.wd.hint, /^drop "min" from the clauses so the rows unroll at build time/);
+  assert.ok(!error.wd.hint.includes("a static source"), `blamed the source: ${error.wd.hint}`);
+});
+
+test("WD191 names a state-driven limit / sort clause too", () => {
+  for (const [clause, name] of [
+    ["limit size", "size"],
+    ["sort by { sk }", "sk"]
+  ]) {
+    const error = thrown(() =>
+      main(
+        [
+          ":state size = 1",
+          ':state sk = "qty"',
+          "",
+          "| N |",
+          "| --- |",
+          `@loop /data.json into p ${clause}`,
+          "| { p.qty } |",
+          "@endloop"
+        ],
+        { "site/_/data.json": SHELF }
+      )
+    );
+    assert.equal(error.wd.code, "WD191", clause);
+    assert.match(error.wd.hint, new RegExp(`^drop "${name}" from the clauses`), clause);
+  }
+});
+
+test("WD191 still blames the SOURCE when the source is the reactive part", () => {
+  const error = thrown(() =>
+    main([
+      ':state shelf = [{ "name": "Ash" }]',
+      "",
+      "| Item |",
+      "| --- |",
+      "@loop shelf into row",
+      "| { row.name } |",
+      "@endloop"
+    ])
+  );
+  assert.equal(error.wd.code, "WD191");
+  assert.match(
+    error.wd.hint,
+    /^a static source \(a JSON file, a frontmatter list, or a collection\)/
+  );
+  assert.ok(!error.message.includes("The source is static"), error.message);
+});

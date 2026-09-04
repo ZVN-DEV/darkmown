@@ -509,6 +509,32 @@ test("a deleted directive DOES trip it — :note and :sprint are no longer .wd s
   assert.match(warnings[1], /":sprint" looks like a directive but matches none/);
 });
 
+test("a stray @empty joins the coded-closer family", () => {
+  // `@empty` is a MID-block marker: inside a `@loop` it is consumed by
+  // `splitEmptyBranch`, so one that reaches the dispatcher has no loop to belong
+  // to. It used to render as the literal text `@empty`, silently, while every
+  // other orphaned marker got WD010.
+  const root = fixture();
+  write(root, "site/pages/index.wd", "text\n@empty\n");
+  assert.throws(
+    () => compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)),
+    /\[WD010\] Stray "@empty" with no matching opener/
+  );
+});
+
+test("an @empty INSIDE a loop is still the empty branch", () => {
+  // Negative control: the loop's own scanner must keep claiming it first.
+  const root = fixture();
+  write(root, "site/_/rows.json", "[]");
+  write(
+    root,
+    "site/pages/index.wd",
+    "@loop /rows.json into r\n- { r.n }\n@empty\nnothing\n@endloop\n"
+  );
+  const html = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).html;
+  assert.match(html, /<p>nothing<\/p>/);
+});
+
 test("a stray :endcarousel is the same coded error every other stray closer gets", () => {
   const root = fixture();
   write(root, "site/pages/index.wd", ":endcarousel\n");
