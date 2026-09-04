@@ -7,7 +7,7 @@ Darkmown is a Markdown-native web framework. You build sites by writing `.md` an
 - `.md` files are plain CommonMark. Directives stay inert text.
 - `.wd` files are the same Markdown **plus directives** (state, loops, conditionals, includes, forms).
 - To make a `.md` page interactive, **rename it to `.wd`**. ⚠️ Renaming means the old `.md` is **gone** — never leave both `index.md` and `index.wd`, that is a fatal `Duplicate route` build error. Upgrade = delete the `.md`, create the `.wd`.
-- Static pages ship **zero** JavaScript; a page loads the ~6.4 KB gzipped runtime (CI-enforced under 8 KB) only if it declares reactive behavior.
+- Static pages ship **zero** JavaScript; a page loads the ~6.4 KB gzipped runtime (CI-enforced under 8 KB) only if it declares reactive behavior. What ships at `/__wd/runtime.js` is a minified build of the readable source, with a sourcemap beside it at `/__wd/runtime.js.map`.
 
 ### ⚠️ Raw HTML is escaped by default (since 2.0.0)
 
@@ -23,6 +23,8 @@ html: true
 `html: true` on that page is what lets a raw `<main>` / `<div>` / `<a>` in its body render as markup instead of escaped text.
 
 **Annotations never go inside a `wd` fence.** Every line inside a fenced `wd` block is real source: a trailing `←` note or a `#` comment on a directive line is parsed as part of the directive and either breaks the build or (in frontmatter) is silently swallowed into the value. `.wd` has no comment syntax. Put explanations in prose next to the block, the way this file does.
+
+**A directive is a whole line, flush left, with its arguments.** An indented directive is prose and a directive inside a fenced block is code. A line that is only a keyword (`:state`, `:button`, `@loop`, and every other directive that takes arguments) is a **compile error** carrying that directive's own code and `Use:` hint, so a lone `:state` is `[WD201]` and a lone `:button` is `[WD301]`. Three keywords are valid bare because they mean something bare: `:::`, `:theme`, `:carousel`. To print a directive name as text, escape it: `\:fetch` renders `:fetch`.
 
 `{ name }` interpolation, directives, and Markdown never needed `html: true` — only literal HTML tags do. One thing `html: true` does **not** unlock: an inline `<script>` is still blocked by the shipped Content-Security-Policy — put behavior in a colocated `.js` file instead.
 
@@ -81,7 +83,17 @@ rss_limit: 20
 
 The page's frontmatter is in scope as `meta`: `{ meta.title }` prints a field, `{ meta.tags }` joins an array with `, `, and `@loop meta.tags into tag` iterates a frontmatter array (build-time, stays static). Frontmatter arrays are inline only — `tags: [a, b, "x, y"]`; a value without a leading `[` is a plain string.
 
-Build-time values resolve **inside a link or image destination** too: `[{ item.label }]({ item.url })`. Reactive `:state` cannot live in a destination.
+Values resolve **inside a link or image destination** too, and every brace in the destination resolves, not just one filling the whole value: `[Docs](/docs/{ region }/)`. A build-time value folds and the page stays static; a `:state`/`:store`/`:computed` value, a reactive loop row, or a `{ $index }` becomes a **live binding** the runtime rewrites on every render.
+
+```wd
+:state region = "eu"
+
+:button "US" -> region = "us"
+
+[Open the docs](/docs/{ region }/)
+```
+
+Values in URL position are percent-encoded, and the runtime refuses a `javascript:`, `data:`, or `vbscript:` result by applying an empty attribute. Values resolve in **raw HTML** too (attributes and html blocks, HTML-escaped, `html: true` only), but raw HTML is a build-time paint, **not** a binding: `<a href="{ url }">` never updates, and the compiler warns. Fenced code and inline code spans are never rewritten.
 
 ### Format pipes: `{ value | name:arg }`
 
@@ -115,10 +127,13 @@ Twenty-five directives. `@include`, `@loop`, `:::`, `:if`, `:state`, `:store`, `
 
 Count: { count } · Total: { total }
 ```
-- `:state name = value` is page-scoped (and section-scoped inside a `::: section`). **Ephemeral by default**; add `persist` for localStorage.
+- `:state name = value` is page-scoped (and section-scoped inside a `::: section`). **Ephemeral by default**; add `persist` for localStorage, and `from-url` to mirror the value into the query string.
 - `:store name = value` is global by name, shared across pages and tabs. **Persisted by default**; add `ephemeral` to opt out.
 - `:computed name = <expression>` derives from other state: names, numbers, `+ - * /`, comparisons, and the five aggregates `sum(list, field)` / `avg` / `min` / `max` / `count(list)`. It takes no `persist`/`ephemeral` (that is a compile error).
 - Values are JSON: string, number, `true`/`false`/`null`, array, object. An array or object literal may span lines; the `persist`/`ephemeral` token then goes after the closing bracket. A blank line inside the literal ends it.
+- A **seed is stored verbatim**. `:state b = a` where `a` is declared state is `[WD251]`, not a reference: derive it with `:computed b = a`, or quote it to keep the literal word. A plain undeclared word is still fine (`:state status = draft`).
+- `persist` and `ephemeral` on one line, or the same modifier twice, is `[WD261]`. A declaration named `__proto__`, `constructor`, or `prototype` is `[WD250]` on every declaring directive.
+- A declaration inside an `:if` branch that starts **closed** is hydrated when the branch opens, `persist` included. The seed is claimed once per key, so re-opening the branch does not reset the value.
 
 ```wd
 :store rows = [
@@ -126,6 +141,18 @@ Count: { count } · Total: { total }
   {"id": 2, "label": "Two"}
 ] persist
 ```
+
+**`from-url` puts a `:state` in the query string.** The parameter is named after the key (`cart:items` becomes `cart.items`), writes go through `history.replaceState` (no history entry per keystroke), a value equal to its seed drops the parameter, and boot precedence is URL, then storage, then seed. It composes with `persist`.
+
+```wd
+:state q = "" from-url persist
+
+:bind q placeholder="Search"
+
+Searching for { q }.
+```
+
+`from-url` is `:state` only: on a `:store` or `:theme` it is `[WD260]` (both are shared by every page and tab, a query parameter belongs to one address), and on a `:computed` it is `[WD211]`.
 
 ### Buttons and the action vocabulary
 ```wd
@@ -234,6 +261,18 @@ Nothing matched.
 - `sortable` (a bare clause, **not** `:sortable`) makes a plain reactive `:state`/`:store` loop drag-reorderable, with keyboard support. Not valid alongside `where`/`sort`/`reverse`/`offset`/`limit`.
 - `@empty` opens a fallback branch rendered when the loop produces no rows. A missing in-scope source is an empty list, not an error.
 
+**Markdown table rows.** A **static** loop whose body is bare `| … |` cells fills a table: write the header in prose above the loop, or put the whole table inside it. Either way the result is one `<table>` with one `<tr>` per row.
+
+```wd
+| Item | Price |
+| --- | --- |
+@loop /products.json into row
+| **{ row.name }** | { row.price } |
+@endloop
+```
+
+A format pipe inside a cell needs its `|` escaped (`{ row.price \| money }`). A pipe row written **after** `@endloop` stays a paragraph. A **reactive** loop over pipe rows is `[WD191]`: a reactive row is cloned into a `<div>`, which cannot live in a `<table>`, so use a static source, or build rows from containers (`::: trow` / `::: td`).
+
 **Row variables**, valid only inside a loop body: `{ $index }` (0-based), `{ $number }` (1-based), `{ $first }`, `{ $last }`, `{ $count }`. They work in interpolation and in `:if`.
 
 ### Content collections and `_schema.wd`
@@ -272,7 +311,8 @@ The closed vocabulary: `string`, `number`, `boolean`, `date`, `string[]`, each w
 :::
 ```
 - `@include /partial.wd [with key="value" …]` inlines a file from `site/_/` or `site/pages/`. Paths are **static literals**; there is no dynamic include path. Includes are macros, not components: no children, no slots, no default arguments. A missing argument renders `{ title }` literally.
-- `::: [tag] [.class …] [#id] … :::` groups content. A container named `section`, `nav`, or `main` emits that real element; any other name is a `<div>` with that class. State declared inside a section is scoped to it (`sectionId:name`). Containers accept **only** `.class` / `#id` / `.class when …`, never `aria-*` or `role`.
+- `::: [tag] [.class …] [#id] [.class when …] [role="…"] [aria-…="…"] [title="…"] … :::` groups content. A container named `section`, `nav`, or `main` emits that real element; any other name is a `<div>` with that class. State declared inside a section is scoped to it (`sectionId:name`).
+- Container attributes are **exactly three names** (`role=`, any `aria-…=`, `title=`), always double-quoted static text, interleaved freely with `.class`/`#id` tokens: `::: nav .menu role="navigation" aria-label="Main"`. Anything else (`class=`, `id=`, `style=`, `onclick=`, `data-…=`) is `[WD650]`; a missing quoted value is `[WD651]`. No `{ state }` inside an aria value: it emits the literal braces. Zero runtime cost, a static page stays static.
 - There is **no layout or shell inheritance**. Every page includes its own nav and footer.
 
 ### Fetching data
@@ -292,7 +332,7 @@ No team members yet.
 @endloop
 :endif
 ```
-`:fetch name from "url"` declares four keys: `name` (the data, `null` until it lands), `name_loading`, `name_error`, `name_empty`. Options: `method=` (GET/POST/PUT/PATCH/DELETE), `when=load|visible`, `timeout=<ms>`, `retry=<N>`, `headers=<state key>`, `body=<state key>`, `refresh=<url>`. A URL may interpolate `{ state }` and re-runs when it changes; `name refetch` re-runs it by hand.
+`:fetch name from "url"` declares five keys: `name` (the data, `null` until it lands), `name_loading`, `name_error`, `name_error_body`, `name_empty`. On a failing response with a JSON body, `name_error` is the body's own `error` field, then its `message` field, falling back to `HTTP <status>`; `name_error_body` is the whole parsed body (`null` if the response was not JSON), so `{ signup_error_body.fields.email }` renders a field-level message. Both are cleared at the start of the next request, and a round-trip `:form` (one with both `into` and `action=`) declares them too. Options: `method=` (GET/POST/PUT/PATCH/DELETE), `when=load|visible`, `timeout=<ms>`, `retry=<N>`, `headers=<state key>`, `body=<state key>`, `refresh=<url>`. A URL may interpolate `{ state }` and re-runs when it changes; `name refetch` re-runs it by hand.
 
 URLs must be a relative path, an explicit `http(s)://`, or a leading `{ state }`. Protocol-relative `//host` and non-http(s) schemes are compile errors. A bare `:if name_loading` region gets `role="status" aria-live="polite"` and `:if name_error` gets `role="alert"` for free.
 
@@ -337,6 +377,28 @@ Thanks, **{ profile.name }**!
 - `:form into x` captures the submit into state, no backend. `:form action="/url"` emits a plain native POST (zero JS). `:form action="/url" into reply` does both: fetch when JS is on, native POST when it is not, JSON reply into `reply` (`reply_error` on failure). Darkmown owns no backend; point forms at your own `api/` or an absolute URL.
 - `:select` / `:checkbox` / `:radio` take `- Label` option lines. `:checkbox` captures an **array** of checked values; `:radio` captures one.
 - Every generated control derives an `aria-label` from its placeholder or field name unless you supply one.
+- **File upload:** a `:form` containing a file field (`:input photo type=file`, or a raw `<input type="file">` on an `html: true` page) compiles with `enctype="multipart/form-data"` and posts real `FormData`, so the file travels rather than just its name. Bound controls inside the form are appended by state key. A file field with `method="get"` is `[WD452]` (a GET has no body).
+
+**Outside a `:form`, `:select`/`:radio`/`:checkbox` bind to state.** Same three lines, different meaning: where they sit decides which. Outside a form they bind to a declared `:state`/`:store` of that name, exactly like `:bind`.
+
+```wd
+:state density = "Comfortable"
+:state previews = true
+
+:select density
+- Compact
+- Comfortable
+- Spacious
+
+:checkbox previews
+- Show image previews
+
+:if density == "Compact"
+Rows sit tight.
+:endif
+```
+
+The state must be declared first: a bound field with no matching state is `[WD450]`. A **bound `:checkbox` is a single boolean**, so it takes exactly one `- Label` line; several options is `[WD451]` (use a `:radio` group). In-form behavior is unchanged, array-capturing checkbox groups included.
 
 **Form-state rules (these cause most form failures):**
 - `:form into x` declares `x` only at `:endform`. A `:if x` (or `{ x.field }`) that reads it must come **after `:endform`**, never inside the form body.
@@ -369,6 +431,7 @@ Volume: { volume }
 ```
 - `:every <duration> -> <actions>` runs the `:button` vocabulary on an interval. Durations are `<n>ms` / `<n>s` / `<n>m`. Intervals **pause while the tab is hidden** and resume on return, so a background dashboard stops firing requests.
 - `:effect <watched> -> <actions>` runs actions when a watched state path changes. Effects run on change, never on load, and are capped at 10 settle passes.
+- **Both are page-level registrations.** Inside a reactive `@loop` body they are `[WD315]`: the runtime clones the body per row, so the timer or watcher would be registered once per row and a removed row's would keep firing. Declare it once outside the loop (page level, or inside the `::: section`) and act on the whole list: `:every 5s -> rows refetch`. Still fine: page level, inside a `:::`, inside a **static** loop, and in a reactive loop's `@empty` branch. `:button` inside a reactive loop is unaffected.
 
 ### Theme toggle: `:theme`
 ```wd
@@ -415,6 +478,8 @@ Your `.skin` selectors must match the **real** output. The emitted HTML is:
 | `:select name` + `- Label` lines | `<select>` of `<option>`s |
 | `:checkbox name` / `:radio name` + `- Label` lines | labelled `<input type=checkbox\|radio>` group (`:checkbox` captures an **array**, `:radio` one value) |
 | `:bind q placeholder="…"` | `<input>` bound two-way to `:state q` |
+| `:select`/`:radio`/`:checkbox` **outside** a `:form` | the same control, bound to `:state` of that name (no `name=` on a `:select`) |
+| `[x]({ state })`, `![alt]({ state })` | `<a href>` / `<img src>` the runtime rewrites on every render |
 | `:slider v = 50 …` | `<input type="range">` |
 | `:submit "Go"` | `<button type="submit">Go</button>` |
 | `:form …` | `<form>…</form>` |
@@ -558,12 +623,14 @@ Every author-facing compile error opens with a stable `WDxxx` code and names the
         Use: :state name = value [persist|ephemeral] — e.g. :state count = 0
 ```
 
-Codes are grouped by subsystem: `WD0xx` source and frontmatter, `WD1xx` loops and collections, `WD2xx` state and expressions, `WD3xx` button/effect/timer actions, `WD4xx` forms, `WD5xx` fetching and URL safety, `WD6xx` includes and page structure, `WD7xx` media, `WD8xx` skins, `WD9xx` project and CLI. Every `Use:` hint that contains `[bracket]` placeholders ends with a concrete `— e.g. <valid line>`: **copy the example, never the placeholder.** `darkmown catalog --llms-full` prints every code with its cause and fix.
+Codes are grouped by subsystem: `WD0xx` source and frontmatter, `WD1xx` loops and collections, `WD2xx` state and expressions, `WD3xx` button/effect/timer actions, `WD4xx` forms, `WD5xx` fetching and URL safety, `WD6xx` includes and page structure, `WD7xx` media, `WD8xx` skins, `WD9xx` project and CLI.
+
+The ones you are most likely to hit while writing new pages: `WD191` (a reactive `@loop` over `|` table rows), `WD250` (a reserved declaration name), `WD251` (`:state b = a` where `a` is state), `WD260` (`from-url` on `:store`/`:theme`), `WD261` (`persist` and `ephemeral` together), `WD315` (`:every`/`:effect` inside a reactive loop), `WD450` (a bound field with no state), `WD451` (a bound `:checkbox` with several options), `WD452` (a file field in a GET form), `WD650`/`WD651` (a non-whitelisted or unquoted attribute), `WD950` (a bad `rss_limit`). Every `Use:` hint that contains `[bracket]` placeholders ends with a concrete `— e.g. <valid line>`: **copy the example, never the placeholder.** `darkmown catalog --llms-full` prints every code with its cause and fix.
 
 ## Hard rules — do not break these
 
 1. **Never invent directives or syntax.** These do NOT exist: `@section`/`@endsection`, `{% if %}`, `:for`, `@repeat`, `v-if`, JSX, or any directive not in the list above. The only container is `::: … :::`; the only loop is `@loop`; the only interpolation is `{ }`.
-2. **Never annotate inside a fence.** `.wd` has no comment syntax. A trailing `←` note or `#` comment on a directive line breaks the build, or silently corrupts a frontmatter value.
+2. **Never annotate inside a fence, and never write a bare keyword.** `.wd` has no comment syntax: a trailing `←` note or `#` comment on a directive line breaks the build, or silently corrupts a frontmatter value. A directive line must carry its arguments; a lone `:state`/`:button`/`@loop` is a compile error (only `:::`, `:theme`, `:carousel` are valid bare). To show a directive name as text, escape it: `\:fetch`.
 3. **Always ship styling.** A `.skin` (or `<style>`) with a modern type scale, spacing, and a responsive rule — every page. Unstyled = failure.
 4. **`.skin` must target emitted HTML** (see the table). Verify selectors match real elements.
 5. **Rename = delete.** Upgrading `.md`→`.wd` means removing the `.md`. Never leave both.

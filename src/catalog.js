@@ -118,7 +118,8 @@ const DIRECTIVES = [
     kind: "block",
     syntax:
       '::: [tag] [.class …] [#id] [.class when <pred>] [role="…"] [aria-…="…"] [title="…"] … :::',
-    description: "Group content in a section/div/nav/main with classes, ids, and reactive classes.",
+    description:
+      "Group content in a section/div/nav/main with classes, ids, reactive classes, and role/aria-*/title.",
     example: CONTAINER_EXAMPLE,
     reactive: "either"
   },
@@ -160,7 +161,8 @@ const DIRECTIVES = [
     kind: "line",
     syntax:
       ':fetch name from "url" [method=…] [when=visible] [timeout=ms] [retry=N] [headers=key] [body=key]',
-    description: "Load remote JSON with auto loading/error/empty lifecycle state.",
+    description:
+      "Load remote JSON, auto-declaring name/_loading/_error/_error_body/_empty lifecycle state.",
     example: FETCH_EXAMPLE,
     reactive: "reactive"
   },
@@ -168,7 +170,8 @@ const DIRECTIVES = [
     name: ":effect",
     kind: "line",
     syntax: ":effect watched -> action[; action…]",
-    description: "Run button-vocabulary actions whenever the watched state changes.",
+    description:
+      "Run button-vocabulary actions whenever the watched state changes. Page level only, never inside a reactive @loop body.",
     example: EFFECT_EXAMPLE,
     reactive: "reactive"
   },
@@ -176,7 +179,8 @@ const DIRECTIVES = [
     name: ":every",
     kind: "line",
     syntax: ":every <duration> -> action[; action…]",
-    description: "Run actions on a timer (5s/500ms/2m); auto-pauses while the tab is hidden.",
+    description:
+      "Run actions on a timer (5s/500ms/2m); auto-pauses while the tab is hidden. Page level only, never inside a reactive @loop body.",
     example: EVERY_EXAMPLE,
     reactive: "reactive"
   },
@@ -192,7 +196,8 @@ const DIRECTIVES = [
     name: ":button",
     kind: "line",
     syntax: ':button "Label" [role="…"] [aria-…="…"] [title="…"] -> action[; action…]',
-    description: "A button that runs one or more state actions on click.",
+    description:
+      "A button that runs one or more state actions on click; takes role/aria-*/title before the arrow.",
     example: BUTTON_EXAMPLE,
     reactive: "reactive"
   },
@@ -200,7 +205,8 @@ const DIRECTIVES = [
     name: ":form",
     kind: "block",
     syntax: ':form [into name] [action="/url"] [method="post"] … :endform',
-    description: "A form: client state (into), native post (action), or fetch round-trip (both).",
+    description:
+      "A form: client state (into), native post (action), or fetch round-trip (both). Multipart when it holds a file field.",
     example: FORM_EXAMPLE,
     reactive: "either"
   },
@@ -208,7 +214,7 @@ const DIRECTIVES = [
     name: ":input",
     kind: "line",
     syntax: ':input name [type=…] [placeholder="…"] [required]',
-    description: "A single-line form input (auto aria-label).",
+    description: "A single-line form input (auto aria-label). type=file makes its form multipart.",
     example: INPUT_EXAMPLE,
     reactive: "static"
   },

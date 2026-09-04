@@ -162,7 +162,7 @@ The echo endpoint is only live on the deployed site: { reply_error }
 ## Three rules, no escape hatch
 
 - **Zero-JS static.** A page with no state ships no framework JavaScript. Open [the docs](/docs/) or [a plain `.md` page](/markdown/) and check the network tab.
-- **One runtime.** Every reactive page shares the same 7,654-byte gzipped runtime, CI-enforced under 8 KB. No per-component bundles, no hydration tax that grows with your UI. It runs under a strict CSP with no `unsafe-eval`.
+- **One runtime.** Every reactive page shares the same 6,449-byte gzipped runtime, CI-enforced under 8 KB. No per-component bundles, no hydration tax that grows with your UI. It runs under a strict CSP with no `unsafe-eval`.
 - **One loop, one binding.** `@loop … into …` is the only loop. `{ name }` is the only interpolation. There is no second way to do either.
 
 ## A whole framework, in text
@@ -177,6 +177,8 @@ The echo endpoint is only live on the deployed site: { reply_error }
 ## See it for real
 
 :try "A whole live app in one file: fetch, loops, nested ifs, a form" href="/app/"
+:try "A filter that lives in the URL, so the view is shareable" href="/url-state/"
+:try "A link whose destination follows state as you click" href="/attr-binding/"
 :try "The docs, a .wd page built from includes" href="/docs/"
 :try "A plain .md page, where directives stay inert text" href="/markdown/"
 

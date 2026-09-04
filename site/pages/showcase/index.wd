@@ -160,6 +160,42 @@ Prefer to see each feature in isolation? These pages tour the building blocks th
 [Open →](/markdown/)
 :::
 
+::: card .sc-mini
+**Reactive links**: a destination that follows state.
+
+[Open →](/attr-binding/)
+:::
+
+::: card .sc-mini
+**URL state**: `from-url`, a filter you can share.
+
+[Open →](/url-state/)
+:::
+
+::: card .sc-mini
+**Bound controls**: select, radio, checkbox, no form.
+
+[Open →](/settings/)
+:::
+
+::: card .sc-mini
+**Server errors**: what the API actually said.
+
+[Open →](/api-errors/)
+:::
+
+::: card .sc-mini
+**File upload**: a `:form` that posts multipart.
+
+[Open →](/upload/)
+:::
+
+::: card .sc-mini
+**Branch state**: a `:state` inside a closed `:if`.
+
+[Open →](/branch-state/)
+:::
+
 </div>
 
 </section>

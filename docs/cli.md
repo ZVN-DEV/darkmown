@@ -138,6 +138,16 @@ Cloudflare advanced mode (`dist/_worker.js`) does not run a bundler, so an `api/
 
 Everything from here down is for a clone of the Darkmown repository, not for a project built with it.
 
+### Regenerating the runtime artifact
+
+The runtime that ships is `src/runtime.min.js`, a committed esbuild build of the readable `src/runtime.js` (plus its sourcemap). `darkmown build` copies that artifact byte for byte, so it has to be regenerated whenever the source changes:
+
+```sh
+npm run build:runtime
+```
+
+Nothing regenerates it behind your back. A drift test rebuilds it in memory and fails on any byte difference, and CI runs the same check, so a stale artifact fails the build rather than shipping. `npm run dev` regenerates it first through `predev`, which is why development and production serve the same bytes.
+
 ### Smoke checks
 
 From this repository, run:

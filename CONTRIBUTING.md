@@ -39,21 +39,24 @@ There is no build step for the framework itself — `src/` is plain ESM JavaScri
 ## Ground rules
 
 1. **Every feature needs a test and a demo.** If it isn't exercised by `tests/` and visible somewhere under `site/pages/`, it doesn't exist.
-2. **The runtime size budget is sacred.** Static pages ship zero JS; reactive pages share one sub-8 KB runtime. CI fails if `src/runtime.js` exceeds the budget in `.size-snapshot.json`, which is the single source for it.
+2. **The runtime size budget is sacred.** Static pages ship zero JS; reactive pages share one sub-8 KB runtime. CI fails if `src/runtime.min.js`, the artifact that actually ships, exceeds the budget in `.size-snapshot.json`, which is the single source for it.
 3. **No arbitrary JS in content.** Directive grammars are compile-time-checked whitelists by design. Escape hatches live in colocated `.js` files via `window.wd` — not in `.wd` syntax.
 4. **`.md` stays plain.** Never give `.md` files directive behavior. Renaming to `.wd` is the upgrade path.
 5. **Friendly errors.** Compile errors must say what went wrong, in which file, and what to write instead, and carry a `WDxxx` code from `src/errors.js`.
 
 ## Regenerate what is generated
 
-Two artifacts are generated from the compiler's own tables and are checked in. Re-run the generator in the same PR as the change, or a drift guard fails:
+Three artifacts are generated from the source and are checked in. Re-run the generator in the same PR as the change, or a drift guard fails:
 
 ```sh
 node scripts/gen-errors.mjs     # after touching src/errors.js  → docs/errors.md
 node scripts/gen-grammar.mjs    # after touching the directive vocabulary → grammar/wd-directives.gbnf
+npm run build:runtime           # after ANY edit to src/runtime.js → src/runtime.min.js (+ .map)
 ```
 
-Never hand-edit `docs/errors.md` or `grammar/wd-directives.gbnf`.
+Never hand-edit `docs/errors.md`, `grammar/wd-directives.gbnf`, or `src/runtime.min.js`.
+
+`src/runtime.min.js` is what the builder actually copies to `dist/__wd/runtime.js`, and it is committed because `darkmown build` runs on a consumer's machine from the published tarball, where esbuild does not exist. Nothing regenerates it behind your back: `tests/runtime-min.test.js` rebuilds it in memory and fails on a byte difference, CI runs `node scripts/build-runtime.mjs --check` on top of that, and `predev` regenerates it before `npm run dev` so development serves production's bytes.
 
 ## Adding a directive
 

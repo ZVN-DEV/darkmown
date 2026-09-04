@@ -40,8 +40,8 @@ no install and no build step.
 **On this page**
 
 - [Quick start](#quick-start) · [Showcase](#showcase) · [Working from this repo](#working-from-this-repo) · [Commands](#commands)
-- **Authoring:** [Authoring model](#authoring-model) · [Interpolation](#interpolation) · [Frontmatter](#frontmatter) · [Static assets](#static-assets) · [SEO & feeds](#seo--feeds-sitemap-rss-robots) · [Loops](#loops) · [Content collections](#content-collections) · [Sections](#sections)
-- **Reactivity:** [Reactive directives](#reactive-directives) · [Fetching data](#fetching-data) · [Global state](#global-state--store) · [Forms and persistence](#forms-and-persistence) · [Backends & deploy](#backends--deploy) · [Interactions](#interactions--slider-sortable-carousel)
+- **Authoring:** [Authoring model](#authoring-model) · [Directive lines](#directive-lines) · [Interpolation](#interpolation) · [Frontmatter](#frontmatter) · [Static assets](#static-assets) · [SEO & feeds](#seo--feeds-sitemap-rss-robots) · [Loops](#loops) · [Content collections](#content-collections) · [Sections](#sections)
+- **Reactivity:** [Reactive directives](#reactive-directives) · [Fetching data](#fetching-data) · [Global state](#global-state--store) · [URL as state](#url-as-state-from-url) · [Forms and persistence](#forms-and-persistence) · [Backends & deploy](#backends--deploy) · [Interactions](#interactions--slider-sortable-carousel)
 - **Presentation:** [Inline attributes](#inline-attributes) · [Media](#media--video-audio-embed) · [Syntax highlighting](#syntax-highlighting) · [Dark mode](#dark-mode--tokens-dark) · [Scoped styles](#scoped-styles--scoped)
 - **Extending:** [The escape hatch](#the-escape-hatch) · [Programmatic compile](#programmatic-compile--compilefrommemory) · [Compile error codes](#compile-error-codes) · [AI authoring](#ai-authoring) · [Editor support](#editor-support)
 - **Before you commit:** [Accessibility](#accessibility) · [Security](#security) · [**Limits**](#limits) · [Spec status](#spec-status)
@@ -85,8 +85,17 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js` (currently ~6.4 KB gzipped, CI-enforced under 8 KB).
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js`, a minified build of the readable `src/runtime.js` (currently ~6.4 KB gzipped, CI-enforced under 8 KB). An external sourcemap ships beside it at `/__wd/runtime.js.map` with the original source inlined, so DevTools shows real names and real comments. Development serves the same bytes as production.
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
+
+## Directive lines
+
+A directive is a whole line, written flush against the left margin. Four rules cover everything the compiler will and will not accept there.
+
+- **One directive per line, unindented.** An indented `:state` (inside a list item, say) is prose, and a directive inside a fenced code block is code.
+- **A bare keyword is an error.** A line that is exactly `:state`, `:button`, `@loop`, or any other directive that needs arguments used to render as literal text with no warning at all. It now reaches that directive's own handler and fails with that directive's coded message and `Use:` hint, so `:state` alone gives `[WD201]` and `:button` alone gives `[WD301]`. Three keywords stay valid bare, because they mean something bare: `:::` opens or closes a container, `:theme` declares the theme store, and `:carousel` opens a carousel with no autoplay.
+- **To show a directive name as text, escape it.** `\:fetch` renders the literal text `:fetch`. That is the ordinary CommonMark backslash escape, so it works anywhere Markdown does, including inside a container.
+- **There is no comment syntax.** A trailing `#` or arrow note on a directive line is parsed as part of the value, not as a comment. `html: true  ← required` seeds the *string* `true  ← required`, which compiles clean while doing the opposite of what it looks like. Put explanations in the prose around the line.
 
 ## Interpolation
 
@@ -96,7 +105,37 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 - Declared `:state` becomes a live binding.
 - The page's own frontmatter is in scope as `meta` — `{ meta.title }` prints a field.
 - Anything else stays literal text — braces in prose never break a page or pull in the runtime.
-- Build-time values also resolve **inside a link or image destination** — `[{ item.label }]({ item.url })` or `![{ p.alt }]({ p.src })` — so an `@loop` can drive an `href`/`src` and the page stays static. (Reactive `:state` cannot live in a destination.)
+- Values resolve **inside a link or image destination** too (`[{ item.label }]({ item.url })`, `![{ p.alt }]({ p.src })`), so an `@loop` can drive an `href`/`src` and the page stays static. Every brace in the destination resolves, not just one filling the whole value: `[Docs](/docs/{ region }/)` works. A reactive value there becomes a live binding; see [Destinations that bind](#destinations-that-bind) below.
+- Values resolve in **raw HTML** too (attributes and html blocks, HTML-escaped) on an `html: true` page. Those are painted once at build time, not bound. Fenced code blocks and inline code spans are never rewritten, so a page can still show `` `[x](/p/{ p.slug }/)` `` as syntax.
+
+### Destinations that bind
+
+A destination that reads `:state`, `:store`, `:computed`, a reactive loop row, or a loop meta variable is a **live binding**: the compiler emits the destination as a small template and the runtime rebuilds the value on every render.
+
+```wd
+:state region = "eu"
+
+:button "EU" -> region = "eu"
+:button "US" -> region = "us"
+
+[Open the docs for this region](/docs/{ region }/)
+```
+
+Clicking a button rewrites the `href`. The build-time paint is still the seed (`/docs/eu/`), so the link works before the runtime loads and a crawler sees a real URL. Per-row destinations work the same way inside a reactive `@loop`:
+
+```wd
+:state products = [{"slug": "aurora", "name": "Aurora Lamp"}]
+
+@loop products into p
+- [{ p.name }](/products/{ p.slug }/)
+@endloop
+```
+
+Three rules worth knowing:
+
+- **Values in URL position are percent-encoded.** A `)`, a space, or an angle bracket coming from your data cannot end the link and hand the remainder back to the Markdown parser.
+- **Dangerous schemes are refused twice.** The compiler vets what you wrote; the runtime re-checks what it assembled (control characters stripped first) and applies an **empty** attribute rather than a half-applied one if the value resolves to `javascript:`, `data:`, or `vbscript:`.
+- **Raw HTML attributes do not bind.** `<a href="{ url }">` is painted once with a build warning that names the position that does bind. Move the value into a Markdown destination, or drive the attribute from a colocated `.js` with `wd.subscribe`.
 
 ### Format pipes — `{ value | name:arg }`
 
@@ -137,7 +176,7 @@ tags: [sales, revenue, "q1, q2"]
 
 Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card). `lang:` sets the document language on `<html lang>` (`lang: fr`, `lang: pt-BR`, …) — it defaults to `en`.
 
-A few reserved keys drive **drafts and feeds** (see [SEO & feeds](#seo--feeds-sitemap-rss-robots) below): `draft: true` excludes a page from production builds; `site_url` on the home page turns on `sitemap.xml` + `rss.xml`; `date:` marks a page as a blog post (it lands in `rss.xml` and sets the page's `<lastmod>`); `excerpt:` is the RSS summary. The same frontmatter is queryable when the page is an entry in a [content collection](#content-collections) — `{ post.date }`, `{ post.excerpt }`, `{ post.tags }`, and any custom key resolve in an `@loop` over the folder.
+A few reserved keys drive **drafts and feeds** (see [SEO & feeds](#seo--feeds-sitemap-rss-robots) below): `draft: true` excludes a page from production builds; `site_url` on the home page turns on `sitemap.xml` + `rss.xml`; `rss_limit:` on the home page caps how many posts the feed carries; `date:` marks a page as a blog post (it lands in `rss.xml` and sets the page's `<lastmod>`); `excerpt:` is the RSS summary. The same frontmatter is queryable when the page is an entry in a [content collection](#content-collections): `{ post.date }`, `{ post.excerpt }`, `{ post.tags }`, and any custom key resolve in an `@loop` over the folder.
 
 `transitions: true` opts a page into **instant, flash-free navigation** — zero JavaScript, all declarative. It emits a directional fade+slide **view transition** for the page swap (old lifts up and out, new rises up and in — replacing the default cross-fade, which left both pages ghosted at ~50 % opacity mid-navigation), plus a **`<script type="speculationrules">` prerender** hint that renders the next same-origin page on hover/pointerdown so the click activates an already-painted page (no white render-gap flash). It honors `prefers-reduced-motion`. Only same-origin pages that both opt in transition; browsers without support — or with page-preloading disabled — navigate normally. Off by default; opt out with `transitions: false`. Mark a link `{.no-prefetch}` to exclude it from prerendering. (Chrome disables prerendering while DevTools is open, so test the built site with DevTools closed.)
 
@@ -177,6 +216,7 @@ site_url: https://example.com
 - **`robots.txt`** is *always* emitted; the `Sitemap:` line is added only when `site_url` is set. See [AI crawlers](#ai-crawlers) below for the explicit per-crawler groups.
 - **`sitemap.xml`** lists every built page (reactive pages included — they're indexable HTML). Each `<lastmod>` is the page's frontmatter `date:` if set, else its git last-commit date, else the file's mtime. No `<priority>`/`<changefreq>`.
 - **`rss.xml`** syndicates your **posts** — any page with a `date:` in its frontmatter. Newest first, capped at the 20 most recent. Each item's `<description>` is the page's `excerpt:`, else its `description:`, else (for a plain `.md` post) its first paragraph. Every page links the feed with `<link rel="alternate" type="application/rss+xml">` so readers can autodiscover it.
+- **`rss_limit:`** on the home page changes that cap: `rss_limit: 50` carries the 50 newest posts. It takes digits only (a positive whole number of items), so `1e3`, `0x10`, and `7.0` are refused with `[WD950]` rather than silently coerced. Leave it out for the default of 20.
 
 A post is just a page that carries a `date:`. Add `excerpt:` to control the summary the feed shows for it:
 
@@ -395,6 +435,25 @@ A **missing** in-scope source is an empty list, not an error: `@loop meta.tags i
 
 > **Note:** All of these clauses stay build-time when the source and every clause argument are static — a sorted, limited loop over a JSON file ships **zero JavaScript**. The loop becomes reactive only when the source is `:state`/`:store`/`:fetch` data, or a clause reads reactive state (like `limit pageSize`).
 
+### Table rows from a loop
+
+A **static** loop whose body is bare `| … |` cells fills a Markdown table. Write the header in prose and let the loop supply the rows:
+
+```wd
+| Item | Price |
+| --- | --- |
+@loop /products.json into row
+| **{ row.name }** | { row.price } |
+@endloop
+```
+
+That renders one `<table>` with one `<tr>` per row, and each cell holds ordinary inline Markdown, links included (`| [buy](/buy/{ row.id }/) |`). A format pipe works too, but its `|` has to be escaped inside a table cell: `{ row.price \| money }`. Put the whole table inside the loop instead and you get a headerless `<table>` of the same shape; give the loop body its own `| --- |` separator and each row is a complete table, collapsed into one when the headers match.
+
+Two limits to know before you build on it:
+
+- A pipe row written in prose **after** `@endloop` (a totals row) does not join the table. It stays a paragraph.
+- A **reactive** loop over pipe rows is `[WD191]`, not silent breakage. A reactive row is cloned into a `<div>`, which is not a legal child of `<table>`, so there is no correct HTML to emit. Loop a static source for a Markdown table, or build reactive rows out of containers (`::: trow` / `::: td`) and style them with `display: table-row` / `table-cell`.
+
 ### Editable lists — per-row actions
 
 A `:button` inside a reactive `@loop` can act on its own row. `cart += product` carries the current row into another list; `cart remove line` drops the current row from the looped list:
@@ -536,6 +595,32 @@ State declared inside a section is scoped to it — two sections can both own a 
 
 A container named `nav` or `main` emits the real landmark element (`<nav class="nav">`, `<main class="main">`) instead of a `<div>`, so scaffolded pages keep proper landmarks — a skip link skips a `::: nav`, and `::: main` becomes the page's `<main id="main">`. Any other name stays a `<div>` with that class.
 
+### Accessibility attributes
+
+Darkmown has no general attribute syntax on purpose: styling is `.class` tokens and behavior is `->` actions, which is what keeps output predictable and static pages script-free. That left one thing genuinely unreachable, the ARIA vocabulary a screen reader needs. Exactly three attribute names now compile, on exactly two directives (`:::` and `:button`), always with a **double-quoted static value**:
+
+```wd
+:state open = false
+
+::: card .note role="region" aria-label="Release notes" title="What changed"
+Notes go here.
+:::
+
+::: nav .menu role="navigation" aria-label="Main"
+[Docs](/docs/)
+:::
+
+:button "Menu" aria-expanded="false" aria-controls="m" -> open toggle
+```
+
+- On a container, attributes interleave freely with `.class` and `#id` tokens and coexist with `.class when <predicate>`.
+- On a `:button`, they sit between the label and the `->`. An arrow inside a quoted value is safe: attributes are peeled before the action arrow is looked for.
+- Values are HTML-escaped on emit, so nothing you write can close the attribute or open another.
+- Anything outside the whitelist is `[WD650]`: `onclick=`, `style=`, `href=`, `class=`, `id=`, `data-*` are all refused, and so is `ARIA-LABEL` (the match is case-sensitive) or a single-quoted value. A name on the whitelist with no double-quoted value is `[WD651]`.
+- **Values are static text.** There is no `{ state }` interpolation inside an aria value in this release: `aria-label="{ who }"` emits the literal braces. For a live accessible name, write the element in raw HTML on an `html: true` page, or set it from a colocated `.js`.
+
+This is compile-time only. It costs zero runtime bytes, and a static page carrying attributes stays `runtime: false`.
+
 ### Reactive classes — `.class when <predicate>`
 
 A container class can be toggled by a predicate. Static `.class` tokens are unchanged; add `when <predicate>` to make one reactive:
@@ -584,6 +669,8 @@ Free plan
 
 A whole chain compiles to nested conditional regions, so it stays reactive (or folds at build time when every value is static) exactly like a single `:if`.
 
+**Declarations inside a closed branch are live.** A `:state`, `:store`, or `:theme` written inside an `:if` branch that starts closed is hydrated the moment the branch opens, `persist` included. The seed is claimed once per **key**, not per node, so closing and re-opening the branch does not reset the value the reader set, and the claimed seed is that key's `reset` baseline. (A `:computed` inside a closed branch stays dormant until the branch opens, by design.)
+
 Directive actions are intentionally narrow and compile-time checked. Arbitrary JavaScript belongs in colocated `.js` files.
 
 ### Button actions
@@ -623,6 +710,8 @@ Values are literals: a `"string"`, number, `true`/`false`/`null`, or inline JSON
 :button "Add to cart" -> cart.count++ ; cart.total += 9
 ```
 
+A `:button` also accepts the three [accessibility attributes](#accessibility-attributes), written between the label and the `->`: `:button "Menu" aria-expanded="false" -> open toggle`.
+
 > **Pitfall:** `list toggle v` and `list remove v` match members by value (`===`). That is exact for strings, numbers, and booleans, but not reliable for object members — two equal-looking objects are different values. To remove a row object, loop the list and use the per-row `remove` action below.
 
 ### Computed values — `:computed`
@@ -656,6 +745,8 @@ The first line live-refreshes a dashboard; the second is a ticking counter. Ther
 
 Intervals **pause while the tab is hidden** (via `visibilitychange`) and resume on return, so a backgrounded dashboard stops firing requests and draining battery.
 
+**`:every` is a page-level registration, not a per-row one.** A reactive `@loop` compiles its body once into a template and the runtime clones it per row, so a timer written inside that body would be registered once per row (three rows, three intervals), and a removed row's interval would keep firing. That placement is `[WD315]`. Declare the timer once outside the loop, at page level or inside the `::: section`, and act on the whole list (`:every 5s -> rows refetch`). It stays legal at page level, inside a `:::`, inside a **static** loop (which produces N literal copies that never churn), and in a reactive loop's `@empty` branch. `:button` inside a reactive loop is unaffected.
+
 ### Effects — `:effect`
 
 `:effect <watched> -> <actions>` runs actions whenever a watched state path changes. The actions are the same `:button` vocabulary (`;`-chained) — this is the escape hatch for side effects beyond `:computed` (which derives state) and `:fetch` deps (which auto-refetch):
@@ -668,6 +759,8 @@ Intervals **pause while the tab is hidden** (via `visibilitychange`) and resume 
 ```
 
 Effects run after a render, against settled state, and an effect that mutates state triggers another pass — bounded by a 10-pass settle cap that warns (and stops) if an effect never settles. They do not fire on the initial load, only on a real change.
+
+Like `:every`, `:effect` is page-level: written inside a reactive `@loop` body it is `[WD315]`, because an effect watches a top-level state key and its actions target one, so there is no per-row meaning to give it. Declare it once outside the loop.
 
 ## Fetching data
 
@@ -684,6 +777,7 @@ Each fetch automatically declares four state keys you can branch on:
 | `name` | the data | `null` until the response arrives |
 | `name_loading` | boolean | `true` while the request is in flight |
 | `name_error` | string | the error message, or `null` |
+| `name_error_body` | object | the parsed JSON error body, or `null` |
 | `name_empty` | boolean | `true` when the data is `null`, `[]`, or `{}` |
 
 ### The four-state pattern
@@ -707,6 +801,28 @@ No team members yet.
 ```
 
 The lifecycle regions announce themselves: a bare `:if name_loading` compiles with `role="status" aria-live="polite"` and `:if name_error` with `role="alert"`, so assistive tech hears the flips with no extra markup. Author-supplied `role`/`aria-live` inside a region always wins.
+
+### What the server said: `name_error` and `name_error_body`
+
+A real API explains why it refused, and Darkmown surfaces that instead of a status line. When the failing response has a JSON body:
+
+- **`name_error`** is the body's own `error` field, then its `message` field, falling back to `HTTP <status>` when the body carries neither or is not JSON at all.
+- **`name_error_body`** is the whole parsed body (`null` when the response was not JSON), so per-field messages render without a line of your own JavaScript.
+
+Given a `422` whose body is `{"error": "Pick a file first.", "fields": {"photo": "No file was attached."}}`:
+
+```wd
+:fetch signup from "/api/signup" method=POST
+
+:if signup_error
+**{ signup_error }**
+:if signup_error_body
+Photo: { signup_error_body.fields.photo }
+:endif
+:endif
+```
+
+The first line renders *Pick a file first.*, not *Error: HTTP 422*. Both keys are declared automatically by `:fetch` and by a round-trip `:form` (one with both `into` and `action=`), and both are cleared at the start of the next request, so a stale message never outlives the failure that produced it.
 
 ### Options
 
@@ -830,9 +946,48 @@ The declared value is a **seed**: it is used only the first time, when the store
 
 Writing the token that matches the default is redundant but never wrong, so `:store cart = [] persist` compiles and means exactly what it says. If a value genuinely ends in one of these words, quote it: `:state note = "0 persist"` seeds the string.
 
+There is a third word, [`from-url`](#url-as-state-from-url), which says the value also lives in the query string. It composes with `persist` and belongs to `:state` only. Writing `persist` and `ephemeral` on one line (or the same word twice) is `[WD261]` rather than a token silently folded into the value.
+
 `:computed` takes neither: computed values are derived rather than stored, so persist the state they derive from instead (that mistake is a compile error, `WD211`).
 
 > **Pitfall:** A store name must be unique. Declaring the same name as both a `:store` and a `:state` on one page is a compile error.
+
+## URL as state: `from-url`
+
+A filter nobody can link to is half a feature. Add `from-url` to a `:state` and the value lives in the query string as well as in memory: a reload keeps it, a shared link arrives with it applied, and the back button walks through it.
+
+```wd
+:state q = "" from-url
+:state tier = "all" from-url
+
+:bind q placeholder="Search products"
+
+:radio tier
+- all
+- budget
+- premium
+
+:state products = [{"name": "Aurora Lamp", "tier": "budget"}]
+
+@loop products into p where p.name contains q
+- **{ p.name }** ({ p.tier })
+@empty
+Nothing matches that search.
+@endloop
+```
+
+Type in the box and the address bar becomes `?q=aurora`. Reload, and the search comes back. Copy the URL into a new tab and it opens on the same view.
+
+The rules:
+
+- **The parameter is named after the state key.** A section-scoped key like `cart:items` becomes the parameter `cart.items`, so the name stays readable and stays unique.
+- **A value equal to its declared seed drops its parameter,** so the default page keeps a clean URL.
+- **Writes go through `history.replaceState`,** so filtering never fills the back button with one entry per keystroke. `popstate` re-reads on back and forward, and a parameter that is gone restores the seed.
+- **It composes with `persist`,** and the boot precedence is URL, then stored value, then seed. A link somebody sent you beats what this browser remembers.
+- **Strings stay strings.** For any other seed type the parameter is JSON-parsed, falling back to the raw string.
+- **`from-url` is `:state` only.** A `:store` is shared by every page and every tab while a query parameter belongs to one page's address, so `from-url` on a `:store` or a `:theme` is `[WD260]` rather than a guess. On a `:computed` it is `[WD211]`: derive the value from a state key that does come from the URL.
+
+Live demo: [darkmown.com/url-state/](https://darkmown.com/url-state/).
 
 ## Forms and persistence
 
@@ -869,6 +1024,55 @@ Fetched data and a form live happily on the same page:
 - `:state x = [] persist` keeps a single page's state in localStorage across reloads. (For state that is shared across pages and tabs, reach for [`:store`](#global-state--store) instead.)
 - `:computed total = items.length * 4` derives state from state with a compile-time-checked expression — names, numbers, arithmetic, comparisons, and list aggregates (`sum`/`avg`/`min`/`max`/`count`). See [Computed values](#computed-values--computed).
 - `:if item.path` works inside reactive loops for per-row branches, and nests — an inner `:if` resolves after the outer branch and stays reactive.
+
+### Bound controls outside a form
+
+`:select`, `:radio`, and `:checkbox` mean two different things, and **where they sit decides which**. Inside a `:form` they are form fields, submitted by name (unchanged). Outside one they bind to a declared `:state` or `:store` of that name, exactly like `:bind` and `:slider`: move the control and the state changes, change the state and the control moves.
+
+```wd
+:state density = "Comfortable"
+:state previews = true
+
+:select density
+- Compact
+- Comfortable
+- Spacious
+
+:checkbox previews
+- Show image previews
+
+:if density == "Compact"
+Rows sit tight together.
+:endif
+```
+
+- **The state has to exist first.** A bound field naming state that is not declared is `[WD450]`, which spells out both readings: declare the state, or move the field inside a `:form`.
+- **A bound `:checkbox` is a single boolean,** so it takes exactly one `- Label` line (the label shown beside it). Several options is `[WD451]`; for a set of choices use a `:radio` group. The multi-value checkbox group is the in-form behavior and is unchanged.
+- **A bound `:radio` group keeps its shared `name`,** which is what makes the browser treat it as mutually exclusive, and carries the chosen option's text.
+
+### File upload
+
+A `:form` that contains a file field posts **multipart**, so the file itself travels:
+
+```wd
+:form into reply action="/api/upload/"
+:input photo type=file required
+:input caption placeholder="A caption (optional)"
+:submit "Upload"
+:endform
+
+:if reply
+Uploaded **{ reply.name }**, { reply.size } bytes.
+:endif
+
+:if reply_error
+**{ reply_error }**
+:endif
+```
+
+The compiler writes `enctype="multipart/form-data"` for the browser's native submit, and the runtime sends real `FormData` with **no** content type of its own so the browser writes the boundary. A raw `<input type="file">` on an `html: true` page counts as a file field too.
+
+Bound controls inside the form carry no `name`, so `FormData` would never see them; on the multipart path they are appended by their state key instead of being silently dropped. A file field on a `method="get"` form is `[WD452]`: a GET request has no body, so only the file's name would ever travel, which is the kind of failure that looks like it worked.
 
 ## Backends & deploy
 
@@ -1220,6 +1424,7 @@ Every compiled page ships with landmark-and-announcement basics baked in at buil
 - **Document language.** `lang:` frontmatter sets `<html lang>` per page (default `en`).
 - **Live `:fetch` regions.** A bare `:if name_loading` region over a `:fetch` key compiles to `role="status" aria-live="polite"` and `:if name_error` to `role="alert"`, so screen readers announce loading and error flips for free. Write your own `role`/`aria-live` inside the region and Darkmown adds nothing.
 - **Accessible names on form controls.** Generated `:input`/`:bind`/`:textarea`/`:select` controls without an author-supplied `aria-label`/`aria-describedby` get an `aria-label` derived from the placeholder or field name; `:slider` and choice groups do the same.
+- **`role`, `aria-*`, and `title` on containers and buttons.** `::: card role="region" aria-label="Notes"` and `:button "Menu" aria-expanded="false" -> open toggle` compile without raw HTML. Values are static, double-quoted, and escaped on emit. See [Accessibility attributes](#accessibility-attributes) for the whole rule.
 
 ## Security
 
@@ -1262,13 +1467,16 @@ Darkmown is small on purpose. Here is what it deliberately refuses and what it g
 - **No layout or shell inheritance.** Every page includes its own nav and footer. There is no template a page extends and no slot to fill.
 - **No arbitrary `<head>` content.** The document head is what frontmatter drives; you cannot inject your own tags.
 - **No route generation from data.** Collections are folders of files. A JSON array cannot become routes. `paginate N` is the one route multiplier, and only over an existing collection listing.
-- **No attributes on containers or buttons.** `:::` accepts only `#id`, `.class`, and `.class when …`; `:button` accepts none at all. `aria-*`, `role`, `data-*`, and `title` need raw HTML or a colocated `.js`.
+- **Only accessibility attributes on containers and buttons.** `:::` and `:button` accept `role="…"`, `aria-…="…"`, and `title="…"`, and nothing else: `class=`, `id=`, `style=`, `data-*`, and event handlers are compile errors by design. Style with `.class` tokens, act with `->` actions, and reach for raw HTML on an `html: true` page when you genuinely need another attribute.
+- **Aria values are static text.** There is no `{ state }` interpolation inside `role`/`aria-*`/`title`, so a live accessible name means raw HTML or a colocated `.js`.
+- **Raw HTML attributes do not bind.** A Markdown link or image destination does ([Destinations that bind](#destinations-that-bind)), but `<a href="{ url }">` on an `html: true` page is painted once at build time and warned about. There is no element for the compiler to mark up.
+- **Reactive rows cannot fill a Markdown table.** A reactive row is cloned into a `<div>`, which is not a legal child of `<table>`, so `[WD191]` refuses it. Static loops fill tables fine; for reactive rows, build them from containers (`::: trow` / `::: td`) and style them as a table.
 - **No i18n beyond `lang:`.** No `hreflang`, no message catalog, no ambient locale, no locale routing. A multilingual site means duplicating the tree per locale.
 - **Every framework asset URL is absolute** (`/__wd/...`), so a Darkmown site cannot be mounted at a subpath. It is all-or-nothing per origin.
 - **Includes are macros, not components.** No children, no slots, no default arguments, and a missing argument renders `{ title }` literally rather than erroring.
 - **No `darkmown test`.** There is no built-in way to assert your own site's behavior. Use [`compileFromMemory`](#programmatic-compile--compilefrommemory) against your own pages, or a browser test runner.
 
-**Migrating out is easy, and that is on purpose.** `dist/` is portable static HTML plus one runtime file of about 7.7 KB. There is no server to port, no proprietary component format, no framework runtime baked through the output, and nothing to un-eject. Point any host at the folder, or hand it to whatever you move to next, and the site keeps working. The lock-in is a directory of Markdown files you already own.
+**Migrating out is easy, and that is on purpose.** `dist/` is portable static HTML plus one runtime file of ~6.4 KB gzipped. There is no server to port, no proprietary component format, no framework runtime baked through the output, and nothing to un-eject. Point any host at the folder, or hand it to whatever you move to next, and the site keeps working. The lock-in is a directory of Markdown files you already own.
 
 ## Spec status
 

@@ -59,6 +59,8 @@ The panel is closed. Everything inside it, including its `:state`, is still in a
 - The seed recorded when the key is claimed is also its `reset` baseline, so a late declaration is resettable like any other.
 - `persist` and `:store` read through storage at claim time, so a durable value declared in a branch comes back the first time the branch opens.
 
+<a class="btn primary" href="/docs/#reactive-directives">Read the docs on reactive directives</a>
+
 </section>
 
 </main>

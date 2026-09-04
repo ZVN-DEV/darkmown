@@ -1,6 +1,6 @@
 ---
 html: true
-title: Server error bodies — what the API actually said
+title: Server error bodies: what the API actually said
 description: A failed :fetch or :form now surfaces the server's own error message, and the whole parsed JSON body lands in a second state key so a page can render field-level errors.
 ---
 
@@ -35,7 +35,7 @@ The endpoint said: **{ probe_error }**
 :endif
 
 :if probe_error_body
-And the whole body is available too — `ok` came back as { probe_error_body.ok }.
+And the whole body is available too: `ok` came back as { probe_error_body.ok }.
 :endif
 
 </section>
@@ -71,6 +71,8 @@ The [upload demo](/upload/) has this wired up end to end.
 - `<name>_error` prefers the body's `error` field, then its `message` field, and falls back to `HTTP <status>` when the body has neither or is not JSON at all.
 - `<name>_error_body` is the parsed JSON body, or `null` when the response was not JSON.
 - Both keys are auto-declared by `:fetch` and by a round-trip `:form`, and both are cleared on the next success.
+
+<a class="btn primary" href="/docs/#what-the-server-said">Read the docs on fetching data</a>
 
 </section>
 

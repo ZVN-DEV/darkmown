@@ -1,6 +1,6 @@
 ---
 html: true
-title: Reactive links — a destination that follows state
+title: Reactive links: a destination that follows state
 description: A markdown link destination that reads :state or a loop row now binds, so the href and src keep up with the page instead of being painted once at build time. Dangerous schemes are refused at paint time, in the browser.
 ---
 
@@ -74,6 +74,8 @@ The value in state: `{ danger }`
 [This link's href]({ danger })
 
 Click the second button and inspect the anchor: the whole attribute is emptied rather than half-applied, because the guard runs on the value the runtime assembled, not on the literal parts the author wrote.
+
+<a class="btn primary" href="/docs/#destinations-that-bind">Read the docs on destinations that bind</a>
 
 </section>
 
