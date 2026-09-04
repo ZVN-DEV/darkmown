@@ -1,0 +1,40 @@
+{
+  "Design tokens": {
+    "prefix": "tokens",
+    "body": [
+      "tokens",
+      "  ${1:accent} ${2:#16645a}",
+      "tokens dark",
+      "  ${1:accent} ${3:#7fd1c1}"
+    ],
+    "description": "Design tokens with a dark-mode variant (emitted as CSS variables)"
+  },
+  "Scoped skin": {
+    "prefix": "scoped",
+    "body": [
+      "scoped",
+      "${1:.card}",
+      "  bg ${2:white}",
+      "  radius ${3:8px}"
+    ],
+    "description": "Scope every selector in this file to its own subtree (compile-time)"
+  },
+  "Rule": {
+    "prefix": "rule",
+    "body": [
+      "${1:.card}",
+      "  bg ${2:white}",
+      "  color \\$${3:accent}"
+    ],
+    "description": "A selector with indented property/value lines"
+  },
+  "Media query": {
+    "prefix": "@media",
+    "body": [
+      "@media (min-width: ${1:40rem})",
+      "  ${2:.card}",
+      "    padding ${3:2rem}"
+    ],
+    "description": "Wrap indented rules in a media query"
+  }
+}

@@ -87,6 +87,81 @@ test("darkmown grammar scopes every directive", async () => {
   assert.ok(scoped(t, "count", "variable.other.interpolation"), "interpolation");
 });
 
+// The grammar covered roughly a third of the language: `:store`, `:effect`,
+// `:every`, `:theme`, `:bind`, `:slider`, `:carousel`, the media trio, three of
+// the five form fields, `@empty` and `:else if` all fell through to plain
+// Markdown, while three DEMO-ONLY directives were highlighted as if public.
+// One line per previously-unhighlighted directive.
+test("darkmown grammar scopes the directives the 0.1.0 grammar missed", async () => {
+  const t = await tokens("text.markdown.darkmown", [
+    ":store cart = [] ephemeral",
+    ":state seen = false ephemeral",
+    ":effect query -> searches++",
+    ":every 5s -> seconds++",
+    ':theme mode = "auto"',
+    ':bind query placeholder="Search"',
+    ":slider volume = 50 min=0 max=100",
+    ":carousel autoplay=4000",
+    ":endcarousel",
+    ":video /clip.mp4 controls muted",
+    ":audio /theme.mp3 controls",
+    ':embed https://www.youtube.com/watch?v=abc title="Demo"',
+    ':textarea bio placeholder="About you" rows=4',
+    ":select size required",
+    ":checkbox toppings",
+    ":radio plan",
+    ":endform",
+    "@empty",
+    ":else if count > 3",
+    ':button "Refresh" -> board refetch'
+  ]);
+
+  assert.ok(scoped(t, ":store", "keyword.control.state"), ":store keyword");
+  assert.ok(scoped(t, "ephemeral", "storage.modifier.persist"), "ephemeral modifier");
+  assert.ok(scoped(t, ":effect", "keyword.control.effect"), ":effect keyword");
+  assert.ok(scoped(t, ":every", "keyword.control.every"), ":every keyword");
+  assert.ok(scoped(t, "5s", "constant.numeric.duration"), ":every duration");
+  assert.ok(scoped(t, ":theme", "keyword.control.theme"), ":theme keyword");
+  assert.ok(scoped(t, ":bind", "keyword.control.bind"), ":bind keyword");
+  assert.ok(scoped(t, ":slider", "keyword.control.slider"), ":slider keyword");
+  assert.ok(scoped(t, ":carousel", "keyword.control.carousel"), ":carousel keyword");
+  assert.ok(scoped(t, ":endcarousel", "keyword.control.carousel.end"), ":endcarousel");
+  assert.ok(scoped(t, ":video", "keyword.control.media"), ":video keyword");
+  assert.ok(scoped(t, ":audio", "keyword.control.media"), ":audio keyword");
+  assert.ok(scoped(t, ":embed", "keyword.control.embed"), ":embed keyword");
+  assert.ok(scoped(t, ":textarea", "keyword.control.textarea"), ":textarea keyword");
+  assert.ok(scoped(t, ":select", "keyword.control.select"), ":select keyword");
+  assert.ok(scoped(t, ":checkbox", "keyword.control.checkbox"), ":checkbox keyword");
+  assert.ok(scoped(t, ":radio", "keyword.control.radio"), ":radio keyword");
+  assert.ok(scoped(t, ":endform", "keyword.control.form.end"), ":endform");
+  assert.ok(scoped(t, "@empty", "keyword.control.loop.empty"), "@empty marker");
+  assert.ok(scoped(t, ":else if", "keyword.control.conditional.elseif"), ":else if keyword");
+  assert.ok(scoped(t, "refetch", "keyword.operator.action"), "refetch action op");
+});
+
+test("@loop clauses and format pipes are scoped, not left as prose", async () => {
+  const t = await tokens("text.markdown.darkmown", [
+    "@loop products into p where p.price < 50 sort by p.price desc limit 5",
+    "Total: { cart | sum:\"price\" }"
+  ]);
+  assert.ok(scoped(t, "where", "keyword.control.loop.clause"), "where clause");
+  assert.ok(scoped(t, "sort by", "keyword.control.loop.clause"), "sort by clause");
+  assert.ok(scoped(t, "limit", "keyword.control.loop.clause"), "limit clause");
+  assert.ok(scoped(t, "desc", "keyword.control.loop.clause"), "sort direction");
+  assert.ok(scoped(t, "<", "keyword.operator.comparison"), "comparison operator");
+  assert.ok(scoped(t, "sum", "support.function.pipe"), "format pipe name");
+});
+
+test("the demo-only directives are no longer highlighted as public syntax", async () => {
+  // `:note` and `:sprint` are demo directives the spec doc says are not public;
+  // highlighting them taught users a vocabulary that does not exist. `:try` is
+  // still listed, so it stays.
+  const t = await tokens("text.markdown.darkmown", [":note hello", ":sprint 3", ":try href=/x"]);
+  assert.ok(!scoped(t, ":note", "keyword.control"), ":note must not be highlighted");
+  assert.ok(!scoped(t, ":sprint", "keyword.control"), ":sprint must not be highlighted");
+  assert.ok(scoped(t, ":try", "keyword.control.demo"), ":try is still listed and stays");
+});
+
 test("skin grammar scopes selectors, tokens, colors, and properties", async () => {
   const t = await tokens("source.darkmown-skin", [
     "tokens",

@@ -18,7 +18,7 @@
 // while staying small and maintainable.
 // ---------------------------------------------------------------------------
 
-import { directiveCatalog } from "./catalog.js";
+import { CATALOG_ACTION_GRAMMAR, directiveCatalog } from "./catalog.js";
 
 /** Slugify a directive token into a GBNF rule name (`@loop` → `dir-loop`). */
 /** @type {Record<string, string>} */
@@ -58,6 +58,19 @@ const STRUCTURED = new Set(["@loop", ":if", ":button", ":::"]);
 const alt = (/** @type {string[]} */ items) => items.map((s) => `"${s}"`).join(" | ");
 
 /**
+ * One alternative of the `action-op` rule, from a catalog action's shape.
+ * `name++` (suffix, no space) vs `name toggle [v]` / `name append v` (infix).
+ * @param {{ token: string, place: "suffix" | "infix", operand: "none" | "required" | "optional" }} op
+ * @returns {string}
+ */
+function actionAlternative({ token, place, operand }) {
+  if (place === "suffix") return `"${token}"`;
+  const tail =
+    operand === "required" ? " sp value" : operand === "optional" ? " ( sp value )?" : "";
+  return `sp "${token}"${tail}`;
+}
+
+/**
  * Generate the GBNF grammar for `.wd` directive lines from the directive catalog.
  * @returns {string}
  */
@@ -72,8 +85,15 @@ export function generateGrammar() {
     "# Constrains a directive line (or a { path | pipe } interpolation). Do not edit by hand."
   );
   lines.push("");
-  lines.push("root ::= directive | binding");
+  // A `.wd` line is an opener, a BLOCK CLOSER (or mid-block marker), or an
+  // interpolation. The closers were missing, so constrained decoding could open
+  // an `@loop` it was then unable to close.
+  lines.push("root ::= directive | closer | binding");
   lines.push(`directive ::= ${dirRules.join(" | ")}`);
+  lines.push(
+    'closer ::= "@endloop" | "@empty" | ":endif" | ":endform" | ":endcarousel" | ":::"' +
+      ' | ":else if" sp condition ( sp joiner sp condition )* | ":else if" sp path | ":else"'
+  );
   lines.push("");
 
   // Structured directives.
@@ -91,23 +111,37 @@ export function generateGrammar() {
   lines.push("");
 
   // @loop clause vocabulary (mirrors the fixed clause order in the catalog).
+  // `sort by`, `offset` and `limit` each accept a REACTIVE form as well as a
+  // literal — `sort by { sortKey } { sortDir }` for clickable-header sort, and
+  // `limit pageSize` for a state-driven page size. The grammar used to allow
+  // only the literal form, which made those shipped features unreachable under
+  // constrained decoding.
   lines.push("loop-clauses ::= ( sp loop-clause )*");
   lines.push(
-    'loop-clause ::= where-clause | "sort by" sp path ( sp ( "asc" | "desc" ) )? | "reverse" | "offset" sp number | "limit" sp number | "paginate" sp number | "sortable"'
+    'loop-clause ::= where-clause | "sort by" sp sort-key ( sp sort-dir )? | "reverse"' +
+      ' | "offset" sp count | "limit" sp count | "paginate" sp number | "sortable"'
   );
+  lines.push("sort-key ::= path | statebinding");
+  lines.push('sort-dir ::= "asc" | "desc" | statebinding');
+  lines.push("count ::= number | ident");
+  lines.push('statebinding ::= "{" wsopt ident wsopt "}"');
   lines.push('where-clause ::= "where" sp condition ( sp joiner sp condition )*');
-  lines.push("condition ::= operand sp op sp operand");
+  // A leading `not` negates one condition (it is a PREFIX, not a joiner — the
+  // catalog lists it under predicateJoiners, so it is derived from there rather
+  // than filtered away).
+  const negate = cat.predicateJoiners.includes("not") ? '( "not" sp )? ' : "";
+  lines.push(`condition ::= ${negate}operand sp op sp operand`);
   lines.push(`op ::= ${alt(cat.predicateOps.map((o) => o.name))}`);
   lines.push(`joiner ::= ${alt(cat.predicateJoiners.filter((j) => j !== "not"))}`);
   lines.push("");
 
-  // Button-action vocabulary. Each operator token below is asserted present
-  // against the catalog's action tokens in tests/grammar.test.js.
+  // Button-action vocabulary, DERIVED from the catalog's action ops (token +
+  // shape) so the grammar cannot list a different set from `llms.txt` and the
+  // `WD311` hint. It used to be one hand-written string; that is how `refetch`
+  // ended up in the grammar and nowhere else.
   lines.push('action-chain ::= action ( wsopt ";" wsopt action )*');
   lines.push("action ::= ident action-op");
-  lines.push(
-    'action-op ::= "++" | "--" | sp "+=" sp value | sp "-=" sp value | sp "=" sp value | sp "toggle" ( sp value )? | sp "append" sp value | sp "prepend" sp value | sp "remove" sp value | sp "clear" | sp "merge" sp ident | sp "delete" sp value | sp "reset" | sp "refetch"'
-  );
+  lines.push(`action-op ::= ${CATALOG_ACTION_GRAMMAR.map(actionAlternative).join(" | ")}`);
   lines.push("");
 
   // Interpolation binding with format pipes.

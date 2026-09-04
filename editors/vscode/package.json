@@ -2,7 +2,7 @@
   "name": "darkmown",
   "displayName": "Darkmown",
   "description": "Syntax highlighting, snippets, and language support for Darkmown .wd and .skin files.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "zvndev",
   "license": "MIT",
   "icon": "icon.png",
@@ -40,14 +40,25 @@
     "languages": [
       {
         "id": "darkmown",
-        "aliases": ["Darkmown", "whateverdown", "wd"],
-        "extensions": [".wd"],
+        "aliases": [
+          "Darkmown",
+          "whateverdown",
+          "wd"
+        ],
+        "extensions": [
+          ".wd"
+        ],
         "configuration": "./language-configuration.json"
       },
       {
         "id": "darkmown-skin",
-        "aliases": ["Darkmown Skin", "skin"],
-        "extensions": [".skin"],
+        "aliases": [
+          "Darkmown Skin",
+          "skin"
+        ],
+        "extensions": [
+          ".skin"
+        ],
         "configuration": "./skin-language-configuration.json"
       }
     ],
@@ -67,6 +78,10 @@
       {
         "language": "darkmown",
         "path": "./snippets/darkmown.json"
+      },
+      {
+        "language": "darkmown-skin",
+        "path": "./snippets/skin.json"
       }
     ]
   }

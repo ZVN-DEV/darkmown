@@ -347,12 +347,32 @@ const LOOP_VAR_DESC = {
   $count: "Total row count."
 };
 
-/** The button-action vocabulary. `token` is the distinguishing keyword the drift
- * test checks against actions.js's ACTION_USE string. */
+/**
+ * The button-action vocabulary — the ONE list every downstream surface reads.
+ *
+ * `token` is the distinguishing keyword (`refetch` drifted out of this list for
+ * three releases: implemented in the compiler, documented in the README seven
+ * times, and missing from `llms.txt`, `llms-full.txt` and the `WD311` hint,
+ * because the guard compared this array against a hardcoded literal copy of
+ * itself. `tests/catalog-actions.test.js` now derives the compiler's real
+ * vocabulary by compiling probes, so that cannot recur.)
+ *
+ * `place` and `operand` describe the token's SHAPE, which is what
+ * `src/grammar.js` needs to emit the GBNF `action-op` rule:
+ *   place    "suffix" → `name++`   | "infix" → `name toggle`
+ *   operand  "none"   → nothing follows the token
+ *            "required" → exactly one value follows
+ *            "optional" → a value may follow (`flag toggle` / `list toggle v`)
+ * @type {{ name: string, token: string, place: "suffix" | "infix",
+ *   operand: "none" | "required" | "optional", syntax: string,
+ *   description: string, example: string }[]}
+ */
 const ACTION_OPS = [
   {
     name: "increment",
     token: "++",
+    place: "suffix",
+    operand: "none",
     syntax: "name++",
     description: "Increment a number.",
     example: "count++"
@@ -360,6 +380,8 @@ const ACTION_OPS = [
   {
     name: "decrement",
     token: "--",
+    place: "suffix",
+    operand: "none",
     syntax: "name--",
     description: "Decrement a number.",
     example: "count--"
@@ -367,6 +389,8 @@ const ACTION_OPS = [
   {
     name: "add",
     token: "+=",
+    place: "infix",
+    operand: "required",
     syntax: "n += k",
     description: "Add to a number.",
     example: "count += 5"
@@ -374,6 +398,8 @@ const ACTION_OPS = [
   {
     name: "subtract",
     token: "-=",
+    place: "infix",
+    operand: "required",
     syntax: "n -= k",
     description: "Subtract from a number.",
     example: "count -= 5"
@@ -381,6 +407,8 @@ const ACTION_OPS = [
   {
     name: "set",
     token: "=",
+    place: "infix",
+    operand: "required",
     syntax: "name = v",
     description: "Assign a value.",
     example: "open = true"
@@ -388,6 +416,8 @@ const ACTION_OPS = [
   {
     name: "toggle",
     token: "toggle",
+    place: "infix",
+    operand: "optional",
     syntax: "flag toggle",
     description: "Flip a boolean (or toggle a list member with `list toggle v`).",
     example: "open toggle"
@@ -395,6 +425,8 @@ const ACTION_OPS = [
   {
     name: "append",
     token: "append",
+    place: "infix",
+    operand: "required",
     syntax: "list append v",
     description: "Append a value to a list.",
     example: 'items append "x"'
@@ -402,6 +434,8 @@ const ACTION_OPS = [
   {
     name: "prepend",
     token: "prepend",
+    place: "infix",
+    operand: "required",
     syntax: "list prepend v",
     description: "Prepend a value to a list.",
     example: 'items prepend "x"'
@@ -409,6 +443,8 @@ const ACTION_OPS = [
   {
     name: "remove",
     token: "remove",
+    place: "infix",
+    operand: "required",
     syntax: "list remove v",
     description: "Remove a value from a list (or the current loop row).",
     example: 'items remove "x"'
@@ -416,6 +452,8 @@ const ACTION_OPS = [
   {
     name: "clear",
     token: "clear",
+    place: "infix",
+    operand: "none",
     syntax: "x clear",
     description: "Empty a list or reset a value to null.",
     example: "items clear"
@@ -423,6 +461,8 @@ const ACTION_OPS = [
   {
     name: "merge",
     token: "merge",
+    place: "infix",
+    operand: "required",
     syntax: "obj merge other",
     description: "Shallow-merge another object/state key.",
     example: "settings merge patch"
@@ -430,6 +470,8 @@ const ACTION_OPS = [
   {
     name: "delete",
     token: "delete",
+    place: "infix",
+    operand: "required",
     syntax: "obj delete key",
     description: "Delete a key from an object.",
     example: 'settings delete "beta"'
@@ -437,9 +479,20 @@ const ACTION_OPS = [
   {
     name: "reset",
     token: "reset",
+    place: "infix",
+    operand: "none",
     syntax: "name reset",
     description: "Reset a state key to its initial value.",
     example: "form reset"
+  },
+  {
+    name: "refetch",
+    token: "refetch",
+    place: "infix",
+    operand: "none",
+    syntax: "name refetch",
+    description: "Re-run the matching :fetch.",
+    example: "board refetch"
   }
 ];
 
@@ -573,6 +626,96 @@ const OP_DESC = {
   "<": "Less than."
 };
 
+/**
+ * The shipped reactive runtime's human-readable gzip size, for the cheatsheet.
+ *
+ * The single source of truth for the NUMBER is `.size-snapshot.json`
+ * (`runtime.gzip`), but that file is a repo artifact and is NOT in the published
+ * tarball (see `package.json`'s `files`), so reading it here would throw for
+ * every npm consumer whose `darkmown build` emits `dist/llms.txt`. It is
+ * therefore a literal that `tests/size-prose.test.js` derives from the snapshot
+ * and asserts against this generated text — the same guard that already keeps
+ * README.md, AGENTS.md and the docs site honest. The cheatsheet used to say
+ * "~8 KB" (the BUDGET, not the size) and escaped that guard entirely.
+ */
+const RUNTIME_SIZE = "~7.7 KB";
+
+/**
+ * Block openers close explicitly; these are the closers and the mid-block
+ * markers. They are real vocabulary an author must write and were missing from
+ * the cheatsheet entirely, so a model could open a block it could not close.
+ * @returns {string[]}
+ */
+function blockStructureSection() {
+  return [
+    "## Block structure (every block closes explicitly)",
+    "- `@loop … @endloop`. `@empty` inside the loop body renders when the list is empty.",
+    "- `:if … :endif`, with optional `:else if <condition>` and `:else` branches before the close.",
+    "- `:form … :endform`, `:carousel … :endcarousel`, and `::: … :::` (a bare `:::` closes a container).",
+    ""
+  ];
+}
+
+/**
+ * The `{.class #id}` inline-attribute block. Real, undocumented in the
+ * cheatsheet, and with one sharp edge (inline code is not supported) that an
+ * author otherwise discovers by shipping a broken page.
+ * @returns {string[]}
+ */
+function inlineAttributesSection() {
+  return [
+    "## Inline attributes  `{.class #id}`",
+    "- Attach classes/an id to an inline element by following it with NO space:" +
+      " `[Get started](/start/){.btn}`, `![logo](/l.png){.brand}`, `*text*{.hl}`.",
+    "- Several at once: `[Go](/u/){.btn .lg #cta}`. A space before the block breaks it (stays literal).",
+    "- Works on links, images, and emphasis/strong. It does NOT work on inline `code`.",
+    ""
+  ];
+}
+
+/**
+ * Collections: any `site/pages/<name>/` folder is queryable by its bare name,
+ * with optional `_schema.wd` validation. The docs site covers this; the
+ * cheatsheet did not, so an AI author had no way to reach it.
+ * @returns {string[]}
+ */
+function collectionsSection() {
+  return [
+    "## Collections (a folder of pages, queried like data)",
+    "- Any `site/pages/<name>/` folder is a collection. Loop it by BARE NAME:" +
+      " `@loop posts into post sort by post.date desc`",
+    "- Each row is that entry's frontmatter plus derived `url`, `slug`, and `excerpt`.",
+    "- Optional `site/pages/<name>/_schema.wd` type-checks every entry at build time," +
+      " one `field: type` per line. Types: `string`, `number`, `boolean`, `date`, `string[]`;" +
+      " a trailing `?` makes a field optional. e.g. `title: string`, `featured: boolean?`",
+    ""
+  ];
+}
+
+/**
+ * The `.skin` language. AGENTS.md tells a model to always ship styling, and the
+ * cheatsheet carried not one line of the styling syntax.
+ * @returns {string[]}
+ */
+function skinSection() {
+  return [
+    "## Styling: the `.skin` language (zero runtime)",
+    "- A `.skin` beside a page or include (`index.wd` → `index.skin`) compiles to CSS and links itself.",
+    "- Indentation IS the structure: no braces, no semicolons, no colon between property and value.",
+    "- Selector, then indented `property value` lines: `.card` / `  bg white` / `  radius 8px`.",
+    "- `tokens` opens a design-token block (`accent #16645a`) emitting CSS variables;" +
+      " `tokens dark` supplies the dark-mode values for the same names. Read one with `$name`" +
+      " (`color $accent`).",
+    "- Shorthands: `bg`→background, `radius`→border-radius, `shadow`→box-shadow," +
+      " `font`→font-family, and `page` targets `<body>`.",
+    "- Nest by indenting (a nested selector is a descendant); `&:hover` / `&.active` attach to" +
+      " the parent; `@media (min-width: 40rem)` wraps its indented rules.",
+    "- A first line of `scoped` scopes every selector in that file to its own subtree at compile" +
+      " time. `tokens` stay global; `:global(.x)` opts one selector out.",
+    ""
+  ];
+}
+
 /** Read the installed version from package.json (always shipped beside src/). */
 function readVersion() {
   const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -623,6 +766,19 @@ export function directiveCatalog() {
 export const CATALOG_ACTION_TOKENS = ACTION_OPS.map((a) => a.token);
 
 /**
+ * The same vocabulary with each token's SHAPE, for `src/grammar.js`. The GBNF
+ * `action-op` rule used to be a hand-written string listing all fourteen
+ * alternatives; it is now generated from this, so the grammar and the catalog
+ * cannot list different ops.
+ * @type {{ token: string, place: "suffix" | "infix", operand: "none" | "required" | "optional" }[]}
+ */
+export const CATALOG_ACTION_GRAMMAR = ACTION_OPS.map((a) => ({
+  token: a.token,
+  place: a.place,
+  operand: a.operand
+}));
+
+/**
  * One page of a built site, as it appears in the generated `llms.txt` index and
  * `llms-full.txt` corpus.
  * @typedef {object} SitePage
@@ -662,7 +818,9 @@ export function llmsText(site) {
   out.push("");
   out.push("Darkmown compiles Markdown. A plain `.md` file stays plain; rename it to `.wd`");
   out.push("to unlock the directives below. Static pages ship ZERO JavaScript; only pages");
-  out.push("that use :state/:store/:fetch/:button (reactive) load the ~8 KB runtime. Copy an");
+  out.push(
+    `that use :state/:store/:fetch/:button (reactive) load the ${RUNTIME_SIZE} runtime. Copy an`
+  );
   out.push("example verbatim — every one compiles. Interpolate values with `{ path }`.");
   out.push("");
 
@@ -671,6 +829,8 @@ export function llmsText(site) {
     out.push(`- \`${d.name}\` (${d.reactive}) — ${d.description} e.g. \`${d.example}\``);
   }
   out.push("");
+
+  out.push(...blockStructureSection());
 
   out.push("## @loop clauses (this fixed order, all optional)");
   for (const c of cat.loopClauses) {
@@ -706,17 +866,24 @@ export function llmsText(site) {
   );
   out.push("");
 
+  out.push(...inlineAttributesSection());
+
   out.push("## Page frontmatter");
   for (const key of cat.frontmatterKeys) {
     out.push(`- \`${key.name}\`: ${key.description} e.g. \`${key.example}\``);
   }
   out.push("");
 
+  out.push(...collectionsSection());
+  out.push(...skinSection());
+
   out.push("## Rules");
   out.push("- `.md` never gets directives — the `.wd` extension is the feature gate.");
   out.push("- One loop syntax (`@loop … into … @endloop`), one interpolation syntax (`{ name }`).");
   out.push("- Actions and predicates are a fixed whitelist — no JavaScript, no `x.filter(...)`.");
-  out.push("- Close every block: `@endloop`, `:endif`, `:endform`, `:endcarousel`, `:::`.");
+  out.push(
+    "- Close every block (see Block structure above) — an unclosed block is a compile error."
+  );
   out.push(
     "- Compile errors start with a stable code (`[WD201] …`) and always name the file," +
       " the line, and a fix. Read the message; it tells you exactly what to write."
@@ -776,6 +943,8 @@ export function llmsFullText(site) {
   }
   out.push("");
 
+  out.push(...blockStructureSection());
+
   out.push("## @loop clauses (this fixed order, all optional)");
   for (const c of cat.loopClauses) {
     out.push(`- \`${c.syntax}\`: ${c.description} e.g. \`${c.example}\``);
@@ -807,11 +976,16 @@ export function llmsFullText(site) {
   out.push(`Join conditions with ${cat.predicateJoiners.map((j) => `\`${j}\``).join(" / ")}.`);
   out.push("");
 
+  out.push(...inlineAttributesSection());
+
   out.push("## Page frontmatter");
   for (const key of cat.frontmatterKeys) {
     out.push(`- \`${key.name}\`: ${key.description} e.g. \`${key.example}\``);
   }
   out.push("");
+
+  out.push(...collectionsSection());
+  out.push(...skinSection());
 
   out.push("## Compile error codes");
   for (const area of cat.errorAreas) {

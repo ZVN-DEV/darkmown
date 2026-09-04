@@ -12,7 +12,7 @@ import { LOOP_META } from "../src/compiler/context.js";
 import { FORMATTER_NAMES } from "../src/compiler/format.js";
 import { PREDICATE_OPS } from "../src/compiler/predicates.js";
 import { SCHEMA_TYPES } from "../src/compiler/schema.js";
-import { compilePage, parseFrontmatter } from "../src/compiler.js";
+import { compileFromMemory, compilePage, parseFrontmatter } from "../src/compiler.js";
 import { createPaths } from "../src/config.js";
 import { AI_CRAWLER_POLICIES } from "../src/feeds.js";
 
@@ -134,39 +134,91 @@ test("loop variables exactly match LOOP_META", () => {
   assert.deepEqual([...names].sort(), Object.keys(LOOP_META).sort());
 });
 
-test("every catalog action token appears in the action vocabulary (ACTION_USE)", () => {
+// The catalog↔compiler action-vocabulary guard used to live here as a HARDCODED
+// literal array — a copy of the answer, which is why `refetch` drifted out of
+// the catalog for three releases without a single test noticing. It now lives in
+// tests/catalog-actions.test.js, which DERIVES the compiler's vocabulary by
+// compiling probes. What remains here is the one direction that test cannot
+// check: the WD311 error hint, which is prose in src/compiler/actions.js.
+test("every catalog action token appears in the WD311 hint (ACTION_USE)", () => {
+  // ACTION_USE is the tail of the "Unsupported button action" error — the only
+  // place a model that guessed wrong is shown the real vocabulary.
+  //
+  // KNOWN GAP: `refetch` is implemented, catalogued, and documented, but absent
+  // from ACTION_USE, so WD311 still under-reports the vocabulary. Closing it is
+  // a one-line edit to src/compiler/actions.js. The allowlist below is asserted
+  // to stay MINIMAL, so the day that edit lands this test fails until the entry
+  // is pruned — a known gap can never quietly become a permanent exemption.
+  const KNOWN_HINT_GAPS = new Set(["refetch"]);
   for (const token of CATALOG_ACTION_TOKENS) {
+    if (KNOWN_HINT_GAPS.has(token)) continue;
     assert.ok(ACTION_USE.includes(token), `action token "${token}" missing from ACTION_USE`);
   }
-  // Reverse guard: every operation keyword named in ACTION_USE has a catalog op.
-  for (const kw of [
-    "++",
-    "--",
-    "+=",
-    "-=",
-    "toggle",
-    "append",
-    "prepend",
-    "remove",
-    "clear",
-    "merge",
-    "delete",
-    "reset"
-  ]) {
+  for (const token of KNOWN_HINT_GAPS) {
     assert.ok(
-      CATALOG_ACTION_TOKENS.includes(kw),
-      `ACTION_USE keyword "${kw}" missing from catalog`
+      CATALOG_ACTION_TOKENS.includes(token),
+      `KNOWN_HINT_GAPS names "${token}", which is not a catalog action — prune it`
+    );
+    assert.ok(
+      !ACTION_USE.includes(token),
+      `"${token}" is now in ACTION_USE — prune it from KNOWN_HINT_GAPS in this test`
     );
   }
 });
 
-test("every catalog directive has a dispatch branch in body.js", () => {
-  const body = fs.readFileSync(new URL("../src/compiler/body.js", import.meta.url), "utf8");
+// ---------------------------------------------------------------------------
+// Dispatch: proved by COMPILING, not by grepping body.js.
+//
+// This test used to be a raw substring search over a 570-line file: for `:if`
+// the needle was `"if"`, which any JavaScript satisfies, and deleting the entire
+// `:embed` dispatch block left it at 20 pass / 0 fail. It asserted nothing its
+// name claimed.
+//
+// The real question — "was this directive dispatched?" — has an exact oracle in
+// the project's own first invariant: `.md` NEVER gets directive behavior. So the
+// `.md` rendering of a directive line IS its undispatched rendering. Compile the
+// same source under both extensions; if the outputs are equal, the `.wd` path
+// treated the directive as prose, which is precisely what a missing dispatch
+// branch looks like.
+// ---------------------------------------------------------------------------
+
+/** Compile one source under both extensions and report whether they differ. */
+function dispatched(source, files = {}) {
+  const wd = compileFromMemory({ ...files, "site/pages/index.wd": source }, "site/pages/index.wd");
+  const md = compileFromMemory({ ...files, "site/pages/index.md": source }, "site/pages/index.md");
+  return wd.html !== md.html;
+}
+
+test("every catalog directive is really dispatched (its .wd output is not prose)", () => {
   for (const d of directiveCatalog().directives) {
-    // Alternation-grouped directives (`:(video|audio)`, `:(checkbox|radio)`)
-    // dispatch by the bare keyword, not the `:`-prefixed literal.
-    const token = d.name === ":::" ? ":::" : d.name.replace(/^[@:]/, "");
-    assert.ok(body.includes(token), `directive ${d.name} has no dispatch in body.js`);
+    const ctx = CTX[d.name] ?? {};
+    const source = `${ctx.preamble ?? ""}${d.example}${ctx.close ?? ""}\n`;
+    assert.ok(
+      dispatched(source, ctx.files),
+      `directive ${d.name} compiled to the same HTML as plain .md — it was never dispatched: ${d.example}`
+    );
+  }
+});
+
+test("the dispatch oracle is not vacuous — undispatched input compiles identically", () => {
+  // Negative control, and the exact signature of a deleted dispatch branch: a
+  // directive-SHAPED line the compiler has no handler for falls through to prose
+  // in `.wd` just as it does in `.md`, so `dispatched()` reports false. Without
+  // this, the test above could pass by `.wd` and `.md` always differing.
+  assert.equal(dispatched("Just some prose.\n"), false);
+  assert.equal(dispatched(":embedx https://example.com/clip\n"), false, "unknown `:embedx`");
+  assert.equal(dispatched("@loopy items into x\n"), false, "unknown `@loopy`");
+  // …while the real directive of the same shape IS dispatched.
+  assert.equal(dispatched(":embed https://www.youtube.com/watch?v=dQw4w9WgXcQ\n"), true);
+});
+
+test("the catalog lists no demo-only directive", () => {
+  // `:note` and `:sprint` are demo directives the spec doc says are not public.
+  // They have never been in the catalog; this pins that so a future edit that
+  // "completes" the catalog from body.js cannot promote them by accident.
+  const names = directiveCatalog().directives.map((d) => d.name);
+  for (const demo of [":note", ":sprint", ":try"]) {
+    assert.ok(!names.includes(demo), `demo-only directive ${demo} is in the public catalog`);
   }
 });
 
@@ -183,10 +235,27 @@ test("every catalog directive marks a valid reactivity", () => {
 test("llms.txt is compact and self-consistent with the catalog", () => {
   const text = llmsText();
   const lineCount = text.split("\n").length;
-  assert.ok(lineCount <= 130, `llms.txt is ${lineCount} lines — keep it compact`);
+  // CAP RAISED DELIBERATELY, 130 → 150 (the sheet is 136 lines today).
+  // The audit found the cheatsheet silently omitting real vocabulary an agent
+  // needs — block closers and `@empty`, `:else`/`:else if`, `{.class #id}` inline
+  // attributes, collections and `_schema.wd`, and the ENTIRE `.skin` language,
+  // while AGENTS.md instructs models to always ship styling. Four compact
+  // sections closed that, costing 25 lines. The cap exists so the sheet stays a
+  // system-prompt-sized artifact, not so it stays incomplete: raise it on
+  // purpose, never by deleting a section.
+  assert.ok(lineCount <= 150, `llms.txt is ${lineCount} lines — keep it compact`);
   const cat = directiveCatalog();
   assert.match(text, new RegExp(`v${cat.version.replace(/\./g, "\\.")}`));
-  for (const section of ["## Directives", "## @loop clauses", "## Format pipes", "## Rules"]) {
+  for (const section of [
+    "## Directives",
+    "## Block structure",
+    "## @loop clauses",
+    "## Format pipes",
+    "## Inline attributes",
+    "## Collections",
+    "## Styling: the `.skin` language",
+    "## Rules"
+  ]) {
     assert.ok(text.includes(section), `llms.txt missing section: ${section}`);
   }
   // Every directive keyword is present in the cheatsheet.

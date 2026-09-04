@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { llmsFullText, llmsText } from "../src/catalog.js";
 
 // The human-readable runtime size ("~7.5 KB") is quoted in marketing/docs prose in
 // several places. It must never drift from the ACTUAL shipped size, which has one
@@ -91,5 +92,38 @@ test("every present-tense runtime-size claim in docs matches .size-snapshot.json
 
   console.log(
     `size-prose: ${checked} present-tense claim(s) verified as "${EXPECTED}" (runtime ${gzip} B gzipped)`
+  );
+});
+
+// The cheatsheet is GENERATED, so it is not in FILES above and escaped the scan
+// entirely — it said "~8 KB" (the BUDGET) while every hand-written file said
+// ~7.7 KB (the SIZE). It is the artifact an app pastes into a model's system
+// prompt, so a wrong number there is the one that gets repeated back at users.
+test("the generated llms.txt / llms-full.txt size claims match .size-snapshot.json", () => {
+  for (const [name, text] of [
+    ["llms.txt", llmsText()],
+    ["llms-full.txt", llmsFullText()]
+  ]) {
+    const claims = text.match(SIZE_CLAIM) ?? [];
+    for (const claim of claims) {
+      assert.equal(
+        claim.replace(/&nbsp;/g, " ").replace(/\s/g, " "),
+        EXPECTED,
+        `${name} — generated size claim "${claim}" drifted from the snapshot (${gzip} B ⇒ "${EXPECTED}"). ` +
+          "Update RUNTIME_SIZE in src/catalog.js."
+      );
+    }
+    if (name === "llms.txt") {
+      assert.ok(claims.length > 0, "llms.txt states no runtime size at all — the scan is broken");
+    }
+  }
+
+  // Negative control: the sheet must not quote the BUDGET as if it were the
+  // shipped size. That confusion is exactly what this test was added to catch.
+  const budget = JSON.parse(readFileSync(".size-snapshot.json", "utf8")).runtime.budget;
+  assert.doesNotMatch(
+    llmsText(),
+    new RegExp(`~?\\s*${Math.round(budget / 1024)}\\s*KB`),
+    "llms.txt quotes the 8 KB BUDGET as the runtime size — quote the measured size instead"
   );
 });

@@ -4,9 +4,15 @@ Syntax highlighting, snippets, and language support for [Darkmown](https://darkm
 
 ## Features
 
-- **`.wd` highlighting** — full Markdown highlighting plus Darkmown directives: `:state`, `:computed`, `:button`, `:if`/`:else`/`:endif`, `@loop`/`@endloop`, `@include`, `:fetch`, `:form`/`:input`/`:submit`, `::: section`, and `{ interpolation }`.
+- **`.wd` highlighting** — full Markdown highlighting plus the whole directive set:
+  - State and data: `:state` / `:store` (with `persist` and `ephemeral`), `:computed`, `:fetch` (and its `method` / `when` / `timeout` / `retry` / `headers` / `body` options), `:effect`, `:every`, `:theme`.
+  - Structure: `@include`, `@loop` / `@empty` / `@endloop` (including the `where`, `sort by`, `reverse`, `offset`, `limit`, `paginate`, `sortable` clauses), `:if` / `:else if` / `:else` / `:endif`, `::: section`, `:carousel` / `:endcarousel`.
+  - Forms and controls: `:form` / `:endform`, `:input`, `:textarea`, `:select`, `:checkbox`, `:radio`, `:submit`, `:bind`, `:slider`.
+  - Media: `:video`, `:audio`, `:embed`.
+  - Actions: `:button` and the closed action vocabulary (`++`, `--`, `+=`, `-=`, `=`, `toggle`, `append`, `prepend`, `remove`, `clear`, `merge`, `delete`, `reset`, `refetch`).
+  - Values: `{ interpolation }` with its `| format:pipes`.
 - **`.skin` highlighting** — selectors, the `tokens` block, `$token` references, `#hex` colors, and CSS-like properties.
-- **Snippets** — type `:state`, `@loop`, `:if`, `:form`, `:::` and more to scaffold directives.
+- **Snippets** — one for every directive (type `:state`, `@loop`, `:if`, `:form`, `:carousel`, `:embed`, `:::` and the rest), plus `.skin` snippets for `tokens`, `scoped`, a rule, and a media query.
 - **Folding** — `@loop…@endloop`, `:if…:endif`, `:form…:endform`, and `:::` sections fold.
 
 ## What it looks like

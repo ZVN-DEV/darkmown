@@ -1,72 +1,263 @@
 {
   "Frontmatter": {
     "prefix": "---",
-    "body": ["---", "title: ${1:Page title}", "---", "$0"],
+    "body": [
+      "---",
+      "title: ${1:Page title}",
+      "---",
+      "$0"
+    ],
     "description": "Page frontmatter block"
   },
   "State": {
     "prefix": ":state",
-    "body": [":state ${1:name} = ${2:0}"],
+    "body": [
+      ":state ${1:name} = ${2:0}"
+    ],
     "description": "Declare reactive state"
   },
   "Persistent state": {
     "prefix": ":state persist",
-    "body": [":state ${1:items} = ${2:[]} persist"],
+    "body": [
+      ":state ${1:items} = ${2:[]} persist"
+    ],
     "description": "Declare state backed by localStorage"
   },
   "Computed": {
     "prefix": ":computed",
-    "body": [":computed ${1:total} = ${2:items.length}"],
+    "body": [
+      ":computed ${1:total} = ${2:items.length}"
+    ],
     "description": "Derive state from state"
   },
   "Button": {
     "prefix": ":button",
-    "body": [":button \"${1:Label}\" -> ${2:count}${3:++}"],
+    "body": [
+      ":button \"${1:Label}\" -> ${2:count}${3:++}"
+    ],
     "description": "Action button"
   },
   "If / else / endif": {
     "prefix": ":if",
-    "body": [":if ${1:name}", "${2:Shown when truthy}", ":else", "${3:Shown when falsy}", ":endif"],
+    "body": [
+      ":if ${1:name}",
+      "${2:Shown when truthy}",
+      ":else",
+      "${3:Shown when falsy}",
+      ":endif"
+    ],
     "description": "Conditional block"
   },
   "Loop": {
     "prefix": "@loop",
-    "body": ["@loop ${1:items} into ${2:item}", "- { ${2:item}.${3:title} }", "@endloop"],
+    "body": [
+      "@loop ${1:items} into ${2:item}",
+      "- { ${2:item}.${3:title} }",
+      "@endloop"
+    ],
     "description": "Loop over a list, JSON file, or :state"
   },
   "Include": {
     "prefix": "@include",
-    "body": ["@include /${1:partial.wd}"],
+    "body": [
+      "@include /${1:partial.wd}"
+    ],
     "description": "Embed another Markdown file"
   },
   "Include with args": {
     "prefix": "@include with",
-    "body": ["@include /${1:card.wd} with ${2:title}={ ${3:row.name} }"],
+    "body": [
+      "@include /${1:card.wd} with ${2:title}={ ${3:row.name} }"
+    ],
     "description": "Embed a file and pass values down"
   },
   "Section": {
     "prefix": ":::",
-    "body": ["::: section #${1:id}", "$0", ":::"],
+    "body": [
+      "::: section #${1:id}",
+      "$0",
+      ":::"
+    ],
     "description": "Scoped section container"
   },
   "Fetch": {
     "prefix": ":fetch",
-    "body": [":fetch ${1:data} from \"${2:/__wd/data/items.json}\""],
+    "body": [
+      ":fetch ${1:data} from \"${2:/__wd/data/items.json}\""
+    ],
     "description": "Load JSON into reactive state"
   },
   "Lazy fetch": {
     "prefix": ":fetch visible",
-    "body": [":fetch ${1:data} from \"${2:/__wd/data/items.json}\" when=visible"],
+    "body": [
+      ":fetch ${1:data} from \"${2:/__wd/data/items.json}\" when=visible"
+    ],
     "description": "Defer fetch until scrolled into view"
   },
   "Form into state": {
     "prefix": ":form into",
-    "body": [":form into ${1:profile}", ":input ${2:name} placeholder=\"${3:Your name}\" required", ":submit \"${4:Save}\"", ":endform"],
+    "body": [
+      ":form into ${1:profile}",
+      ":input ${2:name} placeholder=\"${3:Your name}\" required",
+      ":submit \"${4:Save}\"",
+      ":endform"
+    ],
     "description": "Capture a submit into client state"
   },
   "Form to server": {
     "prefix": ":form action",
-    "body": [":form action=\"${1:/api/echo}\" into ${2:reply}", ":input ${3:message} placeholder=\"${4:Say something}\"", ":submit \"${5:Send}\"", ":endform"],
+    "body": [
+      ":form action=\"${1:/api/echo}\" into ${2:reply}",
+      ":input ${3:message} placeholder=\"${4:Say something}\"",
+      ":submit \"${5:Send}\"",
+      ":endform"
+    ],
     "description": "Round-trip a form to a backend"
+  },
+  "Store (page-global)": {
+    "prefix": ":store",
+    "body": [
+      ":store ${1:cart} = ${2:[]}"
+    ],
+    "description": "Declare a page-global store (persisted by default)"
+  },
+  "Ephemeral store": {
+    "prefix": ":store ephemeral",
+    "body": [
+      ":store ${1:session} = ${2:{}} ephemeral"
+    ],
+    "description": "A store that is never written to localStorage"
+  },
+  "Effect": {
+    "prefix": ":effect",
+    "body": [
+      ":effect ${1:query} -> ${2:searches}${3:++}"
+    ],
+    "description": "Run actions whenever a state key changes"
+  },
+  "Every (timer)": {
+    "prefix": ":every",
+    "body": [
+      ":every ${1:5s} -> ${2:seconds}${3:++}"
+    ],
+    "description": "Run actions on a timer; auto-pauses when the tab is hidden"
+  },
+  "Theme toggle": {
+    "prefix": ":theme",
+    "body": [
+      ":theme ${1:mode} = \"${2:auto}\""
+    ],
+    "description": "Light/dark theme store reflected onto <html data-theme>"
+  },
+  "Bound text input": {
+    "prefix": ":bind",
+    "body": [
+      ":bind ${1:query} placeholder=\"${2:Search}\""
+    ],
+    "description": "Two-way text input bound to a :state"
+  },
+  "Slider": {
+    "prefix": ":slider",
+    "body": [
+      ":slider ${1:volume} = ${2:50} min=${3:0} max=${4:100}"
+    ],
+    "description": "Range input two-way bound to a number :state"
+  },
+  "Refetch button": {
+    "prefix": ":button refetch",
+    "body": [
+      ":button \"${1:Refresh}\" -> ${2:board} refetch"
+    ],
+    "description": "Re-run a :fetch from a button"
+  },
+  "Loop with empty state": {
+    "prefix": "@loop empty",
+    "body": [
+      "@loop ${1:items} into ${2:item}",
+      "- { ${2:item}.${3:title} }",
+      "@empty",
+      "${4:Nothing yet.}",
+      "@endloop"
+    ],
+    "description": "Loop with an @empty fallback branch"
+  },
+  "If / else if / else": {
+    "prefix": ":else if",
+    "body": [
+      ":if ${1:count} == ${2:0}",
+      "${3:None}",
+      ":else if ${1:count} == ${4:1}",
+      "${5:One}",
+      ":else",
+      "${6:Many}",
+      ":endif"
+    ],
+    "description": "Multi-branch conditional"
+  },
+  "Textarea": {
+    "prefix": ":textarea",
+    "body": [
+      ":textarea ${1:message} placeholder=\"${2:Say something}\" rows=${3:4}"
+    ],
+    "description": "Multi-line form input"
+  },
+  "Select": {
+    "prefix": ":select",
+    "body": [
+      ":select ${1:size} required",
+      "- ${2:Small}",
+      "- ${3:Large}"
+    ],
+    "description": "Dropdown; one option per following - Label line"
+  },
+  "Checkbox group": {
+    "prefix": ":checkbox",
+    "body": [
+      ":checkbox ${1:toppings}",
+      "- ${2:Cheese}",
+      "- ${3:Basil}"
+    ],
+    "description": "Checkbox group capturing every checked value"
+  },
+  "Radio group": {
+    "prefix": ":radio",
+    "body": [
+      ":radio ${1:plan}",
+      "- ${2:Monthly}",
+      "- ${3:Yearly}"
+    ],
+    "description": "Radio group capturing a single value"
+  },
+  "Carousel": {
+    "prefix": ":carousel",
+    "body": [
+      ":carousel",
+      "::: slide",
+      "$0",
+      ":::",
+      ":endcarousel"
+    ],
+    "description": "Scroll-snapping carousel; each child block is a slide"
+  },
+  "Video": {
+    "prefix": ":video",
+    "body": [
+      ":video /${1:clip.mp4} controls"
+    ],
+    "description": "Hardened HTML5 <video> (zero runtime)"
+  },
+  "Audio": {
+    "prefix": ":audio",
+    "body": [
+      ":audio /${1:clip.mp3} controls"
+    ],
+    "description": "Hardened HTML5 <audio> player (zero runtime)"
+  },
+  "Embed": {
+    "prefix": ":embed",
+    "body": [
+      ":embed ${1:https://www.youtube.com/watch?v=xyz} title=\"${2:Demo}\""
+    ],
+    "description": "Lazy, privacy-friendly YouTube/Vimeo/iframe embed"
   }
 }
