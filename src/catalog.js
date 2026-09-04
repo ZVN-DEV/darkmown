@@ -563,6 +563,11 @@ const FRONTMATTER_KEYS = [
     example: "ai_crawlers: deny"
   },
   {
+    name: "rss_limit",
+    description: "HOME PAGE ONLY: how many newest posts rss.xml carries (default 20).",
+    example: "rss_limit: 50"
+  },
+  {
     name: "date",
     description: "Marks the page a post: RSS item, sitemap lastmod, og:type=article.",
     example: "date: 2026-08-09"

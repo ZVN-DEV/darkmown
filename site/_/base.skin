@@ -463,7 +463,7 @@ label
   border 1px solid $line
   color $ink-soft
 
-/* ── Callout (the demo :note directive renders <aside class="note">) ─ */
+/* ── Callout ───────────────────────────────────────────────────── */
 
 .note, .callout
   margin 1.6rem 0
