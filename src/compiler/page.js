@@ -293,8 +293,11 @@ export function enhanceImages(html, paths, reader) {
     /** @type {string[]} */
     const add = [];
     // Dimensions only when the author hasn't sized it — adding one axis to a
-    // manually-sized image would distort its aspect ratio.
-    if (!has("width") && !has("height")) {
+    // manually-sized image would distort its aspect ratio. A REACTIVE src
+    // (`![alt]({ photo })`, marked `data-wd-attr`/`data-wd-each-attr`) is sized
+    // from whatever the seed happened to be, so baking width/height would
+    // stretch every later image to the first one's aspect ratio.
+    if (!has("width") && !has("height") && !/\bdata-wd-(?:each-)?attr\s*=/.test(tag)) {
       const dim = measureImage(srcOf(tag), paths, reader);
       if (dim) add.push(`width="${dim.width}"`, `height="${dim.height}"`);
     }

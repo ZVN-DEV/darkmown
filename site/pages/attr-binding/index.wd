@@ -1,0 +1,82 @@
+---
+html: true
+title: Reactive links — a destination that follows state
+description: A markdown link destination that reads :state or a loop row now binds, so the href and src keep up with the page instead of being painted once at build time. Dangerous schemes are refused at paint time, in the browser.
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main>
+
+<section class="intro">
+  <span class="eyebrow">Darkmown 2.7</span>
+
+# Reactive links
+
+A `{ … }` inside a link or image destination used to be painted once at build time and then went stale. Now it binds: the compiler emits the destination as a small template, and the runtime rebuilds the whole value on every render.
+
+</section>
+
+<section>
+
+## The destination follows the state
+
+:state region = "eu"
+
+Pick a region and watch the link underneath it change. The link is written as ordinary markdown: `[Open the EU docs](/docs/{ region }/)`.
+
+:button "EU" -> region = "eu"
+:button "US" -> region = "us"
+:button "APAC" -> region = "apac"
+
+Current region: **{ region }**
+
+[Open the docs for this region](/docs/{ region }/)
+
+The `href` is rebuilt from the literal parts (`/docs/` and `/`) plus the live value, so a value in the middle of a path works exactly like one that fills the whole destination.
+
+</section>
+
+<section>
+
+## One template, every row
+
+:state products = [
+  { "slug": "aurora", "name": "Aurora Lamp" },
+  { "slug": "briza", "name": "Briza Fan" },
+  { "slug": "cove", "name": "Cove Shelf" }
+]
+
+A reactive `@loop` shares ONE row template, so a per-row destination has no single build-time value: it paints empty and the runtime fills each row from its own item.
+
+@loop products into p
+- [{ p.name }](/products/{ p.slug }/)
+@endloop
+
+:button "Add a product" -> products append { "slug": "dune", "name": "Dune Rug" }
+
+</section>
+
+<section>
+
+## A bound URL is checked where it lands
+
+The compiler vets URLs an author writes. A bound `href` carries a value that only exists at runtime, so the scheme is checked again in the browser: `javascript:`, `data:` and `vbscript:` are refused and the attribute is left empty, with control characters stripped first so `java&#9;script:` cannot sneak through.
+
+:state danger = "/safe/place/"
+
+:button "Set a safe URL" -> danger = "/safe/place/"
+:button "Try a javascript: URL" -> danger = "javascript:alert(1)"
+
+The value in state: `{ danger }`
+
+[This link's href]({ danger })
+
+Click the second button and inspect the anchor: the whole attribute is emptied rather than half-applied, because the guard runs on the value the runtime assembled, not on the literal parts the author wrote.
+
+</section>
+
+</main>
+
+@include /footer.wd

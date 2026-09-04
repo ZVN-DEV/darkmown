@@ -1,0 +1,95 @@
+---
+html: true
+title: Bound controls — a select, a radio group and a checkbox
+description: Outside a :form, the three field directives bind straight to a declared :state, so a settings panel drives :if regions with no form and no JavaScript of your own.
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main>
+
+<section class="intro">
+  <span class="eyebrow">Darkmown 2.7</span>
+
+# Bound controls
+
+`:select`, `:radio` and `:checkbox` mean two things, and where they sit decides which. Inside a `:form` they are form fields, submitted by name. Outside one they bind to a declared `:state` the way `:bind` and `:slider` already do: move the control and the state changes, change the state and the control moves.
+
+</section>
+
+<section>
+
+## A settings panel
+
+:state density = "Comfortable"
+:state theme_pick = "System"
+:state previews = true
+
+**Density**
+
+:select density
+- Compact
+- Comfortable
+- Spacious
+
+**Colour**
+
+:radio theme_pick
+- System
+- Light
+- Dark
+
+**Previews**
+
+:checkbox previews
+- Show image previews
+
+</section>
+
+<section>
+
+## What the panel drives
+
+Every region below reads the same state the controls write.
+
+:if density == "Compact"
+Compact: rows sit tight together.
+:else if density == "Spacious"
+Spacious: rows get room to breathe.
+:else
+Comfortable: the default spacing.
+:endif
+
+:if theme_pick == "System"
+Following the operating system's colour scheme.
+:else
+Forcing **{ theme_pick }** regardless of the system setting.
+:endif
+
+:if previews
+Image previews are on.
+:else
+Image previews are off, so the list loads text only.
+:endif
+
+Settings as one line each: **{ density }**, **{ theme_pick }**, previews { previews }.
+
+:button "Reset to defaults" -> density reset; theme_pick reset; previews reset
+
+</section>
+
+<section>
+
+## The rules
+
+- The state has to exist first. A bound field with no matching `:state` is a compile error that names both readings, so a typo can never become a silently inert control.
+- A bound `:radio` group carries the chosen option's text; the group keeps a shared `name` so the browser makes it mutually exclusive.
+- A bound `:checkbox` carries a **boolean**, so it takes exactly one `- Label` line — the label to show beside it. The multi-value checkbox group is the in-form behavior and is unchanged.
+- Inside a `:form` nothing changed at all, even if a `:state` of the same name happens to exist elsewhere on the page.
+
+</section>
+
+</main>
+
+@include /footer.wd

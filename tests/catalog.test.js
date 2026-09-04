@@ -36,9 +36,12 @@ const CTX = {
   ":every": { preamble: ":state seconds = 0\n" },
   ":button": { preamble: ":state count = 0\n" },
   ":form": { close: "\n:input name\n:endform" },
-  ":select": { close: "\n- One\n- Two" },
-  ":checkbox": { close: "\n- A\n- B" },
-  ":radio": { close: "\n- S\n- M" },
+  // The three field directives read differently inside and outside a `:form`
+  // (form field vs bound control), and the catalog example is the bare opener,
+  // so each gets the `:state` its standalone reading binds to.
+  ":select": { preamble: ':state topic = "One"\n', close: "\n- One\n- Two" },
+  ":checkbox": { preamble: ":state toppings = false\n", close: "\n- A" },
+  ":radio": { preamble: ':state size = "S"\n', close: "\n- S\n- M" },
   ":bind": { preamble: ':state query = ""\n' },
   ":carousel": { close: "\n::: slide\nhi\n:::\n:endcarousel" }
 };

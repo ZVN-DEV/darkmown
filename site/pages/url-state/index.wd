@@ -1,0 +1,68 @@
+---
+html: true
+title: The URL is state — :state … from-url
+description: A filter that survives a reload and travels in a shared link. from-url mirrors a :state into the query string with replaceState, drops the parameter when the value is back at its default, and re-reads on back and forward.
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main>
+
+<section class="intro">
+  <span class="eyebrow">Darkmown 2.7</span>
+
+# The URL is state
+
+A filter nobody can link to is half a feature. Add `from-url` to a `:state` and the value lives in the query string as well as in memory: reload keeps it, a shared link arrives with it applied, and back and forward move through it.
+
+</section>
+
+<section>
+
+## Search and filter
+
+:state q = "" from-url
+:state tier = "all" from-url
+
+:bind q placeholder="Search products"
+
+:radio tier
+- all
+- budget
+- premium
+
+:state products = [
+  { "name": "Aurora Lamp", "price": 49, "tier": "budget" },
+  { "name": "Briza Fan", "price": 89, "tier": "budget" },
+  { "name": "Cove Shelf", "price": 240, "tier": "premium" },
+  { "name": "Dune Rug", "price": 310, "tier": "premium" }
+]
+
+:computed matching = q
+
+@loop products into p where p.name contains q
+- **{ p.name }** — { p.price | money } ({ p.tier })
+@empty
+Nothing matches that search.
+@endloop
+
+Type in the box and watch the address bar. Then reload the page: the search and the tier come back. Copy the URL into a new tab and it opens on the same view.
+
+</section>
+
+<section>
+
+## The rules
+
+- The parameter is named after the state key. A section-scoped key like `cart:items` becomes `cart.items`, so the name is always readable and always unique.
+- A value equal to its declared seed **drops** its parameter, so the default page keeps a clean URL.
+- Writes go through `history.replaceState`, so filtering never fills the back button with one entry per keystroke.
+- Combine it with `persist` and the precedence is URL first, then the stored value, then the seed — a link you were sent wins over what this browser remembers.
+- `from-url` belongs to `:state` only. A `:store` is shared by every page and every tab, while a query parameter belongs to one page's address, so putting `from-url` on a `:store` is a compile error rather than a guess.
+
+</section>
+
+</main>
+
+@include /footer.wd

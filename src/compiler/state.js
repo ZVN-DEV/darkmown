@@ -22,7 +22,8 @@ export const STATE_EXAMPLE = ":state count = 0";
 export const STORE_EXAMPLE = ":store cart = []";
 export const COMPUTED_EXAMPLE = ":computed total = items.length * 4";
 export const THEME_EXAMPLE = ":theme";
-const STATE_USE = `Use: :state name = value [persist|ephemeral] — e.g. ${STATE_EXAMPLE}`;
+export const URL_STATE_EXAMPLE = ':state q = "" from-url';
+const STATE_USE = `Use: :state name = value [persist|ephemeral] [from-url] — e.g. ${STATE_EXAMPLE}`;
 
 // ---------------------------------------------------------------------------
 // PERSISTENCE IS ONE VOCABULARY, NOT TWO.
@@ -43,8 +44,61 @@ const STATE_USE = `Use: :state name = value [persist|ephemeral] — e.g. ${STATE
 //
 // Text that genuinely ends in one of these words still quotes to keep it, the
 // same escape hatch `:state` has always had.
+//
+// `from-url` joins that vocabulary as a THIRD word, on `:state` only: it says
+// where the value also lives (the query string), so it composes with `persist`
+// rather than replacing it. All three are matched here, in any order, for every
+// keyword — a `:store … from-url` has to be RECOGNIZED before it can be
+// rejected with a reason, or the token would glue itself to the value and seed
+// the string "0 from-url", which is exactly the silent corruption this
+// vocabulary exists to prevent.
 // ---------------------------------------------------------------------------
-const PERSISTENCE = String.raw`(?:\s+(persist|ephemeral))?`;
+const MODIFIERS = String.raw`((?:\s+(?:persist|ephemeral|from-url))*)`;
+
+/**
+ * Split a matched modifier tail into its flags, rejecting a nonsense
+ * combination rather than silently honouring the last one.
+ * @param {string} raw The whole matched tail, e.g. `" persist from-url"`.
+ * @param {string} directive The declaring directive, for the message.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line`.
+ * @returns {{ persist: boolean, ephemeral: boolean, fromUrl: boolean }}
+ */
+function parseModifiers(raw, directive, ctx, index) {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  const flags = {
+    persist: tokens.includes("persist"),
+    ephemeral: tokens.includes("ephemeral"),
+    fromUrl: tokens.includes("from-url")
+  };
+  const bad =
+    new Set(tokens).size !== tokens.length
+      ? "the same word twice"
+      : flags.persist && flags.ephemeral
+        ? '"persist" and "ephemeral" at once'
+        : "";
+  if (bad) {
+    const hint = `pick one — persist keeps the value across reloads, ephemeral drops it — e.g. ${STATE_EXAMPLE} persist`;
+    throw wdError(`${directive} in ${at(ctx, index)} carries ${bad}. Use: ${hint}`, {
+      code: "WD261",
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint,
+      example: STATE_EXAMPLE
+    });
+  }
+  if (flags.fromUrl && directive !== ":state") {
+    const hint = `:state name = value from-url — a :store is shared by every page and every tab, while a query parameter belongs to one page's address, so the two cannot mean the same thing — e.g. ${URL_STATE_EXAMPLE}`;
+    throw wdError(`${directive} in ${at(ctx, index)} cannot be from-url. Use: ${hint}`, {
+      code: "WD260",
+      file: ctx.file,
+      line: lineOf(ctx, index),
+      hint,
+      example: URL_STATE_EXAMPLE
+    });
+  }
+  return flags;
+}
 
 // ---------------------------------------------------------------------------
 // A DECLARATION NAME IS A KEY ON THE RUNTIME'S STATE OBJECT, SO IT OBEYS THE
@@ -128,7 +182,7 @@ function rejectStateSeed(value, raw, directive, ctx, index) {
  */
 export function handleState(line, ctx, index) {
   const match = line.match(
-    new RegExp(String.raw`^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)${PERSISTENCE}$`)
+    new RegExp(String.raw`^:state\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)${MODIFIERS}$`)
   );
   if (!match)
     throw wdError(`Malformed :state in ${at(ctx, index)}: ${line}. ${STATE_USE}`, {
@@ -138,12 +192,16 @@ export function handleState(line, ctx, index) {
       hint: STATE_USE.slice("Use: ".length),
       example: STATE_EXAMPLE
     });
+  const flags = parseModifiers(match[3], ":state", ctx, index);
   const value = parseStateValue(match[2], at(ctx, index));
   rejectStateSeed(value, match[2], ":state", ctx, index);
   const key = declareState(match[1], value, ctx);
   recordSymbol(ctx, index, { kind: "state", name: key, detail: `${key} = ${match[2].trim()}` });
-  const persistAttr = match[3] === "persist" ? ` data-wd-persist="${escapeHtml(key)}"` : "";
-  return `<script type="application/json" data-wd-state${persistAttr}>${safeScriptJson({ [key]: value })}</script>`;
+  const persistAttr = flags.persist ? ` data-wd-persist="${escapeHtml(key)}"` : "";
+  // The runtime derives the parameter name from the key (`cart:items` →
+  // `cart.items`), so the marker only has to name the key it belongs to.
+  const urlAttr = flags.fromUrl ? ` data-wd-url="${escapeHtml(key)}"` : "";
+  return `<script type="application/json" data-wd-state${persistAttr}${urlAttr}>${safeScriptJson({ [key]: value })}</script>`;
 }
 
 /**
@@ -189,7 +247,7 @@ export function declareState(name, value, ctx) {
  */
 export function handleStore(line, ctx, index) {
   const match = line.match(
-    new RegExp(String.raw`^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)${PERSISTENCE}$`)
+    new RegExp(String.raw`^:store\s+([A-Za-z_$][\w$]*)\s*=\s*(.+?)${MODIFIERS}$`)
   );
   if (!match)
     throw wdError(
@@ -202,11 +260,12 @@ export function handleStore(line, ctx, index) {
         example: STORE_EXAMPLE
       }
     );
+  const flags = parseModifiers(match[3], ":store", ctx, index);
   const value = parseStateValue(match[2], at(ctx, index));
   rejectStateSeed(value, match[2], ":store", ctx, index);
   const name = declareStore(match[1], value, ctx);
   recordSymbol(ctx, index, { kind: "store", name, detail: `${name} = ${match[2].trim()}` });
-  const ephemeral = match[3] === "ephemeral" ? " data-wd-store-ephemeral" : "";
+  const ephemeral = flags.ephemeral ? " data-wd-store-ephemeral" : "";
   return `<script type="application/json" data-wd-store="${escapeHtml(name)}"${ephemeral}>${safeScriptJson(value)}</script>`;
 }
 
@@ -248,15 +307,21 @@ export function declareStore(name, value, ctx) {
 }
 
 /**
- * Seed a `<name>_error` state key (null) if absent. Shared by :fetch and the
- * round-trip :form so error fallbacks have a key to bind.
+ * Seed the `<name>_error` / `<name>_error_body` pair (null) if absent. Shared by
+ * `:fetch` and the round-trip `:form` so error fallbacks have a key to bind.
+ *
+ * `_error` is what the server SAID — its JSON `error`/`message` field when the
+ * body has one, else `HTTP <status>`. `_error_body` is the whole parsed body,
+ * so a page can render field-level errors (`{ signup_error_body.fields.email }`)
+ * without a colocated script.
  * @param {string} key
  * @param {Ctx} ctx
  * @returns {void}
  */
 export function declareErrorState(key, ctx) {
-  const errorKey = `${key}_error`;
-  if (!ctx.comp.state.has(errorKey)) ctx.comp.state.set(errorKey, null);
+  for (const suffix of ["_error", "_error_body"]) {
+    if (!ctx.comp.state.has(key + suffix)) ctx.comp.state.set(key + suffix, null);
+  }
 }
 
 /**
@@ -283,9 +348,14 @@ export function handleComputed(line, ctx, index) {
   // compiles and is nonsense. `resolveStateKey` is the same lookup the
   // expression walker does, so a page that really does declare state by that
   // name still compiles as an ordinary reference.
-  const stray = raw.match(/\s+(persist|ephemeral)$/);
+  const stray = raw.match(/\s+(persist|ephemeral|from-url)$/);
   if (stray && !resolveStateKey(stray[1], ctx)) {
-    const hint = `:computed values are derived, not stored, so they cannot ${stray[1] === "persist" ? "persist" : "be ephemeral"}. Persist the state they derive from instead — e.g. :state count = 0 persist`;
+    const outcome = {
+      persist: "persist",
+      ephemeral: "be ephemeral",
+      "from-url": "come from the URL"
+    }[stray[1]];
+    const hint = `:computed values are derived, not stored, so they cannot ${outcome}. Put the token on the state they derive from instead — e.g. :state count = 0 persist`;
     throw wdError(`Persistence token on :computed in ${at(ctx, index)}: ${line}. ${hint}`, {
       code: "WD211",
       file: ctx.file,
@@ -338,7 +408,7 @@ export function handleComputed(line, ctx, index) {
  */
 export function handleTheme(line, ctx, index) {
   const match = line.match(
-    new RegExp(String.raw`^:theme(?:\s+([A-Za-z_$][\w$]*))?(?:\s*=\s*(.+?))?${PERSISTENCE}$`)
+    new RegExp(String.raw`^:theme(?:\s+([A-Za-z_$][\w$]*))?(?:\s*=\s*(.+?))?${MODIFIERS}$`)
   );
   if (!match) {
     throw wdError(
@@ -352,6 +422,7 @@ export function handleTheme(line, ctx, index) {
       }
     );
   }
+  const flags = parseModifiers(match[3], ":theme", ctx, index);
   const name = match[1] || "theme";
   const seed = match[2] != null ? parseStateValue(match[2], at(ctx, index)) : "auto";
   const storeName = declareStore(name, seed, ctx);
@@ -360,6 +431,6 @@ export function handleTheme(line, ctx, index) {
     name: storeName,
     detail: `${storeName} = ${JSON.stringify(seed)}`
   });
-  const ephemeral = match[3] === "ephemeral" ? " data-wd-store-ephemeral" : "";
+  const ephemeral = flags.ephemeral ? " data-wd-store-ephemeral" : "";
   return `<script type="application/json" data-wd-store="${escapeHtml(storeName)}"${ephemeral}>${safeScriptJson(seed)}</script><span data-wd-theme="${escapeHtml(storeName)}" hidden></span>`;
 }

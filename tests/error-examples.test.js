@@ -163,23 +163,26 @@ const HINTS = [
     example: ':textarea message placeholder="Your message" rows=4',
     build: (ex) => `${ex}\n`
   },
+  // The three field directives are form fields inside a `:form` and controls
+  // bound to `:state` outside one, so each example is built inside the form it
+  // describes — the same host construct the VS Code snippets use.
   {
     name: ":select",
     trigger: ":select ",
     example: ":select topic",
-    build: (ex) => `${ex}\n- One\n- Two\n`
+    build: (ex) => `:form into c action="/api/echo"\n${ex}\n- One\n- Two\n:endform\n`
   },
   {
     name: ":checkbox",
     trigger: ":checkbox ",
     example: ":checkbox toppings",
-    build: (ex) => `${ex}\n- A\n- B\n`
+    build: (ex) => `:form into c action="/api/echo"\n${ex}\n- A\n- B\n:endform\n`
   },
   {
     name: ":radio",
     trigger: ":radio ",
     example: ":radio size",
-    build: (ex) => `${ex}\n- S\n- M\n`
+    build: (ex) => `:form into c action="/api/echo"\n${ex}\n- S\n- M\n:endform\n`
   },
   { name: ":submit", trigger: ":submit bad", example: ':submit "Send"', build: (ex) => `${ex}\n` }
 ];

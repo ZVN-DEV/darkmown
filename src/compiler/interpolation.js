@@ -228,6 +228,34 @@ export function humanizeName(name) {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
 }
 
+// ---------------------------------------------------------------------------
+// A BOUND href/src CARRIES A VALUE THE COMPILER NEVER SEES.
+//
+// `validateFetchUrl` and markdown-it's `validateLink` both vet a URL the AUTHOR
+// wrote. A reactive attribute binding (`[go]({ url })`) is different: the
+// compiler only sees the seed, and every later value arrives at runtime from
+// state, a form field, or a fetched payload. So the scheme check has to run
+// where the value lands, and it has to run in BOTH places — here for the
+// build-time paint, and again in `src/runtime.js` for every repaint.
+//
+// Control characters are stripped before the test because browsers strip tab,
+// newline and carriage return out of a URL attribute before resolving it, so
+// `java\tscript:alert(1)` is a live `javascript:` URL to the browser and must be
+// one to this guard too. Whitespace is stripped along with them, which only
+// makes the test stricter. `tests/attr-binding.test.js` runs the same table
+// through the compiler and the runtime so the two cannot drift.
+// ---------------------------------------------------------------------------
+
+/**
+ * True for a value that must never be applied to a bound `href`/`src`.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function unsafeUrlValue(value) {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — browsers strip these out of a URL, so the guard must too.
+  return /^(javascript|data|vbscript):/i.test(String(value).replace(/[\u0000-\u0020\u007F]+/g, ""));
+}
+
 /**
  * Escape a value for safe inclusion in HTML text and attribute contexts.
  * @param {unknown} value

@@ -223,10 +223,13 @@ class El {
     if (!v) this.children = [];
   }
   matches(selector) {
-    return matchSelector(this, selector);
+    // Comma-separated multi-selectors, like the real DOM: the runtime uses them
+    // (the seed-script hydrate, the scan claim), and a stub that quietly matched
+    // nothing would make the whole boot silently do nothing.
+    return selector.split(",").some((s) => matchSelector(this, s.trim()));
   }
   closest(selector) {
-    for (let n = this; n; n = n.parent) if (n.matches && matchSelector(n, selector)) return n;
+    for (let n = this; n; n = n.parent) if (n.matches && n.matches(selector)) return n;
     return null;
   }
   querySelector(selector) {
@@ -235,7 +238,7 @@ class El {
   querySelectorAll(selector) {
     const out = [];
     walk(this, (node) => {
-      if (node !== this && matchSelector(node, selector)) out.push(node);
+      if (node !== this && node.matches(selector)) out.push(node);
     });
     return out;
   }

@@ -15,7 +15,7 @@ import {
   stripQuotes,
   validatePath
 } from "./interpolation.js";
-import { declareState } from "./state.js";
+import { declareErrorState, declareState } from "./state.js";
 
 /**
  * @typedef {import("./context.js").Ctx} Ctx
@@ -119,15 +119,19 @@ export function handleFetch(line, ctx, index) {
     if (!deps.includes(headKey)) deps.push(headKey);
   }
 
-  // Auto-declare the four lifecycle keys. `name` is declared via declareState
-  // (collision-checked); the derived keys are seeded directly.
+  // Auto-declare the lifecycle keys. `name` is declared via declareState
+  // (collision-checked); the derived keys are seeded directly, and the error
+  // pair goes through the shared helper so `:fetch` and `:form` declare the
+  // same two keys.
   const key = declareState(name, null, ctx);
   ctx.comp.fetchKeys.add(key);
+  declareErrorState(key, ctx);
   recordSymbol(ctx, index, { kind: "fetch", name: key, detail: `${key} from "${url}"` });
   /** @type {Record<string, unknown>} */
   const seeds = { [key]: null };
   for (const [suffix, seed] of [
     ["_error", null],
+    ["_error_body", null],
     ["_loading", false],
     ["_empty", false]
   ]) {

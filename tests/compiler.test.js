@@ -1501,7 +1501,7 @@ test(":fetch and round-trip :form auto-declare their _error keys for display", (
 // Stage 5: fetch lifecycle — loading/empty, options, dynamic URL, refetch
 // ---------------------------------------------------------------------------
 
-test(":fetch auto-declares four lifecycle state keys (value/error/loading/empty)", () => {
+test(":fetch auto-declares its lifecycle state keys (value/error/error_body/loading/empty)", () => {
   const root = fixture();
   write(
     root,
@@ -1522,7 +1522,7 @@ test(":fetch auto-declares four lifecycle state keys (value/error/loading/empty)
   // into one state script so the lifecycle regions resolve before the fetch).
   assert.match(
     page.html,
-    /data-wd-state>\{"team":null,"team_error":null,"team_loading":false,"team_empty":false\}/
+    /data-wd-state>\{"team":null,"team_error":null,"team_error_body":null,"team_loading":false,"team_empty":false\}/
   );
   // The reactive regions resolve the auto-declared keys.
   assert.match(page.html, /data-wd-if="team_loading"/);

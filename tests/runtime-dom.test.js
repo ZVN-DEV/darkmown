@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { astOf } from "../src/compiler/expr-ast.js";
+import { unsafeUrlValue } from "../src/compiler/interpolation.js";
 
 // Compile a validated expression string to the serialized AST the runtime reads
 // from `data-wd-*` attributes (the compiler emits this; the runtime walks it).
@@ -150,6 +151,25 @@ class El {
   }
   set value(v) {
     this.attrs.set("value", v == null ? "" : String(v));
+  }
+  // `input.type` is what the runtime switches on to decide whether a bound
+  // control carries a string, a number, or a checked flag. A <select> reports
+  // "select-one" in a real DOM, exactly as here.
+  get type() {
+    if (this.tagName === "SELECT") return "select-one";
+    return this.getAttribute("type") || "";
+  }
+  get valueAsNumber() {
+    return Number(this.value);
+  }
+  // Checkedness is an attribute in this stub so cloneNode and the FormData
+  // collector (which reads the attribute) stay coherent with the property the
+  // runtime writes.
+  get checked() {
+    return this.hasAttribute("checked");
+  }
+  set checked(on) {
+    on ? this.setAttribute("checked", "") : this.removeAttribute("checked");
   }
 }
 
@@ -1666,7 +1686,9 @@ test(":form action posts and lands a JSON reply into state[key] on success", asy
   assert.equal(h.sandbox.wd.state.saved_error, null, "no error flag on success");
 });
 
-test(":form action writes state[key+'_error'] on a failure response", async () => {
+test(":form action writes the SERVER'S message into state[key+'_error']", async () => {
+  // The body said why it refused, so the page shows that rather than a bare
+  // status line. `saved_error_body` carries the whole parsed body alongside it.
   const stub = makeFetchStub({ "/api/save": { status: 500, body: { error: "boom" } } });
   let form;
   const h = makeSandbox(
@@ -1684,7 +1706,8 @@ test(":form action writes state[key+'_error'] on a failure response", async () =
   h.fire("submit", form);
   await settle();
 
-  assert.match(String(h.sandbox.wd.state.saved_error), /HTTP 500/, "failure surfaces as *_error");
+  assert.equal(h.sandbox.wd.state.saved_error, "boom", "the server's own message");
+  assert.deepEqual(h.sandbox.wd.state.saved_error_body, { error: "boom" });
   assert.equal(h.sandbox.wd.state.saved ?? null, null, "no success value on failure");
 });
 
@@ -2236,34 +2259,205 @@ test(":fetch, :effect and :every inside an :if branch start when the branch open
   assert.equal(h.sandbox.wd.state.hit, 1, ":effect in the opened branch fired");
 });
 
-test("a directive is claimed once, so re-opening a branch does not double-register", async () => {
+test("closing an :if branch unregisters its directives, so re-opening never double-fires", async () => {
   const stub = makeFetchStub({ "/api/feed": { status: 200, body: [1] } });
+  const intervals = [];
+  let nextId = 1;
   const h = makeSandbox(
     (root, El) => {
-      seedState(El, root, { open: true });
+      seedState(El, root, { open: false, q: "a", hits: 0, ticks: 0 });
       const fetchNode = el(El, "span", {
         "data-wd-fetch": "",
         "data-wd-fetch-key": "feed",
-        "data-wd-fetch-url": "/api/feed"
+        "data-wd-fetch-url": "/api/feed",
+        "data-wd-fetch-deps": "q"
       });
-      const built = ifRegion(El, { key: "open", active: "true", truthy: [fetchNode], initial: "" });
-      // The compile-time paint already has the branch open, so the node is live
-      // from the first scan; flipping away and back injects a NEW node, which is
-      // a new registration, not a duplicate of the old one.
-      built.out.appendChild(fetchNode.cloneNode(true));
+      const effect = el(El, "script", { "data-wd-effect": "" });
+      effect.textContent = JSON.stringify({ watch: "q", actions: [{ op: "inc", target: "hits" }] });
+      const every = el(El, "script", { "data-wd-every": "" });
+      every.textContent = JSON.stringify({ ms: 500, actions: [{ op: "inc", target: "ticks" }] });
+      const built = ifRegion(El, { key: "open", truthy: [fetchNode, effect, every], initial: "" });
       root.appendChild(built.node);
     },
-    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+    {
+      globals: {
+        fetch: stub.fetch,
+        // The refetch debounce is 150 ms and settle() only drains 0 ms ticks.
+        setTimeout: (fn) => setTimeout(fn, 0),
+        clearTimeout,
+        Promise,
+        setInterval: (fn, ms) => {
+          const id = nextId++;
+          intervals.push({ id, fn, ms, cleared: false });
+          return id;
+        },
+        clearInterval: (id) => {
+          const it = intervals.find((x) => x.id === id);
+          if (it) it.cleared = true;
+        }
+      }
+    }
   );
-  await settle();
-  const afterBoot = stub.count("/api/feed");
-  assert.equal(afterBoot, 1, "one live fetch node, one request");
+  const live = () => intervals.filter((i) => !i.cleared);
+  const toggle = async (on) => {
+    h.sandbox.wd.state.open = on;
+    h.sandbox.wd.render();
+    await settle();
+  };
 
-  // Several renders with no structural change must not re-run it.
-  h.sandbox.wd.render();
-  h.sandbox.wd.render();
   await settle();
-  assert.equal(stub.count("/api/feed"), afterBoot, "re-renders do not re-fire a claimed :fetch");
+  assert.equal(stub.count("/api/feed"), 0, "closed at boot: no request, no timer");
+  assert.equal(intervals.length, 0);
+
+  // Two full close/re-open cycles. Every open clones FRESH nodes out of the
+  // template, so each previous open's copies have to be dropped as they leave.
+  await toggle(true);
+  await toggle(false);
+  await toggle(true);
+  await toggle(false);
+  await toggle(true);
+
+  assert.equal(stub.count("/api/feed"), 3, "one initial request per open, none from a stale copy");
+  assert.equal(live().length, 1, "exactly one live :every timer, not one per open");
+
+  // One state change, one of everything: no stale copy fires alongside.
+  const before = stub.count("/api/feed");
+  h.sandbox.wd.set("q", "b");
+  await settle();
+  assert.equal(stub.count("/api/feed") - before, 1, "a dep change refetches exactly once");
+  assert.equal(h.sandbox.wd.state.hits, 1, ":effect fired exactly once");
+
+  // ...and a closed branch holds nothing at all.
+  await toggle(false);
+  assert.equal(live().length, 0, "closing the branch clears its timer");
+  const closed = stub.count("/api/feed");
+  h.sandbox.wd.set("q", "c");
+  await settle();
+  assert.equal(stub.count("/api/feed"), closed, "a closed branch issues no request");
+  assert.equal(h.sandbox.wd.state.hits, 1, "a closed branch runs no :effect");
+});
+
+test("an :if chain deeper than the settle cap finishes instead of stopping half-painted", async () => {
+  // A persisted or `from-url` value can flip an :if at hydrate, so the paint the
+  // compiler wrote says "false" while state says true. Each branch that opens
+  // reveals the :computed the NEXT :if reads, and one render only goes three
+  // deep: the innermost branch used to land with its :computed never computed,
+  // so the bind inside it painted empty and stayed empty.
+  const warnings = [];
+  const originalWarn = console.warn;
+  const computed = (El, key, expr) =>
+    el(El, "span", {
+      "data-wd-computed": "",
+      "data-wd-computed-key": key,
+      "data-wd-computed-expr": ast(expr)
+    });
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { open: true, x: 21, b: false, c: false });
+    const inner = ifRegion(El, {
+      key: "c",
+      initial: "",
+      truthy: [computed(El, "total", 'S("x") * 2'), el(El, "b", { "data-wd-bind": "total" })]
+    });
+    const middle = ifRegion(El, {
+      key: "b",
+      initial: "",
+      truthy: [computed(El, "c", 'S("x") > 0'), inner.node]
+    });
+    const outer = ifRegion(El, {
+      key: "open",
+      initial: "",
+      truthy: [computed(El, "b", 'S("x") > 0'), middle.node]
+    });
+    root.appendChild(outer.node);
+  });
+  const bound = () => h.root.querySelector("[data-wd-bind]");
+
+  assert.equal(h.renderCount, 1, "boot rendered once");
+  assert.ok(bound(), "the innermost branch is open");
+  await settle(1);
+  assert.equal(h.renderCount, 2, "and scheduled exactly one more pass, not a spin");
+  assert.equal(h.sandbox.wd.state.total, 42, "the :computed the last pass revealed did run");
+  assert.equal(bound().textContent, "42", "so the bind inside it is painted, not left empty");
+
+  // A page that settles inside the cap schedules nothing extra.
+  const settled = h.renderCount;
+  h.sandbox.wd.state.x = 5;
+  h.sandbox.wd.render();
+  await settle(1);
+  assert.equal(h.renderCount, settled + 1, "a settled render does not schedule another");
+  assert.equal(bound().textContent, "10");
+
+  // Re-running the whole chain warns under wd.debug, and only there.
+  const rerun = () => {
+    h.sandbox.wd.state.open = false;
+    h.sandbox.wd.render();
+    // Only now: while the branch was open, its :computed nodes were live and
+    // every render recomputed them.
+    h.sandbox.wd.state.b = false;
+    h.sandbox.wd.state.c = false;
+    h.sandbox.wd.state.open = true;
+    h.sandbox.wd.render();
+  };
+  console.warn = (...args) => warnings.push(args.join(" "));
+  try {
+    rerun();
+    await settle(1);
+    assert.deepEqual(warnings, [], "silent in production");
+
+    h.sandbox.wd.debug = true;
+    rerun();
+    await settle(1);
+    assert.equal(warnings.length, 1, "one warning per unsettled render");
+    assert.match(warnings[0], /render did not settle/);
+  } finally {
+    console.warn = originalWarn;
+    h.sandbox.wd.debug = false;
+  }
+});
+
+test("the @empty branch of a loop is unregistered when rows replace it", () => {
+  const intervals = [];
+  let nextId = 1;
+  const h = makeSandbox(
+    (root, El) => {
+      const every = el(El, "script", { "data-wd-every": "" });
+      every.textContent = JSON.stringify({ ms: 300, actions: [{ op: "inc", target: "polls" }] });
+      const proto = el(El, "li", { "data-wd-each": "", "data-wd-path": "name" });
+      const shell = loopShell(El, { key: "rows", proto, empty: [every] });
+      seedState(El, root, { rows: [], polls: 0 });
+      root.appendChild(shell.region);
+    },
+    {
+      globals: {
+        setInterval: (fn, ms) => {
+          const id = nextId++;
+          intervals.push({ id, fn, ms, cleared: false });
+          return id;
+        },
+        clearInterval: (id) => {
+          const it = intervals.find((x) => x.id === id);
+          if (it) it.cleared = true;
+        }
+      }
+    }
+  );
+  const live = () => intervals.filter((i) => !i.cleared);
+
+  // The @empty branch is ONE branch, not a per-row clone, so an :every inside it
+  // is legal — and is re-cloned every time the list empties again.
+  assert.equal(live().length, 1, "the empty branch started its timer");
+
+  h.sandbox.wd.state.rows = [{ id: "r1", name: "one" }];
+  h.sandbox.wd.render();
+  assert.equal(live().length, 0, "rows replaced the empty branch, so its timer stopped");
+
+  h.sandbox.wd.state.rows = [];
+  h.sandbox.wd.render();
+  assert.equal(live().length, 1, "back to empty: exactly one live timer, not two");
+  assert.equal(intervals.length, 2, "the re-cloned branch registered once");
+
+  live()[0].fn();
+  assert.equal(h.sandbox.wd.state.polls, 1, "one tick, one increment");
 });
 
 // --- R2: a nested @loop revealed by a per-row :if --------------------------
@@ -3095,4 +3289,996 @@ test("the :fetch abort timer is cleared once the request settles", async () => {
   assert.equal(stub.calls.length, 1);
   assert.ok(cleared.length >= 1, "the abort timer must be cleared on success");
   assert.equal(live.size, 0, "no abort timer left armed after the response landed");
+});
+
+// ---------------------------------------------------------------------------
+// F1 — reactive attribute binding (a markdown link/image destination)
+//
+// A destination used to be painted once at build time. It now carries a
+// `data-wd-attr` (state) / `data-wd-each-attr` (loop row) template that the
+// runtime re-evaluates: literal chunks plus readers, rebuilt into the whole
+// attribute value on every render.
+// ---------------------------------------------------------------------------
+
+/** The marker the compiler emits for `[go](/p/{ slug }/)`. */
+const attrTemplate = (name, ...parts) => JSON.stringify([name, ...parts]);
+
+test("a state-driven href follows the state", () => {
+  let link;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { slug: "alpha" });
+    link = el(El, "a", {
+      href: "/p/alpha/",
+      "data-wd-attr": attrTemplate("href", "/p/", ["s", "slug", ""], "/")
+    });
+    root.appendChild(link);
+  });
+  assert.equal(link.getAttribute("href"), "/p/alpha/");
+
+  h.sandbox.wd.set("slug", "beta");
+  h.sandbox.wd.render();
+  assert.equal(link.getAttribute("href"), "/p/beta/", "the whole template is rebuilt");
+});
+
+test("a dotted sub-path in a bound attribute resolves off the state object", () => {
+  let img;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { user: { avatar: "/a.png" } });
+    img = el(El, "img", {
+      src: "/a.png",
+      "data-wd-attr": attrTemplate("src", ["s", "user", "avatar"])
+    });
+    root.appendChild(img);
+  });
+  h.sandbox.wd.set("user", { avatar: "/b.png" });
+  h.sandbox.wd.render();
+  assert.equal(img.getAttribute("src"), "/b.png");
+});
+
+test("a per-row destination fills from its own row, not row 1", () => {
+  let out;
+  makeSandbox((root, El) => {
+    seedState(El, root, {
+      items: [
+        { id: "a", slug: "alpha" },
+        { id: "b", slug: "beta" }
+      ]
+    });
+    const proto = el(El, "li");
+    proto.appendChild(
+      el(El, "a", {
+        href: "",
+        "data-wd-each-attr": attrTemplate("href", "/p/", ["i", "slug"], "/")
+      })
+    );
+    ({ out } = loopShell(El, { key: "items", proto }));
+    root.appendChild(out.parent);
+  });
+  assert.deepEqual(
+    out.children.map((row) => row.children[0].getAttribute("href")),
+    ["/p/alpha/", "/p/beta/"]
+  );
+});
+
+test("a per-row destination can read the row meta variables", () => {
+  let out;
+  makeSandbox((root, El) => {
+    seedState(El, root, { items: [{ id: "a" }, { id: "b" }] });
+    const proto = el(El, "li");
+    proto.appendChild(
+      el(El, "a", {
+        href: "",
+        "data-wd-each-attr": attrTemplate("href", "/page/", ["m", "number"], "/")
+      })
+    );
+    ({ out } = loopShell(El, { key: "items", proto }));
+    root.appendChild(out.parent);
+  });
+  assert.deepEqual(
+    out.children.map((row) => row.children[0].getAttribute("href")),
+    ["/page/1/", "/page/2/"]
+  );
+});
+
+test("a per-row destination mixing row and state parts resolves both", () => {
+  let out;
+  makeSandbox((root, El) => {
+    seedState(El, root, { lang: "fr", items: [{ id: "a", slug: "alpha" }] });
+    const proto = el(El, "li");
+    proto.appendChild(
+      el(El, "a", {
+        href: "",
+        "data-wd-each-attr": attrTemplate("href", "/", ["s", "lang", ""], "/p/", ["i", "slug"], "/")
+      })
+    );
+    ({ out } = loopShell(El, { key: "items", proto }));
+    root.appendChild(out.parent);
+  });
+  assert.equal(out.children[0].children[0].getAttribute("href"), "/fr/p/alpha/");
+});
+
+test("the marker on the loop row element ITSELF is filled (self-match, not just descendants)", () => {
+  let out;
+  makeSandbox((root, El) => {
+    seedState(El, root, { items: [{ id: "a", slug: "alpha" }] });
+    const proto = el(El, "a", {
+      href: "",
+      "data-wd-each-attr": attrTemplate("href", "/p/", ["i", "slug"], "/")
+    });
+    ({ out } = loopShell(El, { key: "items", proto }));
+    root.appendChild(out.parent);
+  });
+  assert.equal(out.children[0].getAttribute("href"), "/p/alpha/");
+});
+
+// --- the security requirement ----------------------------------------------
+//
+// The compiler's URL guard vets what the AUTHOR wrote. A bound href/src carries
+// a value that arrived at runtime, so the scheme check has to run here too.
+
+const TAB = String.fromCharCode(9);
+const UNSAFE_URLS = [
+  "javascript:alert(1)",
+  "JavaScript:alert(1)",
+  "  javascript:alert(1)",
+  `java${TAB}script:alert(1)`,
+  "data:text/html,<script>alert(1)</script>",
+  "vbscript:msgbox(1)"
+];
+const SAFE_URLS = ["/p/a/", "https://example.com/x", "./rel", "#frag", "mailto:a@b.test"];
+
+for (const value of UNSAFE_URLS) {
+  test(`a bound href never lands the unsafe value ${JSON.stringify(value)}`, () => {
+    let link;
+    const h = makeSandbox((root, El) => {
+      seedState(El, root, { url: "/safe/" });
+      link = el(El, "a", {
+        href: "/safe/",
+        "data-wd-attr": attrTemplate("href", ["s", "url", ""])
+      });
+      root.appendChild(link);
+    });
+    h.sandbox.wd.set("url", value);
+    h.sandbox.wd.render();
+    assert.equal(link.getAttribute("href"), "", "an unsafe value is refused, not applied");
+    // PARITY: the compiler paints the seed into the same attribute at build
+    // time, so its guard has to answer identically on the same input.
+    assert.equal(unsafeUrlValue(value), true, "the compiler-side guard disagrees with the runtime");
+  });
+}
+
+for (const value of SAFE_URLS) {
+  test(`a bound href still applies the safe value ${JSON.stringify(value)}`, () => {
+    // The negative control for the guard above: a check that rejected
+    // everything would pass every unsafe case and be worthless.
+    let link;
+    const h = makeSandbox((root, El) => {
+      seedState(El, root, { url: "/seed/" });
+      link = el(El, "a", {
+        href: "/seed/",
+        "data-wd-attr": attrTemplate("href", ["s", "url", ""])
+      });
+      root.appendChild(link);
+    });
+    h.sandbox.wd.set("url", value);
+    h.sandbox.wd.render();
+    assert.equal(link.getAttribute("href"), value);
+    assert.equal(
+      unsafeUrlValue(value),
+      false,
+      "the compiler-side guard disagrees with the runtime"
+    );
+  });
+}
+
+test("an unsafe value smuggled through a LITERAL chunk is still refused", () => {
+  // The guard runs on the assembled value, not on the reader's value, so a
+  // template whose literal half spells the scheme cannot slip past it.
+  let link;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { rest: "x" });
+    link = el(El, "a", {
+      href: "",
+      "data-wd-attr": attrTemplate("href", "javascript:alert(", ["s", "rest", ""], ")")
+    });
+    root.appendChild(link);
+  });
+  h.sandbox.wd.render();
+  assert.equal(link.getAttribute("href"), "");
+});
+
+test("a malformed data-wd-attr marker is ignored, never thrown", () => {
+  let link;
+  makeSandbox((root, El) => {
+    seedState(El, root, { x: 1 });
+    link = el(El, "a", { href: "/kept/", "data-wd-attr": "{not json" });
+    root.appendChild(link);
+  });
+  assert.equal(link.getAttribute("href"), "/kept/");
+});
+
+test("NEGATIVE CONTROL: without the marker the href never moves", () => {
+  // Exactly the F1 feature removed — a plain painted href, which is what the
+  // compiler emitted before this change. If this test ever goes green with an
+  // updated href, the assertions above are not testing the marker.
+  let link;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { slug: "alpha" });
+    link = el(El, "a", { href: "/p/alpha/" });
+    root.appendChild(link);
+  });
+  h.sandbox.wd.set("slug", "beta");
+  h.sandbox.wd.render();
+  assert.equal(link.getAttribute("href"), "/p/alpha/", "no marker, no update — the old behavior");
+});
+
+// ---------------------------------------------------------------------------
+// F2 — `:state … from-url`: the query string is state
+//
+// On boot the parameter overrides the seed (and a persisted value); on every
+// change the URL is rewritten with replaceState, dropping a parameter whose
+// value is back at the seed; popstate re-reads and re-renders.
+// ---------------------------------------------------------------------------
+
+/**
+ * A `location` + `history` pair the runtime can drive, with a log of every
+ * replaceState so "did this add a history entry?" is observable.
+ */
+function urlBar(href = "http://localhost/search/") {
+  const url = new URL(href);
+  const writes = [];
+  const location = {
+    get pathname() {
+      return url.pathname;
+    },
+    get search() {
+      return url.search;
+    },
+    get hash() {
+      return url.hash;
+    }
+  };
+  const history = {
+    state: null,
+    length: 1,
+    replaceState(state, _title, next) {
+      writes.push(next);
+      const merged = new URL(next, url);
+      url.pathname = merged.pathname;
+      url.search = merged.search;
+      url.hash = merged.hash;
+      history.state = state;
+    },
+    pushState() {
+      history.length++;
+    }
+  };
+  return {
+    location,
+    history,
+    writes,
+    /** Simulate a back/forward that lands on `next`. */
+    go(next) {
+      const merged = new URL(next, url);
+      url.pathname = merged.pathname;
+      url.search = merged.search;
+      url.hash = merged.hash;
+    },
+    get href() {
+      return url.pathname + url.search + url.hash;
+    }
+  };
+}
+
+/** Seed a `from-url` state script. */
+function seedUrlState(El, root, obj, { persist } = {}) {
+  const key = Object.keys(obj)[0];
+  const script = el(El, "script", { "data-wd-state": "", "data-wd-url": key });
+  if (persist) script.setAttribute("data-wd-persist", key);
+  script.textContent = JSON.stringify(obj);
+  root.appendChild(script);
+  return script;
+}
+
+const urlGlobals = (bar) => ({
+  location: bar.location,
+  history: bar.history,
+  URLSearchParams
+});
+
+test("a query parameter overrides the seed on boot", () => {
+  const bar = urlBar("http://localhost/search/?q=chairs");
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "" });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  assert.equal(h.sandbox.wd.state.q, "chairs");
+});
+
+test("with no parameter, the seed stands", () => {
+  const bar = urlBar();
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "start" });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  assert.equal(h.sandbox.wd.state.q, "start");
+  assert.deepEqual(bar.writes, [], "a page at its defaults never rewrites its own URL");
+});
+
+test("URL beats a persisted value, which beats the seed", () => {
+  const bar = urlBar("http://localhost/search/?q=fromurl");
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "seed" }, { persist: true });
+    },
+    { globals: urlGlobals(bar), initialStore: { "wd:q": JSON.stringify("stored") } }
+  );
+  assert.equal(h.sandbox.wd.state.q, "fromurl");
+});
+
+test("a persisted value still wins over the seed when the URL is silent", () => {
+  // The control for the precedence above: drop the parameter and storage wins.
+  const bar = urlBar();
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "seed" }, { persist: true });
+    },
+    { globals: urlGlobals(bar), initialStore: { "wd:q": JSON.stringify("stored") } }
+  );
+  assert.equal(h.sandbox.wd.state.q, "stored");
+});
+
+test("a non-string seed parses its parameter as JSON, falling back to the raw text", () => {
+  const bar = urlBar("http://localhost/x/?n=12&tags=%5B%22a%22%5D&broken=oops");
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { n: 0 });
+      seedUrlState(El, root, { tags: [] });
+      seedUrlState(El, root, { broken: 0 });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  assert.equal(h.sandbox.wd.state.n, 12);
+  assert.deepEqual(h.sandbox.wd.state.tags, ["a"]);
+  assert.equal(h.sandbox.wd.state.broken, "oops", "unparseable falls back to the raw string");
+});
+
+test("a string seed keeps its parameter as a string, JSON-looking or not", () => {
+  const bar = urlBar("http://localhost/x/?q=123");
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "" });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  assert.strictEqual(h.sandbox.wd.state.q, "123");
+});
+
+test("a change rewrites the URL with replaceState — never a new history entry", () => {
+  const bar = urlBar();
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "" });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  const before = bar.history.length;
+  h.sandbox.wd.set("q", "chairs");
+  assert.equal(bar.href, "/search/?q=chairs");
+  assert.equal(bar.history.length, before, "filtering must not fill the back button");
+  assert.equal(bar.writes.length, 1);
+});
+
+test("a value back at its seed DROPS the parameter, so the default URL stays clean", () => {
+  const bar = urlBar("http://localhost/search/?q=chairs&page=2");
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "" });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  h.sandbox.wd.set("q", "");
+  assert.equal(bar.href, "/search/?page=2", "an unrelated parameter is left alone");
+});
+
+test("an unchanged value never rewrites the URL", () => {
+  const bar = urlBar("http://localhost/search/?q=chairs");
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "" });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  h.sandbox.wd.set("other", 1);
+  assert.deepEqual(bar.writes, []);
+});
+
+test("popstate re-reads the URL and re-renders", () => {
+  const bar = urlBar("http://localhost/search/?q=chairs");
+  let bind;
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "" });
+      bind = el(El, "span", { "data-wd-bind": "q" });
+      root.appendChild(bind);
+    },
+    { globals: urlGlobals(bar) }
+  );
+  assert.equal(bind.textContent, "chairs");
+
+  bar.go("/search/?q=lamps");
+  h.fire("popstate", null);
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.q, "lamps");
+  assert.equal(bind.textContent, "lamps", "the page repainted, not just the state");
+});
+
+test("popstate back to a URL with no parameter restores the seed", () => {
+  const bar = urlBar("http://localhost/search/?q=chairs");
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "start" });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  bar.go("/search/");
+  h.fire("popstate", null);
+  assert.equal(h.sandbox.wd.state.q, "start");
+});
+
+test("a from-url value also persists when the declaration says so", () => {
+  const bar = urlBar();
+  const h = makeSandbox(
+    (root, El) => {
+      seedUrlState(El, root, { q: "" }, { persist: true });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  h.sandbox.wd.set("q", "chairs");
+  assert.equal(h.store.get("wd:q"), JSON.stringify("chairs"));
+  assert.equal(bar.href, "/search/?q=chairs");
+});
+
+test("NEGATIVE CONTROL: without the marker, nothing touches the address bar", () => {
+  const bar = urlBar();
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { q: "" });
+    },
+    { globals: urlGlobals(bar) }
+  );
+  h.sandbox.wd.set("q", "chairs");
+  assert.deepEqual(bar.writes, [], "a plain :state must stay out of the URL");
+});
+
+// ---------------------------------------------------------------------------
+// F6 — seed scripts inside an unopened `:if` branch
+//
+// querySelectorAll cannot see into <template> content, so a :state/:store/:theme
+// declared inside a closed branch was never hydrated: it started undefined and
+// never persisted. scan() now claims seed scripts every time a render changes
+// structure, guarded by "state does not have this key yet" so re-opening a
+// branch is a no-op rather than a reset.
+// ---------------------------------------------------------------------------
+
+test("a :state declared inside a closed :if branch is hydrated when the branch opens", () => {
+  let node;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { open: false });
+    const inner = el(El, "script", { "data-wd-state": "" });
+    inner.textContent = JSON.stringify({ inner: 7 });
+    const bind = el(El, "span", { "data-wd-bind": "inner" });
+    ({ node } = ifRegion(El, { key: "open", truthy: [inner, bind] }));
+    root.appendChild(node);
+  });
+  assert.equal(h.sandbox.wd.state.inner, undefined, "closed branch: never declared");
+
+  h.sandbox.wd.set("open", true);
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.inner, 7, "opening the branch declares it");
+  assert.equal(
+    node.querySelector("[data-wd-bind]").textContent,
+    "7",
+    "and the same render paints it"
+  );
+});
+
+test("a :state inside a branch persists once the branch has opened", () => {
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { open: false });
+    const inner = el(El, "script", { "data-wd-state": "", "data-wd-persist": "inner" });
+    inner.textContent = JSON.stringify({ inner: 0 });
+    const { node } = ifRegion(El, { key: "open", truthy: [inner] });
+    root.appendChild(node);
+  });
+  h.sandbox.wd.set("open", true);
+  h.sandbox.wd.render();
+  h.sandbox.wd.set("inner", 5);
+  assert.equal(h.store.get("wd:inner"), "5");
+});
+
+test("a persisted :state inside a branch reads storage through, not just its seed", () => {
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { open: false });
+      const inner = el(El, "script", { "data-wd-state": "", "data-wd-persist": "inner" });
+      inner.textContent = JSON.stringify({ inner: 0 });
+      const { node } = ifRegion(El, { key: "open", truthy: [inner] });
+      root.appendChild(node);
+    },
+    { initialStore: { "wd:inner": "42" } }
+  );
+  h.sandbox.wd.set("open", true);
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.inner, 42);
+});
+
+test("a :theme inside a branch reflects onto <html> once the branch opens", () => {
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { open: false });
+    const store = el(El, "script", { "data-wd-store": "theme" });
+    store.textContent = JSON.stringify("dark");
+    const marker = el(El, "span", { "data-wd-theme": "theme" });
+    const { node } = ifRegion(El, { key: "open", truthy: [store, marker] });
+    root.appendChild(node);
+  });
+  assert.equal(h.document.documentElement.getAttribute("data-theme"), null);
+
+  h.sandbox.wd.set("open", true);
+  h.sandbox.wd.render();
+  assert.equal(h.document.documentElement.getAttribute("data-theme"), "dark");
+  assert.equal(h.store.get("wd:store:theme"), JSON.stringify("dark"), "and it is durable");
+});
+
+test("closing and re-opening a branch does not reset what the reader changed", () => {
+  // The branch is re-cloned from its template, so the script node is FRESH each
+  // time. Claiming per node would reset the value; the guard is per key.
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { open: true });
+    const inner = el(El, "script", { "data-wd-state": "" });
+    inner.textContent = JSON.stringify({ count: 0 });
+    const { node } = ifRegion(El, { key: "open", active: "true", truthy: [inner] });
+    root.appendChild(node);
+  });
+  h.sandbox.wd.render();
+  h.sandbox.wd.set("count", 9);
+  h.sandbox.wd.set("open", false);
+  h.sandbox.wd.render();
+  h.sandbox.wd.set("open", true);
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.count, 9, "the seed must not clobber the live value");
+});
+
+test("`reset` restores the seed of a state declared inside a branch", () => {
+  // The seed snapshot is recorded per key AS the key is claimed, so a state
+  // that only exists once a branch opens is resettable like any other.
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { open: false });
+    const inner = el(El, "script", { "data-wd-state": "" });
+    inner.textContent = JSON.stringify({ picks: ["a"] });
+    const { node } = ifRegion(El, { key: "open", truthy: [inner] });
+    root.appendChild(node);
+    root.appendChild(el(El, "span", { "data-wd-action": "reset", "data-wd-target": "picks" }));
+  });
+  h.sandbox.wd.set("open", true);
+  h.sandbox.wd.render();
+  h.sandbox.wd.state.picks.push("b");
+  assert.deepEqual(h.sandbox.wd.state.picks, ["a", "b"]);
+
+  h.fire("click", h.root.querySelector("[data-wd-action]"));
+  assert.deepEqual(h.sandbox.wd.state.picks, ["a"]);
+});
+
+test("a seed is deep-copied into state, so mutating it never rewrites the reset baseline", () => {
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { picks: ["a"] });
+    root.appendChild(el(El, "span", { "data-wd-action": "reset", "data-wd-target": "picks" }));
+  });
+  h.sandbox.wd.state.picks.push("b");
+  h.fire("click", h.root.querySelector("[data-wd-action]"));
+  assert.deepEqual(h.sandbox.wd.state.picks, ["a"], "reset restores the DECLARED value");
+});
+
+// ---------------------------------------------------------------------------
+// F3 — bound `:select` / `:radio` / `:checkbox` (outside a `:form`)
+//
+// All three ride the existing `data-wd-bind-input` channel, but a checkbox
+// carries a boolean and a radio carries whichever option equals the value, so
+// neither can go through `.value` in either direction.
+// ---------------------------------------------------------------------------
+
+/** A bound control as the compiler emits it. */
+function boundControl(El, tag, attrs, options = []) {
+  const node = el(El, tag, attrs);
+  for (const [value, selected] of options) {
+    const option = el(El, "option", { value }, value);
+    if (selected) option.setAttribute("selected", "");
+    node.appendChild(option);
+  }
+  return node;
+}
+
+test("changing a bound select writes the state", () => {
+  let select;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { topic: "Bug" });
+    select = boundControl(El, "select", { "data-wd-bind-input": "topic" }, [
+      ["Bug", true],
+      ["Idea", false]
+    ]);
+    root.appendChild(select);
+  });
+  select.value = "Idea";
+  h.fire("input", select);
+  assert.equal(h.sandbox.wd.state.topic, "Idea");
+});
+
+test("changing the state moves a bound select", () => {
+  let select;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { topic: "Bug" });
+    select = boundControl(El, "select", { "data-wd-bind-input": "topic" }, [
+      ["Bug", true],
+      ["Idea", false]
+    ]);
+    root.appendChild(select);
+  });
+  h.sandbox.wd.set("topic", "Idea");
+  h.sandbox.wd.render();
+  assert.equal(select.value, "Idea");
+});
+
+test("a bound checkbox writes a BOOLEAN, not its label", () => {
+  let box;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { agree: false });
+    box = el(El, "input", {
+      type: "checkbox",
+      value: "I agree",
+      "data-wd-bind-input": "agree"
+    });
+    root.appendChild(box);
+  });
+  box.checked = true;
+  h.fire("input", box);
+  assert.strictEqual(h.sandbox.wd.state.agree, true, "the boolean, not the string 'I agree'");
+
+  box.checked = false;
+  h.fire("input", box);
+  assert.strictEqual(h.sandbox.wd.state.agree, false);
+});
+
+test("a bound checkbox follows the state both ways", () => {
+  let box;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { agree: false });
+    box = el(El, "input", { type: "checkbox", value: "x", "data-wd-bind-input": "agree" });
+    root.appendChild(box);
+  });
+  h.sandbox.wd.set("agree", true);
+  h.sandbox.wd.render();
+  assert.equal(box.checked, true);
+  h.sandbox.wd.set("agree", false);
+  h.sandbox.wd.render();
+  assert.equal(box.checked, false);
+});
+
+test("a bound radio group checks exactly the option that equals the state", () => {
+  let small;
+  let medium;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { size: "M" });
+    small = el(El, "input", { type: "radio", value: "S", "data-wd-bind-input": "size" });
+    medium = el(El, "input", { type: "radio", value: "M", "data-wd-bind-input": "size" });
+    root.appendChild(small);
+    root.appendChild(medium);
+  });
+  assert.equal(medium.checked, true);
+  assert.equal(small.checked, false);
+
+  h.sandbox.wd.set("size", "S");
+  h.sandbox.wd.render();
+  assert.equal(small.checked, true);
+  assert.equal(medium.checked, false);
+});
+
+test("clicking a radio writes its value", () => {
+  let small;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { size: "M" });
+    small = el(El, "input", { type: "radio", value: "S", "data-wd-bind-input": "size" });
+    root.appendChild(small);
+  });
+  small.checked = true;
+  h.fire("input", small);
+  assert.equal(h.sandbox.wd.state.size, "S");
+});
+
+test("a bound control persists when its state does", () => {
+  let box;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { agree: false }, "agree");
+    box = el(El, "input", { type: "checkbox", value: "x", "data-wd-bind-input": "agree" });
+    root.appendChild(box);
+  });
+  box.checked = true;
+  h.fire("input", box);
+  assert.equal(h.store.get("wd:agree"), "true");
+});
+
+test("a text input is still reflected by value, and still respects focus", () => {
+  // The control for the type switch above: the pre-existing path is untouched.
+  let input;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { q: "hello" });
+    input = el(El, "input", { type: "text", "data-wd-bind-input": "q" });
+    root.appendChild(input);
+  });
+  assert.equal(input.value, "hello");
+  h.document.activeElement = input;
+  h.sandbox.wd.set("q", "changed");
+  h.sandbox.wd.render();
+  assert.equal(input.value, "hello", "a focused field is never overwritten mid-keystroke");
+});
+
+test("NEGATIVE CONTROL: a checkbox without the marker leaves state alone", () => {
+  let box;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { agree: false });
+    box = el(El, "input", { type: "checkbox", name: "agree", value: "x" });
+    root.appendChild(box);
+  });
+  box.checked = true;
+  h.fire("input", box);
+  assert.strictEqual(h.sandbox.wd.state.agree, false, "an in-form field is not a bound control");
+});
+
+// ---------------------------------------------------------------------------
+// F4 — server error bodies
+//
+// `<name>_error` was always the string "Error: HTTP <status>", which tells a
+// reader nothing an API already knows how to say. It is now the body's own
+// `error`/`message` field when the response carries one, and the whole parsed
+// body lands in the new `<name>_error_body` so a page can render field-level
+// errors without a colocated script.
+// ---------------------------------------------------------------------------
+
+test(":fetch surfaces the server's `error` field, and keeps the whole body", async () => {
+  const stub = makeFetchStub({
+    "/api/x": { status: 422, body: { error: "Email is taken", fields: { email: "taken" } } }
+  });
+  const h = makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "signup",
+          "data-wd-fetch-url": "/api/x"
+        })
+      );
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  assert.equal(h.sandbox.wd.state.signup_error, "Email is taken");
+  assert.deepEqual(h.sandbox.wd.state.signup_error_body.fields, { email: "taken" });
+});
+
+test("a `message` field works as well as `error`", async () => {
+  const stub = makeFetchStub({ "/api/x": { status: 400, body: { message: "Bad request" } } });
+  const h = makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "thing",
+          "data-wd-fetch-url": "/api/x"
+        })
+      );
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  assert.equal(h.sandbox.wd.state.thing_error, "Bad request");
+});
+
+test("a JSON body with no message falls back to the status line", async () => {
+  const stub = makeFetchStub({ "/api/x": { status: 503, body: { detail: "nope" } } });
+  const h = makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "thing",
+          "data-wd-fetch-url": "/api/x"
+        })
+      );
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  assert.equal(h.sandbox.wd.state.thing_error, "HTTP 503");
+  assert.deepEqual(
+    h.sandbox.wd.state.thing_error_body,
+    { detail: "nope" },
+    "the body is kept anyway"
+  );
+});
+
+test("a non-JSON error body leaves _error_body null", async () => {
+  const stub = {
+    fetch: () =>
+      Promise.resolve({ ok: false, status: 502, text: () => Promise.resolve("<html>oops</html>") })
+  };
+  const h = makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "thing",
+          "data-wd-fetch-url": "/api/x"
+        })
+      );
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  assert.equal(h.sandbox.wd.state.thing_error, "HTTP 502");
+  assert.equal(h.sandbox.wd.state.thing_error_body, null);
+});
+
+test("a successful retry clears BOTH error keys", async () => {
+  const stub = makeFetchStub({
+    "/api/x": [
+      { status: 500, body: { error: "boom" } },
+      { status: 200, body: { ok: 1 } }
+    ]
+  });
+  const h = makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "thing",
+          "data-wd-fetch-url": "/api/x",
+          "data-wd-fetch-retry": "1"
+        })
+      );
+    },
+    {
+      // The retry backs off 200ms; collapse it so `settle` can reach the reply.
+      globals: { fetch: stub.fetch, setTimeout: (fn) => setTimeout(fn, 0), clearTimeout, Promise }
+    }
+  );
+  await settle();
+  assert.deepEqual({ ...h.sandbox.wd.state.thing }, { ok: 1 });
+  assert.equal(h.sandbox.wd.state.thing_error, null);
+  assert.equal(h.sandbox.wd.state.thing_error_body, null);
+});
+
+test("a 200 that is not JSON still wraps as {status, body} — including a body of `null`", async () => {
+  // The refactor introduced a sentinel to tell "not JSON" from a JSON `null`.
+  // Without it, an endpoint replying `null` would be wrapped as a status object.
+  const stub = makeFetchStub({ "/api/n": { status: 200, body: null } });
+  const h = makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "nothing",
+          "data-wd-fetch-url": "/api/n"
+        })
+      );
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  assert.equal(h.sandbox.wd.state.nothing, null, "JSON null stays null, never a wrapper object");
+
+  const raw = {
+    fetch: () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("plain") })
+  };
+  const h2 = makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "text",
+          "data-wd-fetch-url": "/api/t"
+        })
+      );
+    },
+    { globals: { fetch: raw.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  // Spread across the vm boundary: the wrapper is built inside the sandbox, so
+  // its prototype is the sandbox realm's, which deepStrictEqual would reject.
+  assert.deepEqual({ ...h2.sandbox.wd.state.text }, { status: 200, body: "plain" });
+});
+
+test("NEGATIVE CONTROL: the old String(error) shape is gone", async () => {
+  // Before F4 this read "Error: HTTP 500". A test that still passed on that
+  // string would not be testing the new contract.
+  const stub = makeFetchStub({ "/api/x": { status: 500, body: { error: "boom" } } });
+  const h = makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "thing",
+          "data-wd-fetch-url": "/api/x"
+        })
+      );
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  assert.doesNotMatch(String(h.sandbox.wd.state.thing_error), /^Error: /);
+});
+
+// ---------------------------------------------------------------------------
+// F5 — a form with a file field posts multipart
+//
+// The urlencoded body only ever carried the file's NAME. A form with a file
+// input now posts the FormData itself and sets NO content-type, so the browser
+// writes the multipart type together with its boundary.
+// ---------------------------------------------------------------------------
+
+test(":form with a file field sends the FormData itself, with no content-type", async () => {
+  const stub = makeFetchStub({ "/api/upload": { status: 200, body: { ok: 1 } } });
+  let form;
+  const h = makeSandbox(
+    (root, El) => {
+      form = formRegion(root, El, {
+        key: "upload",
+        action: "/api/upload",
+        method: "post",
+        build: (f, E) => {
+          const file = el(E, "input", { type: "file", name: "photo" });
+          file.value = "notes.txt";
+          f.appendChild(file);
+          textInput(f, E, "note", "a caption");
+          // A bound control has no `name`, so plain FormData never sees it.
+          f.appendChild(el(E, "input", { type: "text", "data-wd-bind-input": "author" }));
+        }
+      });
+      seedState(El, root, { author: "Ada" });
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+
+  h.fire("submit", form);
+  await settle();
+
+  const { init } = stub.calls[0];
+  assert.equal(init.headers, undefined, "the browser must set multipart + boundary itself");
+  assert.equal(typeof init.body, "object", "the FormData is the body, not a urlencoded string");
+  assert.deepEqual(init.body.getAll("photo"), ["notes.txt"]);
+  assert.deepEqual(init.body.getAll("note"), ["a caption"]);
+  assert.deepEqual(init.body.getAll("author"), ["Ada"], "bound controls ride along");
+});
+
+test("NEGATIVE CONTROL: without a file field the body is still urlencoded", async () => {
+  const stub = makeFetchStub({ "/api/save": { status: 200, body: { ok: 1 } } });
+  let form;
+  const h = makeSandbox(
+    (root, El) => {
+      form = formRegion(root, El, {
+        key: "saved",
+        action: "/api/save",
+        method: "post",
+        build: (f, E) => textInput(f, E, "name", "Ada")
+      });
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  h.fire("submit", form);
+  await settle();
+  const { init } = stub.calls[0];
+  assert.equal(init.headers["content-type"], "application/x-www-form-urlencoded");
+  assert.equal(init.body, "name=Ada");
 });

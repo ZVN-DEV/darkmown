@@ -15,7 +15,8 @@ import {
   interpolateBound,
   interpolateLeaf,
   lookupVar,
-  resolveStateKey
+  resolveStateKey,
+  unsafeUrlValue
 } from "./interpolation.js";
 
 /**
@@ -30,6 +31,7 @@ import {
 const md = new MarkdownIt({ html: false, highlight: highlightCode });
 md.use(bindingPlugin);
 md.use(attrsPlugin);
+md.use(attrBindPlugin);
 md.use(rawHtmlPlugin);
 md.use(anchorPlugin);
 
@@ -52,6 +54,7 @@ export function selectMd(meta) {
     mdRawHtml = new MarkdownIt({ html: true, highlight: highlightCode });
     mdRawHtml.use(bindingPlugin);
     mdRawHtml.use(attrsPlugin);
+    mdRawHtml.use(attrBindPlugin);
     mdRawHtml.use(rawHtmlPlugin);
     mdRawHtml.use(anchorPlugin);
   }
@@ -68,14 +71,24 @@ export function selectMd(meta) {
  * @returns {string}
  */
 export function renderProse(text, ctx, index = 0) {
-  text = resolveDestinationBindings(text, ctx, index);
-  return (ctx.md ?? md).render(text, {
+  /** @type {PendingAttr[]} */
+  const attrs = [];
+  text = resolveDestinationBindings(text, ctx, attrs);
+  const html = (ctx.md ?? md).render(text, {
     resolveBinding: (/** @type {string} */ expr) => resolveBinding(expr, ctx),
     // Raw-HTML interpolation needs the compile context AND the chunk's offset,
-    // and markdown-it's env is the only channel into a core rule.
-    wd: { ctx, index },
+    // and markdown-it's env is the only channel into a core rule. `attrs` is the
+    // destination-binding registry `attrBindPlugin` reads back (see below).
+    wd: { ctx, index, attrs },
     headingSlugs: ctx.comp.headingSlugs
   });
+  if (!attrs.length) return html;
+  // A `](…)` that markdown did NOT turn into a link — the commonest being an
+  // inline code span documenting the syntax — keeps its placeholder. Put the
+  // author's own braces back rather than shipping the marker.
+  return html.replace(ATTR_MARK_RE, (mark, n) =>
+    attrs[Number(n)] ? escapeHtml(attrs[Number(n)].raw) : mark
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -94,54 +107,128 @@ export function renderProse(text, ctx, index = 0) {
 //      is one opaque `html_inline` token; nothing inside it is ever parsed.
 //   3. The body of a raw `html_block` (`<div>{ x }</div>`).
 //
-// Every build-time value now resolves in all three. A REACTIVE value cannot —
-// there is no `data-wd-attr` in the runtime, and a destination has no node to
-// bind — so instead of failing silently it WARNS with the file:line, paints the
-// initial value where painting is possible, and names the two workarounds.
+// Every build-time value resolves in all three. A REACTIVE value in a
+// destination now BINDS: the destination pass plants a placeholder, and
+// `attrBindPlugin` turns the assembled href/src into a `data-wd-attr` template
+// the runtime repaints (see there). Raw HTML still cannot bind — a tag is one
+// opaque token with no element to mark — so that position keeps the warning.
 // ---------------------------------------------------------------------------
 
 /**
- * Warn (non-fatal) that a reactive value landed somewhere it cannot bind.
+ * Warn (non-fatal) that a reactive value landed in raw HTML, which has no
+ * element for the runtime to mark.
  * @param {Ctx} ctx
  * @param {number} index 0-based line index of the offending line in the slice.
  * @param {string} expr The binding source text, without braces.
- * @param {"destination" | "html"} where Which position it landed in.
  * @param {boolean} painted Whether the initial value was written into the output.
  * @returns {void}
  */
-function warnUnbindable(ctx, index, expr, where, painted) {
-  const position =
-    where === "destination"
-      ? "a link/image destination"
-      : "raw HTML (an attribute or an html block)";
+function warnUnbindable(ctx, index, expr, painted) {
   const outcome = painted
     ? "its build-time value is painted once and then never updates"
     : "it stays literal text";
   ctx.comp.warnings.push(
-    `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" is reactive, but ${position} cannot bind, so ${outcome}. ` +
-      `Move the value into ordinary text (where { ${expr} } does bind), or update it from a colocated .js with wd.subscribe.`
+    `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" is reactive, but raw HTML (an attribute or an html block) cannot bind, so ${outcome}. ` +
+      `Move the value into ordinary text or a markdown link/image destination (where { ${expr} } does bind), or update it from a colocated .js with wd.subscribe.`
   );
+}
+
+// ---------------------------------------------------------------------------
+// REACTIVE ATTRIBUTE BINDING (a link/image destination).
+//
+// A destination is not inline content, so there is no token for the inline rule
+// to emit and nothing to hang `data-wd-bind` on. The pass below therefore runs
+// in two halves:
+//
+//   1. `resolveDestinationBindings` (pre-parse) substitutes a build-time value
+//      directly, exactly as before, and replaces a REACTIVE one with the
+//      placeholder `~wd-attr-<n>~`, recording what it stands for. The
+//      placeholder is deliberately shaped out of characters markdown-it's URL
+//      normalizer leaves untouched, so it survives into the token's href/src.
+//   2. `attrBindPlugin` (core rule) finds the placeholder in the assembled
+//      href/src, splits the value into literal chunks + bindings, writes the
+//      initial paint, and stamps the template onto the element.
+//
+// The template rides on `data-wd-attr` (state/`:computed`, repainted in the
+// runtime's text-bind pass) or `data-wd-each-attr` (anything per-row, filled by
+// `fillItem`) — the same split `data-wd-bind` / `data-wd-each` already use for
+// text. One template serves every row, so a per-row destination paints EMPTY at
+// build time and gets its first real value on hydrate.
+// ---------------------------------------------------------------------------
+
+/**
+ * One reactive binding found in a destination: the serialized template part the
+ * runtime evaluates, plus the build-time text to paint for it.
+ * @typedef {object} PendingAttr
+ * @property {["s", string, string] | ["i", string] | ["m", string]} part
+ *   `s` = state key + sub-path, `i` = loop-row sub-path, `m` = row meta variable.
+ * @property {string} text Build-time paint ("" for anything per-row).
+ * @property {string} raw The author's own `{ … }` source, restored when the
+ *   `](…)` turned out not to be a link after all.
+ */
+
+/** @param {number} n @returns {string} */
+const attrMark = (n) => `~wd-attr-${n}~`;
+const ATTR_MARK_RE = /~wd-attr-(\d+)~/g;
+
+// A value going into a markdown link destination is URL text, not markdown, and
+// the destination has no quoting: an unencoded `)` CLOSES it and hands whatever
+// follows back to the parser (raw HTML on an `html: true` page), and a space
+// silently kills the link. Encode the ASCII characters that carry meaning there
+// by hand, because encodeURIComponent deliberately leaves `(`, `)` and `'`
+// alone. Non-ASCII is left to markdown-it's own normalizeLink.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — a control character in a destination has to be encoded, not passed through.
+const DEST_UNSAFE = /[\u0000-\u0020()<>"'`\\\u007F]/g;
+
+/** @param {string} value @returns {string} */
+const encodeDest = (value) =>
+  String(value).replace(
+    DEST_UNSAFE,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`
+  );
+
+/**
+ * Byte ranges of the inline code spans on one line, so a destination being SHOWN
+ * rather than used stays literal. `` `[x](/p/{ p.slug }/)` `` in a docs
+ * paragraph documents the syntax, exactly like the fenced-block skip.
+ * @param {string} line
+ * @returns {[number, number][]}
+ */
+function codeSpansOf(line) {
+  /** @type {[number, number][]} */
+  const spans = [];
+  const runs = [...line.matchAll(/`+/g)];
+  for (let i = 0; i < runs.length; i++) {
+    for (let j = i + 1; j < runs.length; j++) {
+      // CommonMark closes a run of N backticks with a run of exactly N.
+      if (runs[j][0].length !== runs[i][0].length) continue;
+      spans.push([runs[i].index, runs[j].index + runs[j][0].length]);
+      i = j;
+      break;
+    }
+  }
+  return spans;
 }
 
 /**
  * Pre-resolve `{ expr }` interpolations sitting in a markdown link/image
  * destination — the `](…)` slot — so a build-time `@loop` (or any static scope)
- * can drive an href/src.
+ * can drive an href/src, and a reactive value can be bound by the core rule.
  *
  * A markdown destination cannot contain the spaces inside `{ … }`, so markdown-it
- * would never form the link; substituting the value here first lets the normal
- * link/image parser run, and validateLink still vets the assembled URL. Every
- * `{ … }` in the destination is substituted, not just one at the very start —
- * `/products/{ p.slug }/` is the shape a collection listing actually writes.
+ * would never form the link; substituting here first lets the normal link/image
+ * parser run. Every `{ … }` in the destination is substituted, not just one at
+ * the very start — `/products/{ p.slug }/` is the shape a collection listing
+ * actually writes.
  *
  * Fenced code is skipped: a docs page showing `[{ p.name }](/p/{ p.slug }/)`
  * inside a ```` ```wd ```` block is DOCUMENTING the syntax, not using it.
  * @param {string} text
  * @param {Ctx} ctx
- * @param {number} index 0-based line index the chunk starts at.
+ * @param {PendingAttr[]} attrs Registry the core rule reads placeholders back from.
  * @returns {string}
  */
-function resolveDestinationBindings(text, ctx, index) {
+function resolveDestinationBindings(text, ctx, attrs) {
   const lines = text.split("\n");
   /** @type {string | null} */
   let fence = null;
@@ -156,27 +243,89 @@ function resolveDestinationBindings(text, ctx, index) {
       fence = fenceMatch[1];
       continue;
     }
-    lines[i] = lines[i].replace(/\]\(([^)\n]*)\)/g, (whole, dest) => {
+    const spans = codeSpansOf(lines[i]);
+    lines[i] = lines[i].replace(/\]\(([^)\n]*)\)/g, (whole, dest, offset) => {
+      if (spans.some(([a, b]) => offset >= a && offset < b)) return whole;
       const filled = dest.replace(
         /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g,
         (/** @type {string} */ brace, /** @type {string} */ expr) => {
           const found = resolveBinding(expr, ctx);
           if (!found) return brace; // not in scope — leave the author's text alone
-          if (found.kind === "row") {
-            // One template serves every row, so a per-row value cannot become a
-            // single build-time href. Painting row 1's value into all of them
-            // would be worse than leaving it visible.
-            warnUnbindable(ctx, index + i, expr, "destination", false);
-            return brace;
-          }
-          if (found.kind === "state") warnUnbindable(ctx, index + i, expr, "destination", true);
-          return found.text;
+          if (found.kind === "static") return encodeDest(found.text);
+          const part = /** @type {PendingAttr["part"]} */ (
+            found.kind === "state"
+              ? ["s", found.key ?? "", found.path ?? ""]
+              : found.meta
+                ? ["m", found.meta]
+                : ["i", found.path ?? ""]
+          );
+          attrs.push({ part, text: found.text, raw: brace });
+          return attrMark(attrs.length - 1);
         }
       );
       return filled === dest ? whole : `](${filled})`;
     });
   }
   return lines.join("\n");
+}
+
+/**
+ * markdown-it plugin (core rule): turn a destination placeholder back into a
+ * bound attribute. Reads the `~wd-attr-<n>~` markers out of a `link_open`'s
+ * `href` / an `image`'s `src`, writes the build-time paint, and stamps the
+ * template the runtime re-evaluates on every render.
+ *
+ * The build-time paint runs through the same scheme guard the runtime uses:
+ * markdown-it's own `validateLink` vetted the placeholder, not the value that
+ * replaced it, so an unsafe seed would otherwise ship in the HTML.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
+function attrBindPlugin(mdInstance) {
+  mdInstance.core.ruler.push("wd_attr_bind", (state) => {
+    /** @type {PendingAttr[] | undefined} */
+    const registry = state.env?.wd?.attrs;
+    if (!registry || !registry.length) return false;
+    for (const block of state.tokens) {
+      for (const token of block.children ?? []) {
+        const name = token.type === "link_open" ? "href" : token.type === "image" ? "src" : "";
+        if (!name) continue;
+        const raw = token.attrGet(name);
+        if (!raw || !raw.includes("~wd-attr-")) continue;
+        /** @type {(string | PendingAttr)[]} */
+        const template = [];
+        let initial = "";
+        let perRow = false;
+        let end = 0;
+        ATTR_MARK_RE.lastIndex = 0;
+        /** @type {RegExpExecArray | null} */
+        let hit;
+        while ((hit = ATTR_MARK_RE.exec(raw))) {
+          const pending = registry[Number(hit[1])];
+          if (!pending) continue; // not one of ours — leave the author's text
+          if (hit.index > end) {
+            template.push(raw.slice(end, hit.index));
+            initial += raw.slice(end, hit.index);
+          }
+          template.push(pending);
+          initial += encodeDest(pending.text);
+          if (pending.part[0] !== "s") perRow = true;
+          end = hit.index + hit[0].length;
+        }
+        if (!template.length) continue;
+        if (end < raw.length) {
+          template.push(raw.slice(end));
+          initial += raw.slice(end);
+        }
+        token.attrSet(name, unsafeUrlValue(initial) ? "" : initial);
+        token.attrSet(
+          perRow ? "data-wd-each-attr" : "data-wd-attr",
+          JSON.stringify([name, ...template.map((t) => (typeof t === "string" ? t : t.part))])
+        );
+      }
+    }
+    return false;
+  });
 }
 
 /**
@@ -221,6 +370,13 @@ function rawHtmlPlugin(mdInstance) {
   });
 }
 
+// True when a fragment ENDS inside the value of a URL-bearing attribute, so the
+// next thing written lands in a URL. Escaping is not enough there: `href` and
+// friends resolve `javascript:` without any quote breakout, and unlike a markdown
+// destination nothing upstream vets an author's own raw `<a href="…">`.
+const URL_ATTR_TAIL =
+  /\b(?:href|src|action|formaction|xlink:href)\s*=\s*(?:"[^"]*|'[^']*|[^\s>"']*)$/i;
+
 /**
  * Substitute every `{ expr }` in a raw-HTML fragment with its escaped value.
  * @param {string} html
@@ -231,14 +387,21 @@ function rawHtmlPlugin(mdInstance) {
 function fillRawHtml(html, ctx, index) {
   return html.replace(
     /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g,
-    (brace, /** @type {string} */ expr) => {
+    (brace, /** @type {string} */ expr, /** @type {number} */ offset) => {
       const found = resolveBinding(expr, ctx);
       if (!found) return brace;
       if (found.kind === "row") {
-        warnUnbindable(ctx, index, expr, "html", false);
+        warnUnbindable(ctx, index, expr, false);
         return brace;
       }
-      if (found.kind === "state") warnUnbindable(ctx, index, expr, "html", true);
+      if (found.kind === "state") warnUnbindable(ctx, index, expr, true);
+      if (unsafeUrlValue(found.text) && URL_ATTR_TAIL.test(html.slice(0, offset))) {
+        ctx.comp.warnings.push(
+          `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" resolves to a javascript:, data: or vbscript: URL, so the attribute is emitted empty. ` +
+            `Use an https:, mailto: or site-relative value, or render it as text rather than a link target.`
+        );
+        return "";
+      }
       return escapeHtml(found.text);
     }
   );
@@ -405,8 +568,11 @@ function anchorPlugin(mdInstance) {
  * @property {"static" | "state" | "row"} kind Where the value came from, and
  *   therefore what the non-inline positions may do with it: `static` is a
  *   build-time value and always safe to substitute; `state` is `:state`/`:store`
- *   and can only be painted once; `row` is a reactive `@loop` row, whose ONE
- *   template serves every row, so it cannot be substituted at all.
+ *   and paints its seed then binds; `row` is a reactive `@loop` row, whose ONE
+ *   template serves every row, so it paints nothing and binds per row.
+ * @property {string} [key] For `state`: the fully-qualified state key.
+ * @property {string} [path] For `state`/`row`: the dotted sub-path under it ("" for the whole value).
+ * @property {string} [meta] For `row`: the per-row meta variable (`index`, `number`, …).
  */
 
 /**
@@ -438,7 +604,8 @@ function resolveBinding(expr, ctx) {
       return {
         html: `<span data-wd-each-meta="${LOOP_META[head]}"${fmt}></span>`,
         text: "",
-        kind: "row"
+        kind: "row",
+        meta: LOOP_META[head]
       };
     // static: the value is in scope (injected by staticUnroll); fall through.
   }
@@ -448,7 +615,8 @@ function resolveBinding(expr, ctx) {
     return {
       html: `<span data-wd-each${rest ? ` data-wd-path="${escapeHtml(rest)}"` : ""}${fmt}></span>`,
       text: "",
-      kind: "row"
+      kind: "row",
+      path: rest
     };
   }
 
@@ -473,7 +641,9 @@ function resolveBinding(expr, ctx) {
     return {
       html: `<span data-wd-bind="${escapeHtml(key)}"${pathAttr}${fmt}>${escapeHtml(text)}</span>`,
       text,
-      kind: "state"
+      kind: "state",
+      key,
+      path: rest
     };
   }
 

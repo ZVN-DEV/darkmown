@@ -17,21 +17,13 @@ const persistKeys = new Set();
 /** @type {Set<string>} Non-ephemeral :store names, persisted under wd:store:<name>. */
 const storeKeys = new Set();
 
-for (const script of document.querySelectorAll("script[data-wd-state]")) {
-  Object.assign(state, JSON.parse(script.textContent || "{}"));
-  const persist = script.getAttribute("data-wd-persist");
-  if (persist) persistKeys.add(persist);
-}
-for (const script of document.querySelectorAll("script[data-wd-store]")) {
-  const name = script.getAttribute("data-wd-store") || "";
-  state[name] = JSON.parse(script.textContent || "null");
-  if (!script.hasAttribute("data-wd-store-ephemeral")) storeKeys.add(name);
-}
+/** @type {Set<string>} Keys a `:state … from-url` mirrors into the query string. */
+const urlKeys = new Set();
 
-// Frozen seed snapshot, taken BEFORE localStorage overrides below, so `reset`
-// deep-clones the declared value — not the last persisted one.
+// Seed snapshot, recorded per key BEFORE its localStorage/URL override, so
+// `reset` deep-clones the DECLARED value — not the last persisted one.
 /** @type {Record<string, any>} */
-const initials = Object.freeze(JSON.parse(JSON.stringify(state)));
+const initials = {};
 
 /**
  * Best-effort localStorage. Touching it THROWS outright in a sandboxed iframe or
@@ -48,23 +40,106 @@ function ls(k, v) {
   } catch { return null; }
 }
 
-for (const key of persistKeys) {
-  const stored = ls(`wd:${key}`);
-  if (stored === null) continue;
-  try { state[key] = JSON.parse(stored); } catch { ls(`wd:${key}`, null); }
+/** The query-string parameter a state key mirrors to (`cart:items` → `cart.items`). */
+const urlParam = (/** @type {string} */ key) => key.replace(":", ".");
+
+/**
+ * Claim every seed `<script>` in the LIVE tree: apply the declared value for any
+ * key state does not already hold, record it as that key's reset seed, then let
+ * localStorage and the query string override it in that order.
+ *
+ * Boot runs this over the document; `scan()` runs it again whenever a render
+ * changes structure. That second call is the point: `querySelectorAll` cannot
+ * see into `<template>` content, so a `:state`/`:store`/`:theme` declared inside
+ * an unopened `:if` branch was never hydrated at all — it started undefined and
+ * never persisted. Re-opening a branch injects FRESH script nodes (the branch is
+ * cloned from a template each time), so the guard here is "state does not have
+ * this key yet", not a per-node claim: re-opening a branch must not reset what
+ * the reader already changed.
+ * @returns {void}
+ */
+function hydrate() {
+  for (const script of document.querySelectorAll("script[data-wd-state],script[data-wd-store]")) {
+    const store = script.getAttribute("data-wd-store");
+    const seed = JSON.parse(script.textContent || "null");
+    for (const [key, value] of store ? [[store, seed]] : Object.entries(seed || {})) {
+      if (key in state) continue;
+      // The seed is the reset baseline, so state gets a COPY: mutating a list
+      // through an action must not rewrite what `reset` restores.
+      state[key] = structuredClone((initials[key] = value));
+      const durable = store ? !script.hasAttribute("data-wd-store-ephemeral") : script.getAttribute("data-wd-persist") === key;
+      if (durable) {
+        (store ? storeKeys : persistKeys).add(key);
+        const lsKey = (store ? "wd:store:" : "wd:") + key;
+        const stored = ls(lsKey);
+        // A corrupt entry self-heals: drop it and keep the declared seed, rather
+        // than re-reading the same garbage on every load. A :store with nothing
+        // stored yet writes its seed so other tabs see it.
+        if (stored === null) { if (store) ls(lsKey, JSON.stringify(value ?? null)); }
+        else if (jsonOr(stored) === undefined) ls(lsKey, null);
+        else state[key] = jsonOr(stored);
+      }
+      // `from-url` outranks both: a shared link must show what it says.
+      if (script.getAttribute("data-wd-url") === key) {
+        urlKeys.add(key);
+        readUrl();
+      }
+    }
+  }
 }
-for (const name of storeKeys) {
-  const stored = ls(`wd:store:${name}`);
-  // A corrupt :store entry self-heals exactly as :persist does: drop it and keep
-  // the declared seed, rather than re-reading the same garbage on every load.
-  if (stored === null) ls(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
-  else try { state[name] = JSON.parse(stored); } catch { ls(`wd:store:${name}`, null); }
+
+/**
+ * Mirror every `from-url` key into the address bar. A value equal to its
+ * declared seed DROPS its parameter, so the default page keeps a clean URL, and
+ * the write is `replaceState`, so filtering never fills the back button.
+ * @returns {void}
+ */
+function syncUrl() {
+  if (!urlKeys.size) return;
+  const params = new URLSearchParams(location.search);
+  for (const key of urlKeys) {
+    const value = state[key];
+    if (JSON.stringify(value ?? null) === JSON.stringify(initials[key] ?? null)) params.delete(urlParam(key));
+    else params.set(urlParam(key), typeof value === "string" ? value : JSON.stringify(value));
+  }
+  const query = params.toString();
+  const next = location.pathname + (query ? `?${query}` : "") + location.hash;
+  if (next !== location.pathname + location.search + location.hash) history.replaceState(history.state, "", next);
+}
+
+/**
+ * Re-read every `from-url` key from the address bar. `restore` is true for a
+ * popstate, where a parameter that is GONE means "back to the declared value";
+ * it is false while hydrating, where an absent parameter must leave the
+ * persisted value the storage read just restored.
+ * @param {boolean} [restore]
+ * @returns {void}
+ */
+function readUrl(restore) {
+  const params = new URLSearchParams(location.search);
+  for (const key of urlKeys) {
+    const raw = params.get(urlParam(key));
+    const seed = initials[key];
+    if (raw == null) { if (restore) state[key] = structuredClone(seed); }
+    else state[key] = typeof seed === "string" ? raw : jsonOr(raw) ?? raw;
+  }
 }
 
 function savePersisted() {
   for (const key of persistKeys) ls(`wd:${key}`, JSON.stringify(state[key] ?? null));
   for (const name of storeKeys) ls(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
+  syncUrl();
 }
+
+hydrate();
+
+// Back/forward across `replaceState` history entries, and any other navigation
+// that changes the query string without a reload.
+window.addEventListener("popstate", () => {
+  if (!urlKeys.size) return;
+  readUrl(true);
+  render();
+});
 
 window.addEventListener("storage", (event) => {
   const name = event.key && event.key.startsWith("wd:store:") ? event.key.slice(9) : "";
@@ -130,6 +205,58 @@ function setPath(obj, path, value) {
  */
 function isEmpty(v) {
   return v == null || (typeof v === "object" && (Array.isArray(v) ? v.length : Object.keys(v).length) === 0);
+}
+
+/**
+ * Parse JSON, or undefined when the text is not JSON. `undefined` is a safe
+ * sentinel: no JSON document parses to it, so a body of literal `null` is still
+ * distinguishable from "not JSON at all".
+ * @param {string} text
+ * @returns {any}
+ */
+function jsonOr(text) {
+  try { return JSON.parse(text); } catch { return undefined; }
+}
+
+/**
+ * Every node matching `sel` at or under `node` — the self-match matters because
+ * a loop row's own element can carry the marker, not just its descendants.
+ * @param {Element} node
+ * @param {string} sel
+ * @returns {Element[]}
+ */
+const selfAnd = (node, sel) => (node.matches(sel) ? [node, ...node.querySelectorAll(sel)] : [...node.querySelectorAll(sel)]);
+
+/**
+ * Repaint one bound attribute (a markdown link/image destination that read
+ * `:state`, `:computed`, or a loop row). The marker is `[attr, …parts]`, where a
+ * part is either a literal string or a reader: `["s", key, path]` for state,
+ * `["m", name]` for a row meta variable, `["i", path]` for the row itself.
+ *
+ * The scheme guard is the load-bearing half. The compiler vets URLs the AUTHOR
+ * wrote; the value arriving here came from state, a form field, or a fetched
+ * payload, and nothing upstream has seen it. Control characters are stripped
+ * before the test because a browser strips them out of a URL before resolving
+ * it, so `java<TAB>script:` is a live javascript: URL. An unsafe value is not
+ * applied — the attribute is emptied instead. Mirrored by `unsafeUrlValue` in
+ * src/compiler/interpolation.js for the build-time paint.
+ * @param {Element} el
+ * @param {string | null} raw
+ * @param {any} item Loop row, or undefined outside one.
+ * @param {Record<string, any>} meta Per-row meta values.
+ * @returns {void}
+ */
+function applyAttr(el, raw, item, meta) {
+  if (!raw) return;
+  let parts;
+  try { parts = JSON.parse(raw); } catch { return; }
+  let out = "";
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i];
+    out += (typeof p === "string" ? p : p[0] === "s" ? getPath(state[p[1]], p[2]) : p[0] === "m" ? meta[p[1]] : getPath(item, p[1])) ?? "";
+  }
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — a browser strips these out of a URL, so the guard must too.
+  el.setAttribute(parts[0], /^(javascript|data|vbscript):/i.test(out.replace(/[\u0000-\u0020\u007F]+/g, "")) ? "" : out);
 }
 
 // --- Format pipes -----------------------------------------------------------
@@ -215,12 +342,30 @@ const AGG = (/** @type {string} */ name, /** @type {any} */ list, /** @type {str
 async function httpJson(url, init) {
   const response = await fetch(url, init);
   const text = await response.text();
+  const body = jsonOr(text);
   if (!response.ok) {
-    const err = /** @type {Error & { status?: number }} */ (new Error(`HTTP ${response.status}`));
+    // A real API says WHY it refused. Prefer the body's own `error`/`message`
+    // string over the bare status line, and carry the parsed body along so a
+    // page can render field-level errors from `<name>_error_body`.
+    const said = body && (body.error ?? body.message);
+    const err = /** @type {Error & { status?: number, body?: any }} */ (new Error(typeof said === "string" ? said : `HTTP ${response.status}`));
     err.status = response.status; // lets the :fetch lifecycle single out a 401 for token refresh
+    err.body = body ?? null;
     throw err;
   }
-  try { return JSON.parse(text); } catch { return { status: response.status, body: text }; }
+  return body === undefined ? { status: response.status, body: text } : body;
+}
+
+/**
+ * Write the `<name>_error` / `<name>_error_body` pair for a key: the server's
+ * own message and its parsed JSON body, or null/null when there is no failure.
+ * @param {string} key
+ * @param {any} [error]
+ * @returns {void}
+ */
+function setError(key, error) {
+  state[key + "_error"] = error ? error.message || String(error) : null;
+  state[key + "_error_body"] = (error && error.body) ?? null;
 }
 
 /**
@@ -416,10 +561,7 @@ function fillItem(node, item, meta = {}) {
   // the injection — re-read it, or the passes below overwrite the inner rows
   // with the OUTER row's values.
   inners = node.querySelectorAll("[data-wd-loop-item]");
-  const targets = node.matches("[data-wd-each]")
-    ? [node, ...node.querySelectorAll("[data-wd-each]")]
-    : [...node.querySelectorAll("[data-wd-each]")];
-  for (const target of targets) {
+  for (const target of selfAnd(node, "[data-wd-each]")) {
     if (skip(target)) continue;
     target.textContent = applyFmt(target, getPath(item, target.getAttribute("data-wd-path"))) ?? "";
   }
@@ -427,8 +569,10 @@ function fillItem(node, item, meta = {}) {
     if (skip(marker)) continue;
     marker.textContent = applyFmt(marker, meta[marker.getAttribute("data-wd-each-meta") || ""]) ?? "";
   }
-  const classNodes = node.matches("[data-wd-each-class]") ? [node, ...node.querySelectorAll("[data-wd-each-class]")] : [...node.querySelectorAll("[data-wd-each-class]")];
-  for (const el of classNodes) { if (!skip(el)) classToggle(el, el.getAttribute("data-wd-each-class"), item); }
+  for (const el of selfAnd(node, "[data-wd-each-class]")) { if (!skip(el)) classToggle(el, el.getAttribute("data-wd-each-class"), item); }
+  // Per-row bound attributes (a link/image destination reading the row). State
+  // parts resolve here too, so a destination mixing the two stays correct.
+  for (const el of selfAnd(node, "[data-wd-each-attr]")) { if (!skip(el)) applyAttr(el, el.getAttribute("data-wd-each-attr"), item, meta); }
   // Reconcile nested loops last, against the now-settled outer row.
   for (const region of inners) reconcile(region, getPath(item, region.getAttribute("data-wd-loop-item")));
 }
@@ -499,6 +643,7 @@ function swapBranch(region, output, value, prefix) {
   if (region.getAttribute("data-wd-if-active") === active) return false;
   region.setAttribute("data-wd-if-active", active);
   const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector(`template[data-${prefix}-${active}]`));
+  unregister(output); // the branch being replaced takes its directives with it
   output.innerHTML = template?.innerHTML || "";
   // The branch may carry directives no query has ever seen.
   return (dirty = true);
@@ -549,6 +694,7 @@ function reconcile(region, rows) {
   const emptyTpl = /** @type {HTMLTemplateElement | null} */ (region.querySelector("template[data-wd-loop-empty]"));
   if (!list.length && emptyTpl) {
     if (out.getAttribute("data-wd-empty") !== "1") {
+      unregister(out); // the rows being wiped take their directives with them
       out.textContent = "";
       for (const child of [...emptyTpl.content.children]) out.appendChild(child.cloneNode(true));
       out.setAttribute("data-wd-empty", "1");
@@ -556,7 +702,10 @@ function reconcile(region, rows) {
     }
     return;
   }
-  if (out.getAttribute("data-wd-empty") === "1") { out.textContent = ""; out.removeAttribute("data-wd-empty"); }
+  // The @empty branch is ONE branch, not a per-row clone, so it may legally hold
+  // an :every/:effect. Emptying and refilling the list re-clones it, so the copy
+  // leaving here must be dropped or the next empty state would tick twice.
+  if (out.getAttribute("data-wd-empty") === "1") { unregister(out); out.textContent = ""; out.removeAttribute("data-wd-empty"); }
 
   /** @type {Map<string, WdRow>} */
   const existing = new Map();
@@ -592,7 +741,7 @@ function reconcile(region, rows) {
     if (moved || out.children[i] !== node) { moved = true; out.appendChild(node); }
   }
   for (const [key, node] of existing) {
-    if (!used.has(key)) node.remove();
+    if (!used.has(key)) { unregister(node); node.remove(); }
   }
 }
 
@@ -610,6 +759,7 @@ function reconcile(region, rows) {
  * pass; two passes always suffice in practice and three is the hard cap.
  * @returns {void}
  */
+let settleTries = 0;
 function renderNow() {
   for (let pass = 0; pass < 3; pass++) {
     if (dirty) scan();
@@ -632,13 +782,31 @@ function renderNow() {
     }
     if (!dirty) break;
   }
+  // Deeper than the cap (an `:if` whose branch declares the `:computed` a nested
+  // `:if` reads, a few levels down) the loop used to exit still dirty and leave
+  // the innermost region showing its compile-time branch until some unrelated
+  // state change. Finish this paint, then schedule another pass; the counter
+  // bounds a genuine cycle instead of spinning forever.
+  if (dirty && ++settleTries < 10) {
+    if (/** @type {any} */ (window).wd?.debug) console.warn("[wd] render did not settle; scheduling another pass");
+    render();
+  } else settleTries = 0;
 
   for (const node of document.querySelectorAll("[data-wd-bind]")) {
     node.textContent = applyFmt(node, getPath(state[node.getAttribute("data-wd-bind") || ""], node.getAttribute("data-wd-path"))) ?? "";
   }
 
-  for (const input of document.querySelectorAll("[data-wd-bind-input]")) {
-    if (document.activeElement !== input) /** @type {HTMLInputElement} */ (input).value = state[input.getAttribute("data-wd-bind-input") || ""] ?? "";
+  for (const node of document.querySelectorAll("[data-wd-attr]")) applyAttr(node, node.getAttribute("data-wd-attr"), undefined, {});
+
+  // Bound controls, reflected back from state. A checkbox carries a boolean and
+  // a radio carries whichever option equals the value, so neither can go through
+  // `.value`; a text field keeps the focus guard, because overwriting what
+  // someone is typing mid-keystroke moves their caret.
+  for (const input of /** @type {NodeListOf<HTMLInputElement>} */ (document.querySelectorAll("[data-wd-bind-input]"))) {
+    const value = state[input.getAttribute("data-wd-bind-input") || ""] ?? "";
+    if (input.type === "checkbox") input.checked = Boolean(value);
+    else if (input.type === "radio") input.checked = input.value === String(value);
+    else if (document.activeElement !== input) input.value = value;
   }
 
   reflectThemes();
@@ -659,7 +827,7 @@ function reflectThemes() {
   }
 }
 
-/** @typedef {{ watch: string, actions: { op: string, target?: string, value?: any }[], last: string }} Effect */
+/** @typedef {{ node: Element, watch: string, actions: { op: string, target?: string, value?: any }[], last: string }} Effect */
 /** @type {Effect[]} */
 const effects = [];
 let effectDepth = 0;
@@ -703,8 +871,9 @@ document.addEventListener("input", (event) => {
   const input = /** @type {HTMLInputElement | null} */ (/** @type {Element} */ (event.target)?.closest("[data-wd-bind-input]"));
   if (!input) return;
   // A `:slider` binds a range input: keep state numeric so `:computed`/math see a
-  // number, not the DOM's string `.value`. Other inputs stay strings as before.
-  state[input.getAttribute("data-wd-bind-input") || ""] = input.type === "range" ? input.valueAsNumber : input.value;
+  // number, not the DOM's string `.value`. A standalone `:checkbox` binds the
+  // boolean, not the label. Everything else stays a string, as before.
+  state[input.getAttribute("data-wd-bind-input") || ""] = input.type === "range" ? input.valueAsNumber : input.type === "checkbox" ? input.checked : input.value;
   savePersisted();
   render();
   checkRefetch();
@@ -820,23 +989,36 @@ document.addEventListener("submit", (event) => {
   // A slow earlier submit must not land on top of a newer one's reply, and the
   // previous attempt's error must not sit on screen through the retry.
   const dead = genGuard(/** @type {any} */ (form));
-  state[`${key}_error`] = null;
+  setError(key);
   render();
+  const fd = new FormData(form);
+  // A file cannot be urlencoded, so a form carrying one posts the FormData
+  // itself and lets the browser set the multipart content-type WITH its
+  // boundary — which is exactly why no content-type is passed here. Bound
+  // controls (`:bind`, a bound `:select`) carry no `name`, so FormData never
+  // saw them; append them by their state key rather than dropping them.
+  const upload = form.querySelector("input[type=file]");
+  if (upload) {
+    for (const el of form.querySelectorAll("[data-wd-bind-input]")) {
+      const bound = el.getAttribute("data-wd-bind-input");
+      if (bound && !el.getAttribute("name")) fd.append(bound, state[bound] ?? "");
+    }
+  }
   httpJson(action, {
     method: form.getAttribute("method") || "post",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(/** @type {any} */ (new FormData(form))).toString()
+    headers: upload ? undefined : { "content-type": "application/x-www-form-urlencoded" },
+    body: upload ? fd : new URLSearchParams(/** @type {any} */ (fd)).toString()
   })
     .then((value) => {
       if (dead()) return;
       state[key] = value;
-      state[`${key}_error`] = null;
+      setError(key);
       savePersisted();
       render();
     })
     .catch((error) => {
       if (dead()) return;
-      state[`${key}_error`] = String(error);
+      setError(key, error);
       render();
     });
 });
@@ -871,11 +1053,11 @@ function startFetch(node) {
   const timeout = Number(g("timeout"));
   let tries = Number(g("retry"));
   let refreshed = false; // a token refresh + retry happens at most once per request
-  state[key + "_error"] = null;
+  setError(key);
   set("_loading", true);
 
   /** @param {any} error */
-  const fail = (error) => { state[key + "_error"] = String(error); set("_loading", false); };
+  const fail = (error) => { setError(key, error); set("_loading", false); };
 
   const attempt = () => {
     /** @type {RequestInit} */
@@ -890,7 +1072,7 @@ function startFetch(node) {
       if (dead()) return;
       state[key] = value;
       state[key + "_empty"] = isEmpty(value);
-      state[key + "_error"] = null;
+      setError(key);
       set("_loading", false);
     }).catch((error) => {
       clearTimeout(timer);
@@ -973,6 +1155,35 @@ function checkRefetch() {
 }
 
 /**
+ * Drop every registration belonging to a subtree that is about to leave the
+ * document — a closed `:if` branch, a removed loop row.
+ *
+ * `scan()` claims a node once, and the claim marker lives ON the node while the
+ * registries (`effects`, `fetchNodes`, `everyDefs`) are module-level. A branch
+ * is re-cloned from its template every time it opens, so without this the NEXT
+ * open registers a FRESH node while the detached one stays: an `:every` ticked
+ * twice after one reopen, three times after two, and kept ticking with the
+ * branch closed. Same shape for `:effect` (fired once per stale copy) and
+ * `:fetch` (one request per stale copy, on a state change the reader cannot
+ * even see).
+ * @param {Element} root
+ * @returns {void}
+ */
+function unregister(root) {
+  for (const node of selfAnd(root, "[data-wd-fetch],[data-wd-effect],[data-wd-every]")) {
+    due.delete(/** @type {any} */ (node));
+    // A fetch entry IS the node; an effect/every entry carries it on `.node`.
+    for (const list of [/** @type {any[]} */ (fetchNodes), effects, everyDefs]) {
+      for (let i = list.length - 1; i >= 0; i--) {
+        if ((list[i].node || list[i]) !== node) continue;
+        if (list[i].t) clearInterval(list[i].t);
+        list.splice(i, 1);
+      }
+    }
+  }
+}
+
+/**
  * Claim and wire up the directives that need ONE-TIME setup: `:fetch` (kick off
  * the request, snapshot its deps), `:effect` (parse the def, snapshot its watch)
  * and `:every` (start a timer). `querySelectorAll` cannot see into `<template>`
@@ -984,16 +1195,19 @@ function checkRefetch() {
  * @returns {void}
  */
 function scan() {
+  // Seed scripts first: a branch that just opened may DECLARE the state the
+  // directives below read (see hydrate).
+  hydrate();
   for (const node of /** @type {any} */ (document.querySelectorAll("[data-wd-fetch],[data-wd-effect],[data-wd-every]"))) {
     if (node.__wdReg) continue;
     node.__wdReg = 1;
     if (node.hasAttribute("data-wd-effect")) {
       const def = JSON.parse(node.textContent || "{}");
-      effects.push({ watch: def.watch, actions: def.actions || [], last: JSON.stringify(getPath(state, def.watch) ?? null) });
+      effects.push({ node, watch: def.watch, actions: def.actions || [], last: JSON.stringify(getPath(state, def.watch) ?? null) });
     }
     if (node.hasAttribute("data-wd-every")) {
       if (!everyDefs.length) document.addEventListener("visibilitychange", () => (document.hidden ? stopEvery() : startEvery()));
-      everyDefs.push(JSON.parse(node.textContent || "{}"));
+      everyDefs.push({ ...JSON.parse(node.textContent || "{}"), node });
       startEvery();
     }
     if (node.hasAttribute("data-wd-fetch")) {
@@ -1016,7 +1230,7 @@ function scan() {
 // :every — run actions on a timer, paused while the tab is hidden so background
 // tabs don't poll or animate. Each tick runs the action sequence (no clicked row,
 // like :effect), then saves + renders + checks refetch deps, exactly like a click.
-/** @typedef {{ ms: number, actions: { op: string, target?: string, value?: any }[], t?: any }} EveryDef */
+/** @typedef {{ node: Element, ms: number, actions: { op: string, target?: string, value?: any }[], t?: any }} EveryDef */
 /** @type {EveryDef[]} */
 const everyDefs = [];
 // The timer lives on the def, not in a shared list, so a def registered later

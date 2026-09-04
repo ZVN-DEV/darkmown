@@ -148,7 +148,11 @@ test("fenced code is never rewritten — a docs example is documentation, not ma
 });
 
 // ---------------------------------------------------------------------------
-// (b) REACTIVE values warn — and paint what they can
+// (b) REACTIVE values BIND in a destination, and warn in raw HTML
+//
+// A destination used to be paint-once-and-warn. It now emits a `data-wd-attr`
+// template the runtime repaints, so the warning is gone from this position and
+// survives only where there is genuinely no element to mark (raw HTML).
 // ---------------------------------------------------------------------------
 
 /** Warnings whose text mentions `expr`. */
@@ -156,7 +160,7 @@ function warningsFor(page, expr) {
   return page.warnings.filter((w) => w.includes(`{ ${expr} }`));
 }
 
-test("a :state value in a whole link destination paints the initial value AND warns", () => {
+test("a :state value in a whole link destination paints the seed AND binds (no warning)", () => {
   const page = compile([
     ...HTML_PAGE,
     ':state url = "/live/"',
@@ -164,21 +168,30 @@ test("a :state value in a whole link destination paints the initial value AND wa
     "",
     "[{ name }]({ url })"
   ]);
-  // The link is at least valid on first load…
-  assert.match(page.html, /<a href="\/live\/"><span data-wd-bind="name">Live<\/span><\/a>/);
-  // …and the author is told it will never update, with a file:line and a fix.
-  const [warning, ...rest] = warningsFor(page, "url");
-  assert.equal(rest.length, 0, "exactly one warning");
-  assert.match(warning, /index\.wd:9: /, "carries file:line");
-  assert.match(warning, /link\/image destination cannot bind/);
-  assert.match(warning, /painted once and then never updates/);
-  assert.match(warning, /wd\.subscribe/, "names the workaround");
+  // The link is valid on first load…
+  assert.match(page.html, /<a href="\/live\/" data-wd-attr=/);
+  // …and carries the template the runtime keeps up to date.
+  assert.match(
+    page.html,
+    /data-wd-attr="\[&quot;href&quot;,\[&quot;s&quot;,&quot;url&quot;,&quot;&quot;\]\]"/
+  );
+  assert.deepEqual(
+    warningsFor(page, "url"),
+    [],
+    "a destination binds now, so nothing to warn about"
+  );
 });
 
-test("a :state value in a PARTIAL link destination paints the initial value and warns", () => {
+test("a :state value in a PARTIAL link destination paints the seed and binds the whole template", () => {
   const page = compile([...HTML_PAGE, ':state slug = "abc"', "", "[go](/p/{ slug }/)"]);
-  assert.match(page.html, /<a href="\/p\/abc\/">go<\/a>/);
-  assert.equal(warningsFor(page, "slug").length, 1);
+  assert.match(page.html, /<a href="\/p\/abc\/" data-wd-attr=/);
+  // Literal chunks are part of the template, so the runtime rebuilds the WHOLE
+  // value rather than replacing a substring.
+  assert.match(
+    page.html,
+    /data-wd-attr="\[&quot;href&quot;,&quot;\/p\/&quot;,\[&quot;s&quot;,&quot;slug&quot;,&quot;&quot;\],&quot;\/&quot;\]"/
+  );
+  assert.deepEqual(warningsFor(page, "slug"), []);
 });
 
 test("a :state value in a raw HTML attribute paints the initial value and warns", () => {
@@ -189,7 +202,7 @@ test("a :state value in a raw HTML attribute paints the initial value and warns"
   assert.match(warning, /index\.wd:8: /);
 });
 
-test("a reactive @loop row in a destination is left alone and warns (one template, many rows)", () => {
+test("a reactive @loop row in a destination binds per row (one template, many rows)", () => {
   const page = compile([
     ...HTML_PAGE,
     ':state items = [{"name":"A","slug":"a"}]',
@@ -198,11 +211,13 @@ test("a reactive @loop row in a destination is left alone and warns (one templat
     "[{ it.name }](/p/{ it.slug }/)",
     "@endloop"
   ]);
-  // Painting row 1's slug into every row would be worse than leaving it visible.
-  assert.match(page.html, /\/p\/<span data-wd-each data-wd-path="slug">/);
-  const [warning] = warningsFor(page, "it.slug");
-  assert.match(warning, /it stays literal text/);
-  assert.match(warning, /index\.wd:9: /);
+  // One template serves every row, so there is no single build-time href: the
+  // marker is the per-row variant and the href paints empty until hydrate.
+  assert.match(
+    page.html,
+    /<a href="\/p\/\/" data-wd-each-attr="\[&quot;href&quot;,&quot;\/p\/&quot;,\[&quot;i&quot;,&quot;slug&quot;\],&quot;\/&quot;\]"/
+  );
+  assert.deepEqual(warningsFor(page, "it.slug"), []);
 });
 
 test("a reactive @loop row in a raw HTML attribute is left alone and warns", () => {
@@ -221,7 +236,7 @@ test("a reactive @loop row in a raw HTML attribute is left alone and warns", () 
   assert.match(warning, /index\.wd:10: /);
 });
 
-test("a $index meta marker in a destination warns like any other per-row value", () => {
+test("a $index meta marker in a destination binds like any other per-row value", () => {
   const page = compile([
     ...HTML_PAGE,
     ':state items = [{"n":1}]',
@@ -230,7 +245,20 @@ test("a $index meta marker in a destination warns like any other per-row value",
     "[row](/p/{ $index }/)",
     "@endloop"
   ]);
-  assert.equal(warningsFor(page, "$index").length, 1);
+  assert.match(
+    page.html,
+    /data-wd-each-attr="\[&quot;href&quot;,&quot;\/p\/&quot;,\[&quot;m&quot;,&quot;index&quot;\],&quot;\/&quot;\]"/
+  );
+  assert.deepEqual(warningsFor(page, "$index"), []);
+});
+
+test("a `](…)` that is not a link keeps the author's braces, not the placeholder", () => {
+  // The destination pass runs before markdown parses, so it cannot see inline
+  // code spans. A docs page writing the syntax inside backticks must not ship
+  // the internal marker.
+  const page = compile([...HTML_PAGE, ':state slug = "abc"', "", "Write `[go](/p/{ slug }/)`."]);
+  assert.match(page.html, /<code>\[go\]\(\/p\/\{ slug \}\/\)<\/code>/);
+  assert.doesNotMatch(page.html, /wd-attr-\d/);
 });
 
 test("a reactive binding in ordinary prose still binds and never warns", () => {

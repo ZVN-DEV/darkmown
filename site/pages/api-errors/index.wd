@@ -1,0 +1,79 @@
+---
+html: true
+title: Server error bodies — what the API actually said
+description: A failed :fetch or :form now surfaces the server's own error message, and the whole parsed JSON body lands in a second state key so a page can render field-level errors.
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main>
+
+<section class="intro">
+  <span class="eyebrow">Darkmown 2.7</span>
+
+# What the API actually said
+
+A real API explains why it refused. `<name>_error` used to read `Error: HTTP 422` no matter what came back. It is now the body's own `error` or `message` string, and the whole parsed body lands in `<name>_error_body`, so a page can render per-field errors without a line of its own JavaScript.
+
+</section>
+
+<section>
+
+## A refusal, rendered
+
+`/api/echo` only accepts POST, so a plain `:fetch` gets a `405` whose JSON body carries an `error` string.
+
+:fetch probe from "/api/echo/"
+
+:if probe_loading
+Asking the endpoint…
+:endif
+
+:if probe_error
+The endpoint said: **{ probe_error }**
+:endif
+
+:if probe_error_body
+And the whole body is available too — `ok` came back as { probe_error_body.ok }.
+:endif
+
+</section>
+
+<section>
+
+## Field-level errors
+
+`/api/upload` answers a fileless POST with a `422` whose body carries both a sentence and a per-field map:
+
+```json
+{ "error": "Pick a file first.", "fields": { "photo": "No file was attached." } }
+```
+
+A page renders each half where it belongs:
+
+```wd-fragment
+:if signup_error
+{ signup_error }
+:endif
+
+{ signup_error_body.fields.email }
+```
+
+The [upload demo](/upload/) has this wired up end to end.
+
+</section>
+
+<section>
+
+## The rules
+
+- `<name>_error` prefers the body's `error` field, then its `message` field, and falls back to `HTTP <status>` when the body has neither or is not JSON at all.
+- `<name>_error_body` is the parsed JSON body, or `null` when the response was not JSON.
+- Both keys are auto-declared by `:fetch` and by a round-trip `:form`, and both are cleared on the next success.
+
+</section>
+
+</main>
+
+@include /footer.wd

@@ -89,8 +89,20 @@ const WRAPPED = {
   // snippet only resolves inside a loop — which is exactly how it is used.
   "Include with args": (body) => `@loop /rows.json into row\n${body}\n@endloop\n`,
   // The frontmatter snippet IS the document head; it needs a body after it.
-  Frontmatter: (body) => `${body}\n# Hello\n`
+  Frontmatter: (body) => `${body}\n# Hello\n`,
+  // A field directive reads two ways: a FORM FIELD inside a `:form`, a control
+  // bound to `:state` outside one. All three snippets describe the form-field
+  // reading ("capturing every checked value"), so the form is the host
+  // construct they are written for.
+  Select: inFormWrapper,
+  "Checkbox group": inFormWrapper,
+  "Radio group": inFormWrapper
 };
+
+/** @param {string} body */
+function inFormWrapper(body) {
+  return `:form into contact action="/api/echo"\n${body}\n:submit "Send"\n:endform\n`;
+}
 
 test("every .wd snippet the extension ships compiles", () => {
   const names = Object.keys(wdSnippets);

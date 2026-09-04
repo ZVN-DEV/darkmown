@@ -1,0 +1,66 @@
+---
+html: true
+title: State inside a closed branch
+description: A :state, :store or :theme declared inside an :if branch that starts closed is now hydrated the moment the branch opens, instead of starting undefined and never persisting.
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main>
+
+<section class="intro">
+  <span class="eyebrow">Darkmown 2.7</span>
+
+# State inside a closed branch
+
+A closed `:if` branch lives in a `<template>`, and `querySelectorAll` does not look inside one. Anything declared in there was therefore never hydrated: it started `undefined`, ignored its `persist` token, and stayed that way for the life of the page. Now the runtime re-claims seed scripts whenever a render changes structure, so a branch that opens brings its declarations with it.
+
+</section>
+
+<section>
+
+## Open the panel
+
+:state panel = false
+
+:button "Toggle the advanced panel" -> panel toggle
+
+:if panel
+
+::: section .panel
+
+:state retries = 3 persist
+
+The `:state retries` line above lives **inside** this branch. Before this change it was never declared at all: the counter below read empty and nothing was ever written to storage.
+
+Retries: **{ retries }**
+
+:button "More" -> retries++
+:button "Fewer" -> retries--
+
+Change it, close the panel, reopen it: the value you set is still there, because re-opening a branch does not re-seed a key state already holds. Reload the page and it is still there too, because `persist` now works from in here.
+
+:::
+
+:else
+
+The panel is closed. Everything inside it, including its `:state`, is still in a `<template>`.
+
+:endif
+
+</section>
+
+<section>
+
+## The rules
+
+- A seed is claimed once **per key**, not per node. Re-opening a branch clones fresh `<script>` nodes, so a per-node claim would have reset the reader's value every time.
+- The seed recorded when the key is claimed is also its `reset` baseline, so a late declaration is resettable like any other.
+- `persist` and `:store` read through storage at claim time, so a durable value declared in a branch comes back the first time the branch opens.
+
+</section>
+
+</main>
+
+@include /footer.wd

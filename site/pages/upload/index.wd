@@ -1,0 +1,61 @@
+---
+html: true
+title: File upload — a :form that posts multipart
+description: A :form containing a file field submits as multipart FormData instead of a urlencoded body, so the file itself travels. The failure path renders the server's own message and its field-level errors.
+---
+
+@include /nav.wd
+@include /base.wd
+
+<main>
+
+<section class="intro">
+  <span class="eyebrow">Darkmown 2.7</span>
+
+# File upload
+
+A urlencoded body can only carry a file's **name**. A `:form` that contains a file field now declares `enctype="multipart/form-data"` and the runtime posts the `FormData` itself, letting the browser write the multipart boundary. Nothing else about the form changes.
+
+</section>
+
+<section>
+
+## Pick a file and send it
+
+:form into reply action="/api/upload/"
+:input photo type=file required
+:input caption placeholder="A caption (optional)"
+:submit "Upload"
+:endform
+
+:if reply
+Uploaded **{ reply.name }** — { reply.size } bytes, type `{ reply.type }`.
+:if reply.caption
+Caption: { reply.caption }
+:endif
+:endif
+
+:if reply_error
+**{ reply_error }**
+:if reply_error_body
+The server also said which field was wrong: { reply_error_body.fields.photo }
+:endif
+:endif
+
+Submit with no file to see the failure path: the endpoint answers `422` with a JSON body, and the page renders the server's own sentence rather than "HTTP 422".
+
+</section>
+
+<section>
+
+## The rules
+
+- A file field makes the whole form multipart. The compiler writes the `enctype` for the browser's native submit, and the runtime sends the `FormData` with **no** content-type of its own so the boundary is correct.
+- Bound controls inside the form (a `:bind`, a bound `:select`) carry no `name`, so `FormData` never sees them. On the multipart path they are appended by their state key rather than silently dropped.
+- A file field with `method="get"` is a compile error. A GET request has no body, so only the file's name would ever travel — the kind of failure that looks like it worked.
+
+</section>
+
+</main>
+
+@include /footer.wd
