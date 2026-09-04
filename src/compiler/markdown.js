@@ -19,6 +19,11 @@ import {
   unsafeUrlValue
 } from "./interpolation.js";
 
+// The two halves of the destination contract, re-exported together: a caller
+// painting an href itself (a loop row's build-time initial) has to encode the
+// value the same way this module does and answer the same scheme question.
+export { unsafeUrlValue };
+
 /**
  * @typedef {import("./context.js").Meta} Meta
  * @typedef {import("./context.js").Ctx} Ctx
@@ -73,7 +78,7 @@ export function selectMd(meta) {
 export function renderProse(text, ctx, index = 0) {
   /** @type {PendingAttr[]} */
   const attrs = [];
-  text = resolveDestinationBindings(text, ctx, attrs);
+  text = resolveDestinationBindings(text, ctx, attrs, index);
   const html = (ctx.md ?? md).render(text, {
     resolveBinding: (/** @type {string} */ expr) => resolveBinding(expr, ctx),
     // Raw-HTML interpolation needs the compile context AND the chunk's offset,
@@ -180,8 +185,13 @@ const ATTR_MARK_RE = /~wd-attr-(\d+)~/g;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — a control character in a destination has to be encoded, not passed through.
 const DEST_UNSAFE = /[\u0000-\u0020()<>"'`\\\u007F]/g;
 
-/** @param {string} value @returns {string} */
-const encodeDest = (value) =>
+/**
+ * `unknown` rather than `string`: a caller painting a row's own initial href
+ * holds whatever `getPath` returned, and the coercion is right here.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export const encodeDest = (value) =>
   String(value).replace(
     DEST_UNSAFE,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`
@@ -226,9 +236,10 @@ function codeSpansOf(line) {
  * @param {string} text
  * @param {Ctx} ctx
  * @param {PendingAttr[]} attrs Registry the core rule reads placeholders back from.
+ * @param {number} index 0-based line index of the slice, for `file:line`.
  * @returns {string}
  */
-function resolveDestinationBindings(text, ctx, attrs) {
+function resolveDestinationBindings(text, ctx, attrs, index) {
   const lines = text.split("\n");
   /** @type {string | null} */
   let fence = null;
@@ -251,7 +262,16 @@ function resolveDestinationBindings(text, ctx, attrs) {
         (/** @type {string} */ brace, /** @type {string} */ expr) => {
           const found = resolveBinding(expr, ctx);
           if (!found) return brace; // not in scope — leave the author's text alone
-          if (found.kind === "static") return encodeDest(found.text);
+          if (found.kind === "static") {
+            // The scheme test runs on the RAW value, before encoding, because
+            // that is the string the runtime's guard sees. Encoding first would
+            // turn " javascript:x" into "%20javascript:x" and quietly ship it.
+            if (unsafeUrlValue(found.text)) {
+              warnUnsafeUrl(ctx, index + i, expr);
+              return "";
+            }
+            return encodeDest(found.text);
+          }
           const part = /** @type {PendingAttr["part"]} */ (
             found.kind === "state"
               ? ["s", found.key ?? "", found.path ?? ""]
@@ -275,9 +295,10 @@ function resolveDestinationBindings(text, ctx, attrs) {
  * `href` / an `image`'s `src`, writes the build-time paint, and stamps the
  * template the runtime re-evaluates on every render.
  *
- * The build-time paint runs through the same scheme guard the runtime uses:
- * markdown-it's own `validateLink` vetted the placeholder, not the value that
- * replaced it, so an unsafe seed would otherwise ship in the HTML.
+ * The build-time paint runs through the same scheme guard the runtime uses, on
+ * the same unencoded string: markdown-it's own `validateLink` vetted the
+ * placeholder, not the value that replaced it, so an unsafe seed would
+ * otherwise ship in the HTML.
  * @param {MarkdownIt} mdInstance
  * @returns {void}
  */
@@ -295,6 +316,7 @@ function attrBindPlugin(mdInstance) {
         /** @type {(string | PendingAttr)[]} */
         const template = [];
         let initial = "";
+        let plain = ""; // the same value UNencoded: what the runtime will hold
         let perRow = false;
         let end = 0;
         ATTR_MARK_RE.lastIndex = 0;
@@ -306,9 +328,11 @@ function attrBindPlugin(mdInstance) {
           if (hit.index > end) {
             template.push(raw.slice(end, hit.index));
             initial += raw.slice(end, hit.index);
+            plain += raw.slice(end, hit.index);
           }
           template.push(pending);
           initial += encodeDest(pending.text);
+          plain += pending.text;
           if (pending.part[0] !== "s") perRow = true;
           end = hit.index + hit[0].length;
         }
@@ -316,8 +340,12 @@ function attrBindPlugin(mdInstance) {
         if (end < raw.length) {
           template.push(raw.slice(end));
           initial += raw.slice(end);
+          plain += raw.slice(end);
         }
-        token.attrSet(name, unsafeUrlValue(initial) ? "" : initial);
+        // Tested on the UNencoded assembly, exactly as `applyAttr` will test it
+        // in the browser: encoding first hides a leading space or control
+        // character from a guard that is meant to strip it.
+        token.attrSet(name, unsafeUrlValue(plain) ? "" : initial);
         token.attrSet(
           perRow ? "data-wd-each-attr" : "data-wd-attr",
           JSON.stringify([name, ...template.map((t) => (typeof t === "string" ? t : t.part))])
@@ -370,41 +398,74 @@ function rawHtmlPlugin(mdInstance) {
   });
 }
 
-// True when a fragment ENDS inside the value of a URL-bearing attribute, so the
-// next thing written lands in a URL. Escaping is not enough there: `href` and
-// friends resolve `javascript:` without any quote breakout, and unlike a markdown
+// The value of a URL-bearing attribute, as far as a fragment has been written.
+// The capture is the value SO FAR: `<a href="java` yields "java", so the guard
+// can test what the attribute will actually hold rather than what one brace
+// happened to resolve to. Escaping is no defense here: `href` and friends
+// resolve `javascript:` without any quote breakout, and unlike a markdown
 // destination nothing upstream vets an author's own raw `<a href="…">`.
 const URL_ATTR_TAIL =
-  /\b(?:href|src|action|formaction|xlink:href)\s*=\s*(?:"[^"]*|'[^']*|[^\s>"']*)$/i;
+  /\b(?:href|src|action|formaction|xlink:href)\s*=\s*(?:"([^"]*)|'([^']*)|([^\s>"']*))$/i;
+
+/**
+ * Warn that a value in URL position carries a scheme the browser would execute.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index, for `file:line`.
+ * @param {string} expr
+ * @returns {void}
+ */
+function warnUnsafeUrl(ctx, index, expr) {
+  ctx.comp.warnings.push(
+    `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" resolves to a javascript:, data: or vbscript: URL, so the attribute is emitted empty. ` +
+      `Use an https:, mailto: or site-relative value, or render it as text rather than a link target.`
+  );
+}
 
 /**
  * Substitute every `{ expr }` in a raw-HTML fragment with its escaped value.
+ *
+ * The output is assembled by hand rather than through `String.replace` because
+ * the URL guard has to see the attribute value BEING BUILT: `<a href="java{ x }">`
+ * with x = "script:alert(1)" is a live javascript: URL that no single brace
+ * value would ever look unsafe on its own. When the assembled value trips the
+ * guard, the literal head of that value is dropped from the output too, so the
+ * attribute lands empty instead of half-written.
  * @param {string} html
  * @param {Ctx} ctx
  * @param {number} index 0-based line index of the fragment, for warnings.
  * @returns {string}
  */
 function fillRawHtml(html, ctx, index) {
-  return html.replace(
-    /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g,
-    (brace, /** @type {string} */ expr, /** @type {number} */ offset) => {
-      const found = resolveBinding(expr, ctx);
-      if (!found) return brace;
-      if (found.kind === "row") {
-        warnUnbindable(ctx, index, expr, false);
-        return brace;
-      }
-      if (found.kind === "state") warnUnbindable(ctx, index, expr, true);
-      if (unsafeUrlValue(found.text) && URL_ATTR_TAIL.test(html.slice(0, offset))) {
-        ctx.comp.warnings.push(
-          `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" resolves to a javascript:, data: or vbscript: URL, so the attribute is emitted empty. ` +
-            `Use an https:, mailto: or site-relative value, or render it as text rather than a link target.`
-        );
-        return "";
-      }
-      return escapeHtml(found.text);
+  const brace = /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g;
+  let out = "";
+  let last = 0;
+  /** @type {RegExpExecArray | null} */
+  let hit;
+  while ((hit = brace.exec(html))) {
+    out += html.slice(last, hit.index);
+    last = hit.index + hit[0].length;
+    const expr = hit[1];
+    const found = resolveBinding(expr, ctx);
+    if (!found) {
+      out += hit[0];
+      continue;
     }
-  );
+    if (found.kind === "row") {
+      warnUnbindable(ctx, index, expr, false);
+      out += hit[0];
+      continue;
+    }
+    if (found.kind === "state") warnUnbindable(ctx, index, expr, true);
+    const open = URL_ATTR_TAIL.exec(out);
+    const head = open ? (open[1] ?? open[2] ?? open[3]) : "";
+    if (open && unsafeUrlValue(head + found.text)) {
+      warnUnsafeUrl(ctx, index, expr);
+      out = out.slice(0, out.length - head.length); // the head belongs to the refused value
+      continue;
+    }
+    out += escapeHtml(found.text);
+  }
+  return out + html.slice(last);
 }
 
 /**

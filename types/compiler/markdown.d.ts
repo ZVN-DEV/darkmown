@@ -33,6 +33,8 @@ export function attrTarget(children: any[], i: number): any;
  * @returns {string}
  */
 export function slugify(text: string): string;
+export { unsafeUrlValue };
+export function encodeDest(value: unknown): string;
 /**
  * A resolved `{ name.path }` binding.
  */
@@ -91,3 +93,4 @@ export type PendingAttr = {
     raw: string;
 };
 import MarkdownIt from "markdown-it";
+import { unsafeUrlValue } from "./interpolation.js";

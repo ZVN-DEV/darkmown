@@ -82,7 +82,7 @@ function hydrate() {
       // `from-url` outranks both: a shared link must show what it says.
       if (script.getAttribute("data-wd-url") === key) {
         urlKeys.add(key);
-        readUrl();
+        readUrl(false, [key]);
       }
     }
   }
@@ -104,7 +104,12 @@ function syncUrl() {
   }
   const query = params.toString();
   const next = location.pathname + (query ? `?${query}` : "") + location.hash;
-  if (next !== location.pathname + location.search + location.hash) history.replaceState(history.state, "", next);
+  if (next === location.pathname + location.search + location.hash) return;
+  // about:srcdoc (the playground's preview iframe) answers replaceState with a
+  // SecurityError. This call sits between the state write and the render in
+  // every handler, so an unguarded throw froze the preview on the first
+  // keystroke. Like `ls`, URL sync is best-effort and never blocks a paint.
+  try { history.replaceState(history.state, "", next); } catch { /* history is not writable here */ }
 }
 
 /**
@@ -112,12 +117,17 @@ function syncUrl() {
  * popstate, where a parameter that is GONE means "back to the declared value";
  * it is false while hydrating, where an absent parameter must leave the
  * persisted value the storage read just restored.
+ * `only` narrows the read to the keys just claimed by `hydrate`: re-reading the
+ * WHOLE set there would revert a write the page has already made but not yet
+ * mirrored, which is exactly what happens when an `:effect` writes a `from-url`
+ * key and the same action opens a branch declaring another one.
  * @param {boolean} [restore]
+ * @param {string[]} [only]
  * @returns {void}
  */
-function readUrl(restore) {
+function readUrl(restore, only) {
   const params = new URLSearchParams(location.search);
-  for (const key of urlKeys) {
+  for (const key of only || urlKeys) {
     const raw = params.get(urlParam(key));
     const seed = initials[key];
     if (raw == null) { if (restore) state[key] = structuredClone(seed); }
@@ -138,6 +148,10 @@ hydrate();
 window.addEventListener("popstate", () => {
   if (!urlKeys.size) return;
   readUrl(true);
+  // Storage follows the URL. Boot reads URL > storage > seed, so leaving a
+  // persisted value behind after a back to a parameter-less URL would show the
+  // seed now and flip back to the stored value on the next reload.
+  savePersisted();
   render();
 });
 
@@ -218,6 +232,12 @@ function jsonOr(text) {
   try { return JSON.parse(text); } catch { return undefined; }
 }
 
+// The characters a value must not carry into a URL, mirroring `DEST_UNSAFE`
+// in src/compiler/markdown.js: an unencoded space or paren makes the paint and
+// the re-render disagree, and `tests/attr-binding.test.js` pins the two together.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — a control character in a URL has to be encoded, not passed through.
+const URL_UNSAFE = /[\u0000-\u0020()<>"'`\\\u007F]/g;
+
 /**
  * Every node matching `sel` at or under `node` — the self-match matters because
  * a loop row's own element can carry the marker, not just its descendants.
@@ -250,13 +270,24 @@ function applyAttr(el, raw, item, meta) {
   if (!raw) return;
   let parts;
   try { parts = JSON.parse(raw); } catch { return; }
-  let out = "";
+  let out = ""; // encoded: what lands on the attribute
+  let plain = ""; // raw: what the scheme guard tests
   for (let i = 1; i < parts.length; i++) {
     const p = parts[i];
-    out += (typeof p === "string" ? p : p[0] === "s" ? getPath(state[p[1]], p[2]) : p[0] === "m" ? meta[p[1]] : getPath(item, p[1])) ?? "";
+    // A literal chunk is the author's own URL text, already vetted by the
+    // compiler; only a READER value is encoded, and with exactly the character
+    // set `encodeDest` uses in src/compiler/markdown.js, or the build-time paint
+    // and the first re-render would disagree on every value holding a space.
+    if (typeof p === "string") { out += p; plain += p; continue; }
+    const v = String((p[0] === "s" ? getPath(state[p[1]], p[2]) : p[0] === "m" ? meta[p[1]] : getPath(item, p[1])) ?? "");
+    plain += v;
+    out += v.replace(URL_UNSAFE, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
   }
+  // Defense in depth: the compiler only ever emits href (a link) or src (an
+  // image), so anything else in a marker did not come from a compile.
+  if (parts[0] !== "href" && parts[0] !== "src") return;
   // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — a browser strips these out of a URL, so the guard must too.
-  el.setAttribute(parts[0], /^(javascript|data|vbscript):/i.test(out.replace(/[\u0000-\u0020\u007F]+/g, "")) ? "" : out);
+  el.setAttribute(parts[0], /^(javascript|data|vbscript):/i.test(plain.replace(/[\u0000-\u0020\u007F]+/g, "")) ? "" : out);
 }
 
 // --- Format pipes -----------------------------------------------------------
@@ -347,8 +378,10 @@ async function httpJson(url, init) {
     // A real API says WHY it refused. Prefer the body's own `error`/`message`
     // string over the bare status line, and carry the parsed body along so a
     // page can render field-level errors from `<name>_error_body`.
-    const said = body && (body.error ?? body.message);
-    const err = /** @type {Error & { status?: number, body?: any }} */ (new Error(typeof said === "string" ? said : `HTTP ${response.status}`));
+    // The first NON-EMPTY string of the two: `{ "error": "", "message": "…" }`
+    // is a real shape, and `??` would keep the empty string and render "Error".
+    const said = body && [body.error, body.message].find((v) => typeof v === "string" && v);
+    const err = /** @type {Error & { status?: number, body?: any }} */ (new Error(said || `HTTP ${response.status}`));
     err.status = response.status; // lets the :fetch lifecycle single out a 401 for token refresh
     err.body = body ?? null;
     throw err;
@@ -848,6 +881,10 @@ function runEffects() {
     changed = true;
   }
   if (!changed) { effectDepth = 0; return; }
+  // An effect writes state exactly like a click does, so it persists and syncs
+  // to the URL exactly like a click does. Without this an `:effect` that writes
+  // a `from-url` key never reached the address bar at all.
+  savePersisted();
   if (++effectDepth >= 10) { effectDepth = 0; console.warn("effect did not settle"); return; }
   renderNow(); // reflect the effect's state changes, then re-check
 }
@@ -991,19 +1028,21 @@ document.addEventListener("submit", (event) => {
   const dead = genGuard(/** @type {any} */ (form));
   setError(key);
   render();
+  // ONE FormData feeds both bodies. Bound controls (`:bind`, a bound `:select`)
+  // carry no `name`, so FormData never saw them: they are appended by their
+  // state key here, before the split, so the urlencoded path carries exactly
+  // the same keys the multipart path does. A bound key that a real field
+  // already occupies is left alone — sending both would hand the server the
+  // same name twice with different values.
   const fd = new FormData(form);
+  for (const el of form.querySelectorAll("[data-wd-bind-input]")) {
+    const bound = el.getAttribute("data-wd-bind-input");
+    if (bound && !el.getAttribute("name") && !fd.has(bound)) fd.append(bound, state[bound] ?? "");
+  }
   // A file cannot be urlencoded, so a form carrying one posts the FormData
   // itself and lets the browser set the multipart content-type WITH its
-  // boundary — which is exactly why no content-type is passed here. Bound
-  // controls (`:bind`, a bound `:select`) carry no `name`, so FormData never
-  // saw them; append them by their state key rather than dropping them.
+  // boundary, which is exactly why no content-type is passed here.
   const upload = form.querySelector("input[type=file]");
-  if (upload) {
-    for (const el of form.querySelectorAll("[data-wd-bind-input]")) {
-      const bound = el.getAttribute("data-wd-bind-input");
-      if (bound && !el.getAttribute("name")) fd.append(bound, state[bound] ?? "");
-    }
-  }
   httpJson(action, {
     method: form.getAttribute("method") || "post",
     headers: upload ? undefined : { "content-type": "application/x-www-form-urlencoded" },

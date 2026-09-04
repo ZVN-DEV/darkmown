@@ -407,3 +407,14 @@ test("a static loop value containing braces stays literal text", () => {
   assert.match(body, /Row: \{ meta\.title \}/);
   assert.doesNotMatch(body, /SECRET-TITLE/);
 });
+
+test("a name that is not in scope stays literal in raw HTML, with no warning", () => {
+  // The fill only touches braces it can resolve. `{ nothing }` matches no include
+  // arg, loop var, meta field or declared state, so the author's text survives
+  // byte for byte (this is also what lets a page document the syntax itself).
+  const page = compile([...HTML_PAGE, '<a href="/x" title="{ nothing }">go</a>'], {
+    shelf: SHELF
+  });
+  assert.match(page.html, /<a href="\/x" title="\{ nothing \}">go<\/a>/);
+  assert.equal(page.warnings.length, 0);
+});

@@ -353,3 +353,110 @@ test("a :state value in a raw-HTML href is guarded as well as warned about", () 
   assert.match(page.warnings[0], /raw HTML \(an attribute or an html block\) cannot bind/);
   assert.match(page.warnings[1], /resolves to a javascript:, data: or vbscript: URL/);
 });
+
+// ---------------------------------------------------------------------------
+// Wave 2 — the guard runs on the ASSEMBLED attribute value, not on one brace.
+// ---------------------------------------------------------------------------
+
+test("a scheme split between a literal prefix and a value is still refused", () => {
+  const page = compile(
+    [...RAW_HTML, "@loop /rows.json into r", '<a href="java{ r.tail }">go</a>', "@endloop"],
+    {
+      shelf: { "rows.json": [{ tail: "script:alert(1)" }] }
+    }
+  );
+  const out = body(page);
+  assert.match(out, /<a href="">go<\/a>/, "the literal head goes with the refused value");
+  assert.doesNotMatch(out, /javascript:/i);
+  assert.equal(page.warnings.length, 1);
+  assert.match(page.warnings[0], /resolves to a javascript:, data: or vbscript: URL/);
+});
+
+test("a scheme split across TWO values is refused when the second lands", () => {
+  const page = compile(
+    [...RAW_HTML, "@loop /rows.json into r", '<a href="{ r.a }{ r.b }">go</a>', "@endloop"],
+    { shelf: { "rows.json": [{ a: "java", b: "script:alert(1)" }] } }
+  );
+  const out = body(page);
+  assert.match(out, /<a href="">go<\/a>/, "the half already written is dropped too");
+  assert.doesNotMatch(out, /javascript:/i);
+  assert.equal(page.warnings.length, 1, "one warning, on the brace that tipped it");
+});
+
+test("the split shape is caught in every URL-bearing attribute", () => {
+  const page = compile(
+    [
+      ...RAW_HTML,
+      "@loop /rows.json into r",
+      '<a href="java{ r.tail }">a</a>',
+      "<img src='java{ r.tail }' alt=x>",
+      '<form action="java{ r.tail }"><button formaction="java{ r.tail }">b</button></form>',
+      '<svg><use xlink:href="java{ r.tail }"></use></svg>',
+      "@endloop"
+    ],
+    { shelf: { "rows.json": [{ tail: "script:alert(1)" }] } }
+  );
+  const out = body(page);
+  assert.doesNotMatch(out, /javascript:/i, "not one of the five got through");
+  assert.match(out, /<a href="">/);
+  assert.match(out, /<img src=''/);
+  assert.match(out, /<form action="">/);
+  assert.match(out, /formaction=""/);
+  assert.match(out, /xlink:href=""/);
+  assert.equal(page.warnings.length, 5, "one per refused attribute");
+});
+
+test("CONTROL: a harmless prefix keeps its value, scheme-looking or not", () => {
+  const page = compile(
+    [
+      ...RAW_HTML,
+      "@loop /rows.json into r",
+      '<a href="/p/{ r.slug }">a</a>',
+      '<a href="/go/{ r.tail }">b</a>',
+      "@endloop"
+    ],
+    { shelf: { "rows.json": [{ slug: "alpha", tail: "javascript:alert(1)" }] } }
+  );
+  const out = body(page);
+  assert.ok(out.includes('<a href="/p/alpha">a</a>'), "an ordinary value is untouched");
+  // `/go/javascript:alert(1)` is a relative path, not a javascript: URL, and a
+  // guard that blanked it would be refusing safe pages.
+  assert.ok(out.includes('<a href="/go/javascript:alert(1)">b</a>'));
+  assert.deepEqual(page.warnings, []);
+});
+
+// --- the compile-time guard tests the RAW value, like the runtime does -------
+
+const LEADING_SPACE = " javascript:alert(1)";
+
+test("a static destination value is scheme-checked BEFORE encoding", () => {
+  const page = compile(["@loop /rows.json into r", "[go]({ r.u })", "@endloop"], {
+    shelf: { "rows.json": [{ u: LEADING_SPACE }] }
+  });
+  const out = body(page);
+  assert.match(out, /<a href="">go<\/a>/, "refused, not shipped as %20javascript:…");
+  assert.doesNotMatch(out, /%20javascript/i);
+  assert.equal(page.warnings.length, 1);
+  assert.match(page.warnings[0], /index\.wd:\d+: "\{ r\.u \}" resolves to a javascript:/);
+});
+
+test("a bound destination's painted seed is scheme-checked BEFORE encoding", () => {
+  const page = compile([`:state u = ${JSON.stringify(LEADING_SPACE)}`, "", "[go]({ u })"]);
+  const out = body(page);
+  assert.match(
+    out,
+    /<a href="" data-wd-attr=/,
+    "the paint is empty, exactly as applyAttr would leave it"
+  );
+  assert.doesNotMatch(out, /%20javascript/i);
+  // The binding itself survives: the runtime re-tests the live value.
+  assert.ok(out.includes(`data-wd-attr="${marker("href", ["s", "u", ""])}"`));
+});
+
+test("CONTROL: the same value one character shorter is a normal relative URL", () => {
+  const page = compile(["@loop /rows.json into r", "[go]({ r.u })", "@endloop"], {
+    shelf: { "rows.json": [{ u: "/a javascript:alert(1)" }] }
+  });
+  assert.match(body(page), /<a href="\/a%20javascript:alert%281%29">go<\/a>/);
+  assert.deepEqual(body(page).match(/<a /g).length, 1);
+});
