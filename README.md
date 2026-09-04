@@ -9,17 +9,7 @@
 
 Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~7.7 KB gzipped, CI-enforced under 8 KB.
 
-## Showcase
-
-Five complete apps, each a readable `.wd` file — see them at **[darkmown.com/showcase](https://darkmown.com/showcase/)**:
-
-- **[Folio](https://darkmown.com/folio/)** — a boutique storefront whose cart persists across pages, reloads, and browser tabs (`:store`), with live search and a checkout form.
-- **[Pulse](https://darkmown.com/pulse/)** — a service dashboard driven by `:fetch`: loading / error / empty states, live refresh (`:every`), and status badges, with no hand-written JavaScript.
-- **[Forge](https://darkmown.com/forge/)** — a plan configurator where `:computed` recomputes the price as you toggle features and seats, with conditional upsell hints.
-- **[Compass](https://darkmown.com/compass/)** — a product-finder quiz: a branching state machine expressed entirely as `:if` steps over scored answers.
-- **[Ledger](https://darkmown.com/ledger/)** — a spreadsheet-grade expense table: clickable-header reactive sort, a live filter, running totals via `sum`/`avg`/`max`, `| money`/`| date` format pipes, and a `:theme` toggle.
-
-Plus focused feature demos: a draggable, keyboard-navigable **[Swiper](https://darkmown.com/carousel/)** (the `wd.subscribe` escape hatch) and a zero-JS **[Media](https://darkmown.com/media/)** page (`:video` / `:audio` / `:embed`).
+**Who it is for.** Content sites that need a few interactive islands: documentation, blogs, marketing sites, changelogs, small storefronts and dashboards. You get real Markdown files, real static HTML, and a handful of directives when a page needs to react. It is not a general-purpose application framework, and the [Limits](#limits) section says exactly where the line is before you build against it.
 
 ## Quick start
 
@@ -47,6 +37,27 @@ Prefer to see it run before you install? The [browser playground](https://darkmo
 compiles `.wd`/`.md` live in your browser — the same compiler the CLI ships — with
 no install and no build step.
 
+**On this page**
+
+- [Quick start](#quick-start) · [Showcase](#showcase) · [Working from this repo](#working-from-this-repo) · [Commands](#commands)
+- **Authoring:** [Authoring model](#authoring-model) · [Interpolation](#interpolation) · [Frontmatter](#frontmatter) · [Static assets](#static-assets) · [SEO & feeds](#seo--feeds-sitemap-rss-robots) · [Loops](#loops) · [Content collections](#content-collections) · [Sections](#sections)
+- **Reactivity:** [Reactive directives](#reactive-directives) · [Fetching data](#fetching-data) · [Global state](#global-state--store) · [Forms and persistence](#forms-and-persistence) · [Backends & deploy](#backends--deploy) · [Interactions](#interactions--slider-sortable-carousel)
+- **Presentation:** [Inline attributes](#inline-attributes) · [Media](#media--video-audio-embed) · [Syntax highlighting](#syntax-highlighting) · [Dark mode](#dark-mode--tokens-dark) · [Scoped styles](#scoped-styles--scoped)
+- **Extending:** [The escape hatch](#the-escape-hatch) · [Programmatic compile](#programmatic-compile--compilefrommemory) · [Compile error codes](#compile-error-codes) · [AI authoring](#ai-authoring) · [Editor support](#editor-support)
+- **Before you commit:** [Accessibility](#accessibility) · [Security](#security) · [**Limits**](#limits) · [Spec status](#spec-status)
+
+## Showcase
+
+Five complete apps, each a readable `.wd` file — see them at **[darkmown.com/showcase](https://darkmown.com/showcase/)**:
+
+- **[Folio](https://darkmown.com/folio/)** — a boutique storefront whose cart persists across pages, reloads, and browser tabs (`:store`), with live search and a checkout form.
+- **[Pulse](https://darkmown.com/pulse/)** — a service dashboard driven by `:fetch`: loading / error / empty states, live refresh (`:every`), and status badges, with no hand-written JavaScript.
+- **[Forge](https://darkmown.com/forge/)** — a plan configurator where `:computed` recomputes the price as you toggle features and seats, with conditional upsell hints.
+- **[Compass](https://darkmown.com/compass/)** — a product-finder quiz: a branching state machine expressed entirely as `:if` steps over scored answers.
+- **[Ledger](https://darkmown.com/ledger/)** — a spreadsheet-grade expense table: clickable-header reactive sort, a live filter, running totals via `sum`/`avg`/`max`, `| money`/`| date` format pipes, and a `:theme` toggle.
+
+Plus focused feature demos: a draggable, keyboard-navigable **[Swiper](https://darkmown.com/carousel/)** (the `wd.subscribe` escape hatch) and a zero-JS **[Media](https://darkmown.com/media/)** page (`:video` / `:audio` / `:embed`).
+
 ## Working from this repo
 
 ```sh
@@ -63,7 +74,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - `darkmown build [--target cloudflare] [--drafts]` writes static output to `dist` (plus `sitemap.xml`/`rss.xml`/`robots.txt`); `--drafts` includes `draft: true` pages for staging.
 - `darkmown deploy <vercel|cloudflare> [--prod]` builds and deploys via the platform CLI.
 - `darkmown serve` previews the built `dist` locally.
-- `darkmown catalog [--llms]` prints the machine-readable directive catalog (JSON), or with `--llms` a compact cheatsheet — see [AI authoring](#ai-authoring).
+- `darkmown catalog [--llms|--llms-full]` prints the machine-readable directive catalog (JSON), a compact cheatsheet with `--llms`, or the complete reference including every error code with `--llms-full`. See [AI authoring](#ai-authoring).
 - `darkmown version` prints the installed package version.
 - `darkmown help` prints CLI usage.
 
@@ -167,6 +178,19 @@ site_url: https://example.com
 - **`sitemap.xml`** lists every built page (reactive pages included — they're indexable HTML). Each `<lastmod>` is the page's frontmatter `date:` if set, else its git last-commit date, else the file's mtime. No `<priority>`/`<changefreq>`.
 - **`rss.xml`** syndicates your **posts** — any page with a `date:` in its frontmatter. Newest first, capped at the 20 most recent. Each item's `<description>` is the page's `excerpt:`, else its `description:`, else (for a plain `.md` post) its first paragraph. Every page links the feed with `<link rel="alternate" type="application/rss+xml">` so readers can autodiscover it.
 
+A post is just a page that carries a `date:`. Add `excerpt:` to control the summary the feed shows for it:
+
+```md
+---
+title: Hello, Darkmown
+date: 2026-01-15
+excerpt: Why I rewrote my blog as plain Markdown files.
+---
+
+# Hello, Darkmown
+…
+```
+
 ### Canonical URLs
 
 With `site_url` set, every page's `<head>` states its own absolute URL twice, as `<link rel="canonical">` and `og:url`:
@@ -233,17 +257,6 @@ ai_crawlers: deny
 ```
 
 `allow` is the default (and matches what `User-agent: *` already grants). A value that is neither `allow` nor `deny` **fails the build** rather than defaulting: the intent behind a typo like `ai_crawlers: block` is almost always to opt *out*, and silently allowing would be the one unrecoverable outcome.
-
-```md
----
-title: Hello, Darkmown
-date: 2026-01-15
-excerpt: Why I rewrote my blog as plain Markdown files.
----
-
-# Hello, Darkmown
-…
-```
 
 Without `site_url`, `robots.txt` still emits and the build prints a one-line hint telling you which field to set; it never crashes.
 
@@ -333,6 +346,7 @@ Shape a loop without writing JavaScript. Clauses come in a fixed order after `in
 - `offset <N>` / `limit <N>` — `<N>` is a non-negative integer **or** a `:state`/`:store` key, which makes pagination reactive:
 
 ```wd
+:state products = [{"name": "Aurora Lamp"}, {"name": "Briza Fan"}]
 :state pageSize = 10
 
 @loop products into product limit pageSize
@@ -353,6 +367,8 @@ Each row exposes five meta variables, relative to the rendered slice:
 They work in interpolation and in `:if`:
 
 ```wd
+:state products = [{"name": "Aurora Lamp"}, {"name": "Briza Fan"}]
+
 @loop products into product
 :if $first
 **Top pick:**
@@ -366,6 +382,8 @@ They work in interpolation and in `:if`:
 Add an `@empty` branch to show a fallback when the loop renders no rows (after `where`, `limit`, and the rest):
 
 ```wd
+:state todos = []
+
 @loop todos into todo
 - { todo.title }
 @empty
@@ -407,7 +425,7 @@ That is a full add-to-cart / remove-line flow — and a to-do list with delete �
 
 ### Nested reactive loops
 
-*New in 0.19.0.* A reactive `@loop` may contain an inner reactive `@loop` over one of the outer row's fields — one level of nesting. The inner source is a dotted path rooted at the outer item (`order.lines`), so each row renders its own list and both stay live as state changes:
+A reactive `@loop` may contain an inner reactive `@loop` over one of the outer row's fields — one level of nesting. The inner source is a dotted path rooted at the outer item (`order.lines`), so each row renders its own list and both stay live as state changes:
 
 ```wd
 :state orders = [
@@ -523,6 +541,8 @@ A container named `nav` or `main` emits the real landmark element (`<nav class="
 A container class can be toggled by a predicate. Static `.class` tokens are unchanged; add `when <predicate>` to make one reactive:
 
 ```wd
+:state products = [{"id": 1, "name": "Aurora", "price": 49, "featured": true}]
+
 @loop products into p
 ::: card .product .on-sale when p.price < 50 .featured when p.featured
 **{ p.name }** — ${ p.price }
@@ -552,7 +572,7 @@ Count is still zero.
 
 A condition reads the same predicate grammar as `.class when`: a bare path (truthy), or the comparisons `==` `!=` `<` `<=` `>` `>=` `contains`, joined with `and`, `or`, and `not`. (`@loop … where` is the comparison-only subset — operators with `and`/`or`.) Chain with `:else if` (any number; an optional bare `:else` must be the last branch):
 
-```wd
+```wd-fragment
 :if plan == "pro" or seats >= 5
 Pro plan
 :else if trialDays > 0 and not expired
@@ -599,7 +619,7 @@ Values are literals: a `"string"`, number, `true`/`false`/`null`, or inline JSON
 
 **One button can run several actions** with `;`. They apply in order, then the page renders once:
 
-```wd
+```wd-fragment
 :button "Add to cart" -> cart.count++ ; cart.total += 9
 ```
 
@@ -607,7 +627,7 @@ Values are literals: a `"string"`, number, `true`/`false`/`null`, or inline JSON
 
 ### Computed values — `:computed`
 
-`:computed name = <expression>` derives state from other state with a compile-time-checked expression — names, numbers, arithmetic (`+ - * /`), comparisons, and the five **aggregates** over a list: `sum(list, field)`, `avg(list, field)`, `min(list, field)`, `max(list, field)`, and `count(list)`. It recomputes whenever an input changes and reads like any other binding (so it pairs naturally with [format pipes](#format-pipes--value--namearg)):
+`:computed name = <expression>` derives state from other state with a compile-time-checked expression — names, numbers, arithmetic (`+ - * /`), comparisons, and the five **aggregates** over a list: `sum(list, field)`, `avg(list, field)`, `min(list, field)`, `max(list, field)`, and `count(list)`. It recomputes whenever an input changes and reads like any other binding (so it pairs naturally with [format pipes](#format-pipes---value--namearg-)):
 
 ```wd
 :store cart = [{"price": 89}, {"price": 12}]
@@ -626,11 +646,13 @@ The aggregate's field argument is a bare key on each row (`price`, not `item.pri
 
 ```wd
 :fetch board from "/status.json"
-:every 10s -> board refetch        # live-refresh a dashboard
+:every 10s -> board refetch
 
 :state secs = 0
-:every 1s -> secs++                # a ticking counter
+:every 1s -> secs++
 ```
+
+The first line live-refreshes a dashboard; the second is a ticking counter. There is no comment syntax on a directive line, so a trailing `#` note would be parsed as part of the action.
 
 Intervals **pause while the tab is hidden** (via `visibilitychange`) and resume on return, so a backgrounded dashboard stops firing requests and draining battery.
 
@@ -700,17 +722,28 @@ The lifecycle regions announce themselves: a bare `:if name_loading` compiles wi
 
 ### Authenticated requests and token refresh
 
-`headers=<key>` sends a state object as request headers — pair it with `:store` to persist a bearer token across reloads:
+`headers=<key>` sends a state object as request headers; pair it with `:store` to keep the token across reloads.
+
+**Seed the store empty.** A `:state`/`:store` value is a *build-time* seed: it is inlined into the page's public HTML, so a literal token written into a `.wd` file ships to every visitor. The token has to arrive at runtime, from your own `api/` endpoint:
 
 ```wd
-:store session = { "Authorization": "Bearer …" }
+:store session = {}
+
+:form action="/api/login" into login
+:input email type=email required
+:input password type=password required
+:submit "Sign in"
+:endform
+
+:effect login -> session merge login
+
 :fetch feed from "/api/feed" headers=session
 ```
 
 Add `refresh="<url>"` and Darkmown manages the token lifecycle: when a request comes back `401`, it POSTs the current `headers` object to the refresh URL, writes the returned headers (the new token) back into the `session` state — persisting it, since `session` is a `:store` — and retries the original request once. Concurrent `401`s sharing a refresh URL are de-duplicated into a single in-flight refresh.
 
 ```wd
-:store session = { "Authorization": "Bearer …" }
+:store session = {}
 
 :fetch feed from "/api/feed" headers=session refresh="/auth/refresh"
 ```
@@ -729,7 +762,7 @@ A URL can interpolate state with `{ }`. The fetch re-runs automatically when tha
 
 Trigger a reload by hand with the `refetch` action:
 
-```wd
+```wd-fragment
 :button "Reload" -> roster refetch
 ```
 
@@ -860,9 +893,9 @@ export default async function (request, context) {
 
 Templates get you to a running, deployable app fast: `darkmown init shop --template store` ships a cart **and** an `api/checkout.js`; `--template dashboard` ships a `:fetch` view **and** an `api/metrics.js`; `--template blog` ships a typed posts collection (`_schema.wd` + one `@loop` over the folder) — adding a post is adding a `.md` file.
 
-## Interactions — `:slider`, `:sortable`, `:carousel`
+## Interactions — `:slider`, `sortable`, `:carousel`
 
-Rich interactions are **pay-for-what-you-use**: `:sortable`/`:carousel` compile to a tiny `/__wd/behaviors/<name>.js` module injected **only** on pages that use them, budgeted separately from the ≤8 KB core runtime. `:slider` is compile-time only — zero extra JS.
+Rich interactions are **pay-for-what-you-use**: `sortable`/`:carousel` compile to a tiny `/__wd/behaviors/<name>.js` module injected **only** on pages that use them, budgeted separately from the ≤8 KB core runtime. `:slider` is compile-time only — zero extra JS.
 
 ```wd
 :slider volume = 50 min=0 max=100 step=5
@@ -884,7 +917,7 @@ Second slide
 ```
 
 - **`:slider name = v min max step`** renders a range input two-way bound through `:bind`; range values coerce to Number so `:computed`/math see a number. Ships no behavior module.
-- **`:sortable`** (a `@loop` clause) drag-reorders the underlying `:state`/`:store` list via Pointer Events (mouse + touch), with full keyboard support (Arrow Up/Down on a focused row, screen-reader instructions + a live "Moved to position N of M" announcement), rewriting the list through the public `window.wd` API so the keyed loop repaints. Valid only on a plain reactive loop (no `where`/`sort`/`reverse`/`offset`/`limit`).
+- **`sortable`** (a bare `@loop` clause, written without a leading colon) drag-reorders the underlying `:state`/`:store` list via Pointer Events (mouse + touch), with full keyboard support (Arrow Up/Down on a focused row, screen-reader instructions + a live "Moved to position N of M" announcement), rewriting the list through the public `window.wd` API so the keyed loop repaints. Valid only on a plain reactive loop (no `where`/`sort`/`reverse`/`offset`/`limit`).
 - **`:carousel [autoplay=N]`** treats **each direct child block as one slide** (wrap each in its own block, e.g. `::: slide`, and size it in your skin), using native CSS scroll-snap (touch swipe is free) plus prev/next buttons, dot navigation, and mouse drag. `autoplay` is suppressed under `prefers-reduced-motion`.
 
 ## Inline attributes
@@ -896,13 +929,13 @@ A trailing `{.class .class #id}` attaches classes / an id to the inline element 
 ![logo](/logo.svg){.brand}
 ```
 
-The block must follow the element with no space, and works on links, images, emphasis, and inline code. It never collides with `{ name }` interpolation — an interpolation always starts with a name, never a `.` or `#`.
+The block must follow the element with no space, and works on links, images, and emphasis. It does **not** attach to inline code: `` `x` ``{.hl} leaves the braces in the output as literal text. It never collides with `{ name }` interpolation, because an interpolation always starts with a name, never a `.` or `#`.
 
 **Headings get anchors for free.** Every markdown heading carries a stable, GitHub-style slug `id` at build time (lowercased, punctuation stripped, whitespace → hyphens; duplicates dedupe with `-1`/`-2` suffixes across the whole document), so any section of any page is deep-linkable with a plain `#the-slug` fragment — zero JS. The [docs page's](https://darkmown.com/docs/) "On this page" table of contents is just markdown links to those anchors.
 
 ## Media — `:video`, `:audio`, `:embed`
 
-*New in 1.0.* Three one-line directives replace hand-written `<video>` / `<iframe>` markup. They are **compile-time only** — they emit no `data-wd-*`, so a media-only page still ships **zero** framework JavaScript.
+Three one-line directives replace hand-written `<video>` / `<iframe>` markup. They are **compile-time only** — they emit no `data-wd-*`, so a media-only page still ships **zero** framework JavaScript.
 
 ```wd
 :video /clip.mp4 poster=/clip.jpg controls
@@ -917,7 +950,7 @@ Darkmown's shipped CSP pre-authorizes exactly the two embed origins (`youtube-no
 
 ## Syntax highlighting
 
-*New in 1.3.* Fenced code blocks with a language are highlighted at **build time** — HTML and CSS only, no client JavaScript. Tag the fence with a language and it just works:
+Fenced code blocks with a language are highlighted at **build time** — HTML and CSS only, no client JavaScript. Tag the fence with a language and it just works:
 
 ````md
 ```js
@@ -950,7 +983,7 @@ See it recolor live on the [Syntax highlighting demo](https://darkmown.com/highl
 
 ## Dark mode — `tokens dark`
 
-*New in 0.19.0.* A colocated `.skin` file already declares its palette in a `tokens` block (`name value` pairs referenced elsewhere as `$name`). Add a second `tokens dark` block to override any of those tokens under the visitor's OS dark preference — it compiles to a `@media (prefers-color-scheme: dark) :root { … }` rule, so the page follows the system theme with **zero JavaScript**.
+A colocated `.skin` file already declares its palette in a `tokens` block (`name value` pairs referenced elsewhere as `$name`). Add a second `tokens dark` block to override any of those tokens under the visitor's OS dark preference — it compiles to a `@media (prefers-color-scheme: dark) :root { … }` rule, so the page follows the system theme with **zero JavaScript**.
 
 ```skin
 tokens
@@ -970,7 +1003,7 @@ A single `tokens dark` block powers **both** theming paths: it compiles to `:roo
 
 ### Manual toggle — `:theme`
 
-*New in 1.0.* For an explicit light/dark switch alongside (or instead of) the OS preference, declare `:theme` once and drive it with ordinary buttons. It registers a durable `theme` store and reflects its value onto `<html data-theme="…">`:
+For an explicit light/dark switch alongside (or instead of) the OS preference, declare `:theme` once and drive it with ordinary buttons. It registers a durable `theme` store and reflects its value onto `<html data-theme="…">`:
 
 ```wd
 :theme
@@ -983,7 +1016,7 @@ Because `tokens dark` already emits the `[data-theme="dark"]` rule, **no extra s
 
 ## Scoped styles — `scoped`
 
-*New in 1.4.0.* By default a colocated `.skin` is **global** — its selectors match the whole page, exactly like a stylesheet. That's the right default for a design system. But when two components both want a class called `.card`, global CSS makes them fight. Opt a skin into **scoping** so its selectors only ever match the component it ships with: make the **first line** of the `.skin` file the word `scoped`.
+By default a colocated `.skin` is **global** — its selectors match the whole page, exactly like a stylesheet. That's the right default for a design system. But when two components both want a class called `.card`, global CSS makes them fight. Opt a skin into **scoping** so its selectors only ever match the component it ships with: make the **first line** of the `.skin` file the word `scoped`.
 
 ```skin
 scoped
@@ -1097,7 +1130,7 @@ Every author-facing compile error opens with a stable `WDxxx` code, so it is sea
         Use: :state name = value [persist|ephemeral] — e.g. :state count = 0
 ```
 
-The full list lives in [`docs/errors.md`](docs/errors.md) — code, cause, fix, and a compilable example each. Codes are grouped by subsystem:
+The full list lives in [`docs/errors.md`](https://github.com/ZVN-DEV/darkmown/blob/master/docs/errors.md): code, cause, fix, and a compilable example each. (It is generated into the repository, not the published tarball; `darkmown catalog --llms-full` prints the same content offline.) Codes are grouped by subsystem:
 
 | Range | Subsystem |
 | --- | --- |
@@ -1168,7 +1201,7 @@ session.call("validate", {});
 
 ## Editor support
 
-A VS Code extension in [`editors/vscode`](editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown.
+A VS Code extension in [`editors/vscode`](https://github.com/ZVN-DEV/darkmown/tree/master/editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — so a `.wd` file reads as Markdown-plus-directives, never as broken Markdown.
 
 Install from a `.vsix` today:
 
@@ -1177,7 +1210,7 @@ npm run pack:extension   # builds editors/vscode/darkmown-<version>.vsix
 code --install-extension editors/vscode/darkmown-*.vsix
 ```
 
-Or inside VS Code: Extensions panel → `…` menu → **Install from VSIX…** and pick the built file. A Visual Studio Marketplace listing is pending (see [`editors/vscode/PUBLISHING.md`](editors/vscode/PUBLISHING.md)); until it lands, the `.vsix` route above is the supported install.
+Or inside VS Code: Extensions panel → `…` menu → **Install from VSIX…** and pick the built file. A Visual Studio Marketplace listing is pending (see [`editors/vscode/PUBLISHING.md`](https://github.com/ZVN-DEV/darkmown/blob/master/editors/vscode/PUBLISHING.md)); until it lands, the `.vsix` route above is the supported install.
 
 ## Accessibility
 
@@ -1210,6 +1243,32 @@ Builds emit security response headers so a deployed site gets sane defaults with
 - **`X-Content-Type-Options: nosniff`**, **`Referrer-Policy`**, and a **`frame-ancestors`** directive (clickjacking protection) on every page.
 
 **If you use `:fetch` or `:form action=` against another host, widen `connect-src`.** The shipped CSP allows same-origin connections; calling a third-party API is otherwise blocked by the policy. Add the host to `connect-src` in your deploy config (it is not auto-derived from your page sources). The CSP is a defense-in-depth layer — it does not replace the trust-boundary rules above; see [SECURITY.md](SECURITY.md) for tightening guidance.
+
+## Limits
+
+Darkmown is small on purpose. Here is what it deliberately refuses and what it genuinely cannot do today, collected in one place so you can decide before you build rather than after.
+
+**Refusals that will not change:**
+
+- **`.md` never gets directives.** The extension is the feature gate, and it holds transitively: an `.md` page that `@include`s a `.wd` still ships `runtime: false` and inert text.
+- **No `eval`, and a closed expression vocabulary.** Predicates, `:computed`, and directive actions are compile-time whitelists interpreted by a closed evaluator. There are no custom format pipes and no user-supplied functions anywhere in the language. (That is also why reactive pages need no `'unsafe-eval'`.)
+- **No backend DSL.** `api/` is plain Web-standard JavaScript. Darkmown owns no server and never will.
+- **No built-in sanitizer.** The model is trusted-author; see [Security](#security).
+
+**Structural limits, true today:**
+
+- **No per-request rendering.** Everything is build time. A `:state`-seeded `@loop` *does* bake its rows into the initial HTML, so that content is indexable, but anything behind `:fetch` is invisible to crawlers and to your own `sitemap.xml`. No personalization, no draft preview URLs.
+- **Auth is a public shell with `api/`-gated data.** A `:if session` gate ships *both* branches into the HTML, and a `:state`/`:store` seed is inlined into public HTML, so a token must never be written into a page (see [Authenticated requests](#authenticated-requests-and-token-refresh)). The workable architecture is a public page whose data is gated behind your own endpoint.
+- **No layout or shell inheritance.** Every page includes its own nav and footer. There is no template a page extends and no slot to fill.
+- **No arbitrary `<head>` content.** The document head is what frontmatter drives; you cannot inject your own tags.
+- **No route generation from data.** Collections are folders of files. A JSON array cannot become routes. `paginate N` is the one route multiplier, and only over an existing collection listing.
+- **No attributes on containers or buttons.** `:::` accepts only `#id`, `.class`, and `.class when …`; `:button` accepts none at all. `aria-*`, `role`, `data-*`, and `title` need raw HTML or a colocated `.js`.
+- **No i18n beyond `lang:`.** No `hreflang`, no message catalog, no ambient locale, no locale routing. A multilingual site means duplicating the tree per locale.
+- **Every framework asset URL is absolute** (`/__wd/...`), so a Darkmown site cannot be mounted at a subpath. It is all-or-nothing per origin.
+- **Includes are macros, not components.** No children, no slots, no default arguments, and a missing argument renders `{ title }` literally rather than erroring.
+- **No `darkmown test`.** There is no built-in way to assert your own site's behavior. Use [`compileFromMemory`](#programmatic-compile--compilefrommemory) against your own pages, or a browser test runner.
+
+**Migrating out is easy, and that is on purpose.** `dist/` is portable static HTML plus one runtime file of about 7.7 KB. There is no server to port, no proprietary component format, no framework runtime baked through the output, and nothing to un-eject. Point any host at the folder, or hand it to whatever you move to next, and the site keeps working. The lock-in is a directory of Markdown files you already own.
 
 ## Spec status
 

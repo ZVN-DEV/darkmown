@@ -1,14 +1,26 @@
 # Darkmown CLI
 
-## Install locally
+The published package is `@zvndev/darkmown`; the executable it installs is plain `darkmown`. Nothing here needs a global install.
+
+## Install
+
+Scaffold a new project in one command, with no prior install:
 
 ```sh
+npx @zvndev/darkmown init my-site
+cd my-site
 npm install
-npm link
-darkmown help
+npm run dev
 ```
 
-`package.json` exposes the executable as `darkmown`.
+Or add it to a project you already have, and call it through `npx`:
+
+```sh
+npm install -D @zvndev/darkmown
+npx darkmown help
+```
+
+Working on the framework itself instead? See [Contributing](../CONTRIBUTING.md). From a clone, `npm install` then `npm link` puts a `darkmown` on your `PATH` that points at your working tree.
 
 ## Commands
 
@@ -61,11 +73,13 @@ Rebuilds are **incremental** for `site/` content changes. Every dev build writes
 
 Correctness beats speed: **any uncertainty runs a full rebuild** — a new, deleted, or renamed file; a file no dependency graph accounts for; a change to the site-wide feed link; a missing or stale map. A change under `src/` (the framework's own code) always runs a full rebuild in a child process so fresh modules load. Production `darkmown build` writes no map and is unaffected.
 
-### `darkmown build [--target cloudflare]`
+### `darkmown build [--target cloudflare] [--drafts]`
 
 Compiles `site/pages` into `dist`. The output is always 100% static HTML.
 
-Static pages do not receive `/__wd/runtime.js`; reactive pages do. Pay-for-what-you-use behavior modules (`:sortable`, `:carousel`) emit to `dist/__wd/behaviors/` only on the pages that use them.
+`--drafts` includes pages marked `draft: true` in their frontmatter, which a default `build` leaves out of `dist`, `routes.json`, `sitemap.xml`, and `rss.xml` entirely. Use it for a staging deploy. `darkmown dev` always builds drafts, with a "DRAFT" banner that exists only in the dev server.
+
+Static pages do not receive `/__wd/runtime.js`; reactive pages do. Pay-for-what-you-use behavior modules (`sortable`, `:carousel`) emit to `dist/__wd/behaviors/` only on the pages that use them.
 
 `--target cloudflare` additionally emits `dist/_worker.js` — a Cloudflare Pages worker that routes `/api/*` to the project's `api/*.js` functions and serves everything else from `env.ASSETS`. The default target leaves `api/` for Vercel to run natively. `darkmown deploy` sets the right target automatically.
 
@@ -84,23 +98,19 @@ The deploy URL is printed when the CLI reports it. If the platform CLI isn't sig
 
 Serves the already-built `dist` directory for local preview (static only — use `darkmown dev` to exercise `api/*` locally). Run `darkmown build` first.
 
-### `darkmown catalog [--llms]`
+### `darkmown catalog [--llms|--llms-full]`
 
-Prints the machine-readable `.wd` directive catalog as JSON — every directive, `@loop` clause, loop variable, button action, format pipe, and predicate operator, each with a syntax template, description, and concrete example. With `--llms` it prints a compact (~90-line) markdown cheatsheet instead — the artifact to paste into an AI model's system prompt. Every `darkmown build` also writes the cheatsheet to `dist/llms.txt`, and Darkmown ships a generated GBNF grammar (`grammar/wd-directives.gbnf`) for constrained decoding.
+Prints the machine-readable `.wd` directive catalog as JSON: every directive, `@loop` clause, loop variable, button action, format pipe, and predicate operator, each with a syntax template, description, and concrete example.
+
+- `--llms` prints a compact markdown cheatsheet instead: the artifact to paste into an AI model's system prompt.
+- `--llms-full` prints the complete reference that cheatsheet points at: every directive with its full syntax and example, every clause, action, pipe, operator, and frontmatter key, plus **every compile-error code with its cause and fix**. An edit loop that hits `[WD201]` can resolve it from the same output it learned the syntax from.
 
 ```sh
 darkmown catalog --llms > system-prompt.md
+darkmown catalog --llms-full > reference.md
 ```
 
-## Smoke checks
-
-From this repository, run:
-
-```sh
-npm run smoke
-```
-
-The smoke script packs the local tarball, installs the packed CLI in a temporary driver project, scaffolds a consumer app through that installed bin, installs the same tarball into the app, builds it, verifies the reactive home route, and verifies the plain `.md` about route stays zero-JS.
+Every `darkmown build` also writes both files (`dist/llms.txt` and `dist/llms-full.txt`), and Darkmown ships a generated GBNF grammar (`grammar/wd-directives.gbnf`) for constrained decoding.
 
 ## Backends (`api/`)
 
@@ -123,3 +133,17 @@ export default async function (request, context) {
 ### Cloudflare Pages note
 
 Cloudflare advanced mode (`dist/_worker.js`) does not run a bundler, so an `api/` handler deployed to Cloudflare must be dependency-free (or pre-bundled). The same source still runs on Vercel (which bundles) and in `darkmown dev`.
+
+## Working on the framework itself
+
+Everything from here down is for a clone of the Darkmown repository, not for a project built with it.
+
+### Smoke checks
+
+From this repository, run:
+
+```sh
+npm run smoke
+```
+
+The smoke script packs the local tarball, installs the packed CLI in a temporary driver project, scaffolds a consumer app through that installed bin, installs the same tarball into the app, builds it, verifies the reactive home route, and verifies the plain `.md` about route stays zero-JS.

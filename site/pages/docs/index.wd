@@ -38,6 +38,7 @@ Darkmown is a Markdown-native framework for mostly-static sites with tiny reacti
 - [Drafts](#drafts)
 - [Instant navigation](#instant-navigation)
 - [Images](#images)
+- [Static assets](#static-assets)
 - [Sections](#sections)
 - [Reactive directives](#reactive-directives)
 - [Fetching data](#fetching-data)
@@ -47,12 +48,18 @@ Darkmown is a Markdown-native framework for mostly-static sites with tiny reacti
 - [Interactions](#interactions--slider-sortable-carousel)
 - [Theme toggle — `:theme`](#theme-toggle--theme)
 - [Scoped styles — `scoped`](#scoped-styles--scoped)
+- [Inline attributes](#inline-attributes)
 - [Media directives](#media--video-audio-embed)
 - [Syntax highlighting](#syntax-highlighting)
-- [Trust boundary](#trust-boundary)
 - [Colocation](#colocation)
+- [Programmatic compile](#programmatic-compile-compilefrommemory)
+- [AI authoring](#ai-authoring)
 - [Compile error codes](#compile-error-codes)
 - [CLI reference](#cli-reference)
+- [Editor support](#editor-support)
+- [Accessibility](#accessibility)
+- [Security](#security)
+- [Limits](#limits)
 - [Spec status](#spec-status)
 </nav>
 
@@ -73,7 +80,7 @@ Or add Darkmown to an existing project with `npm install -D @zvndev/darkmown`. T
 
 Want to try the syntax before installing anything? The [playground](/playground/) compiles `.wd` and `.md` live in your browser — the same compiler the CLI ships — and shows the real `file:line` error when you break something.
 
-For editing, a [VS Code extension](https://github.com/ZVN-DEV/darkmown/tree/master/editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding — install it from a `.vsix` built out of the framework repo (see its `editors/vscode` README; a Marketplace listing is pending).
+For editing, there is a VS Code extension for `.wd` and `.skin` files: see [Editor support](#editor-support).
 
 `darkmown dev` rebuilds incrementally: it tracks which routes depend on each file (includes, colocated assets, loop data, collections), so editing one page or include recompiles only the routes it affects — and falls back to a full rebuild whenever a file is added, removed, or renamed. `routes.json`, the sitemap, and the RSS feed are regenerated on every rebuild, so they always describe the whole site.
 
@@ -363,6 +370,16 @@ Add `transitions: true` to a page's frontmatter for **instant, flash-free naviga
 
 You don't size images by hand. Every `<img>` the compiler emits gets its intrinsic `width`/`height` read from the source file (so the page doesn't reflow as images decode), `decoding="async"`, and a priority split — the first image stays eager with `fetchpriority="high"`, the rest `loading="lazy"`. Anything you set yourself wins. The compiler measures, it doesn't resize, so keep source images web-sized.
 
+## Static assets
+
+Non-page files live on the include shelf at `site/_/` and are copied into the build untouched:
+
+- Any non-`.md`/`.wd` shelf file is served at `/__wd/media/<path>`, so `site/_/logo.svg` becomes `/__wd/media/logo.svg`. Reference it with a normal URL: `![logo](/__wd/media/logo.svg)`.
+- Shelf `.json` files are served at `/__wd/data/<name>`, which is what `:fetch` reads. That is why `:fetch` works on any plain static host, with no server.
+- A file colocated under `site/pages/` copies to `dist/` at its own path instead (see [Colocation](#colocation)), so `site/pages/logo.svg` is served at `/logo.svg`.
+
+Use the shelf for assets shared across many pages, and colocate the ones a single page owns. Both ship with the right content-type.
+
 ## Sections
 
 `::: section #id .class` opens a container and `:::` closes it. Sections scope state: a `:state` declared inside a section belongs to that section, so two sections can both declare `count` without colliding. Bindings and buttons resolve to the nearest scope.
@@ -559,12 +576,12 @@ Darkmown builds 100% static HTML — never per-request rendering. When you need 
 
 `darkmown init shop --template store` scaffolds a cart **and** its `api/checkout.js`; `--template dashboard` ships a `:fetch` view **and** `api/metrics.js`.
 
-## Interactions — `:slider`, `:sortable`, `:carousel`
+## Interactions — `:slider`, `sortable`, `:carousel`
 
-Pay-for-what-you-use: `:sortable`/`:carousel` compile to a tiny `/__wd/behaviors/*.js` module loaded only where used, budgeted separately from the ≤8 KB core runtime. `:slider` is compile-time only.
+Pay-for-what-you-use: `sortable`/`:carousel` compile to a tiny `/__wd/behaviors/*.js` module loaded only where used, budgeted separately from the ≤8 KB core runtime. `:slider` is compile-time only.
 
 - `:slider name = v min=0 max=100 step=5` — a range input bound through `:bind`; range values coerce to Number.
-- `:sortable` (a `@loop` clause) — drag-to-reorder a `:state`/`:store` list via Pointer Events, with keyboard (Arrow Up/Down) + screen-reader announcements; valid on a plain reactive loop only.
+- `sortable` (a bare `@loop` clause, written without a leading colon) — drag-to-reorder a `:state`/`:store` list via Pointer Events, with keyboard (Arrow Up/Down) + screen-reader announcements; valid on a plain reactive loop only.
 - `:carousel [autoplay=N]` — each direct child block is one slide (wrap each in its own block, e.g. `::: slide`); native scroll-snap plus prev/next, dots, and mouse drag. Autoplay respects `prefers-reduced-motion`.
 
 See all three live on the [Interactions page](/interactions/).
@@ -604,6 +621,16 @@ compiles to `.card[data-wd-scope="wd-7c21"] { … }`, and the component's markup
 | `page` / `*` / `html` / `body` / `::selection` | Compile error — page-level styles belong in a global skin |
 
 Honest limits this release: only **whole-selector** `:global()` (no `.card :global(.x)` yet), and an **unused** scoped selector **warns but is not removed** (a colocated `.js` may add the class). See the side-by-side [Scoped demo](/scoped/).
+
+## Inline attributes
+
+A trailing `{.class .class #id}` attaches classes or an id to the inline element directly before it, most often to style a link as a button without a wrapper:
+
+```wd
+[Get started](/start/){.btn .lg}
+```
+
+The block must follow the element with no space. It works on links, images, and emphasis, and it does **not** attach to inline code. It never collides with `{ name }` interpolation, because an interpolation always starts with a name, never a `.` or `#`. This page uses it: a link marked `{.no-prefetch}` is excluded from the `transitions: true` prerender hint.
 
 ## Media — `:video`, `:audio`, `:embed`
 
@@ -646,22 +673,27 @@ tokens dark
 
 The framework ships a small default `$code-*` set, so highlighting looks right out of the box. The stylesheet is **pay-for-what-you-use**: it's emitted and linked only on pages that actually contain a highlighted block — a page with no code ships nothing extra. A fence with an unknown or absent language renders as plain escaped `<code>` (no highlighting, no error); inline `` `code` `` is never highlighted, and there are deliberately no line numbers (they break copy-paste). See the live [Syntax highlighting demo](/highlight/).
 
-## Trust boundary
-
-Darkmown is a trusted-author site generator: you compile content you wrote, the way you trust your own source. Three things define that boundary.
-
-- **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
-- **Raw HTML is escaped by default.** Markdown renders with `html: false`, so a stray `<script>` in content becomes inert text — safe for multi-author collections out of the box. Set `html: true` in a page's frontmatter to pass your own raw HTML through verbatim; there is no built-in sanitizer, so keep it off pages with content you didn't write.
-- **`:fetch` and `:form action=` have no host allowlist.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Since 2.1 the runtime **interprets** validated `:computed` / `@loop … where` / `.class when` expressions from a compact AST instead of building a `new Function`, so **reactive pages need no `'unsafe-eval'`** — they run under the same strict, eval-free CSP as static pages.
-
-See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/master/SECURITY.md) in the package for the full security model.
-
 ## Colocation
 
 - A matching `.skin` file attaches CSS to the page (indentation-based, compiles to real CSS).
 - A matching `.js` file attaches page behavior. It loads **after** the runtime, so `window.wd` is ready: `wd.get(key)`, `wd.set(key, value)`, and `wd.subscribe(key, cb)` (runs now and on every settled change) bridge declarative state to imperative widgets — the gestures the framework leaves out (keyboard, drag/touch, canvas). The [Swiper demo](/carousel/) is a draggable carousel built this way.
 - Both work for included fragments too, by basename.
 - Any other file under `site/pages/` (an image, font, PDF — anything that isn't a `.md`/`.wd` route or a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type. So `site/pages/logo.svg` is served at `/logo.svg`. Assets below hidden path segments (`.`, `-`, or `_`) and symlinked page assets are skipped, matching the routing privacy rule. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
+
+## Programmatic compile: `compileFromMemory`
+
+`darkmown build` reads from disk, but the compiler itself is filesystem-free. `compileFromMemory(files, entryPath, options)` compiles a page from an in-memory map of project-relative path to source, so the whole compile path bundles for the browser or any other non-Node host:
+
+```js
+import { compileFromMemory } from "@zvndev/darkmown";
+
+const { html, assets } = compileFromMemory(
+  { "site/pages/index.wd": "---\ntitle: Hi\n---\n\n:state n = 0\n" },
+  "site/pages/index.wd"
+);
+```
+
+Includes, colocated `.skin`/`.js` detection, and `@loop` JSON reads all resolve against the map (anything not in it is simply absent), and it throws the same `file:line` compile errors as the CLI. The [playground](/playground/) is built on exactly this entry point: markdown-it plus the compiler bundled into one asset, recompiling on every keystroke into an iframe. On disk, `compilePage(file, paths)` is the same compile with a filesystem reader injected for you.
 
 ## AI authoring
 
@@ -707,7 +739,7 @@ Every author-facing compile error opens with a stable `WDxxx` code, so it is sea
 
 ```
 [WD201] Malformed :state in site/pages/index.wd:1: :state x.
-        Use: :state name = value [persist] — e.g. :state count = 0
+        Use: :state name = value [persist|ephemeral] — e.g. :state count = 0
 ```
 
 The code is mirrored on the thrown error as `err.wd.code`, alongside `file`, `line`, `hint`, and a compilable `example`. Codes are grouped by subsystem — `WD0xx` source and frontmatter, `WD1xx` loops, `WD2xx` state and expressions, `WD3xx` actions, `WD4xx` forms, `WD5xx` fetching, `WD6xx` includes and structure, `WD7xx` media, `WD8xx` skins, `WD9xx` project and CLI.
@@ -725,6 +757,69 @@ The `darkmown` command (installed by `npx @zvndev/darkmown`) is the whole tool �
 - `darkmown catalog [--llms|--llms-full]`: print the `.wd` directive catalog as JSON, a compact cheatsheet for priming an AI model, or the complete reference including every error code (see [AI authoring](#ai-authoring)).
 - `darkmown deploy <vercel|cloudflare> [--prod]` — build (target-aware) and deploy through the platform CLI, printing your URL; an unauthenticated CLI surfaces the login to run first.
 - `darkmown version` / `darkmown help` — print the installed version, or the full command summary and directive syntax.
+
+## Editor support
+
+A [VS Code extension](https://github.com/ZVN-DEV/darkmown/tree/master/editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding, so a `.wd` file reads as Markdown-plus-directives instead of broken Markdown. Build a `.vsix` from the framework repo and install it with `code --install-extension`; a Marketplace listing is pending.
+
+## Accessibility
+
+Landmark and announcement basics are baked in at build time, so they cost zero JavaScript and a static page stays static:
+
+- **Skip link.** The first focusable element on every page is a visually-hidden-until-focused "Skip to content" link. The shell guarantees it has a target: your own `<main>` is reused (an existing `id` wins, an id-less `<main>` gets `id="main"` stamped on), and a page without one is wrapped in `<main id="main">`. Restyle it through `.wd-skip-link` in a skin.
+- **Document language.** `lang:` frontmatter sets `<html lang>` per page, defaulting to `en`.
+- **Live `:fetch` regions.** A bare `:if name_loading` region compiles with `role="status" aria-live="polite"` and `:if name_error` with `role="alert"`, so screen readers announce the flips for free. A `role`/`aria-live` you write inside the region always wins.
+- **Accessible names on controls.** `:input`, `:bind`, `:textarea`, `:select`, `:slider`, and the choice groups derive an `aria-label` from the placeholder, else a humanized field name, unless you supply one.
+
+There is a ceiling, and it is stated in [Limits](#limits): a `:::` container accepts only `#id` and `.class`, and `:button` accepts no attributes, so `aria-*` or `role` on a container or a button needs raw HTML or a colocated `.js`.
+
+## Security
+
+### Trust boundary
+
+Darkmown is a trusted-author site generator: you compile content you wrote, the way you trust your own source. Three things define that boundary.
+
+- **Compile only content you authored.** Don't run `.md`/`.wd` you didn't write — user-generated content, third-party docs — through the compiler without sanitizing it first.
+- **Raw HTML is escaped by default.** Markdown renders with `html: false`, so a stray `<script>` in content becomes inert text — safe for multi-author collections out of the box. Set `html: true` in a page's frontmatter to pass your own raw HTML through verbatim; there is no built-in sanitizer, so keep it off pages with content you didn't write.
+- **`:fetch` and `:form action=` have no host allowlist.** Fetch/form URLs come straight from the page source — the compiler rejects non-http(s) schemes but does not restrict which hosts you call, so SSRF/exfiltration protection is the author's responsibility. Since 2.1 the runtime **interprets** validated `:computed` / `@loop … where` / `.class when` expressions from a compact AST instead of building a `new Function`, so **reactive pages need no `'unsafe-eval'`** — they run under the same strict, eval-free CSP as static pages.
+
+See [SECURITY.md](https://github.com/ZVN-DEV/darkmown/blob/master/SECURITY.md) in the package for the full security model.
+
+### Shipped security headers
+
+Builds emit security response headers, so a deployed site gets sane defaults without a hand-written config. The build writes `dist/_headers` (Cloudflare Pages format), and the Vercel and local `serve` paths apply the equivalent:
+
+- **`Content-Security-Policy`** with no `'unsafe-inline'` and no `'unsafe-eval'` on `script-src`, on every page. The one inline script the framework emits that CSP gates (the `transitions: true` speculationrules block) is authorized by a build-time `'sha256-…'` hash, and the inline state seed is a non-executable JSON data block CSP does not gate. Static and reactive pages get the same strict policy.
+- **`X-Content-Type-Options: nosniff`**, a **`Referrer-Policy`**, and a **`frame-ancestors`** directive (clickjacking protection) on every page.
+- A raw inline `<script>` you write into an `html: true` page is blocked by that policy. Put it in a colocated `.js` file (same-origin, allowed by `'self'`) or widen `script-src` deliberately.
+- Calling another host with `:fetch` or `:form action=`? Widen `connect-src` (and `form-action` for a native form POST) in your deploy config. It is not derived from your page sources.
+- The two embed origins (`youtube-nocookie.com`, `player.vimeo.com`) and `media-src 'self' https:` are pre-authorized, so `:embed` and remote media work out of the box.
+
+## Limits
+
+Darkmown is small on purpose. Here is what it deliberately refuses and what it genuinely cannot do today, collected in one place so you can decide before you build rather than after.
+
+**Refusals that will not change:**
+
+- **`.md` never gets directives.** The extension is the feature gate, and it holds transitively: an `.md` page that includes a `.wd` still ships `runtime: false` and inert text.
+- **No `eval`, and a closed expression vocabulary.** Predicates, `:computed`, and directive actions are compile-time whitelists interpreted by a closed evaluator. There are no custom format pipes and no user-supplied functions anywhere in the language.
+- **No backend DSL.** `api/` is plain Web-standard JavaScript. Darkmown owns no server and never will.
+- **No built-in sanitizer.** The model is trusted-author; see [Security](#security).
+
+**Structural limits, true today:**
+
+- **No per-request rendering.** Everything is build time. A `:state`-seeded `@loop` *does* bake its rows into the initial HTML, so it is indexable, but anything behind `:fetch` is invisible to crawlers and to the sitemap. No personalization, no draft preview URLs.
+- **Auth is a public shell with `api/`-gated data.** A `:if session` gate ships *both* branches into the HTML, and a `:state`/`:store` seed is inlined into public HTML, so a token must never be written into a page. The workable architecture is a public page whose data is gated behind your `api/` endpoint.
+- **No layout or shell inheritance.** Every page includes its own nav and footer. There is no template a page extends.
+- **No arbitrary `<head>` content.** The document head is what frontmatter drives; you cannot inject your own tags.
+- **No route generation from data.** Collections are folders of files. A JSON array cannot become routes. `paginate N` is the one route multiplier, and only over an existing collection listing.
+- **No attributes on containers or buttons.** `:::` accepts only `#id`, `.class`, and `.class when …`; `:button` accepts none at all. `aria-*`, `role`, `data-*`, and `title` need raw HTML or a colocated `.js`.
+- **No i18n beyond `lang:`.** No `hreflang`, no message catalog, no ambient locale, no locale routing. A multilingual site means duplicating the tree per locale.
+- **Every framework asset URL is absolute** (`/__wd/...`), so a Darkmown site cannot be mounted at a subpath. It is all-or-nothing per origin.
+- **Includes are macros, not components.** No children, no slots, no default arguments, and a missing argument renders `{ title }` literally rather than erroring.
+- **No `darkmown test`.** There is no built-in way to assert your own site's behavior. Use [`compileFromMemory`](#programmatic-compile-compilefrommemory) or a browser test runner.
+
+**Migrating out is easy, and that is on purpose.** `dist/` is portable static HTML plus one runtime file of about 7.7 KB. No server to port, no proprietary component format, no framework baked into the output. Point any host at the folder, or hand it to whatever you move to next, and the site keeps working.
 
 ## Spec status
 
