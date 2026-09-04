@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildSite, renderCloudflareHeaders } from "../src/builder.js";
+import { parseFrontmatter } from "../src/compiler.js";
 import {
   BASE_SECURITY_HEADERS,
   REACTIVE_CSP,
@@ -347,6 +348,57 @@ test("form-action 'self' is present in both CSP variants and in vercel.json", ()
       value,
       /form-action 'self'/,
       "vercel.json CSP is missing form-action 'self' — it drifted from headers.js, so native form posts break on Vercel"
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Drift guard: host canonicalisation is the DOMAIN's job, never the router's.
+//
+// The site ships default-src/style-src/script-src 'self', so a document is only
+// styled if its assets resolve to the SAME origin that served it. A redirect in
+// vercel.json cannot safely move a request to another host, because Vercel
+// applies it per-path: a `/:path*` source matched every asset (`/__wd/*.css`,
+// `/rss.xml` — no trailing slash) but NOT the trailing-slash page routes this
+// site is built on. www.darkmown.com therefore served its own HTML while every
+// stylesheet and script 308'd to the apex, and 'self' blocked all six. The site
+// rendered with zero CSS and no runtime for anyone who typed the www host.
+//
+// A PARTIAL host redirect is strictly worse than none: with no rule at all the
+// alternate host merely serves a duplicate (working) site. So the rule is not
+// "write a better pattern", it is "vercel.json never conditions a redirect on
+// the host". Canonicalisation lives in the Vercel domain config instead
+// (www.darkmown.com -> darkmown.com, 308), which runs ahead of all routing and
+// cannot match only some paths.
+// ---------------------------------------------------------------------------
+test("vercel.json declares no host-conditioned redirect — canonical-host redirects belong to the domain config", () => {
+  const repoRoot = process.cwd();
+  const vercel = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
+
+  // The home page frontmatter carries the site's identity (see the SEO docs).
+  const home = fs.readFileSync(path.join(repoRoot, "site/pages/index.wd"), "utf8");
+  const { meta } = parseFrontmatter(home);
+  assert.ok(
+    meta.site_url,
+    "site/pages/index.wd must declare site_url for this guard to have an origin"
+  );
+  const ownOrigin = new URL(String(meta.site_url)).origin;
+
+  for (const rule of vercel.redirects || []) {
+    const hostRule = (rule.has || []).find((h) => h.type === "host");
+    assert.ok(
+      !hostRule,
+      `vercel.json redirects "${rule.source}" conditioned on host "${hostRule?.value}". Vercel applies redirects per-path, so a source like /:path* fires for asset paths (no trailing slash) but NOT for the trailing-slash page routes this site is built on — the alternate host keeps serving HTML while its assets move to another origin, and default-src 'self' blocks every one. Redirect the host in the Vercel domain config instead.`
+    );
+
+    // A redirect to a genuinely foreign origin has the same effect for any
+    // sub-resource it lands on, so it is out too.
+    const dest = String(rule.destination || "");
+    if (!/^https?:\/\//.test(dest)) continue; // relative destination stays on-origin
+    assert.equal(
+      new URL(dest.replace(/[:$]\w+\*?/g, "x")).origin,
+      ownOrigin,
+      `vercel.json redirects "${rule.source}" to a foreign origin (${dest}), which no 'self' CSP on this site can authorize.`
     );
   }
 });
