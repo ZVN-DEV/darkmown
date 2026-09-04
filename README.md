@@ -7,7 +7,7 @@
 
 **[darkmown.com](https://darkmown.com)** · Markdown that runs.
 
-Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~6.4 KB gzipped, CI-enforced under 8 KB.
+Darkmown is a Markdown-native web framework. Two formats, one rule: `.md` stays plain CommonMark forever, and renaming a file to `.wd` ("whateverdown") is what unlocks directives — includes, loops, state, conditionals, and sections. Static pages ship **zero** framework JavaScript; reactive pages share one runtime around ~6.6 KB gzipped, CI-enforced under 8 KB.
 
 **Who it is for.** Content sites that need a few interactive islands: documentation, blogs, marketing sites, changelogs, small storefronts and dashboards. You get real Markdown files, real static HTML, and a handful of directives when a page needs to react. It is not a general-purpose application framework, and the [Limits](#limits) section says exactly where the line is before you build against it.
 
@@ -85,7 +85,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.
-- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js`, a minified build of the readable `src/runtime.js` (currently ~6.4 KB gzipped, CI-enforced under 8 KB). An external sourcemap ships beside it at `/__wd/runtime.js.map` with the original source inlined, so DevTools shows real names and real comments. Development serves the same bytes as production.
+- Static pages ship zero Darkmown runtime. Reactive pages share `/__wd/runtime.js`, a minified build of the readable `src/runtime.js` (currently ~6.6 KB gzipped, CI-enforced under 8 KB). An external sourcemap ships beside it at `/__wd/runtime.js.map` with the original source inlined, so DevTools shows real names and real comments. Development serves the same bytes as production.
 - Shelf `.json` files are published at `/__wd/data/` so `:fetch` works on any static host.
 
 ## Directive lines
@@ -983,7 +983,7 @@ The rules:
 - **The parameter is named after the state key.** A section-scoped key like `cart:items` becomes the parameter `cart.items`, so the name stays readable and stays unique.
 - **A value equal to its declared seed drops its parameter,** so the default page keeps a clean URL.
 - **Writes go through `history.replaceState`,** so filtering never fills the back button with one entry per keystroke. `popstate` re-reads on back and forward, and a parameter that is gone restores the seed.
-- **It composes with `persist`,** and the boot precedence is URL, then stored value, then seed. A link somebody sent you beats what this browser remembers.
+- **It composes with `persist`,** and the boot precedence is URL, then stored value, then seed. A link somebody sent you beats what this browser remembers. When back navigation lands on a clean URL, the stored value follows the seed too.
 - **Strings stay strings.** For any other seed type the parameter is JSON-parsed, falling back to the raw string.
 - **`from-url` is `:state` only.** A `:store` is shared by every page and every tab while a query parameter belongs to one page's address, so `from-url` on a `:store` or a `:theme` is `[WD260]` rather than a guess. On a `:computed` it is `[WD211]`: derive the value from a state key that does come from the URL.
 
@@ -1476,7 +1476,7 @@ Darkmown is small on purpose. Here is what it deliberately refuses and what it g
 - **Includes are macros, not components.** No children, no slots, no default arguments, and a missing argument renders `{ title }` literally rather than erroring.
 - **No `darkmown test`.** There is no built-in way to assert your own site's behavior. Use [`compileFromMemory`](#programmatic-compile--compilefrommemory) against your own pages, or a browser test runner.
 
-**Migrating out is easy, and that is on purpose.** `dist/` is portable static HTML plus one runtime file of ~6.4 KB gzipped. There is no server to port, no proprietary component format, no framework runtime baked through the output, and nothing to un-eject. Point any host at the folder, or hand it to whatever you move to next, and the site keeps working. The lock-in is a directory of Markdown files you already own.
+**Migrating out is easy, and that is on purpose.** `dist/` is portable static HTML plus one runtime file of ~6.6 KB gzipped. There is no server to port, no proprietary component format, no framework runtime baked through the output, and nothing to un-eject. Point any host at the folder, or hand it to whatever you move to next, and the site keeps working. The lock-in is a directory of Markdown files you already own.
 
 ## Spec status
 

@@ -96,7 +96,7 @@ Darkmown's whole pitch is weight. A static page ships **zero** framework JavaScr
 
 ::: card .sc-scale
 - **Static Darkmown page** — `0 KB` framework JS. Forever.
-- **Reactive Darkmown page** — one shared `~6.4 KB` gzipped runtime, no per-component bundles.
+- **Reactive Darkmown page** — one shared `~6.6 KB` gzipped runtime, no per-component bundles.
 - **A typical SPA** — ships a framework runtime in the **~15–60 KB** gzipped range *before* your app code, on every page (Alpine ~15 KB, Vue ~18 KB runtime, React 19 ~59 KB).
 :::
 

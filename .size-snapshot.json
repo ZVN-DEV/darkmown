@@ -1,7 +1,7 @@
 {
   "runtime": {
     "file": "src/runtime.min.js",
-    "gzip": 6449,
+    "gzip": 6584,
     "budget": 8192
   },
   "behaviors": {

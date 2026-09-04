@@ -394,11 +394,17 @@ function reportAndGate(dir, { srcDir, srcUrlPrefix, threshold }) {
     let exec = false;
     let covered = false;
     let nonWs = false;
+    // WD_COV_SHOW=<substring of the file path> prints the uncovered line numbers
+    // of that file, so a 99.9x% run can be fixed without a second tool.
+    let line = 1;
+    const missed = [];
     const finalize = () => {
       if (exec && nonWs) {
         total++;
         if (covered) hit++;
+        else missed.push(line);
       }
+      line++;
       exec = false;
       covered = false;
       nonWs = false;
@@ -416,6 +422,10 @@ function reportAndGate(dir, { srcDir, srcUrlPrefix, threshold }) {
       }
     }
     finalize();
+    const show = process.env.WD_COV_SHOW;
+    if (show && url.includes(show)) {
+      console.error(`  uncovered lines in ${url.slice(url.lastIndexOf("/src/") + 5)}: ${missed.join(", ") || "none"}`);
+    }
     return { total, hit };
   };
 

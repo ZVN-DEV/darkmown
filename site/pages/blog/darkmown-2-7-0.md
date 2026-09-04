@@ -132,7 +132,7 @@ served next to it so DevTools still shows the readable source with real names
 and real comments. That bought about 2 KB back, and this release spent it:
 attribute binding, `from-url`, bound `:select`/`:radio`/`:checkbox` outside a
 form, server error bodies, and real multipart file upload. Total after all five:
-**6449 bytes gzipped**, against the same 8192 byte budget.
+**6584 bytes gzipped**, against the same 8192 byte budget.
 
 The budget did not move. That is the point of having one.
 

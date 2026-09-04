@@ -162,7 +162,7 @@ The echo endpoint is only live on the deployed site: { reply_error }
 ## Three rules, no escape hatch
 
 - **Zero-JS static.** A page with no state ships no framework JavaScript. Open [the docs](/docs/) or [a plain `.md` page](/markdown/) and check the network tab.
-- **One runtime.** Every reactive page shares the same 6,449-byte gzipped runtime, CI-enforced under 8 KB. No per-component bundles, no hydration tax that grows with your UI. It runs under a strict CSP with no `unsafe-eval`.
+- **One runtime.** Every reactive page shares the same 6,584-byte gzipped runtime, CI-enforced under 8 KB. No per-component bundles, no hydration tax that grows with your UI. It runs under a strict CSP with no `unsafe-eval`.
 - **One loop, one binding.** `@loop … into …` is the only loop. `{ name }` is the only interpolation. There is no second way to do either.
 
 ## A whole framework, in text
