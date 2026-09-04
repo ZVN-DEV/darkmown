@@ -92,6 +92,67 @@ export function astAt(code, ctx, index, what) {
 export const serializeExprAt = (code, ctx, index, what) =>
   JSON.stringify(astAt(code, ctx, index, what));
 
+// The clause patterns, each opening with `(^|\s)` so the keyword's own start is
+// `m.index + m[1].length`. `g`-flagged so {@link matchClause} can keep scanning
+// past an occurrence that turned out to be inside a quoted `where` operand.
+const SORTABLE_RE = /(^|\s)sortable(?=\s|$)/g;
+const PAGINATE_RE = /(^|\s)paginate\s+(\d+)(?=\s|$)/g;
+const LIMIT_RE = /(^|\s)limit\s+(\d+|[A-Za-z_$][\w$]*)$/g;
+const OFFSET_RE = /(^|\s)offset\s+(\d+|[A-Za-z_$][\w$]*)$/g;
+const REVERSE_RE = /(^|\s)reverse$/g;
+const SORT_RE =
+  /(^|\s)sort\s+by\s+(\{\s*[A-Za-z_$][\w$]*\s*\}|[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\s+(\{\s*[A-Za-z_$][\w$]*\s*\}|asc|desc))?$/g;
+// A clause keyword left INSIDE the `where` remainder — the out-of-order signal.
+const CLAUSE_IN_WHERE_RE = /(^|\s)(sort\s+by\s|reverse(\s|$))/g;
+
+/**
+ * Which characters of a `@loop` clause tail sit inside a quoted operand.
+ *
+ * The clause peels are plain regexes over the whole tail, so they could not tell
+ * a real clause from the same word inside a `where` string literal: `where
+ * p.note contains "a sortable b"` peeled a `sortable` flag out of the middle of
+ * the string (then failed as "sortable cannot combine with where"), and `where
+ * p.t contains "we sort by hand"` was rejected outright as out-of-order clauses.
+ * Same defect, and the same remedy, as the quote-aware `and`/`or` split in
+ * `predicates.js`. Opening and closing quotes count as inside, so a keyword can
+ * never be read out of a literal.
+ * @param {string} s
+ * @returns {boolean[]}
+ */
+function quotedMask(s) {
+  const mask = new Array(s.length).fill(false);
+  let quote = "";
+  for (let i = 0; i < s.length; i++) {
+    if (quote) {
+      mask[i] = true;
+      if (s[i] === quote) quote = "";
+    } else if (s[i] === '"' || s[i] === "'") {
+      quote = s[i];
+      mask[i] = true;
+    }
+  }
+  return mask;
+}
+
+/**
+ * The first match of a clause pattern whose KEYWORD begins outside a quoted
+ * operand, or null when the only occurrences are quoted.
+ * @param {string} s
+ * @param {RegExp} re One of the `g`-flagged clause patterns above.
+ * @returns {RegExpExecArray | null}
+ */
+function matchClause(s, re) {
+  const mask = quotedMask(s);
+  re.lastIndex = 0;
+  for (let m = re.exec(s); m; m = re.exec(s)) {
+    if (!mask[m.index + m[1].length]) return m;
+    // Resume one character in, not past the whole match: a real clause can begin
+    // inside the span a quoted occurrence just consumed.
+    re.lastIndex = m.index + 1;
+  }
+  return null;
+}
+
 /**
  * Parse the optional clause tail of a `@loop` header in FIXED order:
  * `[where P] [sort by key [asc|desc]] [reverse] [offset N] [limit N] [paginate N] [sortable]`.
@@ -103,9 +164,11 @@ export const serializeExprAt = (code, ctx, index, what) =>
 function parseLoopClauses(tail, itemName, ctx) {
   // Peel clauses off the END in reverse fixed-order (limit, offset, reverse,
   // sort by). Parsing from the tail avoids mistaking a state operand named
-  // `limit`/`offset` inside the `where` predicate for a clause keyword. Whatever
-  // remains must be `where …` (or empty); a clause keyword surviving in the
-  // remainder means the author wrote the clauses out of order.
+  // `limit`/`offset` inside the `where` predicate for a clause keyword, and
+  // every peel goes through `matchClause`, which ignores a keyword sitting
+  // inside a quoted `where` operand. Whatever remains must be `where …` (or
+  // empty); a clause keyword surviving UNQUOTED in the remainder means the
+  // author wrote the clauses out of order.
   let s = tail.trim();
   /** @type {import("./context.js").LoopOpts["sort"]} */ let sort = null;
   let reverse = false;
@@ -125,7 +188,7 @@ function parseLoopClauses(tail, itemName, ctx) {
   // `sortable` is a position-independent flag (drag-reorder); peel it wherever it
   // sits so the rest of the fixed-order parse is unaffected. handleLoop rejects it
   // when combined with where/sort/reverse/offset/limit.
-  const sm = s.match(/(^|\s)sortable(?=\s|$)/);
+  const sm = matchClause(s, SORTABLE_RE);
   if (sm) {
     sortable = true;
     s = (s.slice(0, sm.index) + s.slice((sm.index ?? 0) + sm[0].length))
@@ -138,7 +201,7 @@ function parseLoopClauses(tail, itemName, ctx) {
   // can reject the combination with a precise message rather than failing the
   // fixed-order parse. The count is a positive integer literal — paginating "by a
   // state value" makes no sense for a build-time route split.
-  const pm = s.match(/(^|\s)paginate\s+(\d+)(?=\s|$)/);
+  const pm = matchClause(s, PAGINATE_RE);
   if (pm) {
     paginate = Number(pm[2]);
     if (paginate < 1) bad();
@@ -147,21 +210,21 @@ function parseLoopClauses(tail, itemName, ctx) {
       .trim();
   }
 
-  let m = s.match(/(^|\s)limit\s+(\d+|[A-Za-z_$][\w$]*)$/);
+  let m = matchClause(s, LIMIT_RE);
   if (m) {
     limit = parseNumArg(m[2], ctx);
     refsState = refsState || limit.kind === "key";
     s = s.slice(0, s.length - m[0].length + m[1].length).trim();
   }
 
-  m = s.match(/(^|\s)offset\s+(\d+|[A-Za-z_$][\w$]*)$/);
+  m = matchClause(s, OFFSET_RE);
   if (m) {
     offset = parseNumArg(m[2], ctx);
     refsState = refsState || offset.kind === "key";
     s = s.slice(0, s.length - m[0].length + m[1].length).trim();
   }
 
-  m = s.match(/(^|\s)reverse$/);
+  m = matchClause(s, REVERSE_RE);
   if (m) {
     reverse = true;
     s = s.slice(0, s.length - m[0].length + m[1].length).trim();
@@ -169,9 +232,7 @@ function parseLoopClauses(tail, itemName, ctx) {
 
   // The field and direction may each be a literal (`post.date` / `asc|desc`) or a
   // `{ state }` reference, which makes the sort reactive (clickable-header tables).
-  m = s.match(
-    /(^|\s)sort\s+by\s+(\{\s*[A-Za-z_$][\w$]*\s*\}|[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\s+(\{\s*[A-Za-z_$][\w$]*\s*\}|asc|desc))?$/
-  );
+  m = matchClause(s, SORT_RE);
   if (m) {
     sort = parseSortClause(m[2], m[3], itemName, ctx);
     if (sort.keyKind === "key" || sort.dirKind === "key") refsState = true;
@@ -180,12 +241,14 @@ function parseLoopClauses(tail, itemName, ctx) {
 
   /** @type {string|null} */ let where = null;
   if (s.length) {
-    m = s.match(/^where\s+(.+)$/);
-    if (!m) return bad(); // leftover non-where text → clauses written out of order
-    where = m[1].trim();
+    const head = s.match(/^where\s+(.+)$/);
+    if (!head) return bad(); // leftover non-where text → clauses written out of order
+    where = head[1].trim();
     // `sort by`/`reverse` are never valid where operands; their presence in the
     // predicate means a clause was written before `where` finished (wrong order).
-    if (/(^|\s)(sort\s+by\s|reverse(\s|$))/.test(where)) bad();
+    // Quoted text is not a clause, so `where p.t contains "we sort by hand"` is
+    // an ordinary string comparison, not a misplaced `sort by`.
+    if (matchClause(where, CLAUSE_IN_WHERE_RE)) bad();
   }
   return { where, sort, reverse, offset, limit, refsState, sortable, paginate };
 }
