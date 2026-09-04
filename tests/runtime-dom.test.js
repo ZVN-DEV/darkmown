@@ -89,26 +89,33 @@ class El {
     for (const [k, v] of this.attrs) copy.attrs.set(k, v);
     copy._text = this._text;
     for (const child of this.children) copy.appendChild(child.cloneNode(true));
+    // A <template>'s children live on .content, not .children: without this a
+    // cloned loop row loses every nested branch template it was carrying.
+    if (this.content)
+      for (const child of this.content.children) copy.content.appendChild(child.cloneNode(true));
     return copy;
   }
   get firstElementChild() {
     return this.children[0] || null;
   }
+  // Recursive, like the real DOM: an element's textContent is its descendants'
+  // text. Without this, reading back a branch the runtime injected via innerHTML
+  // always looks empty and every branch-content assertion is vacuous.
   get textContent() {
-    return this._text;
+    return this.children.length ? this.children.map((c) => c.textContent).join("") : this._text;
   }
   set textContent(v) {
     this._text = v == null ? "" : String(v);
     this.children = [];
   }
-  // innerHTML is only ever assigned "" or template.innerHTML in render(); the
-  // loop reconcile path under test never relies on HTML parsing, so empty-string
-  // clears children and that is all the runtime needs here.
+  // Real serialize/parse. The runtime swaps an :if branch by assigning one
+  // <template>'s innerHTML into a live [data-wd-if-out] node, so a stub that
+  // returned "" would make WHICH branch landed unobservable by construction.
   get innerHTML() {
-    return "";
+    return serializeChildren(this.content || this);
   }
   set innerHTML(v) {
-    if (!v) this.children = [];
+    parseInto(this, v == null ? "" : String(v));
   }
 
   matches(selector) {
@@ -132,7 +139,7 @@ class El {
   querySelectorAll(selector) {
     const out = [];
     walk(this, (node) => {
-      if (node !== this && matchSelector(node, selector)) out.push(node);
+      if (node !== this && node.matches(selector)) out.push(node);
     });
     return out;
   }
@@ -172,6 +179,75 @@ function matchSelector(node, selector) {
     if (val !== undefined && node.attrs.get(attr) !== val.replace(/^["']|["']$/g, "")) return false;
   }
   return true;
+}
+
+const VOID_TAGS = new Set([
+  "AREA",
+  "BASE",
+  "BR",
+  "COL",
+  "EMBED",
+  "HR",
+  "IMG",
+  "INPUT",
+  "LINK",
+  "META",
+  "SOURCE",
+  "TRACK",
+  "WBR"
+]);
+const escText = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escAttr = (v) => escText(v).replace(/"/g, "&quot;");
+const unesc = (t) =>
+  t
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
+
+function serializeChildren(node) {
+  if (!node.children.length) return escText(node._text || "");
+  return node.children
+    .map((el) => {
+      const tag = el.tagName.toLowerCase();
+      const attrs = [...el.attrs]
+        .map(([k, v]) => (v === "" ? ` ${k}` : ` ${k}="${escAttr(v)}"`))
+        .join("");
+      if (VOID_TAGS.has(el.tagName)) return `<${tag}${attrs}>`;
+      return `<${tag}${attrs}>${serializeChildren(el.content || el)}</${tag}>`;
+    })
+    .join("");
+}
+
+// Minimal HTML parser: exactly the shapes the compiler emits into branch
+// templates (tags, quoted/bare attributes, void elements, nested <template>).
+const TOKEN = /<(\/?)([a-zA-Z][\w-]*)((?:\s+[\w:.-]+(?:="[^"]*")?)*)\s*(\/?)>|([^<]+)/g;
+const ATTR = /([\w:.-]+)(?:="([^"]*)")?/g;
+
+function parseInto(root, html) {
+  const target = root.content || root;
+  target.children = [];
+  target._text = "";
+  const stack = [target];
+  TOKEN.lastIndex = 0;
+  let m;
+  while ((m = TOKEN.exec(html))) {
+    const [, close, tag, attrs, selfClose, text] = m;
+    const top = stack[stack.length - 1];
+    if (text !== undefined) {
+      if (!top.children.length) top._text += unesc(text);
+      continue;
+    }
+    if (close) {
+      if (stack.length > 1) stack.pop();
+      continue;
+    }
+    const el = new El(tag);
+    for (const a of attrs.matchAll(ATTR)) el.attrs.set(a[1], a[2] === undefined ? "" : unesc(a[2]));
+    top.appendChild(el);
+    // A <template>'s children belong to .content, so push that as the container.
+    if (!selfClose && !VOID_TAGS.has(el.tagName)) stack.push(el.content || el);
+  }
 }
 
 // --- Form serialization stubs ----------------------------------------------
@@ -359,6 +435,85 @@ function loopRegion(root, El, { key = "items", initial } = {}) {
   root.appendChild(region);
   return { region, out };
 }
+
+// --- builders shared by the conditional / loop behavior tests ---------------
+
+function el(El, tag, attrs = {}, text) {
+  const node = new El(tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function seedState(El, root, obj, persist) {
+  const s = el(El, "script", { "data-wd-state": "" });
+  if (persist) s.setAttribute("data-wd-persist", persist);
+  s.textContent = JSON.stringify(obj);
+  root.appendChild(s);
+  return s;
+}
+
+// A global `:if` region exactly as the compiler emits it: two <template>
+// branches, a live [data-wd-if-out], and the compile-time data-wd-if-active.
+function ifRegion(
+  El,
+  { expr, key = "", path, active = "false", truthy = [], falsy = [], initial = "" }
+) {
+  const node = el(El, "div", { "data-wd-if": key, "data-wd-if-active": active });
+  if (expr) node.setAttribute("data-wd-if-expr", expr);
+  if (path) node.setAttribute("data-wd-path", path);
+  const t = el(El, "template", { "data-wd-true": "" });
+  for (const c of truthy) t.content.appendChild(c);
+  const f = el(El, "template", { "data-wd-false": "" });
+  for (const c of falsy) f.content.appendChild(c);
+  const out = el(El, "div", { "data-wd-if-out": "" }, initial);
+  node.appendChild(t);
+  node.appendChild(f);
+  node.appendChild(out);
+  return { node, out };
+}
+
+// A per-row `:if` region, as emitted inside a loop row template.
+function eachIfRegion(El, { expr, path, meta, truthy = [], falsy = [], initial = "" }) {
+  const region = el(El, "span", { "data-wd-each-if": "" });
+  if (expr) region.setAttribute("data-wd-if-expr", expr);
+  if (path) region.setAttribute("data-wd-path", path);
+  if (meta) region.setAttribute("data-wd-meta", meta);
+  const t = el(El, "template", { "data-wd-if-true": "" });
+  for (const c of truthy) t.content.appendChild(c);
+  const f = el(El, "template", { "data-wd-if-false": "" });
+  for (const c of falsy) f.content.appendChild(c);
+  const out = el(El, "span", { "data-wd-each-if-out": "" }, initial);
+  region.appendChild(t);
+  region.appendChild(f);
+  region.appendChild(out);
+  return { region, out };
+}
+
+// A reactive loop region. Pass `key` for a top-level loop read off state, or
+// `item` for a nested item-relative one (data-wd-loop-item).
+function loopShell(El, { key, item, proto, empty, clauses = {} }) {
+  const region = el(
+    El,
+    "div",
+    key != null ? { "data-wd-loop": key } : { "data-wd-loop-item": item }
+  );
+  for (const [k, v] of Object.entries(clauses)) region.setAttribute(k, v);
+  const template = el(El, "template", { "data-wd-loop-template": "" });
+  template.content.appendChild(proto);
+  region.appendChild(template);
+  if (empty) {
+    const e = el(El, "template", { "data-wd-loop-empty": "" });
+    for (const c of empty) e.content.appendChild(c);
+    region.appendChild(e);
+  }
+  const out = el(El, "ul", { "data-wd-loop-out": "" });
+  region.appendChild(out);
+  return { region, out };
+}
+
+const rowKeys = (out) => out.children.map((n) => n.getAttribute("data-wd-loop-key"));
+const rowText = (out) => out.children.map((n) => n.textContent);
 
 // ---------------------------------------------------------------------------
 // TASK-2A.1 — keyed loop reconcile
@@ -1150,36 +1305,163 @@ test(":effect that never settles stops at the cap and warns", () => {
 // Expression conditionals — :if a <op> b (richer conditions)
 // ---------------------------------------------------------------------------
 
-test("expression :if toggles its active branch as watched state crosses the predicate", () => {
+test("expression :if swaps the RENDERED branch as watched state crosses the predicate", () => {
+  // Both templates carry DISTINCT content. Asserting only data-wd-if-active (as
+  // this test used to) is unobservable by construction: with two EMPTY templates
+  // a swap that injected the wrong branch, or no branch at all, still passes.
   let node;
+  let out;
   const h = makeSandbox((root, El) => {
-    const s = new El("script");
-    s.setAttribute("data-wd-state", "");
-    s.textContent = JSON.stringify({ n: 3 });
-    root.appendChild(s);
-    node = new El("div");
-    node.setAttribute("data-wd-if", "");
-    node.setAttribute("data-wd-if-expr", ast('(S("n") > 5)'));
-    node.setAttribute("data-wd-if-active", "false");
-    const tTrue = new El("template");
-    tTrue.setAttribute("data-wd-true", "");
-    const tFalse = new El("template");
-    tFalse.setAttribute("data-wd-false", "");
-    const out = new El("div");
-    out.setAttribute("data-wd-if-out", "");
-    node.appendChild(tTrue);
-    node.appendChild(tFalse);
-    node.appendChild(out);
+    seedState(El, root, { n: 3 });
+    ({ node, out } = ifRegion(El, {
+      expr: ast('(S("n") > 5)'),
+      truthy: [el(El, "b", {}, "PLENTY")],
+      falsy: [el(El, "i", {}, "SCARCE")],
+      initial: "SCARCE"
+    }));
     root.appendChild(node);
   });
 
-  assert.equal(node.getAttribute("data-wd-if-active"), "false", "n=3 → predicate false");
+  assert.equal(node.getAttribute("data-wd-if-active"), "false", "n=3, predicate false");
+  assert.equal(out.textContent, "SCARCE", "compile-time branch left in place");
+
   h.sandbox.wd.state.n = 10;
   h.sandbox.wd.render();
-  assert.equal(node.getAttribute("data-wd-if-active"), "true", "n=10 → predicate true");
+  assert.equal(node.getAttribute("data-wd-if-active"), "true", "n=10, predicate true");
+  assert.equal(out.children.length, 1);
+  assert.equal(out.children[0].tagName, "B", "the TRUE template's element landed");
+  assert.equal(out.children[0].textContent, "PLENTY");
+
   h.sandbox.wd.state.n = 1;
   h.sandbox.wd.render();
-  assert.equal(node.getAttribute("data-wd-if-active"), "false", "n=1 → predicate false again");
+  assert.equal(node.getAttribute("data-wd-if-active"), "false", "n=1, predicate false again");
+  assert.equal(out.children[0].tagName, "I", "the FALSE template's element landed");
+  assert.equal(out.children[0].textContent, "SCARCE");
+});
+
+test(":if leaves an UNCHANGED branch alone (no re-injection on every render)", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { n: 9 });
+    const built = ifRegion(El, {
+      expr: ast('(S("n") > 5)'),
+      truthy: [el(El, "b", {}, "PLENTY")],
+      falsy: [el(El, "i", {}, "SCARCE")],
+      initial: "SCARCE"
+    });
+    out = built.out;
+    root.appendChild(built.node);
+  });
+  const injected = out.children[0];
+  assert.equal(injected.textContent, "PLENTY");
+
+  // Renders that do not cross the predicate must not touch the subtree:
+  // re-injecting would replace the node and destroy anything live inside it.
+  h.sandbox.wd.state.other = 1;
+  h.sandbox.wd.render();
+  h.sandbox.wd.render();
+  h.sandbox.wd.render();
+  assert.strictEqual(out.children[0], injected, "branch node replaced on an unchanged render");
+});
+
+test("a long :else-if chain resolves to the deepest branch in ONE render", () => {
+  // `:else if` nests one region inside the previous one's false template, so a
+  // four-arm chain is four levels deep and NONE of the inner levels exist in the
+  // live tree until the level above injects. renderIf recursing into what it
+  // just injected is what makes the whole chain settle in a single render; the
+  // repeat-pass safety net alone is capped and would leave the last arm on its
+  // compile-time content until some later, unrelated render.
+  let out;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { a: true, b: true, c: true, d: true });
+    // Each nested arm is baked "false" but reads true, so every level must
+    // actually swap once its parent puts it in the tree.
+    const l4 = ifRegion(El, {
+      key: "d",
+      active: "false",
+      truthy: [el(El, "b", {}, "DEEPEST")],
+      falsy: [el(El, "i", {}, "NONE")],
+      initial: "NONE"
+    });
+    const l3 = ifRegion(El, {
+      key: "c",
+      active: "false",
+      truthy: [l4.node],
+      falsy: [el(El, "i", {}, "L3-FALSE")],
+      initial: "L3-FALSE"
+    });
+    const l2 = ifRegion(El, {
+      key: "b",
+      active: "false",
+      truthy: [l3.node],
+      falsy: [el(El, "i", {}, "L2-FALSE")],
+      initial: "L2-FALSE"
+    });
+    const l1 = ifRegion(El, {
+      key: "a",
+      active: "true",
+      truthy: [el(El, "b", {}, "TOP")],
+      falsy: [l2.node],
+      initial: "TOP"
+    });
+    out = l1.out;
+    root.appendChild(l1.node);
+  });
+  assert.equal(out.textContent, "TOP");
+
+  h.sandbox.wd.state.a = false;
+  h.sandbox.wd.render();
+  assert.equal(
+    out.textContent,
+    "DEEPEST",
+    "every arm of the chain must settle on the render that revealed it"
+  );
+});
+
+test(":if fills a nested :if inside the branch it just injected (:else if desugaring)", () => {
+  // `:else if` compiles to an if-region nested INSIDE the outer false template.
+  // querySelectorAll cannot see into <template> content, so unless renderIf
+  // recurses into what it just injected, the inner region keeps whatever the
+  // compiler baked into it and can never correct itself.
+  let outerOut;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { n: 10, m: 1 });
+    const inner = ifRegion(El, {
+      expr: ast('(S("m") > 0)'),
+      active: "false",
+      truthy: [el(El, "b", {}, "INNER-TRUE")],
+      falsy: [el(El, "i", {}, "INNER-FALSE")],
+      initial: "INNER-FALSE"
+    });
+    const outer = ifRegion(El, {
+      expr: ast('(S("n") > 5)'),
+      active: "true",
+      truthy: [el(El, "b", {}, "OUTER-TRUE")],
+      falsy: [inner.node],
+      initial: "OUTER-TRUE"
+    });
+    outerOut = outer.out;
+    root.appendChild(outer.node);
+  });
+  assert.equal(outerOut.textContent, "OUTER-TRUE", "starts on the outer true branch");
+
+  // Flip the outer predicate: the false branch (carrying the nested region) is
+  // injected for the first time, and that region must be evaluated from m=1
+  // rather than left on the INNER-FALSE the compiler baked into the template.
+  h.sandbox.wd.state.n = 1;
+  h.sandbox.wd.render();
+  const nested = outerOut.querySelector("[data-wd-if]");
+  assert.ok(nested, "the outer false branch was injected");
+  assert.equal(nested.getAttribute("data-wd-if-active"), "true", "nested region evaluated");
+  assert.equal(outerOut.querySelector("[data-wd-if-out]").textContent, "INNER-TRUE");
+
+  h.sandbox.wd.state.m = -1;
+  h.sandbox.wd.render();
+  assert.equal(
+    outerOut.querySelector("[data-wd-if-out]").textContent,
+    "INNER-FALSE",
+    "the now-live nested region keeps tracking state on later renders"
+  );
 });
 
 test("expression :if supports == and a negated operand", () => {
@@ -1832,4 +2114,985 @@ test("a throwing subscriber is caught (prime and on change), never fatal", () =>
     h.sandbox.wd.state.n = 1;
     h.sandbox.wd.render();
   });
+});
+
+// ===========================================================================
+// TASK-R — runtime behavior backfill for the 2026-09-04 audit findings.
+//
+// Every test here fails against the pre-fix runtime for a REASON, not because
+// a marker attribute changed: each asserts the rendered result a user would
+// see, or a DOM operation count, rather than the bookkeeping around it.
+// ===========================================================================
+
+// --- R1: directives that only become live when an :if branch opens ---------
+//
+// The five node-backed directives were registered once at load with
+// document.querySelectorAll, which does not descend into <template> content.
+// One inside an unopened :if branch was invisible forever: the computed never
+// computed, the fetch issued no request, the effect never fired, the timer
+// never ticked, the theme never reflected.
+
+test(":computed and :theme inside an :if branch start working when the branch opens", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { open: false, price: 21, mode: "dark" });
+    const computed = el(El, "span", {
+      "data-wd-computed": "",
+      "data-wd-computed-key": "total",
+      "data-wd-computed-expr": ast('S("price") * 2')
+    });
+    const theme = el(El, "span", { "data-wd-theme": "mode", hidden: "" });
+    const built = ifRegion(El, {
+      key: "open",
+      truthy: [computed, theme, el(El, "span", { "data-wd-bind": "total" })],
+      falsy: [],
+      initial: ""
+    });
+    out = built.out;
+    root.appendChild(built.node);
+  });
+
+  assert.equal(h.sandbox.wd.state.total, undefined, "nothing in the closed branch runs");
+  assert.equal(h.document.documentElement.getAttribute("data-theme"), null);
+
+  h.sandbox.wd.state.open = true;
+  h.sandbox.wd.render();
+
+  assert.equal(h.sandbox.wd.state.total, 42, ":computed in the opened branch computed");
+  assert.equal(
+    out.querySelector("[data-wd-bind]").textContent,
+    "42",
+    "and its value reached the bind in the SAME render"
+  );
+  assert.equal(
+    h.document.documentElement.getAttribute("data-theme"),
+    "dark",
+    ":theme in the opened branch reflected"
+  );
+
+  // It keeps tracking state afterwards, like one that was live all along.
+  h.sandbox.wd.state.price = 5;
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.total, 10);
+});
+
+test(":fetch, :effect and :every inside an :if branch start when the branch opens", async () => {
+  const stub = makeFetchStub({ "/api/feed": { status: 200, body: [{ id: 1 }] } });
+  const intervals = [];
+  let nextId = 1;
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { open: false, n: 0, hit: 0 });
+      const fetchNode = el(El, "span", {
+        "data-wd-fetch": "",
+        "data-wd-fetch-key": "feed",
+        "data-wd-fetch-url": "/api/feed"
+      });
+      const effect = el(El, "script", { "data-wd-effect": "" });
+      effect.textContent = JSON.stringify({
+        watch: "n",
+        actions: [{ op: "set", target: "hit", value: 1 }]
+      });
+      const every = el(El, "script", { "data-wd-every": "" });
+      every.textContent = JSON.stringify({ ms: 500, actions: [{ op: "inc", target: "n" }] });
+      const built = ifRegion(El, { key: "open", truthy: [fetchNode, effect, every], initial: "" });
+      root.appendChild(built.node);
+    },
+    {
+      globals: {
+        fetch: stub.fetch,
+        setTimeout,
+        clearTimeout,
+        Promise,
+        setInterval: (fn, ms) => {
+          const id = nextId++;
+          intervals.push({ id, fn, ms, cleared: false });
+          return id;
+        },
+        clearInterval: (id) => {
+          const it = intervals.find((x) => x.id === id);
+          if (it) it.cleared = true;
+        }
+      }
+    }
+  );
+
+  assert.equal(stub.calls.length, 0, "closed branch issued no request");
+  assert.equal(intervals.length, 0, "closed branch started no timer");
+
+  h.sandbox.wd.state.open = true;
+  h.sandbox.wd.render();
+  await settle();
+
+  assert.equal(stub.count("/api/feed"), 1, ":fetch ran once the branch opened");
+  assert.deepEqual(h.sandbox.wd.state.feed, [{ id: 1 }]);
+  assert.equal(intervals.length, 1, ":every registered its timer");
+  assert.equal(intervals[0].ms, 500);
+
+  // The timer ticks, and the :effect watching `n` sees the change.
+  intervals[0].fn();
+  assert.equal(h.sandbox.wd.state.n, 1);
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.hit, 1, ":effect in the opened branch fired");
+});
+
+test("a directive is claimed once, so re-opening a branch does not double-register", async () => {
+  const stub = makeFetchStub({ "/api/feed": { status: 200, body: [1] } });
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { open: true });
+      const fetchNode = el(El, "span", {
+        "data-wd-fetch": "",
+        "data-wd-fetch-key": "feed",
+        "data-wd-fetch-url": "/api/feed"
+      });
+      const built = ifRegion(El, { key: "open", active: "true", truthy: [fetchNode], initial: "" });
+      // The compile-time paint already has the branch open, so the node is live
+      // from the first scan; flipping away and back injects a NEW node, which is
+      // a new registration, not a duplicate of the old one.
+      built.out.appendChild(fetchNode.cloneNode(true));
+      root.appendChild(built.node);
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  const afterBoot = stub.count("/api/feed");
+  assert.equal(afterBoot, 1, "one live fetch node, one request");
+
+  // Several renders with no structural change must not re-run it.
+  h.sandbox.wd.render();
+  h.sandbox.wd.render();
+  await settle();
+  assert.equal(stub.count("/api/feed"), afterBoot, "re-renders do not re-fire a claimed :fetch");
+});
+
+// --- R2: a nested @loop revealed by a per-row :if --------------------------
+
+function teamsFixture(root, El, { open }) {
+  const innerProto = el(El, "b", { "data-wd-each": "", "data-wd-path": "who" });
+  const inner = loopShell(El, { item: "members", proto: innerProto });
+  // The compiler paints the inner rows into the branch template, so on the
+  // reveal render they are LIVE nodes the outer row's passes can reach.
+  for (const [key, who] of [
+    ["m1", "Ann"],
+    ["m2", "Amy"]
+  ]) {
+    inner.out.appendChild(
+      el(El, "b", { "data-wd-each": "", "data-wd-path": "who", "data-wd-loop-key": key }, who)
+    );
+  }
+  const cond = eachIfRegion(El, { path: "open", truthy: [inner.region], falsy: [] });
+  const proto = el(El, "li");
+  proto.appendChild(el(El, "span", { "data-wd-each": "", "data-wd-path": "name" }));
+  proto.appendChild(cond.region);
+  const outer = loopShell(El, { key: "teams", proto });
+  seedState(El, root, {
+    teams: [
+      {
+        id: "t1",
+        name: "TEAM A",
+        open,
+        members: [
+          { id: "m1", who: "Ann" },
+          { id: "m2", who: "Amy" }
+        ]
+      }
+    ]
+  });
+  root.appendChild(outer.region);
+  return outer.out;
+}
+
+test("a nested @loop revealed by a per-row :if renders the INNER rows, not the outer value", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    out = teamsFixture(root, El, { open: false });
+  });
+  assert.equal(out.children.length, 1);
+  assert.equal(out.children[0].querySelector("[data-wd-loop-item]"), null, "branch is closed");
+
+  h.sandbox.wd.state.teams[0].open = true;
+  h.sandbox.wd.render();
+
+  const innerRows = out.children[0].querySelector("[data-wd-loop-out]").children;
+  assert.deepEqual(
+    innerRows.map((n) => n.textContent),
+    ["Ann", "Amy"],
+    "inner rows keep their own values on the very render that revealed them"
+  );
+});
+
+test("a nested @loop revealed by a per-row :if reconciles on the SAME render", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    out = teamsFixture(root, El, { open: false });
+  });
+  h.sandbox.wd.state.teams[0].open = true;
+  h.sandbox.wd.state.teams[0].members = [{ id: "m3", who: "Zed" }];
+  h.sandbox.wd.render();
+  const innerOut = out.children[0].querySelector("[data-wd-loop-out]");
+  assert.deepEqual(
+    innerOut.children.map((n) => n.textContent),
+    ["Zed"],
+    "the revealed inner loop reconciled against current state, not the baked paint"
+  );
+});
+
+// --- R3 / R4: global :if and .class when on a row the reconcile just cloned -
+
+function badgeRowFixture(root, El, items) {
+  const cond = ifRegion(El, {
+    key: "open",
+    active: "false",
+    truthy: [el(El, "b", {}, "OPEN")],
+    falsy: [el(El, "i", {}, "SHUT")],
+    initial: "SHUT"
+  });
+  const proto = el(El, "li");
+  proto.appendChild(el(El, "span", { "data-wd-each": "", "data-wd-path": "name" }));
+  proto.appendChild(cond.node);
+  proto.appendChild(
+    el(El, "em", {
+      "data-wd-class": JSON.stringify([["hot", JSON.parse(ast('(S("temp") > 30)'))]])
+    })
+  );
+  const loop = loopShell(El, { key: "items", proto });
+  seedState(El, root, { open: true, temp: 40, items });
+  root.appendChild(loop.region);
+  return loop.out;
+}
+
+test("a global :if inside a loop row is resolved on a row the reconcile just cloned", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    out = badgeRowFixture(root, El, [{ id: "one", name: "one" }]);
+  });
+  const branchText = (row) => row.querySelector("[data-wd-if-out]").textContent;
+  assert.equal(branchText(out.children[0]), "OPEN", "the first cloned row is corrected too");
+
+  h.sandbox.wd.state.items = [
+    { id: "one", name: "one" },
+    { id: "two", name: "two" }
+  ];
+  h.sandbox.wd.render();
+  assert.equal(out.children.length, 2);
+  assert.equal(
+    branchText(out.children[1]),
+    "OPEN",
+    "a NEW row must not keep the compile-time branch baked into its template"
+  );
+  assert.equal(
+    out.children[1].querySelector("[data-wd-if]").getAttribute("data-wd-if-active"),
+    "true"
+  );
+});
+
+test("a `.class when` inside a loop row is applied to a row the reconcile just cloned", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    out = badgeRowFixture(root, El, [{ id: "one", name: "one" }]);
+  });
+  const hot = (row) => row.querySelector("[data-wd-class]").classList.contains("hot");
+  assert.equal(hot(out.children[0]), true);
+
+  h.sandbox.wd.state.items = [
+    { id: "one", name: "one" },
+    { id: "two", name: "two" }
+  ];
+  h.sandbox.wd.render();
+  assert.equal(hot(out.children[1]), true, "a NEW row missed the class pass and stayed unstyled");
+
+  // And it still tracks state afterwards, in both directions.
+  h.sandbox.wd.state.temp = 5;
+  h.sandbox.wd.render();
+  assert.deepEqual(out.children.map(hot), [false, false]);
+});
+
+// --- R9: a per-row :if must not re-inject an unchanged branch ---------------
+
+test("a per-row :if leaves an unchanged branch alone across renders", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    const cond = eachIfRegion(El, {
+      path: "open",
+      truthy: [el(El, "b", {}, "YES")],
+      falsy: [el(El, "i", {}, "NO")]
+    });
+    const proto = el(El, "li");
+    proto.appendChild(cond.region);
+    const loop = loopShell(El, { key: "items", proto });
+    seedState(El, root, { tick: 0, items: [{ id: "a", open: true }] });
+    root.appendChild(loop.region);
+    out = loop.out;
+  });
+  const branchOut = () => out.children[0].querySelector("[data-wd-each-if-out]");
+  const injected = branchOut().children[0];
+  assert.equal(injected.textContent, "YES");
+
+  h.sandbox.wd.state.tick = 1;
+  h.sandbox.wd.render();
+  h.sandbox.wd.render();
+  assert.strictEqual(branchOut().children[0], injected, "unchanged per-row branch was re-injected");
+
+  // A real flip still swaps.
+  h.sandbox.wd.state.items = [{ id: "a", open: false }];
+  h.sandbox.wd.render();
+  assert.equal(branchOut().children[0].textContent, "NO");
+});
+
+// --- R5: no DOM churn for rows that are already in place -------------------
+
+function countAppends(out) {
+  const real = out.appendChild.bind(out);
+  const seen = { n: 0 };
+  out.appendChild = (node) => {
+    seen.n++;
+    return real(node);
+  };
+  return seen;
+}
+
+test("a render that does not change the list performs ZERO row moves", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = loopRegion(root, El, {
+      initial: [
+        { id: "a", name: "Alpha" },
+        { id: "b", name: "Beta" },
+        { id: "c", name: "Gamma" }
+      ]
+    }));
+  });
+  const appends = countAppends(out);
+
+  // Any state change anywhere on the page used to detach and re-insert EVERY
+  // row (appendChild is a remove-then-insert), blurring the focused field and
+  // resetting scroll.
+  h.sandbox.wd.state.unrelated = 1;
+  h.sandbox.wd.render();
+  h.sandbox.wd.render();
+  assert.equal(appends.n, 0, "unchanged rows were detached and re-inserted");
+});
+
+test("appending an item moves only the new row", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = loopRegion(root, El, {
+      initial: [
+        { id: "a", name: "Alpha" },
+        { id: "b", name: "Beta" }
+      ]
+    }));
+  });
+  const appends = countAppends(out);
+  h.sandbox.wd.state.items = [
+    { id: "a", name: "Alpha" },
+    { id: "b", name: "Beta" },
+    { id: "c", name: "Gamma" }
+  ];
+  h.sandbox.wd.render();
+  assert.equal(appends.n, 1, "only the appended row should move");
+  assert.deepEqual(rowKeys(out), ["a", "b", "c"]);
+});
+
+test("a reorder still lands every row in the right final order", () => {
+  // The prefix-stable skip must never trade correctness for fewer moves.
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = loopRegion(root, El, {
+      initial: [
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+        { id: "c", name: "C" },
+        { id: "d", name: "D" }
+      ]
+    }));
+  });
+  const before = Object.fromEntries(
+    out.children.map((n) => [n.getAttribute("data-wd-loop-key"), n])
+  );
+  for (const order of [
+    ["b", "c", "a", "d"],
+    ["d", "c", "b", "a"],
+    ["a", "d", "b", "c"],
+    ["c", "a", "d", "b"]
+  ]) {
+    h.sandbox.wd.state.items = order.map((id) => ({ id, name: id.toUpperCase() }));
+    h.sandbox.wd.render();
+    assert.deepEqual(rowKeys(out), order, `order ${order.join(",")}`);
+    for (const id of order) {
+      assert.strictEqual(before[id], out.children[order.indexOf(id)], `node ${id} reused`);
+    }
+  }
+});
+
+// --- R6 / R13: persistence must never take the page down -------------------
+
+const throwingStorage = () => ({
+  getItem() {
+    throw new Error("storage blocked");
+  },
+  setItem() {
+    throw new Error("storage blocked");
+  },
+  removeItem() {
+    throw new Error("storage blocked");
+  }
+});
+
+test("the runtime boots with localStorage completely blocked", () => {
+  let span;
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { count: 2 }, "count");
+      span = el(El, "span", { "data-wd-bind": "count" });
+      root.appendChild(span);
+    },
+    { globals: { localStorage: throwingStorage() } }
+  );
+  assert.ok(h.sandbox.wd, "window.wd must exist even when storage is unavailable");
+  assert.equal(h.sandbox.wd.state.count, 2, "declared seed survives");
+  assert.equal(span.textContent, "2", "the page rendered");
+});
+
+test("a storage write failure inside a click never stops the render", () => {
+  let span;
+  let button;
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { count: 0 }, "count");
+      span = el(El, "span", { "data-wd-bind": "count" });
+      button = el(El, "button", { "data-wd-action": "inc", "data-wd-target": "count" });
+      root.appendChild(span);
+      root.appendChild(button);
+    },
+    { globals: { localStorage: throwingStorage() } }
+  );
+  h.fire("click", button);
+  h.sandbox.wd.render();
+  assert.equal(h.sandbox.wd.state.count, 1, "state advanced");
+  assert.equal(span.textContent, "1", "and the DOM followed — no silent freeze");
+});
+
+test("a corrupt :store value self-heals instead of being kept forever", () => {
+  let span;
+  const h = makeSandbox(
+    (root, El) => {
+      const s = el(El, "script", { "data-wd-store": "cart" });
+      s.textContent = JSON.stringify(["seed"]);
+      root.appendChild(s);
+      span = el(El, "span", { "data-wd-bind": "cart" });
+      root.appendChild(span);
+    },
+    { initialStore: { "wd:store:cart": "{not json" } }
+  );
+  assert.deepEqual(h.sandbox.wd.state.cart, ["seed"], "seed kept");
+  assert.equal(
+    h.store.has("wd:store:cart"),
+    false,
+    "the unparseable entry must be dropped, exactly as :persist drops one"
+  );
+});
+
+// --- R7 / R11: refetch debounce must not lose a pending node ---------------
+
+function fakeTimers() {
+  const timers = [];
+  let nextId = 1;
+  return {
+    timers,
+    setTimeout: (fn, ms) => {
+      const id = nextId++;
+      timers.push({ id, fn, ms, cleared: false });
+      return id;
+    },
+    clearTimeout: (id) => {
+      const t = timers.find((x) => x.id === id);
+      if (t) t.cleared = true;
+    },
+    runPending() {
+      for (const t of timers) {
+        if (!t.cleared && !t.ran) {
+          t.ran = true;
+          t.fn();
+        }
+      }
+    }
+  };
+}
+
+function depFetchNode(El, root, { key, url, deps }) {
+  const span = el(El, "span", {
+    "data-wd-fetch": "",
+    "data-wd-fetch-key": key,
+    "data-wd-fetch-url": url,
+    "data-wd-fetch-deps": deps
+  });
+  root.appendChild(span);
+  return span;
+}
+
+test("two dep changes inside one debounce window refetch BOTH nodes", async () => {
+  const stub = makeFetchStub({
+    "/a?q=1": { status: 200, body: "a1" },
+    "/a?q=2": { status: 200, body: "a2" },
+    "/b?r=1": { status: 200, body: "b1" },
+    "/b?r=2": { status: 200, body: "b2" }
+  });
+  const clock = fakeTimers();
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { q: 1, r: 1 });
+      depFetchNode(El, root, { key: "a", url: "/a?q={q}", deps: "q" });
+      depFetchNode(El, root, { key: "b", url: "/b?r={r}", deps: "r" });
+    },
+    {
+      globals: {
+        fetch: stub.fetch,
+        setTimeout: clock.setTimeout,
+        clearTimeout: clock.clearTimeout,
+        Promise
+      }
+    }
+  );
+  await settle();
+  assert.equal(stub.count("/a?q=1"), 1);
+  assert.equal(stub.count("/b?r=1"), 1);
+
+  // Two mutations in quick succession: the second RESTARTS the debounce. The
+  // first node's snapshot has already advanced, so dropping it here would lose
+  // its refetch permanently rather than merely delaying it.
+  h.sandbox.wd.set("q", 2);
+  h.sandbox.wd.set("r", 2);
+  clock.runPending();
+  await settle();
+
+  assert.equal(stub.count("/a?q=2"), 1, "the node queued by the FIRST mutation still refetched");
+  assert.equal(stub.count("/b?r=2"), 1, "the node queued by the second refetched");
+});
+
+test("wd.set triggers a dependent refetch, like the click and input handlers do", async () => {
+  const stub = makeFetchStub({
+    "/a?q=1": { status: 200, body: "one" },
+    "/a?q=9": { status: 200, body: "nine" }
+  });
+  const clock = fakeTimers();
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { q: 1 });
+      depFetchNode(El, root, { key: "a", url: "/a?q={q}", deps: "q" });
+    },
+    {
+      globals: {
+        fetch: stub.fetch,
+        setTimeout: clock.setTimeout,
+        clearTimeout: clock.clearTimeout,
+        Promise
+      }
+    }
+  );
+  await settle();
+
+  // `wd.set` is the documented escape hatch colocated .js behaviors write
+  // through (src/behaviors/sortable.js uses nothing else).
+  h.sandbox.wd.set("q", 9);
+  clock.runPending();
+  await settle();
+  assert.equal(stub.count("/a?q=9"), 1, "wd.set must be able to trigger a refetch");
+  assert.equal(h.sandbox.wd.state.a, "nine");
+});
+
+// --- R8: :form needs the same in-flight guard :fetch already has -----------
+
+function deferredFetch() {
+  const pending = [];
+  const fetch = (url, init) =>
+    new Promise((resolve) => {
+      pending.push({
+        url,
+        init,
+        reply(status, body) {
+          resolve({
+            ok: status >= 200 && status < 300,
+            status,
+            text: () => Promise.resolve(JSON.stringify(body))
+          });
+        }
+      });
+    });
+  return { fetch, pending };
+}
+
+test("a slow earlier :form submit cannot overwrite a newer reply", async () => {
+  const net = deferredFetch();
+  let form;
+  const h = makeSandbox(
+    (root, El) => {
+      form = formRegion(root, El, {
+        key: "contact",
+        action: "/api/contact",
+        build: (f, E) => textInput(f, E, "name", "x")
+      });
+    },
+    { globals: { fetch: net.fetch, setTimeout, clearTimeout, Promise } }
+  );
+
+  h.fire("submit", form);
+  h.fire("submit", form);
+  assert.equal(net.pending.length, 2, "both submits went out");
+
+  // The NEWER request answers first, then the stale one lands late.
+  net.pending[1].reply(200, { ok: "second" });
+  await settle();
+  net.pending[0].reply(200, { ok: "first" });
+  await settle();
+
+  assert.deepEqual(
+    h.sandbox.wd.state.contact,
+    { ok: "second" },
+    "the superseded submit wrote over the newer reply"
+  );
+});
+
+test("a new :form submit clears the previous attempt's error immediately", async () => {
+  const net = deferredFetch();
+  let form;
+  let errSpan;
+  const h = makeSandbox(
+    (root, El) => {
+      form = formRegion(root, El, {
+        key: "contact",
+        action: "/api/contact",
+        build: (f, E) => textInput(f, E, "name", "x")
+      });
+      errSpan = el(El, "span", { "data-wd-bind": "contact_error" });
+      form.parent.appendChild(errSpan);
+    },
+    { globals: { fetch: net.fetch, setTimeout, clearTimeout, Promise } }
+  );
+
+  h.fire("submit", form);
+  net.pending[0].reply(500, { bad: true });
+  await settle();
+  assert.match(String(h.sandbox.wd.state.contact_error), /HTTP 500/);
+  h.sandbox.wd.render();
+  assert.match(errSpan.textContent, /HTTP 500/, "the error is on screen");
+
+  // Retrying must not leave the previous failure visible while it is in flight.
+  h.fire("submit", form);
+  assert.equal(h.sandbox.wd.state.contact_error, null, "stale error cleared on the new submit");
+  await settle(1); // the submit handler renders through the normal batched path
+  assert.equal(errSpan.textContent, "", "and cleared on screen too");
+});
+
+// --- R10: duplicate keys ---------------------------------------------------
+
+test("duplicate rows render as distinct nodes and the list does not grow", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    ({ out } = loopRegion(root, El, {
+      initial: [
+        { id: "a", name: "one" },
+        { id: "a", name: "two" },
+        { id: "a#1", name: "literal" },
+        { id: "a", name: "three" }
+      ]
+    }));
+  });
+  assert.deepEqual(rowKeys(out), ["a", "a#1", "a##1", "a#2"]);
+  assert.deepEqual(rowText(out), ["one", "two", "literal", "three"]);
+  assert.equal(new Set(out.children).size, 4, "four distinct nodes");
+
+  const snapshot = out.children.slice();
+  for (let i = 0; i < 5; i++) h.sandbox.wd.render();
+  assert.equal(out.children.length, 4, "the list must not grow on repeated renders");
+  assert.deepEqual(out.children, snapshot, "and every node is reused");
+  assert.deepEqual(rowText(out), ["one", "two", "literal", "three"]);
+});
+
+// --- R12: :effect / :every action values must be cloned per fire -----------
+
+test(":every append pushes a DISTINCT object on every tick", () => {
+  const intervals = [];
+  let nextId = 1;
+  const h = makeSandbox(
+    (root, El) => {
+      seedState(El, root, { log: [] });
+      const every = el(El, "script", { "data-wd-every": "" });
+      every.textContent = JSON.stringify({
+        ms: 100,
+        actions: [{ op: "append", target: "log", value: { at: 1 } }]
+      });
+      root.appendChild(every);
+    },
+    {
+      globals: {
+        setInterval: (fn, ms) => {
+          const id = nextId++;
+          intervals.push({ id, fn, ms });
+          return id;
+        },
+        clearInterval: () => {}
+      }
+    }
+  );
+  intervals[0].fn();
+  intervals[0].fn();
+  const log = h.sandbox.wd.state.log;
+  assert.equal(log.length, 2);
+  assert.notStrictEqual(log[0], log[1], "both ticks pushed the SAME object reference");
+  // The consequence that matters: `remove` filters by identity, so a shared
+  // reference means deleting one line deletes them all.
+  log[0].at = 99;
+  assert.equal(log[1].at, 1, "mutating one entry must not change the other");
+});
+
+test(":effect append pushes a DISTINCT object on every fire", () => {
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { n: 0, log: [] });
+    const fx = el(El, "script", { "data-wd-effect": "" });
+    fx.textContent = JSON.stringify({
+      watch: "n",
+      actions: [{ op: "append", target: "log", value: { at: 1 } }]
+    });
+    root.appendChild(fx);
+  });
+  h.sandbox.wd.state.n = 1;
+  h.sandbox.wd.render();
+  h.sandbox.wd.state.n = 2;
+  h.sandbox.wd.render();
+  const log = h.sandbox.wd.state.log;
+  assert.equal(log.length, 2);
+  assert.notStrictEqual(log[0], log[1]);
+});
+
+// --- R14 + sort behavior ---------------------------------------------------
+
+function sortLoop(root, El, { items, sort, dir }) {
+  const proto = el(El, "li", { "data-wd-each": "", "data-wd-path": "name" });
+  const clauses = { "data-wd-loop-sort": sort };
+  if (dir) clauses["data-wd-loop-sort-dir"] = dir;
+  const loop = loopShell(El, { key: "items", proto, clauses });
+  seedState(El, root, { items });
+  root.appendChild(loop.region);
+  return loop.out;
+}
+
+test("numeric sort compares NUMBERS, not their string forms", () => {
+  let out;
+  makeSandbox((root, El) => {
+    out = sortLoop(root, El, {
+      sort: "n",
+      items: [
+        { id: "c", n: 100, name: "hundred" },
+        { id: "a", n: 9, name: "nine" },
+        { id: "b", n: 10, name: "ten" }
+      ]
+    });
+  });
+  // A localeCompare fallback would order these 10, 100, 9.
+  assert.deepEqual(rowText(out), ["nine", "ten", "hundred"]);
+});
+
+test("sort is STABLE for tied keys, ascending and descending alike", () => {
+  const items = [
+    { id: "a", n: 1, name: "a" },
+    { id: "b", n: 1, name: "b" },
+    { id: "c", n: 0, name: "c" },
+    { id: "d", n: 1, name: "d" },
+    { id: "e", n: 0, name: "e" }
+  ];
+  let asc;
+  makeSandbox((root, El) => {
+    asc = sortLoop(root, El, { sort: "n", items });
+  });
+  assert.deepEqual(rowText(asc), ["c", "e", "a", "b", "d"], "ties keep source order ascending");
+
+  let desc;
+  makeSandbox((root, El) => {
+    desc = sortLoop(root, El, { sort: "n", dir: "desc", items });
+  });
+  // The tiebreaker must NOT be negated along with the comparator: descending by
+  // key, but ties still in source order.
+  assert.deepEqual(rowText(desc), ["a", "b", "d", "c", "e"], "ties keep source order descending");
+});
+
+// --- @loop where at runtime ------------------------------------------------
+
+test("@loop where filters at runtime and re-filters when state changes", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    const proto = el(El, "li", { "data-wd-each": "", "data-wd-path": "name" });
+    const loop = loopShell(El, {
+      key: "items",
+      proto,
+      clauses: { "data-wd-loop-where": ast('(I("price") <= S("limit"))') }
+    });
+    seedState(El, root, {
+      limit: 10,
+      items: [
+        { id: "a", price: 5, name: "cheap" },
+        { id: "b", price: 50, name: "dear" },
+        { id: "c", price: 10, name: "edge" }
+      ]
+    });
+    root.appendChild(loop.region);
+    out = loop.out;
+  });
+  assert.deepEqual(rowText(out), ["cheap", "edge"], "where applied on the first render");
+
+  h.sandbox.wd.state.limit = 100;
+  h.sandbox.wd.render();
+  assert.deepEqual(rowText(out), ["cheap", "dear", "edge"], "predicate re-read from state");
+
+  h.sandbox.wd.state.limit = 4;
+  h.sandbox.wd.render();
+  assert.deepEqual(rowText(out), [], "and back down to nothing");
+});
+
+// --- $last on a reactive re-render -----------------------------------------
+
+test("$last moves to the new final row when the list grows", () => {
+  let out;
+  const h = makeSandbox((root, El) => {
+    const proto = el(El, "li");
+    proto.appendChild(el(El, "span", { "data-wd-each-meta": "last" }));
+    const loop = loopShell(El, { key: "items", proto });
+    seedState(El, root, { items: [{ id: "a" }, { id: "b" }] });
+    root.appendChild(loop.region);
+    out = loop.out;
+  });
+  const lasts = () =>
+    out.children.map((row) => row.querySelector("[data-wd-each-meta]").textContent);
+  assert.deepEqual(lasts(), ["false", "true"]);
+
+  h.sandbox.wd.state.items = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  h.sandbox.wd.render();
+  assert.deepEqual(lasts(), ["false", "false", "true"], "the old last row must stop being last");
+
+  h.sandbox.wd.state.items = [{ id: "a" }];
+  h.sandbox.wd.render();
+  assert.deepEqual(lasts(), ["true"]);
+});
+
+// --- setPath prototype guard on the FINAL segment --------------------------
+
+test("setPath refuses __proto__ / constructor / prototype as the FINAL segment", () => {
+  let button;
+  const h = makeSandbox((root, El) => {
+    seedState(El, root, { cfg: {} });
+    button = el(El, "button", { "data-wd-actions": "[]" });
+    root.appendChild(button);
+  });
+
+  // Only the middle-segment shape was covered before; a bare final segment is
+  // the shape `Object.assign`-style pollution actually uses.
+  for (const target of ["__proto__", "constructor", "prototype", "cfg.__proto__"]) {
+    button.setAttribute(
+      "data-wd-actions",
+      JSON.stringify([{ op: "set", target, value: { polluted: true } }])
+    );
+    h.fire("click", button);
+  }
+  h.sandbox.wd.render();
+
+  assert.equal({}.polluted, undefined, "Object.prototype must not be polluted");
+  assert.equal(h.sandbox.wd.state.polluted, undefined, "no key leaked through the prototype");
+  assert.deepEqual(h.sandbox.wd.state.cfg, {}, "nested final segment rejected too");
+  assert.equal(Object.hasOwn(h.sandbox.wd.state, "__proto__"), false);
+});
+
+// --- :fetch request shape ---------------------------------------------------
+
+test("a GET :fetch sends no request body, even with a body key configured", async () => {
+  const stub = makeFetchStub({ "/api/thing": { status: 200, body: { ok: 1 } } });
+  makeSandbox(
+    (root, El) => {
+      seedState(El, root, { payload: { a: 1 } });
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "thing",
+          "data-wd-fetch-url": "/api/thing",
+          "data-wd-fetch-body": "payload"
+        })
+      );
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  assert.equal(stub.calls.length, 1);
+  assert.equal(stub.calls[0].init.method, "GET");
+  assert.equal("body" in stub.calls[0].init, false, "a GET with a body is a protocol error");
+});
+
+test("a POST :fetch does send the configured body", async () => {
+  const stub = makeFetchStub({ "/api/thing": { status: 200, body: { ok: 1 } } });
+  makeSandbox(
+    (root, El) => {
+      seedState(El, root, { payload: { a: 1 } });
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "thing",
+          "data-wd-fetch-url": "/api/thing",
+          "data-wd-fetch-method": "POST",
+          "data-wd-fetch-body": "payload"
+        })
+      );
+    },
+    { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+  );
+  await settle();
+  assert.equal(stub.calls[0].init.body, JSON.stringify({ a: 1 }));
+});
+
+test("the :fetch abort timer is cleared once the request settles", async () => {
+  const stub = makeFetchStub({ "/api/thing": { status: 200, body: { ok: 1 } } });
+  const cleared = [];
+  let nextId = 1;
+  const live = new Set();
+  makeSandbox(
+    (root, El) => {
+      root.appendChild(
+        el(El, "span", {
+          "data-wd-fetch": "",
+          "data-wd-fetch-key": "thing",
+          "data-wd-fetch-url": "/api/thing",
+          "data-wd-fetch-timeout": "5000"
+        })
+      );
+    },
+    {
+      globals: {
+        fetch: stub.fetch,
+        Promise,
+        AbortController: class {
+          constructor() {
+            this.signal = { aborted: false };
+          }
+          abort() {
+            this.signal.aborted = true;
+            throw new Error("the abort timer fired on a request that had already settled");
+          }
+        },
+        setTimeout: (fn, ms) => {
+          const id = nextId++;
+          live.add(id);
+          // Only the abort timer is long; settle() needs the real one.
+          if (ms >= 1000) return id;
+          return setTimeout(fn, ms);
+        },
+        clearTimeout: (id) => {
+          cleared.push(id);
+          live.delete(id);
+          clearTimeout(id);
+        }
+      }
+    }
+  );
+  await settle();
+  assert.equal(stub.calls.length, 1);
+  assert.ok(cleared.length >= 1, "the abort timer must be cleared on success");
+  assert.equal(live.size, 0, "no abort timer left armed after the response landed");
 });

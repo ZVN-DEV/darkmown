@@ -33,24 +33,37 @@ for (const script of document.querySelectorAll("script[data-wd-store]")) {
 /** @type {Record<string, any>} */
 const initials = Object.freeze(JSON.parse(JSON.stringify(state)));
 
-for (const key of persistKeys) {
-  const stored = localStorage.getItem(`wd:${key}`);
-  if (stored === null) continue;
+/**
+ * Best-effort localStorage. Touching it THROWS outright in a sandboxed iframe or
+ * a browser set to block site data, and setItem throws on quota — persistence
+ * must never abort the boot or stop a render, so every access is swallowed here.
+ * `ls(k)` reads, `ls(k, v)` writes, `ls(k, null)` drops a corrupt entry.
+ * @param {string} k
+ * @param {string | null} [v]
+ * @returns {any}
+ */
+function ls(k, v) {
   try {
-    state[key] = JSON.parse(stored);
-  } catch {
-    localStorage.removeItem(`wd:${key}`);
-  }
+    return v === undefined ? localStorage.getItem(k) : v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v);
+  } catch { return null; }
+}
+
+for (const key of persistKeys) {
+  const stored = ls(`wd:${key}`);
+  if (stored === null) continue;
+  try { state[key] = JSON.parse(stored); } catch { ls(`wd:${key}`, null); }
 }
 for (const name of storeKeys) {
-  const stored = localStorage.getItem(`wd:store:${name}`);
-  if (stored === null) localStorage.setItem(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
-  else try { state[name] = JSON.parse(stored); } catch { /** keep seed */ }
+  const stored = ls(`wd:store:${name}`);
+  // A corrupt :store entry self-heals exactly as :persist does: drop it and keep
+  // the declared seed, rather than re-reading the same garbage on every load.
+  if (stored === null) ls(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
+  else try { state[name] = JSON.parse(stored); } catch { ls(`wd:store:${name}`, null); }
 }
 
 function savePersisted() {
-  for (const key of persistKeys) localStorage.setItem(`wd:${key}`, JSON.stringify(state[key] ?? null));
-  for (const name of storeKeys) localStorage.setItem(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
+  for (const key of persistKeys) ls(`wd:${key}`, JSON.stringify(state[key] ?? null));
+  for (const name of storeKeys) ls(`wd:store:${name}`, JSON.stringify(state[name] ?? null));
 }
 
 window.addEventListener("storage", (event) => {
@@ -210,11 +223,25 @@ async function httpJson(url, init) {
   try { return JSON.parse(text); } catch { return { status: response.status, body: text }; }
 }
 
-const computedDefs = [...document.querySelectorAll("[data-wd-computed]")].map((node) => ({
-  key: node.getAttribute("data-wd-computed-key") || "",
-  expr: node.getAttribute("data-wd-computed-expr") || "",
-  ast: JSON.parse(node.getAttribute("data-wd-computed-expr") || "null")
-}));
+/**
+ * Bump a node's generation token and hand back a staleness probe. An in-flight
+ * request that a newer one superseded must never write its result. Shared by the
+ * `:fetch` lifecycle and the round-trip `:form` submit.
+ * @param {{ __wdGen?: number }} node
+ * @returns {() => boolean}
+ */
+function genGuard(node) {
+  const gen = (node.__wdGen = (node.__wdGen || 0) + 1);
+  return () => gen !== node.__wdGen;
+}
+
+/**
+ * Set whenever a render pass changes STRUCTURE — an `:if` branch injected, a loop
+ * row cloned, an `@empty` branch filled. It buys one more pass (the document-wide
+ * queries must reach the new nodes) and one more `scan()` (the new nodes may be
+ * directives no query had ever seen). True at boot: nothing is registered yet.
+ */
+let dirty = true;
 
 /**
  * Log an expression failure when `window.wd.debug` is enabled.
@@ -228,16 +255,22 @@ function warn(expr, error) {
 }
 
 /**
- * Re-evaluate all `:computed` definitions into `state`.
+ * Re-evaluate every `:computed` marker in the live tree into `state`. Read from
+ * the DOM rather than a registry captured at load: `querySelectorAll` cannot see
+ * into `<template>` content, so a registry would permanently miss a `:computed`
+ * that only becomes live when an `:if` branch opens. `parseAst` caches by the raw
+ * attribute text, so re-reading costs an attribute read, not a re-parse.
  * @returns {void}
  */
 function recompute() {
-  for (const def of computedDefs) {
+  for (const node of document.querySelectorAll("[data-wd-computed]")) {
+    const key = node.getAttribute("data-wd-computed-key") || "";
+    const expr = node.getAttribute("data-wd-computed-expr") || "null";
     try {
-      state[def.key] = evalAst(def.ast, undefined);
+      state[key] = evalAst(parseAst(expr), undefined);
     } catch (error) {
-      state[def.key] = undefined;
-      warn(def.expr, error);
+      state[key] = undefined;
+      warn(expr, error);
     }
   }
 }
@@ -338,10 +371,13 @@ function classToggle(el, raw, item) {
  * @returns {string}
  */
 function loopKeyOf(item, counts) {
-  const base =
+  // Every literal `#` doubles, so the `#n` duplicate suffix lives in a namespace
+  // no real key can reach: a genuine "a#1" keys as "a##1", never as a's duplicate.
+  const base = (
     item && typeof item === "object"
       ? String(item.id ?? item.key ?? JSON.stringify(item))
-      : String(item);
+      : String(item)
+  ).replace(/#/g, "##");
   const seen = counts.get(base) || 0;
   counts.set(base, seen + 1);
   return seen ? `${base}#${seen}` : base;
@@ -359,8 +395,8 @@ function fillItem(node, item, meta = {}) {
   // Nested item-relative loops (data-wd-loop-item) own their descendants' binds;
   // when present, `skip` excludes a node living inside one so the outer row's
   // text/meta/each-if/class passes never overwrite an inner row's values.
-  const inners = node.querySelectorAll("[data-wd-loop-item]");
-  const skip = inners.length ? (/** @type {Element} */ el) => el.closest("[data-wd-loop-item]") : () => false;
+  let inners = node.querySelectorAll("[data-wd-loop-item]");
+  const skip = (/** @type {Element} */ el) => inners.length && el.closest("[data-wd-loop-item]");
   // querySelectorAll skips <template> content, so this sees only the outermost
   // regions; recursing into each injected branch fills the rest.
   for (const region of node.querySelectorAll("[data-wd-each-if]")) {
@@ -370,10 +406,16 @@ function fillItem(node, item, meta = {}) {
     const value = expr ? evalPredicate(parseAst(expr), item) : (m ? meta[m] : getPath(item, region.getAttribute("data-wd-path")));
     const output = region.querySelector("[data-wd-each-if-out]");
     if (!output) continue;
-    const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector(value ? "template[data-wd-if-true]" : "template[data-wd-if-false]"));
-    output.innerHTML = template?.innerHTML || "";
+    // swapBranch carries the same skip-when-unchanged guard the global :if has:
+    // re-injecting an unchanged branch on every render would destroy whatever is
+    // live inside it — a nested loop's reconciled rows, focus, a playing <video>.
+    swapBranch(region, output, value, "wd-if");
     fillItem(output, item, meta);
   }
+  // An each-if branch can REVEAL a nested loop, and the capture above predates
+  // the injection — re-read it, or the passes below overwrite the inner rows
+  // with the OUTER row's values.
+  inners = node.querySelectorAll("[data-wd-loop-item]");
   const targets = node.matches("[data-wd-each]")
     ? [node, ...node.querySelectorAll("[data-wd-each]")]
     : [...node.querySelectorAll("[data-wd-each]")];
@@ -427,7 +469,7 @@ function pipeline(list, region) {
         const av = getPath(a.value, sort || null);
         const bv = getPath(b.value, sort || null);
         const c = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
-        return (c || a.index - b.index) * dir;
+        return c ? c * dir : a.index - b.index;
       }).map((w) => w.value);
     }
   }
@@ -437,6 +479,29 @@ function pipeline(list, region) {
   const lim = loopNum(region, "data-wd-loop-limit");
   if (lim != null) list = list.slice(0, lim);
   return list;
+}
+
+/**
+ * Swap a conditional region to the branch its truthiness selects, and report
+ * whether anything actually moved. The unchanged-guard is the load-bearing part:
+ * re-injecting the branch that is already showing would replace every live node
+ * inside it on every render. One implementation for both conditionals — the
+ * global `:if` (`prefix` "wd", templates `data-wd-true`/`-false`) and the per-row
+ * `:if` inside a loop row ("wd-if", `data-wd-if-true`/`-false`).
+ * @param {Element} region Carries data-wd-if-active, the last painted branch.
+ * @param {Element} output The node whose contents the branch replaces.
+ * @param {any} value
+ * @param {string} prefix
+ * @returns {boolean} true when the branch was swapped
+ */
+function swapBranch(region, output, value, prefix) {
+  const active = String(Boolean(value));
+  if (region.getAttribute("data-wd-if-active") === active) return false;
+  region.setAttribute("data-wd-if-active", active);
+  const template = /** @type {HTMLTemplateElement | null} */ (region.querySelector(`template[data-${prefix}-${active}]`));
+  output.innerHTML = template?.innerHTML || "";
+  // The branch may carry directives no query has ever seen.
+  return (dirty = true);
 }
 
 /**
@@ -454,13 +519,8 @@ function pipeline(list, region) {
 function renderIf(node) {
   const expr = node.getAttribute("data-wd-if-expr");
   const value = expr ? evalPredicate(parseAst(expr), undefined) : getPath(state[node.getAttribute("data-wd-if") || ""], node.getAttribute("data-wd-path"));
-  const active = String(Boolean(value));
-  if (node.getAttribute("data-wd-if-active") === active) return;
-  node.setAttribute("data-wd-if-active", active);
   const output = node.querySelector("[data-wd-if-out]");
-  if (!output) return;
-  const template = /** @type {HTMLTemplateElement | null} */ (node.querySelector(value ? "template[data-wd-true]" : "template[data-wd-false]"));
-  output.innerHTML = template?.innerHTML || "";
+  if (!output || !swapBranch(node, output, value, "wd")) return;
   for (const nested of output.querySelectorAll("[data-wd-if]")) renderIf(nested);
 }
 
@@ -492,6 +552,7 @@ function reconcile(region, rows) {
       out.textContent = "";
       for (const child of [...emptyTpl.content.children]) out.appendChild(child.cloneNode(true));
       out.setAttribute("data-wd-empty", "1");
+      dirty = true;
     }
     return;
   }
@@ -507,6 +568,7 @@ function reconcile(region, rows) {
   /** @type {Set<string>} */
   const used = new Set();
   const count = list.length;
+  let moved = false;
   for (let i = 0; i < count; i++) {
     const item = list[i];
     const key = loopKeyOf(item, counts);
@@ -515,11 +577,19 @@ function reconcile(region, rows) {
       node = /** @type {WdRow} */ (template.content.firstElementChild?.cloneNode(true));
       if (!node) continue;
       node.setAttribute("data-wd-loop-key", key);
+      // A fresh row missed this pass's document-wide if/class/scan work.
+      dirty = true;
     }
     used.add(key);
     fillItem(node, item, { index: i, number: i + 1, first: i === 0, last: i === count - 1, count });
     node.__wdItem = item; /** let per-row actions resolve which row was clicked */
-    out.appendChild(node);
+    // Leave a row that is already in place ALONE. appendChild is a
+    // remove-then-insert per spec, so appending unconditionally blurs the
+    // focused field, resets scroll, restarts CSS transitions and reloads an
+    // <iframe> in a row — on every render, even when the list did not change.
+    // Once one row has had to move, every later row must be re-appended too, or
+    // the ones left behind would sit in front of it.
+    if (moved || out.children[i] !== node) { moved = true; out.appendChild(node); }
   }
   for (const [key, node] of existing) {
     if (!used.has(key)) node.remove();
@@ -528,25 +598,39 @@ function reconcile(region, rows) {
 
 /**
  * Synchronously render the whole document from current `state`:
- * computed → if-regions → keyed loop reconcile → text/input binds.
+ * (scan → computed → if-regions → reactive classes → keyed loop reconcile)
+ * repeated until the structure settles → text/input binds → theme → effects.
+ *
+ * The repeat is the point. The if/class passes are document-wide queries, so a
+ * row the loop reconcile CLONED during the same pass was not in the tree when
+ * they ran and would keep the compile-time branch and classes baked into its
+ * template — wrong until some unrelated state change. Symmetrically, a branch an
+ * `:if` just injected can carry `:fetch`/`:computed`/`:effect`/`:every`/`:theme`
+ * nodes that no query had ever seen. Either marks `dirty`, which buys one more
+ * pass; two passes always suffice in practice and three is the hard cap.
  * @returns {void}
  */
 function renderNow() {
-  recompute();
-  for (const node of document.querySelectorAll("[data-wd-if]")) renderIf(node);
+  for (let pass = 0; pass < 3; pass++) {
+    if (dirty) scan();
+    dirty = false;
+    recompute();
+    for (const node of document.querySelectorAll("[data-wd-if]")) renderIf(node);
 
-  // Reactive styling: toggle state-driven `.class when …` bindings. Loop-row
-  // bindings (data-wd-each-class) are handled per item inside fillItem.
-  for (const el of document.querySelectorAll("[data-wd-class]")) classToggle(el, el.getAttribute("data-wd-class"), undefined);
+    // Reactive styling: toggle state-driven `.class when …` bindings. Loop-row
+    // bindings (data-wd-each-class) are handled per item inside fillItem.
+    for (const el of document.querySelectorAll("[data-wd-class]")) classToggle(el, el.getAttribute("data-wd-class"), undefined);
 
-  // Nested item-relative loops use data-wd-loop-item, so this top-level query
-  // skips them; fillItem reconciles those against their enclosing row.
-  for (const region of document.querySelectorAll("[data-wd-loop]")) {
-    const key = region.getAttribute("data-wd-loop");
-    const data = region.getAttribute("data-wd-loop-data");
-    /** Source may be a dotted path (e.g. team.members) read off state via getPath. */
-    const dot = key ? key.indexOf(".") : -1;
-    reconcile(region, key ? (dot < 0 ? state[key] : getPath(state[key.slice(0, dot)], key.slice(dot + 1))) : (data ? JSON.parse(data) : []));
+    // Nested item-relative loops use data-wd-loop-item, so this top-level query
+    // skips them; fillItem reconciles those against their enclosing row.
+    for (const region of document.querySelectorAll("[data-wd-loop]")) {
+      const key = region.getAttribute("data-wd-loop");
+      const data = region.getAttribute("data-wd-loop-data");
+      /** Source may be a dotted path (e.g. team.members) read off state via getPath. */
+      const dot = key ? key.indexOf(".") : -1;
+      reconcile(region, key ? (dot < 0 ? state[key] : getPath(state[key.slice(0, dot)], key.slice(dot + 1))) : (data ? JSON.parse(data) : []));
+    }
+    if (!dirty) break;
   }
 
   for (const node of document.querySelectorAll("[data-wd-bind]")) {
@@ -557,17 +641,17 @@ function renderNow() {
     if (document.activeElement !== input) /** @type {HTMLInputElement} */ (input).value = state[input.getAttribute("data-wd-bind-input") || ""] ?? "";
   }
 
-  if (themeNodes.length) reflectThemes();
-  runEffects(); // side effects run last, against fully settled state
+  reflectThemes();
+  // side effects run last, against fully settled state
+  runEffects();
   if (subscribers.size) notifySubscribers();
 }
 
 /** :theme — reflect a store value onto <html data-theme> so a manual light/dark
  * switch layers over the OS preference: `auto`/empty clears the attribute (follow
  * the system via the skin's `tokens dark` media query), anything else forces it. */
-const themeNodes = [...document.querySelectorAll("[data-wd-theme]")];
 function reflectThemes() {
-  for (const node of themeNodes) {
+  for (const node of document.querySelectorAll("[data-wd-theme]")) {
     const value = state[node.getAttribute("data-wd-theme") || ""];
     const root = document.documentElement;
     if (value == null || value === "" || value === "auto") root.removeAttribute("data-theme");
@@ -577,10 +661,7 @@ function reflectThemes() {
 
 /** @typedef {{ watch: string, actions: { op: string, target?: string, value?: any }[], last: string }} Effect */
 /** @type {Effect[]} */
-const effects = [...document.querySelectorAll("script[data-wd-effect]")].map((node) => {
-  const def = JSON.parse(node.textContent || "{}");
-  return { watch: def.watch, actions: def.actions || [], last: JSON.stringify(getPath(state, def.watch) ?? null) };
-});
+const effects = [];
 let effectDepth = 0;
 /**
  * After a render, fire any `:effect` whose watched state changed, running its
@@ -595,7 +676,7 @@ function runEffects() {
     const now = JSON.stringify(getPath(state, fx.watch) ?? null);
     if (now === fx.last) continue;
     fx.last = now;
-    for (const a of fx.actions) applyAction(null, a.op, a.target || "", a.value);
+    runActions(fx.actions);
     changed = true;
   }
   if (!changed) { effectDepth = 0; return; }
@@ -687,6 +768,19 @@ function applyAction(action, op, target, value) {
   }
 }
 
+/**
+ * Run a parsed action sequence with no clicked row — the `:effect` and `:every`
+ * paths. Their defs are parsed ONCE and re-fired, so an `append`/`prepend` would
+ * push the SAME object reference every time and a later `remove` (which filters
+ * by identity) would delete every copy at once. Clone per fire; the click path
+ * re-parses its JSON attribute each time and needs no copy.
+ * @param {{ op: string, target?: string, value?: any }[]} actions
+ * @returns {void}
+ */
+const runActions = (actions) => {
+  for (const a of actions) applyAction(null, a.op, a.target || "", structuredClone(a.value));
+};
+
 document.addEventListener("click", (event) => {
   const action = /** @type {Element} */ (event.target)?.closest("[data-wd-action],[data-wd-actions]");
   if (!action) return;
@@ -723,18 +817,25 @@ document.addEventListener("submit", (event) => {
     return;
   }
 
+  // A slow earlier submit must not land on top of a newer one's reply, and the
+  // previous attempt's error must not sit on screen through the retry.
+  const dead = genGuard(/** @type {any} */ (form));
+  state[`${key}_error`] = null;
+  render();
   httpJson(action, {
     method: form.getAttribute("method") || "post",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(/** @type {any} */ (new FormData(form))).toString()
   })
     .then((value) => {
+      if (dead()) return;
       state[key] = value;
       state[`${key}_error`] = null;
       savePersisted();
       render();
     })
     .catch((error) => {
+      if (dead()) return;
       state[`${key}_error`] = String(error);
       render();
     });
@@ -749,9 +850,7 @@ document.addEventListener("submit", (event) => {
  */
 function startFetch(node) {
   // Per-node generation token: a refetch bumps it; superseded writes bail.
-  const gen = node.__wdGen = (node.__wdGen || 0) + 1;
-  /** @returns {boolean} stale once a newer fetch superseded this one */
-  const dead = () => gen !== node.__wdGen;
+  const dead = genGuard(node);
   /** @param {string} n @returns {string} */
   const g = (n) => node.getAttribute("data-wd-fetch-" + n) || "";
   const key = g("key");
@@ -847,70 +946,95 @@ function refreshToken(refreshUrl, headersKey) {
  * a generation token so a superseded in-flight response/retry bails on write. */
 /** @typedef {Element & { __wdSnap?: string, __wdGen?: number }} FetchNode */
 /** @type {FetchNode[]} */
-const fetchNodes = [...document.querySelectorAll("[data-wd-fetch]")];
+const fetchNodes = [];
 /** @param {FetchNode} node @returns {string} */
 const depSnapshot = (node) => (node.getAttribute("data-wd-fetch-deps") || "").split(",").filter(Boolean).map((d) => JSON.stringify(getPath(state, d))).join("|");
 
 /** @type {any} */
 let refetchTimer = 0;
+/** @type {Set<FetchNode>} Nodes owed a refetch, accumulated across the window. */
+const due = new Set();
 /**
  * After a mutation render, debounce-refetch any fetch node whose URL deps
- * changed. Snapshots live on the node, so no extra bookkeeping structure.
+ * changed. Snapshots live on the node, so no extra bookkeeping structure. The
+ * due set OUTLIVES each debounce restart: a second mutation resets the timer,
+ * and a node dropped there could never be re-detected — its snapshot has already
+ * been advanced — so its refetch would be lost rather than merely delayed.
  * @returns {void}
  */
 function checkRefetch() {
-  /** @type {FetchNode[]} */
-  const due = [];
   for (const node of fetchNodes) {
     const snap = depSnapshot(node);
-    if (snap && snap !== node.__wdSnap) { node.__wdSnap = snap; due.push(node); }
+    if (snap && snap !== node.__wdSnap) { node.__wdSnap = snap; due.add(node); }
   }
-  if (!due.length) return;
+  if (!due.size) return;
   clearTimeout(refetchTimer);
-  refetchTimer = setTimeout(() => { for (const node of due) startFetch(node); }, 150);
+  refetchTimer = setTimeout(() => { for (const node of due) startFetch(node); due.clear(); }, 150);
 }
 
-for (const node of fetchNodes) {
-  node.__wdSnap = depSnapshot(node);
-  if (node.getAttribute("data-wd-fetch-when") === "visible" && "IntersectionObserver" in window) {
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
-      observer.disconnect();
-      startFetch(node);
-    });
-    observer.observe(node);
-  } else {
-    startFetch(node);
+/**
+ * Claim and wire up the directives that need ONE-TIME setup: `:fetch` (kick off
+ * the request, snapshot its deps), `:effect` (parse the def, snapshot its watch)
+ * and `:every` (start a timer). `querySelectorAll` cannot see into `<template>`
+ * content, so building these at load permanently missed any that lived in an
+ * unopened `:if` branch or a loop row template — they simply never ran. Called
+ * again whenever a render changes structure; each node is claimed once
+ * (`__wdReg`), so a re-scan costs the query and nothing else. (`:computed` and
+ * `:theme` need no claim at all: both read the live tree on every render.)
+ * @returns {void}
+ */
+function scan() {
+  for (const node of /** @type {any} */ (document.querySelectorAll("[data-wd-fetch],[data-wd-effect],[data-wd-every]"))) {
+    if (node.__wdReg) continue;
+    node.__wdReg = 1;
+    if (node.hasAttribute("data-wd-effect")) {
+      const def = JSON.parse(node.textContent || "{}");
+      effects.push({ watch: def.watch, actions: def.actions || [], last: JSON.stringify(getPath(state, def.watch) ?? null) });
+    }
+    if (node.hasAttribute("data-wd-every")) {
+      if (!everyDefs.length) document.addEventListener("visibilitychange", () => (document.hidden ? stopEvery() : startEvery()));
+      everyDefs.push(JSON.parse(node.textContent || "{}"));
+      startEvery();
+    }
+    if (node.hasAttribute("data-wd-fetch")) {
+      fetchNodes.push(node);
+      node.__wdSnap = depSnapshot(node);
+      if (node.getAttribute("data-wd-fetch-when") === "visible" && "IntersectionObserver" in window) {
+        const observer = new IntersectionObserver((entries) => {
+          if (!entries.some((entry) => entry.isIntersecting)) return;
+          observer.disconnect();
+          startFetch(node);
+        });
+        observer.observe(node);
+      } else {
+        startFetch(node);
+      }
+    }
   }
 }
 
 // :every — run actions on a timer, paused while the tab is hidden so background
 // tabs don't poll or animate. Each tick runs the action sequence (no clicked row,
 // like :effect), then saves + renders + checks refetch deps, exactly like a click.
-/** @typedef {{ ms: number, actions: { op: string, target?: string, value?: any }[] }} EveryDef */
+/** @typedef {{ ms: number, actions: { op: string, target?: string, value?: any }[], t?: any }} EveryDef */
 /** @type {EveryDef[]} */
-const everyDefs = [...document.querySelectorAll("script[data-wd-every]")].map((node) => JSON.parse(node.textContent || "{}"));
-/** @type {any[]} */
-let everyTimers = [];
+const everyDefs = [];
+// The timer lives on the def, not in a shared list, so a def registered later
+// (one revealed by an :if flip) starts ticking without restarting the others.
 function startEvery() {
-  if (everyTimers.length || document.hidden) return;
+  if (document.hidden) return;
   for (const def of everyDefs) {
-    if (!def.ms || !def.actions) continue;
-    everyTimers.push(setInterval(() => {
-      for (const a of def.actions) applyAction(null, a.op, a.target || "", a.value);
+    if (def.t || !def.ms || !def.actions) continue;
+    def.t = setInterval(() => {
+      runActions(def.actions);
       savePersisted();
       render();
       checkRefetch();
-    }, def.ms));
+    }, def.ms);
   }
 }
 function stopEvery() {
-  for (const timer of everyTimers) clearInterval(timer);
-  everyTimers = [];
-}
-if (everyDefs.length) {
-  document.addEventListener("visibilitychange", () => (document.hidden ? stopEvery() : startEvery()));
-  startEvery();
+  for (const def of everyDefs) { clearInterval(def.t); def.t = 0; }
 }
 
 // Escape-hatch subscriptions: colocated `.js` "behaviors" (carousels, drag-and-
@@ -944,6 +1068,8 @@ function notifySubscribers() {
     state[key] = value;
     savePersisted();
     render();
+    // The input and click handlers both do; behaviors write only through here.
+    checkRefetch();
   },
   /**
    * Run `cb(value)` now and on every future change to `state[key]`. Returns an
