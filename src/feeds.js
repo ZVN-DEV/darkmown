@@ -516,7 +516,9 @@ export function rssItemLimit(meta, file) {
   const text = String(raw).trim();
   // `Number("")` is 0 and `Number("12px")` is NaN — both fail the guard below,
   // so an empty or non-numeric value lands on the same actionable error.
-  const value = Number(text);
+  // Digits only: `Number()` would also accept "1e3", "0x10" and "7.0", none
+  // of which is the "positive whole number" the error promises.
+  const value = /^\d+$/.test(text) ? Number(text) : Number.NaN;
   if (Number.isInteger(value) && value > 0) return value;
   const hint = "rss_limit: 20";
   throw wdError(

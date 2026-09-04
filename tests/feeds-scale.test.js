@@ -158,7 +158,7 @@ test("rssItemLimit defaults to 20 and accepts any positive whole number", () => 
 });
 
 test("rssItemLimit rejects anything that is not a positive whole number", () => {
-  for (const bad of ["0", "-5", "2.5", "all", "", "twenty"]) {
+  for (const bad of ["0", "-5", "2.5", "all", "", "twenty", "1e3", "0x10", "7.0", "+5"]) {
     assert.throws(
       () => rssItemLimit({ rss_limit: bad }, "/site/pages/index.md"),
       (err) => {
