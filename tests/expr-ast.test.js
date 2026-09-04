@@ -78,7 +78,26 @@ const EXPRS = [
   'S("a") && S("b") || S("c")',
   'S("a") < S("b") == S("c")',
   'S("t") == true',
-  'S("t") == false'
+  'S("t") == false',
+  // Associativity of same-precedence chains: a left-associative parse gives
+  // `(a - b) - c`, a right-associative one `a - (b - c)`, and they disagree for
+  // almost every input. Same for `/`. These two lines are what pin the parser's
+  // `parseExpr(prec + 1)` recursion to JS semantics.
+  'S("a") - S("b") - S("x")',
+  'S("a") / S("b") / S("x")',
+  'S("a") - S("b") + S("x")',
+  'S("base") % S("b") % S("seats")',
+  'S("subtotal") % 7',
+  'I("qty") % 2',
+  // `contains` folds case on BOTH sides, so an uppercase needle must still match
+  // a lowercase haystack (the `q: "KIR"` state row is the uppercase needle).
+  '(C(S("name"), S("q")))',
+  '(C(I("name"), "GET"))',
+  // Unary minus, including doubled and applied to a reader with a dotted path.
+  '-S("cart","count")',
+  '- -S("a")',
+  '-I("qty") > 0',
+  '!(-S("a"))'
 ];
 
 const STATES = [
@@ -209,6 +228,22 @@ test("PARITY: walking the AST matches the pre-2.1 new Function evaluation exactl
 });
 
 // --- Leaf / literal node coverage ------------------------------------------
+
+test("astOf reads the exponent notation JSON.stringify produces for a folded number", () => {
+  // No author types `1e+21`, but `JSON.stringify` prints any number outside
+  // 1e-7…1e21 that way, and the static-operand fold splices its output straight
+  // into the fragment this module re-parses. Rejecting it threw a raw uncoded
+  // `expr-ast: trailing input` Error out of a perfectly ordinary `.class when`.
+  assert.deepEqual(astOf("1e+21"), ["L", 1e21]);
+  assert.deepEqual(astOf("1e-7"), ["L", 1e-7]);
+  assert.deepEqual(astOf("1E21"), ["L", 1e21]);
+  assert.deepEqual(astOf("1.5e3"), ["L", 1500]);
+  assert.deepEqual(astOf("1e+21 > 1"), [">", ["L", 1e21], ["L", 1]]);
+  // A bare `e` is NOT an exponent, so the closed grammar still rejects it rather
+  // than quietly swallowing an identifier that happens to start with `e`.
+  assert.throws(() => astOf("1e"), /trailing input/);
+  assert.throws(() => astOf("1e+"), /trailing input/);
+});
 
 test("astOf parses every literal kind into an inert L node", () => {
   const st = { obj: 1, arr: 1 };

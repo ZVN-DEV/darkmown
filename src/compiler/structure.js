@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Structure: the directives that shape a page's tree — `@include` (sub-file
 // compile + scoped-skin stamp), `::: container` sections, `:if` conditional
-// regions, the `:carousel` block — plus the documentation-demo directives
-// (`:try`/`:note`/`:sprint`). Nested block bodies recurse through
+// regions, the `:carousel` block — plus the documentation-demo directive
+// `:try`. Nested block bodies recurse through
 // `ctx.compileBody` (and `@include` through `ctx.compileFile`), threaded in by
 // the per-file compile so the module graph stays an import-cycle-free DAG.
 //
@@ -12,7 +12,6 @@
 // ---------------------------------------------------------------------------
 
 import { at, createScope, LOOP_META, lineOf, nestedCtx, recordSymbol, wdError } from "./context.js";
-import { astOf, serializeExpr } from "./expr-ast.js";
 import { resolveInclude, scopedSkinFor, stampScope } from "./includes.js";
 import {
   escapeHtml,
@@ -22,6 +21,7 @@ import {
   parseScalar,
   resolveStateKey
 } from "./interpolation.js";
+import { astAt, serializeExprAt } from "./loops.js";
 import { compileWhen, evalPredicate } from "./predicates.js";
 
 /**
@@ -182,8 +182,9 @@ export function handleContainer(header, bodyLines, ctx, index) {
       const compiled = compileWhen(whenMatch[1].trim(), ctx);
       if (compiled.static) {
         if (compiled.value) extraClass.push(cls);
-      } else if (compiled.item) eachClasses.push([cls, astOf(compiled.body)]);
-      else stateClasses.push([cls, astOf(compiled.body)]);
+      } else if (compiled.item)
+        eachClasses.push([cls, astAt(compiled.body, ctx, index, '"::: … when"')]);
+      else stateClasses.push([cls, astAt(compiled.body, ctx, index, '"::: … when"')]);
     } else {
       extraClass.push(cls);
     }
@@ -313,18 +314,24 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
       // static: the meta boolean is in scope — fall through to the static branch below.
     }
 
-    const staticValue = lookupVar(ctx.scope, head);
-    if (staticValue.found) {
-      const active = Boolean(getPath(staticValue.value, segs.slice(1)));
-      return ctx.compileBody(active ? truthyLines : falsyLines, active ? truthyCtx : falsyCtx);
-    }
-
+    // RESOLUTION ORDER: reactive loop item → static scope → declared state, the
+    // framework-wide order `{ }` interpolation and `@loop … where` already use.
+    // Static scope used to be tried FIRST here, so in a nested static-then-
+    // reactive loop that reuses one item name, `{ it.name }` bound to the
+    // reactive row while `:if it.done` folded against the OUTER static value and
+    // hard-baked a branch with no `data-wd-each-if` — unfixable at runtime.
     if (ctx.loopItem && head === ctx.loopItem) {
       const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
       const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
       const rest = segs.slice(1).join(".");
       const pathAttr = ` data-wd-path="${escapeHtml(rest)}"`;
       return `<span data-wd-each-if${pathAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
+    }
+
+    const staticValue = lookupVar(ctx.scope, head);
+    if (staticValue.found) {
+      const active = Boolean(getPath(staticValue.value, segs.slice(1)));
+      return ctx.compileBody(active ? truthyLines : falsyLines, active ? truthyCtx : falsyCtx);
     }
 
     const key = resolveStateKey(head, ctx);
@@ -342,7 +349,11 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
     const liveAttr = restPath ? "" : fetchLiveAttr(key, [...truthyLines, ...falsyLines], ctx);
     const initialTruthy = Boolean(getPath(ctx.comp.state.get(key), segs.slice(1)));
     const active = initialTruthy ? truthy : falsy;
-    return `<div data-wd-if="${key}"${pathAttr}${liveAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
+    // The key carries the `::: name #id` section prefix, which is author text.
+    // It is escaped exactly like the `id="…"` attribute beside it — an unescaped
+    // `&`/`"` in a section id closed the attribute early and produced broken
+    // markup with a dead binding.
+    return `<div data-wd-if="${escapeHtml(key)}"${pathAttr}${liveAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
   }
 
   // Predicate path: a comparison / logical condition. Compiles through the same
@@ -368,17 +379,20 @@ export function handleIf(line, truthyLines, falsyLines, ctx, index, falsyStart =
   ctx.comp.assets.runtime = true;
   const truthy = ctx.compileBody(truthyLines, truthyCtx).trim();
   const falsy = ctx.compileBody(falsyLines, falsyCtx).trim();
-  const exprAttr = ` data-wd-if-expr="${escapeHtml(serializeExpr(compiled.body))}"`;
+  const exprAttr = ` data-wd-if-expr="${escapeHtml(serializeExprAt(compiled.body, ctx, index, '":if"'))}"`;
   if (compiled.item) {
     return `<span data-wd-each-if${exprAttr}><template data-wd-if-true>${truthy}</template><template data-wd-if-false>${falsy}</template><span data-wd-each-if-out></span></span>`;
   }
-  const initialTruthy = evalPredicate(compiled.body, undefined, ctx);
+  const initialTruthy = evalPredicate(compiled.body, undefined, ctx, '":if"');
   const active = initialTruthy ? truthy : falsy;
   return `<div data-wd-if=""${exprAttr} data-wd-if-active="${initialTruthy}"><template data-wd-true>${truthy}</template><template data-wd-false>${falsy}</template><div data-wd-if-out>${active}</div></div>`;
 }
 
 /**
- * Render the documentation-demo directives (`:try`, `:note`, `:sprint`).
+ * Render the documentation-demo directive `:try` (the "Try it" card the homepage
+ * uses). `:note` and `:sprint` lived here too and were deleted: nothing in the
+ * site, the docs, or the public directive set used them, and a directive the
+ * catalog does not list is a trap for an AI author that discovers it in source.
  * @param {string} line
  * @param {Ctx} ctx
  * @returns {string}
@@ -388,16 +402,6 @@ export function renderDemoDirective(line, ctx) {
   if (tryMatch) {
     const href = validateDemoHref(tryMatch[2], ctx);
     return `<a class="try-card" href="${escapeHtml(href)}"><span>Try</span>${escapeHtml(tryMatch[1])}</a>`;
-  }
-  const note = line.match(/^:note\s+"([^"]+)"$/);
-  if (note) return `<aside class="note">${escapeHtml(note[1])}</aside>`;
-  const sprint = line.match(/^:sprint\s+min=(\d+)\s+max=(\d+)\s+roles="([^"]+)"$/);
-  if (sprint) {
-    const roles = sprint[3]
-      .split(",")
-      .map((role) => role.trim())
-      .filter(Boolean);
-    return `<section class="sprint-board" data-min="${sprint[1]}" data-max="${sprint[2]}">${roles.map((role) => `<article><strong>${escapeHtml(role)}</strong><span>active lane</span></article>`).join("")}</section>`;
   }
   return "";
 }

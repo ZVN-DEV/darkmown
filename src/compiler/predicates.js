@@ -28,6 +28,56 @@ export const PREDICATE_JOINERS = ["and", "or", "not"];
 // adding an operator in one place updates the parser and the catalog together.
 const CONDITION_RE = new RegExp(`^(.+?)\\s+(${PREDICATE_OPS.join("|")})\\s+(.+)$`, "i");
 
+// One ` and `/` or ` joiner, matched STICKILY at a cursor so {@link splitJoiners}
+// can skip over quoted operands instead of splitting inside them.
+const JOINER_RE = /\s+(and|or)\s+/iy;
+
+/**
+ * Split a predicate at its TOP-LEVEL `and`/`or` joiners, never inside a quoted
+ * operand — so `where p.name contains "cats and dogs"` stays ONE condition
+ * instead of being torn into `p.name contains "cats` / `dogs"`, which no operand
+ * grammar can accept. Mirrors the quote-aware `splitTop` the format-pipe parser
+ * uses (copied rather than imported: `splitTop` is private to `format.js`).
+ *
+ * Returns the same alternating shape the previous `raw.split(/\s+(and|or)\s+/i)`
+ * produced — operands at even indexes, joiners at odd — so both callers keep
+ * their `i % 2` walk.
+ * @param {string} raw
+ * @returns {string[]}
+ */
+function splitJoiners(raw) {
+  /** @type {string[]} */
+  const parts = [];
+  let cur = "";
+  let quote = "";
+  let i = 0;
+  while (i < raw.length) {
+    const c = raw[i];
+    if (quote) {
+      cur += c;
+      if (c === quote) quote = "";
+      i++;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+      cur += c;
+      i++;
+    } else {
+      JOINER_RE.lastIndex = i;
+      const joiner = JOINER_RE.exec(raw);
+      if (joiner) {
+        parts.push(cur, joiner[1]);
+        cur = "";
+        i += joiner[0].length;
+      } else {
+        cur += c;
+        i++;
+      }
+    }
+  }
+  parts.push(cur);
+  return parts;
+}
+
 // Compile a `where` predicate to a safe JS boolean expression over I()/S()/C().
 // Conditions (operand <op> operand) join with `and`/`or`; operands are loop-item
 // paths, declared :state, numbers, or strings. No identifiers survive un-mapped.
@@ -38,7 +88,7 @@ const CONDITION_RE = new RegExp(`^(.+?)\\s+(${PREDICATE_OPS.join("|")})\\s+(.+)$
  * @returns {Predicate}
  */
 export function compilePredicate(raw, itemName, ctx) {
-  const parts = raw.split(/\s+(and|or)\s+/i);
+  const parts = splitJoiners(raw);
   /** @type {string[]} */
   const pieces = [];
   let refsState = false;
@@ -122,17 +172,27 @@ function compileOperand(tok, itemName, ctx) {
 /**
  * Evaluate a compiled predicate against a row at build time by walking its AST —
  * the same closed evaluator the runtime uses, so the fold matches. No eval.
+ *
+ * `what` names the CONSTRUCT the body came from. Three directives share this
+ * evaluator (`@loop … where`, `::: … .class when`, `:if`), and the warning used
+ * to say "@loop where predicate … treating the row as excluded" for all of
+ * them — pointing an author at a loop they never wrote when a `:if` folded.
  * @param {string} body
  * @param {unknown} item
  * @param {Ctx} ctx
+ * @param {string} [what] Directive label, e.g. `":if"`. Defaults to `@loop where`.
  * @returns {boolean}
  */
-export function evalPredicate(body, item, ctx) {
+export function evalPredicate(body, item, ctx, what = "@loop where") {
   try {
     return Boolean(evalAst(astOf(body), item, ctx.comp));
   } catch {
+    // Only `@loop where` filters rows; for the others the verdict is the branch
+    // (or the class), so say what actually happens rather than naming a row.
+    const outcome =
+      what === "@loop where" ? "treating the row as excluded" : "treating it as false";
     console.warn(
-      `@loop where predicate "${body}" in ${ctx.file} could not be evaluated at build time; treating the row as excluded. Check the condition.`
+      `${what} predicate "${body}" in ${ctx.file} could not be evaluated at build time; ${outcome}. Check the condition.`
     );
     return false;
   }
@@ -142,8 +202,14 @@ export function evalPredicate(body, item, ctx) {
  * Compile one operand of a `::: … .class when <predicate>` expression. Like the
  * `@loop where` operand, but also folds a static-scope value (a loop-unrolled
  * item field or include arg) to its build-time literal, so a fully-static
- * predicate can be evaluated at compile time. Mirrors `:if`'s scope→item→state
- * resolution order.
+ * predicate can be evaluated at compile time.
+ *
+ * RESOLUTION ORDER is the framework-wide one — reactive loop item → static scope
+ * → declared state — the same order `{ }` interpolation, `:if`, and `@loop …
+ * where` use. It used to try static scope FIRST here, so a reactive row item
+ * whose name was also bound in an enclosing static scope folded to the OUTER
+ * value at build time and hard-baked the wrong verdict, while `{ item.field }`
+ * two lines away resolved to the reactive row.
  * @param {string} tok
  * @param {Ctx} ctx
  * @param {string} what Directive label for error messages.
@@ -167,15 +233,18 @@ function compileWhenOperand(tok, ctx, what) {
       file: ctx.file
     });
   }
-  const scoped = lookupVar(ctx.scope, segs[0]);
-  if (scoped.found)
-    return {
-      code: JSON.stringify(getPath(scoped.value, segs.slice(1)) ?? null),
-      state: false,
-      item: false
-    };
   if (ctx.loopItem && segs[0] === ctx.loopItem)
     return { code: `I(${JSON.stringify(segs.slice(1).join("."))})`, state: false, item: true };
+  const scoped = lookupVar(ctx.scope, segs[0]);
+  if (scoped.found) {
+    // `JSON.stringify` returns UNDEFINED (not a string) for a value it cannot
+    // represent — a function, most notably, which is what an `Object.prototype`
+    // member folds to. Splicing that into the expression produced the literal
+    // text `undefined`, which the AST re-parser rejects with a raw uncoded
+    // Error. `null` is the honest, parseable stand-in for "no value here".
+    const literal = JSON.stringify(getPath(scoped.value, segs.slice(1)) ?? null);
+    return { code: literal === undefined ? "null" : literal, state: false, item: false };
+  }
   const key = resolveStateKey(segs[0], ctx);
   if (!key)
     throw wdError(
@@ -202,7 +271,7 @@ function compileWhenOperand(tok, ctx, what) {
  * @returns {{ static: true, value: boolean } | { static: false, body: string, item: boolean }}
  */
 export function compileWhen(raw, ctx, what = '"::: … when"') {
-  const parts = raw.split(/\s+(and|or)\s+/i);
+  const parts = splitJoiners(raw);
   /** @type {string[]} */
   const pieces = [];
   let usesState = false;
@@ -238,7 +307,8 @@ export function compileWhen(raw, ctx, what = '"::: … when"') {
     pieces.push(negate ? `(!(${expr}))` : `(${expr})`);
   }
   const body = pieces.join(" ");
-  if (!usesState && !usesItem) return { static: true, value: evalPredicate(body, undefined, ctx) };
+  if (!usesState && !usesItem)
+    return { static: true, value: evalPredicate(body, undefined, ctx, what) };
   return { static: false, body, item: usesItem };
 }
 

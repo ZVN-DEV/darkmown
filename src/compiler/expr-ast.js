@@ -169,6 +169,20 @@ export function astOf(code) {
   const readNumber = () => {
     let j = i;
     while (j < n && /[0-9.]/.test(code[j])) j++;
+    // Exponent notation. The compilers fold a build-known operand with
+    // `JSON.stringify`, and JS prints a number outside 1e-7…1e21 in exponent
+    // form (`1e+21`, `1e-7`), so the fragment this module re-parses can carry
+    // one even though no author ever typed it. The exponent is only consumed
+    // when `e`/`E` is actually followed by digits (with an optional sign), so a
+    // bare trailing `e` still falls through to the closed grammar's hard error.
+    if (code[j] === "e" || code[j] === "E") {
+      let k = j + 1;
+      if (code[k] === "+" || code[k] === "-") k++;
+      if (k < n && code[k] >= "0" && code[k] <= "9") {
+        while (k < n && code[k] >= "0" && code[k] <= "9") k++;
+        j = k;
+      }
+    }
     const num = Number(code.slice(i, j));
     i = j;
     return num;

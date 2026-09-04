@@ -297,16 +297,17 @@ test("an unexpected container token is rejected", () => {
   compileThrows(["::: section !bad", "x", ":::"], /Unexpected token "!bad"/);
 });
 
-test(":try, :note, and :sprint demo directives render their markup", () => {
+test(":try renders its demo card, and the deleted :note/:sprint stay plain text", () => {
   const page = compile([
     ':try "Reactive" href="/reactive/"',
     ':note "Heads up"',
     ':sprint min=2 max=5 roles="PM, Dev, QA"'
   ]);
   assert.match(page.html, /<a class="try-card" href="\/reactive\/"><span>Try<\/span>Reactive<\/a>/);
-  assert.match(page.html, /<aside class="note">Heads up<\/aside>/);
-  assert.match(page.html, /<section class="sprint-board" data-min="2" data-max="5">/);
-  assert.match(page.html, /<article><strong>PM<\/strong>/);
+  // `:note` and `:sprint` were demo-only directives nobody used; they are gone,
+  // so their lines now fall through to prose like any other unknown `:word`.
+  assert.doesNotMatch(page.html, /<aside class="note">/);
+  assert.doesNotMatch(page.html, /sprint-board/);
 });
 
 test(":try escapes safe hrefs and allows whitelisted schemes", () => {

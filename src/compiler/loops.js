@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { at, createScope, lineOf, nestedCtx, recordSymbol, wdError } from "./context.js";
-import { serializeExpr } from "./expr-ast.js";
+import { astOf, evalAst, serializeExpr } from "./expr-ast.js";
 import { applyPipeline, stagesFromAttr } from "./format.js";
 import { resolveInclude } from "./includes.js";
 import {
@@ -23,6 +23,7 @@ import { compilePredicate, evalPredicate } from "./predicates.js";
 
 /**
  * @typedef {import("./context.js").Ctx} Ctx
+ * @typedef {import("./context.js").Compilation} Compilation
  * @typedef {import("./context.js").Predicate} Predicate
  * @typedef {import("./context.js").NumArg} NumArg
  * @typedef {import("./context.js").LoopOpts} LoopOpts
@@ -36,6 +37,60 @@ export const LOOP_EXAMPLE = "@loop /products.json into p where p.price < 50 sort
 
 // The fixed corrective suggestion shown for any malformed @loop header.
 const LOOP_USAGE = `Use: @loop src into item [where …] [sort by …] [reverse] [offset N] [limit N] [paginate N] [sortable] — e.g. ${LOOP_EXAMPLE}`;
+
+// The corrective suggestion for an expression the AST re-parser cannot read.
+const EXPR_USAGE =
+  'Use simpler operands — a field path, a declared :state, a plain number, or a "string".';
+
+/**
+ * Serialize an already-validated expression fragment into the compact AST
+ * attribute payload the runtime reads, turning a residual parse failure into a
+ * CODED compile error with `file:line` instead of the AST layer's raw internal
+ * `Error`.
+ *
+ * `expr-ast.js` re-parses the compiler's own output, so a failure there is not
+ * an author mistake and it throws a plain `Error` by design. But the operand
+ * folds in `predicates.js` splice BUILD-TIME VALUES into that output, and a
+ * value the fold cannot render as a readable literal escapes as an uncoded
+ * `expr-ast: …` error with no file, no line, and no suggestion — the one gap in
+ * the "every author-facing error carries a code" invariant. This is the seam
+ * where that becomes an ordinary Darkmown compile error again.
+ *
+ * Lives here rather than beside its `structure.js` callers because the error-code
+ * registry pins each source file to a subsystem block (`compiler/loops.js` owns
+ * WD1xx), and this guard's reserved code is WD190.
+ * @param {string} code Validated JS fragment over `I()`/`S()`/`C()`/`A()`.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index of the directive that owns it.
+ * @param {string} what Directive label for the message, e.g. `":if"`.
+ * @returns {any[]} The parsed AST.
+ */
+export function astAt(code, ctx, index, what) {
+  try {
+    return astOf(code);
+  } catch {
+    throw wdError(
+      `${what} expression in ${at(ctx, index)} could not be compiled: "${code}". ${EXPR_USAGE}`,
+      {
+        code: "WD190",
+        file: ctx.file,
+        line: lineOf(ctx, index),
+        hint: EXPR_USAGE.slice("Use ".length)
+      }
+    );
+  }
+}
+
+/**
+ * `JSON.stringify(astAt(…))` — the attribute payload, with the same coded error.
+ * @param {string} code
+ * @param {Ctx} ctx
+ * @param {number} index
+ * @param {string} what
+ * @returns {string}
+ */
+export const serializeExprAt = (code, ctx, index, what) =>
+  JSON.stringify(astAt(code, ctx, index, what));
 
 /**
  * Parse the optional clause tail of a `@loop` header in FIXED order:
@@ -541,7 +596,10 @@ function pipelineRows(rows, where, opts, ctx) {
           typeof av === "number" && typeof bv === "number"
             ? av - bv
             : String(av).localeCompare(String(bv));
-        return (c || a.index - b.index) * dir;
+        // The index tiebreaker keeps EQUAL rows in source order, so it must not
+        // be flipped with the comparator: `(c || tie) * dir` negated the tie too
+        // and made `desc` unstable, reversing runs of equal keys.
+        return c ? c * dir : a.index - b.index;
       })
       .map((w) => w.value);
   }
@@ -610,7 +668,67 @@ function staticUnroll(rows, itemName, bodyLines, ctx, empty = null, emptyStart =
     };
     out.push(ctx.compileBody(bodyLines, rowCtx));
   }
-  return out.join("\n");
+  return joinRows(out);
+}
+
+// The block tags a static unroll stitches back together across a row seam. Each
+// row body is compiled as its OWN markdown document, so a row whose body is a
+// list item closes its own `<ul>`/`<ol>` and a row whose body is a table closes
+// its own `<table>`: `- { p.name }` over three rows produced three separate
+// lists, `1. { p.name }` produced three lists each numbered 1, and a table body
+// produced three tables. Splicing at the seam gives the ONE list / ONE correctly
+// numbered list / ONE table an author wrote.
+const SEAM_TAGS = ["ul", "ol"];
+
+/**
+ * Join the compiled row bodies of a static unroll, splicing a block that a row
+ * seam split in two back into one element. A seam that does not match any
+ * mergeable shape falls back to the plain `"\n"` join the unroll always used, so
+ * every other body shape emits byte-identical HTML.
+ * @param {string[]} parts Compiled HTML, one entry per row.
+ * @returns {string}
+ */
+function joinRows(parts) {
+  if (!parts.length) return "";
+  let html = parts[0];
+  for (let i = 1; i < parts.length; i++) html = spliceRow(html, parts[i]);
+  return html;
+}
+
+/**
+ * Splice one row's HTML onto the accumulated output at their shared seam.
+ * @param {string} prev Everything emitted so far.
+ * @param {string} next The next row's compiled HTML.
+ * @returns {string}
+ */
+function spliceRow(prev, next) {
+  const left = prev.trimEnd();
+  const right = next.trimStart();
+  for (const tag of SEAM_TAGS) {
+    if (left.endsWith(`</${tag}>`) && right.startsWith(`<${tag}>`)) {
+      return `${left.slice(0, -(tag.length + 3)).trimEnd()}\n${right.slice(tag.length + 2).trimStart()}`;
+    }
+  }
+  return spliceTable(left, right) ?? `${prev}\n${next}`;
+}
+
+/**
+ * Splice two single-row tables into one by concatenating their `<tbody>`
+ * contents. Only when both carry the SAME markup before `<tbody>`: a header that
+ * interpolates the row is genuinely a table per row, and merging would drop it.
+ * @param {string} left
+ * @param {string} right
+ * @returns {string | null} The spliced HTML, or null when they do not merge.
+ */
+function spliceTable(left, right) {
+  if (!left.endsWith("</table>") || !right.startsWith("<table>")) return null;
+  const rightBody = right.indexOf("<tbody>");
+  const leftBody = left.lastIndexOf("</tbody>");
+  if (rightBody === -1 || leftBody === -1) return null;
+  if (left.slice(0, left.indexOf("<tbody>")) !== right.slice(0, rightBody)) return null;
+  const head = left.slice(0, leftBody).trimEnd();
+  const tail = right.slice(rightBody + "<tbody>".length).trimStart();
+  return `${head}\n${tail}`;
 }
 
 /**
@@ -657,12 +775,26 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
   /** @param {NumArg|null} a */
   const num = (a) =>
     a ? (a.kind === "literal" ? a.value : Number(ctx.comp.state.get(a.value) ?? 0)) : null;
+  // A reactive `sort by { field }` / `{ dir }` carries the resolved STATE KEY in
+  // `sort.key`/`sort.dir`, not a field path and not `asc`/`desc` — the runtime
+  // reads the current value per render. The initial paint has to resolve it the
+  // same way (exactly as `num()` already does for a state-keyed offset/limit),
+  // or the key is used as a literal field path (which no row has), the direction
+  // never equals "desc", and the pre-hydration HTML ships in source order and
+  // visibly reorders the moment the runtime boots.
+  const initialSort = sort
+    ? {
+        ...sort,
+        key: sort.keyKind === "key" ? String(ctx.comp.state.get(sort.key) ?? "") : sort.key,
+        dir: sort.dirKind === "key" ? String(ctx.comp.state.get(sort.dir) ?? "asc") : sort.dir
+      }
+    : null;
   const rows = pipelineRows(
     allRows,
     where,
     {
       where,
-      sort,
+      sort: initialSort,
       reverse,
       offset:
         offset && offset.kind === "key" ? { kind: "literal", value: num(offset) || 0 } : offset,
@@ -688,7 +820,10 @@ function reactiveLoop(key, itemName, bodyLines, ctx, opts = null) {
     .map((/** @type {unknown} */ item, i) => {
       const itemKey = loopKeyOf(item, counts);
       const meta = { index: i, number: i + 1, first: i === 0, last: i === count - 1, count };
-      return unmaskItemLoops(fillTemplateString(withLoopKey(masked, itemKey), item, meta), regions);
+      return unmaskItemLoops(
+        fillTemplateString(withLoopKey(masked, itemKey), item, meta, ctx.comp),
+        regions
+      );
     })
     .join("");
 
@@ -853,13 +988,15 @@ function withLoopKey(template, itemKey) {
 /**
  * @param {string} template
  * @param {unknown} item
- * @param {Record<string, unknown>} [meta] Per-row meta values for the initial paint.
+ * @param {Record<string, unknown>} meta Per-row meta values for the initial paint.
+ * @param {Compilation} comp Declared state, for a per-row `:if` predicate that
+ *   also reads `:state`/`:store`.
  * @returns {string}
  */
-function fillTemplateString(template, item, meta = {}) {
+function fillTemplateString(template, item, meta, comp) {
   // Resolve per-item :if regions first (recursively, so nested conditionals are
   // pre-rendered for the initial paint), then fill text binds and meta markers.
-  return fillEachMeta(fillEachText(fillEachIfRegions(template, item, meta), item), meta);
+  return fillEachMeta(fillEachText(fillEachIfRegions(template, item, meta, comp), item), meta);
 }
 
 /**
@@ -886,10 +1023,11 @@ function fillEachMeta(str, meta) {
 /**
  * @param {string} str
  * @param {unknown} item
- * @param {Record<string, unknown>} [meta]
+ * @param {Record<string, unknown>} meta
+ * @param {Compilation} comp
  * @returns {string}
  */
-function fillEachIfRegions(str, item, meta = {}) {
+function fillEachIfRegions(str, item, meta, comp) {
   const marker = "<span data-wd-each-if ";
   let result = "";
   let i = 0;
@@ -898,7 +1036,7 @@ function fillEachIfRegions(str, item, meta = {}) {
     if (start === -1) return result + str.slice(i);
     result += str.slice(i, start);
     const end = matchElement(str, start, "span");
-    result += fillOneEachIf(str.slice(start, end), item, meta);
+    result += fillOneEachIf(str.slice(start, end), item, meta, comp);
     i = end;
   }
 }
@@ -907,10 +1045,18 @@ function fillEachIfRegions(str, item, meta = {}) {
  * @param {string} region
  * @param {unknown} item
  * @param {Record<string, unknown>} meta
+ * @param {Compilation} comp
  * @returns {string}
  */
-function fillOneEachIf(region, item, meta) {
+function fillOneEachIf(region, item, meta, comp) {
   const metaMatch = region.match(/^<span data-wd-each-if data-wd-meta="([a-z]+)">/);
+  // A per-row `:if` with an OPERATOR (`:if r.qty > 1`) ships its condition as a
+  // serialized AST, not a path — the same payload the runtime walks. Without
+  // this branch the path fell back to "", `getPath(item, [])` handed back the
+  // row object, and `Boolean(row)` was true for every row: every operator `:if`
+  // in every reactive loop shipped its TRUE branch in the pre-hydration HTML,
+  // which is what a crawler and a no-JS reader see.
+  const exprMatch = region.match(/^<span data-wd-each-if data-wd-if-expr="([^"]*)">/);
   const path = (region.match(/^<span data-wd-each-if data-wd-path="([^"]*)">/) || ["", ""])[1];
   const trueStart = region.indexOf("<template data-wd-if-true>");
   const trueEnd = matchElement(region, trueStart, "template");
@@ -920,12 +1066,20 @@ function fillOneEachIf(region, item, meta) {
   const close = "</template>".length;
   const truthy = region.slice(trueStart + open, trueEnd - close);
   const falsy = region.slice(falseStart + "<template data-wd-if-false>".length, falseEnd - close);
-  const test = metaMatch
-    ? Boolean(meta[metaMatch[1]])
-    : Boolean(getPath(item, path ? path.split(".") : []));
+  let test;
+  if (exprMatch) {
+    // The compiler serialized this AST itself, so the parse cannot fail; the
+    // walk is the same closed evaluator the runtime uses, so the initial paint
+    // and the first render agree.
+    test = Boolean(evalAst(JSON.parse(unescapeHtml(exprMatch[1])), item, comp));
+  } else if (metaMatch) {
+    test = Boolean(meta[metaMatch[1]]);
+  } else {
+    test = Boolean(getPath(item, path ? path.split(".") : []));
+  }
   const branch = test ? truthy : falsy;
   const head = region.slice(0, falseEnd);
-  return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item, meta)}</span></span>`;
+  return `${head}<span data-wd-each-if-out>${fillEachIfRegions(branch, item, meta, comp)}</span></span>`;
 }
 
 /**
@@ -989,7 +1143,7 @@ export function matchElement(str, start, tag) {
  * @returns {string}
  */
 export function loopKeyOf(item, counts) {
-  const base =
+  const raw =
     item && typeof item === "object"
       ? String(
           /** @type {Record<string, unknown>} */ (item).id ??
@@ -997,6 +1151,12 @@ export function loopKeyOf(item, counts) {
             JSON.stringify(item)
         )
       : String(item);
+  // Escape every literal `#` in the value BEFORE the `#n` disambiguator is
+  // appended, so a real key can never be mistaken for a duplicate suffix. A row
+  // with `id: "a#1"` and the second row with `id: "a"` both serialized to `a#1`,
+  // and because the runtime's reuse Map is keyed on this attribute the collision
+  // made a 3-item list grow a row on every render, unbounded.
+  const base = raw.replace(/#/g, "##");
   const seen = counts.get(base) || 0;
   counts.set(base, seen + 1);
   return seen ? `${base}#${seen}` : base;

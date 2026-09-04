@@ -266,14 +266,21 @@ export const pageIncludeExtensions = [".md", ".wd"];
 
 // Reserved per-row meta variables, mapped to their runtime marker token. Shared
 // by the body parser, the `:if` handler, and prose interpolation.
+//
+// PROTOTYPE-FREE ON PURPOSE. Every consumer asks `LOOP_META[head]` where `head`
+// is an author-supplied identifier, so a plain object literal would answer for
+// every `Object.prototype` member: `{ toString }` and `:if __proto__` resolved
+// as loop meta variables and emitted a `data-wd-each-meta="…"` marker for a
+// name nobody declared. A null-prototype object closes that at the source, so
+// every consumer (body parser, `:if`, prose interpolation) is fixed at once.
 /** @type {Record<string, string>} */
-export const LOOP_META = {
+export const LOOP_META = Object.assign(Object.create(null), {
   $index: "index",
   $number: "number",
   $first: "first",
   $last: "last",
   $count: "count"
-};
+});
 
 /**
  * @param {import("./reader.js").Reader} reader The source reader for this
