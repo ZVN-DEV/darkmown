@@ -342,6 +342,19 @@ function resolveVercelCsp(rules, urlPath) {
   return csp;
 }
 
+/**
+ * darkmown.com's vercel.json policy: the framework CSP plus the Little Friend
+ * analytics hosts the production site loads (scripts/little-friend.mjs). Only
+ * those two sources are added; every other directive must match the framework.
+ * @param {string} csp
+ * @returns {string}
+ */
+function withSiteAnalytics(csp) {
+  return csp
+    .replace("'inline-speculation-rules'", "'inline-speculation-rules' https://cdn.littlefriend.io")
+    .replace("connect-src 'self'", "connect-src 'self' https://in.littlefriend.io");
+}
+
 test("vercel.json resolves EVERY route — static (incl. nested) and reactive — to the eval-free CSP", () => {
   const repoRoot = process.cwd();
   const vercel = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
@@ -372,7 +385,7 @@ test("vercel.json resolves EVERY route — static (incl. nested) and reactive �
     const csp = resolveVercelCsp(rules, servedPath(r.route));
     assert.equal(
       csp,
-      STATIC_CSP,
+      withSiteAnalytics(STATIC_CSP),
       `static route ${r.route} (served at ${servedPath(r.route)}) resolves to a CSP that is NOT the strict eval-free policy — it drifts to the relaxed (unsafe-eval) CSP on Vercel. Extend the vercel.json static-CSP source to cover it.`
     );
   }
@@ -380,7 +393,7 @@ test("vercel.json resolves EVERY route — static (incl. nested) and reactive �
     const csp = resolveVercelCsp(rules, servedPath(r.route));
     assert.equal(
       csp,
-      REACTIVE_CSP,
+      withSiteAnalytics(REACTIVE_CSP),
       `reactive route ${r.route} (served at ${servedPath(r.route)}) resolves to the wrong CSP — since 2.1 the runtime walks a validated AST (no eval), so its CSP is the same eval-free policy as static routes.`
     );
   }

@@ -9,10 +9,10 @@ html: true
       <div class="small">Zero JS on static pages · one ~6.6&nbsp;KB runtime when reactive.</div>
     </div>
     <nav class="foot-links">
-      <a href="/docs/">Docs</a>
+      <a href="/docs/" data-lf="footer.docs">Docs</a>
       <a href="/showcase/">Showcase</a>
-      <a href="https://github.com/ZVN-DEV/darkmown">GitHub</a>
-      <a href="https://www.npmjs.com/package/@zvndev/darkmown">npm</a>
+      <a href="https://github.com/ZVN-DEV/darkmown" data-lf="footer.github">GitHub</a>
+      <a href="https://www.npmjs.com/package/@zvndev/darkmown" data-lf="footer.npm">npm</a>
     </nav>
   </div>
 </footer>

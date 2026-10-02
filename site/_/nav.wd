@@ -5,12 +5,12 @@ html: true
 <nav class="topnav">
   <a class="brand" href="/">Darkmown</a>
   <span class="nav-links">
-    <a href="/playground/">Playground</a>
-    <a href="/docs/">Docs</a>
+    <a href="/playground/" data-lf="nav.playground">Playground</a>
+    <a href="/docs/" data-lf="nav.docs">Docs</a>
     <a href="/blog/">Blog</a>
     <a href="/showcase/">Showcase</a>
     <a href="/reactive/">Reactive</a>
     <a href="/data/">Data</a>
   </span>
-  <a class="nav-gh" href="https://github.com/ZVN-DEV/darkmown">GitHub ↗</a>
+  <a class="nav-gh" href="https://github.com/ZVN-DEV/darkmown" data-lf="nav.github">GitHub ↗</a>
 </nav>
