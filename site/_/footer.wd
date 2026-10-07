@@ -13,6 +13,7 @@ html: true
       <a href="/showcase/">Showcase</a>
       <a href="https://github.com/ZVN-DEV/darkmown" data-lf="footer.github">GitHub</a>
       <a href="https://www.npmjs.com/package/@zvndev/darkmown" data-lf="footer.npm">npm</a>
+      <a href="mailto:support@darkmown.com" data-lf="footer.support">support@darkmown.com</a>
     </nav>
   </div>
 </footer>
