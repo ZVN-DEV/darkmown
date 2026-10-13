@@ -11,6 +11,7 @@ import {
   aiCrawlerPolicy,
   buildRobots,
   buildRss,
+  isNoindex,
   lastmodFor,
   rfc822,
   rssDescription,
@@ -450,7 +451,9 @@ function breadcrumbTrail(routePath, titles, siteUrl) {
  */
 function siteCorpus(routes, identity) {
   const pages = routes
-    .filter((route) => route.route !== "/404/")
+    // `/404/` is not content, and a `noindex: true` page opted out of being
+    // enumerated anywhere — feeds, sitemap, and this corpus alike.
+    .filter((route) => route.route !== "/404/" && !isNoindex(route.meta))
     .map((route) => {
       const { body } = parseFrontmatter(fs.readFileSync(route.file, "utf8"), route.file);
       return {
@@ -898,8 +901,10 @@ function emitFeeds(routes, identity, paths, quietHints = false) {
   }
 
   // The `/404/` route is never a feed entry — it's not an indexable page and
-  // not a post. Filter it out once; both feeds work off the result.
-  const feedable = routes.filter((route) => route.route !== "/404/");
+  // not a post — and a `noindex: true` route has opted out of both, exactly as
+  // it opted out of the index with its robots meta. Filter once; both feeds
+  // work off the result.
+  const feedable = routes.filter((route) => route.route !== "/404/" && !isNoindex(route.meta));
 
   // Sitemap: one <url> per emitted route (404 excluded above). A frontmatter
   // `date:` wins, but only when it IS a date — an unparseable one warns and

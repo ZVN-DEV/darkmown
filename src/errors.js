@@ -228,6 +228,13 @@ const ENTRIES = [
     cause: "Frontmatter `schema:` names a type outside the supported whitelist.",
     fix: "Use one of the listed schema.org types; the message names every one."
   },
+  {
+    code: "WD017",
+    title: "Invalid `skins:` frontmatter entry",
+    cause:
+      "A `skins:` entry is missing, is not a `.skin` file, escapes `site/pages`/`site/_`, or the value is not an inline array of paths.",
+    fix: "Write `skins: [/base.skin]` — an inline array of .skin paths inside site/pages or site/_."
+  },
 
   // --- WD1xx: loops and collections ----------------------------------------
   {
@@ -1098,8 +1105,22 @@ const ENTRIES = [
   {
     code: "WD705",
     title: "Unknown `:embed` attribute",
-    cause: "`title` is the only supported attribute.",
-    fix: "Remove the attribute, or set the accessible title.",
+    cause: "The attribute is not `title`, `height`, `aspect`, or `allow`.",
+    fix: "Remove the attribute, or use one of the supported ones.",
+    example: EMBED_EXAMPLE
+  },
+  {
+    code: "WD706",
+    title: "Unknown `:embed allow` token",
+    cause: 'An `allow="…"` permission token is outside the fixed whitelist.',
+    fix: "Use only the listed tokens; the message names every one.",
+    example: EMBED_EXAMPLE
+  },
+  {
+    code: "WD707",
+    title: "Invalid `:embed` sizing",
+    cause: "`aspect=` is not a `<w>:<h>` ratio, or `height=` is not a plain CSS length.",
+    fix: "Write `aspect=4:3`, or a length like `height=400px`.",
     example: EMBED_EXAMPLE
   },
 

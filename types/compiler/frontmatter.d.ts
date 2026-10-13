@@ -35,6 +35,25 @@ export function parseFrontmatter(raw: string, file?: string): {
  * @returns {void}
  */
 export function warnLikelyFrontmatter(raw: string, file: string, comp: Compilation): void;
+/**
+ * Resolve the `skins:` frontmatter key to the absolute paths of the shared
+ * `.skin` files a page pulls in, in listed order. The value is an inline array
+ * (`skins: [/base.skin, /marketing.skin]`) reusing the same array parsing as
+ * `tags:`; each entry resolves like an `@include` path — a leading `/` is
+ * rooted at the shelf/pages roots (`site/_` first, then `site/pages`), a
+ * relative path resolves beside the page, then on the shelf — and must point
+ * at a real `.skin` file inside the `site/pages` / `site/_` sandbox. Anything
+ * else (a non-array value, a non-string entry, a missing file, a wrong
+ * extension, a path escaping the sandbox) is a WD017 compile error naming the
+ * offending entry.
+ * @param {Meta} meta Parsed frontmatter.
+ * @param {string} file Absolute path of the file the frontmatter came from.
+ * @param {import("./context.js").Paths} context Resolved project paths.
+ * @param {import("./reader.js").Reader} reader Source reader (fs or in-memory).
+ * @returns {string[]} Absolute `.skin` paths, in listed order (empty when the
+ *   key is absent).
+ */
+export function resolveSharedSkins(meta: Meta, file: string, context: import("./context.js").Paths, reader: import("./reader.js").Reader): string[];
 export type Meta = import("./context.js").Meta;
 export type FrontmatterValue = import("./context.js").FrontmatterValue;
 export type Compilation = import("./context.js").Compilation;

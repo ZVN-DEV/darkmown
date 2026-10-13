@@ -100,10 +100,48 @@ export function handleMedia(line, kind, ctx, index) {
 }
 
 /**
- * `:embed <url> [title="…"]` → a lazy, privacy-friendly responsive iframe. A
- * YouTube or Vimeo URL is rewritten to its no-cookie / player embed; any other
- * http(s) URL becomes a generic 16:9 iframe. Inline styles keep the wrapper
- * self-contained (no framework CSS), so an embed-only page stays zero-JS/zero-CSS.
+ * The attributes `:embed` accepts beyond its URL.
+ * @type {string[]}
+ */
+const EMBED_ATTRS = ["title", "height", "aspect", "allow"];
+
+/**
+ * The iframe permission tokens an `:embed allow="…"` value may name. A closed
+ * whitelist: the iframe is a third-party document, so the page states exactly
+ * which capabilities it hands over rather than passing an arbitrary string
+ * through.
+ * @type {string[]}
+ */
+export const EMBED_ALLOW_TOKENS = [
+  "payment",
+  "autoplay",
+  "encrypted-media",
+  "fullscreen",
+  "picture-in-picture",
+  "clipboard-write",
+  "camera",
+  "microphone",
+  "geolocation"
+];
+
+// The default permission set every embed shipped before `allow=` existed.
+// Kept byte-identical so an embed with no `allow=` attribute is unchanged.
+const EMBED_ALLOW_DEFAULT =
+  "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+
+/**
+ * `:embed <url> [title="…"] [height=<css length>] [aspect=<w>:<h>] [allow="…"]` →
+ * a lazy, privacy-friendly responsive iframe. A YouTube or Vimeo URL is
+ * rewritten to its no-cookie / player embed; any other http(s) URL becomes a
+ * generic 16:9 iframe. Inline styles keep the wrapper self-contained (no
+ * framework CSS), so an embed-only page stays zero-JS/zero-CSS.
+ *
+ * Sizing: the default box is 16:9. `aspect=4:3` swaps in a different ratio;
+ * `height=400px` drops the ratio box and pins the frame's height instead (it
+ * wins over `aspect` when both are given). `allow="payment clipboard-write"`
+ * REPLACES the default iframe permission set — each token must be on the
+ * {@link EMBED_ALLOW_TOKENS} whitelist, so a typo is a compile error rather
+ * than a silently broken embed.
  * @param {string} line
  * @param {Ctx} ctx
  * @param {number} index 0-based line index for `file:line` errors.
@@ -122,24 +160,81 @@ export function handleEmbed(line, ctx, index) {
     });
   }
   const raw = stripQuotes(match[1]);
-  let title = "";
+  /** @type {Map<string, string>} */
+  const attrs = new Map();
   const re = /([A-Za-z-]+)=("[^"]*"|\S+)/g;
   for (const token of (match[2] || "").matchAll(re)) {
-    if (token[1] !== "title")
+    if (!EMBED_ATTRS.includes(token[1]))
       throw wdError(`Unknown :embed attribute "${token[1]}" in ${at(ctx, index)}`, {
         code: "WD705",
         file: ctx.file,
         line: lineOf(ctx, index)
       });
-    title = stripQuotes(token[2]);
+    attrs.set(token[1], stripQuotes(token[2]));
   }
+  const sizing = embedSizing(attrs, ctx, index);
+  const allow = embedAllow(attrs, ctx, index);
   const { url, label } = resolveEmbed(raw, ctx);
+  const title = attrs.get("title") || "";
   const iframe =
     `<iframe src="${escapeHtml(url)}" title="${escapeHtml(title || label)}" loading="lazy" ` +
     `referrerpolicy="strict-origin-when-cross-origin" ` +
-    `allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" ` +
+    `allow="${escapeHtml(allow)}" ` +
     `allowfullscreen style="width:100%;height:100%;border:0"></iframe>`;
-  return `<div class="wd-embed" style="aspect-ratio:16/9">${iframe}</div>`;
+  return `<div class="wd-embed" style="${sizing}">${iframe}</div>`;
+}
+
+/**
+ * The wrapper's sizing style: a pinned `height`, a custom `aspect` ratio, or
+ * the default 16:9 box. Both author values are shape-validated so a typo fails
+ * the build instead of shipping a style the browser drops.
+ * @param {Map<string, string>} attrs
+ * @param {Ctx} ctx
+ * @param {number} index
+ * @returns {string}
+ */
+function embedSizing(attrs, ctx, index) {
+  const height = attrs.get("height");
+  if (height !== undefined) {
+    if (!/^\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%)$/.test(height))
+      throw wdError(
+        `Invalid :embed height "${height}" in ${at(ctx, index)}. Use: a CSS length like height=400px or height=24rem.`,
+        { code: "WD707", file: ctx.file, line: lineOf(ctx, index) }
+      );
+    return `height:${height}`;
+  }
+  const aspect = attrs.get("aspect");
+  if (aspect !== undefined) {
+    if (!/^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(aspect))
+      throw wdError(
+        `Invalid :embed aspect "${aspect}" in ${at(ctx, index)}. Use: a width:height ratio like aspect=4:3.`,
+        { code: "WD707", file: ctx.file, line: lineOf(ctx, index) }
+      );
+    return `aspect-ratio:${aspect.replace(":", "/")}`;
+  }
+  return "aspect-ratio:16/9";
+}
+
+/**
+ * The iframe `allow` value: the author's whitelisted token list, or the
+ * default permission set when no `allow=` attribute is present.
+ * @param {Map<string, string>} attrs
+ * @param {Ctx} ctx
+ * @param {number} index
+ * @returns {string}
+ */
+function embedAllow(attrs, ctx, index) {
+  const raw = attrs.get("allow");
+  if (raw === undefined) return EMBED_ALLOW_DEFAULT;
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  for (const token of tokens) {
+    if (!EMBED_ALLOW_TOKENS.includes(token))
+      throw wdError(
+        `Unknown :embed allow token "${token}" in ${at(ctx, index)}. Use: ${EMBED_ALLOW_TOKENS.join(", ")}.`,
+        { code: "WD706", file: ctx.file, line: lineOf(ctx, index) }
+      );
+  }
+  return tokens.join("; ");
 }
 
 /**

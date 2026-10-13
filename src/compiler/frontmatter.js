@@ -3,7 +3,9 @@
 // values, and warn when a file looks like it forgot the opening `---`.
 // ---------------------------------------------------------------------------
 
+import path from "node:path";
 import { normalizeNewlines, wdError } from "./context.js";
+import { isAllowedInclude } from "./includes.js";
 import { stripQuotes } from "./interpolation.js";
 
 /**
@@ -149,4 +151,68 @@ function parseInlineArray(raw) {
   }
   push();
   return items;
+}
+
+/**
+ * Resolve the `skins:` frontmatter key to the absolute paths of the shared
+ * `.skin` files a page pulls in, in listed order. The value is an inline array
+ * (`skins: [/base.skin, /marketing.skin]`) reusing the same array parsing as
+ * `tags:`; each entry resolves like an `@include` path — a leading `/` is
+ * rooted at the shelf/pages roots (`site/_` first, then `site/pages`), a
+ * relative path resolves beside the page, then on the shelf — and must point
+ * at a real `.skin` file inside the `site/pages` / `site/_` sandbox. Anything
+ * else (a non-array value, a non-string entry, a missing file, a wrong
+ * extension, a path escaping the sandbox) is a WD017 compile error naming the
+ * offending entry.
+ * @param {Meta} meta Parsed frontmatter.
+ * @param {string} file Absolute path of the file the frontmatter came from.
+ * @param {import("./context.js").Paths} context Resolved project paths.
+ * @param {import("./reader.js").Reader} reader Source reader (fs or in-memory).
+ * @returns {string[]} Absolute `.skin` paths, in listed order (empty when the
+ *   key is absent).
+ */
+export function resolveSharedSkins(meta, file, context, reader) {
+  const raw = meta.skins;
+  if (raw === undefined) return [];
+  /** @param {string} reason @returns {never} */
+  const fail = (reason) => {
+    throw wdError(
+      `Invalid skins frontmatter in ${file}: ${reason}. Use: skins: [/base.skin] — an inline array of .skin paths inside site/pages or site/_.`,
+      { code: "WD017", file }
+    );
+  };
+  if (!Array.isArray(raw)) fail("the value must be an inline array, e.g. skins: [/base.skin]");
+  /** @type {string[]} */
+  const resolved = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string" || !entry.trim())
+      fail(`every entry must be a path string, got ${JSON.stringify(entry)}`);
+    const clean = entry.trim();
+    const candidates = clean.startsWith("/")
+      ? [
+          path.join(context.shelfRoot, clean.slice(1)),
+          path.join(context.routesRoot, clean.slice(1))
+        ]
+      : [path.resolve(path.dirname(file), clean), path.join(context.shelfRoot, clean)];
+    /** @type {string | null} */
+    let found = null;
+    for (const candidate of candidates) {
+      const abs = path.resolve(candidate);
+      // Lexical containment first (same discipline as resolveInclude): a `../`
+      // escape is refused outright, not treated as "not found".
+      if (!isAllowedInclude(abs, context))
+        fail(`"${entry}" resolves outside site/pages and site/_`);
+      if (!reader.exists(abs)) continue;
+      // Canonical containment second, closing the symlink hole once the file is
+      // known to exist (mirrors resolveInclude).
+      if (!isAllowedInclude(abs, context, reader))
+        fail(`"${entry}" resolves outside site/pages and site/_`);
+      found = abs;
+      break;
+    }
+    if (!found) fail(`"${entry}" does not exist (looked in site/pages and site/_)`);
+    if (path.extname(found) !== ".skin") fail(`"${entry}" is not a .skin file`);
+    resolved.push(found);
+  }
+  return resolved;
 }

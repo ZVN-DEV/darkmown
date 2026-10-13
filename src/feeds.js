@@ -140,6 +140,20 @@ function metaString(meta, key) {
 }
 
 /**
+ * Whether a page's frontmatter opts out of indexing (`noindex: true`). Mirrors
+ * the router's `isDraft` (and the page shell's head meta in
+ * src/compiler/page.js): the scalar parser yields a boolean or the string
+ * `"true"`, and only those opt in. The builder drops noindex routes from
+ * sitemap.xml, rss.xml, and the llms.txt corpus; the page itself carries a
+ * `<meta name="robots" content="noindex,nofollow">`.
+ * @param {import("./compiler.js").Meta} meta
+ * @returns {boolean}
+ */
+export function isNoindex(meta) {
+  return meta.noindex === true || meta.noindex === "true";
+}
+
+/**
  * Extract the first paragraph of a plain-`.md` body as a single-line snippet —
  * the RSS description fallback when a `.md` post has neither `excerpt:` nor
  * `description:`. Deliberately dumb: skip leading blank/frontmatter-less lines,

@@ -10,12 +10,13 @@ import { createPaths } from "../config.js";
 import { htmlHasHighlight } from "../highlight.js";
 import { compileBody } from "./body.js";
 import { createCompilation, createScope, wdError } from "./context.js";
-import { parseFrontmatter, warnLikelyFrontmatter } from "./frontmatter.js";
+import { parseFrontmatter, resolveSharedSkins, warnLikelyFrontmatter } from "./frontmatter.js";
 import { imageSize } from "./image-size.js";
 import {
   collectColocatedAssets,
   scanMarkdownHints,
   scopedSkinFor,
+  scopeInfoForSkin,
   stampScope
 } from "./includes.js";
 import { escapeHtml } from "./interpolation.js";
@@ -82,6 +83,9 @@ export function compilePage(file, context, options = {}) {
   const ogType = dated || isArticleSchema(compiled.meta) ? "article" : "website";
   /** @type {string[]} */
   const social = [];
+  // `noindex: true` asks search engines to skip the page entirely; the route is
+  // also dropped from sitemap.xml/rss.xml/llms.txt by the builder (src/feeds.js).
+  if (isNoindex(compiled.meta)) social.push(`<meta name="robots" content="noindex,nofollow">`);
   if (description) social.push(`<meta name="description" content="${escapeHtml(description)}">`);
   // The canonical link is the one place the site declares which URL form wins.
   // It must agree with the sitemap and with every internal link, so it is built
@@ -122,8 +126,11 @@ export function compilePage(file, context, options = {}) {
   });
   if (jsonLd) social.push(jsonLd);
   const descriptionTag = social.length ? `\n  ${social.join("\n  ")}` : "";
-  const favicon =
-    "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='bold'%20fill='%23f7f3ea'%3ED%3C/text%3E%3C/svg%3E";
+  // Favicon: the page's own `icon:` frontmatter wins; else the project
+  // convention files (icon.svg, then icon.png, then favicon.ico in site/pages);
+  // else the built-in data-URI mark. Existence is probed through the reader so
+  // compileFromMemory resolves the convention against its in-memory map.
+  const icon = faviconFor(compiled.meta, context, reader);
   // The framework highlight stylesheet rides ahead of page skins so a project's
   // own `$code-*` tokens / overrides still cascade over it. Pay-for-what-you-use:
   // linked only on pages with a highlighted code block (`hasCode`).
@@ -195,10 +202,19 @@ export function compilePage(file, context, options = {}) {
   // A route whose OWN colocated skin opted into scoping stamps the whole page
   // body so its scoped selectors match. Pure compile-time string post-pass (like
   // enhanceImages) — no runtime, no `data-wd-*` marker, so a static page stays
-  // static. Include-scoped skins are stamped earlier, in handleInclude.
+  // static. Include-scoped skins are stamped earlier, in handleInclude. When the
+  // page has no scoped skin of its own, the FIRST scoped shared skin (frontmatter
+  // `skins:`) stamps the body instead; `stampScope` is first-stamp-wins, so one
+  // page body carries exactly one scope id.
   const scopedSkin = scopedSkinFor(file, context, reader);
-  const stamped =
-    scopedSkin && scopedSkin.scoped ? stampScope(compiled.html, scopedSkin.scopeId) : compiled.html;
+  const sharedScoped =
+    scopedSkin && scopedSkin.scoped
+      ? null
+      : resolveSharedSkins(compiled.meta, file, context, reader)
+          .map((source) => scopeInfoForSkin(source, context.cwd, reader))
+          .find((info) => info.scoped);
+  const scopeId = scopedSkin && scopedSkin.scoped ? scopedSkin.scopeId : sharedScoped?.scopeId;
+  const stamped = scopeId ? stampScope(compiled.html, scopeId) : compiled.html;
   const body = enhanceImages(stamped, context, reader);
   const { content, target } = ensureMainLandmark(body);
 
@@ -213,7 +229,7 @@ export function compilePage(file, context, options = {}) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>${descriptionTag}
-  <link rel="icon" href="${favicon}">${feedLink}
+  <link rel="icon" href="${icon.href}"${icon.type ? ` type="${icon.type}"` : ""}>${feedLink}
   ${SKIP_LINK_STYLE}
   ${cssLinks}${transitions}${speculation}
 </head>
@@ -251,6 +267,62 @@ ${scripts}
 function canonicalUrl(site) {
   if (!site || !site.url || !site.route) return "";
   return `${site.url.replace(/\/$/, "")}${site.route}`;
+}
+
+/**
+ * The built-in favicon every page shipped before the `icon:` frontmatter and
+ * the icon-file convention existed. Still the last resort, so a project with no
+ * icon of its own is byte-identical to before.
+ */
+const FAVICON_FALLBACK =
+  "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2318221d'/%3E%3Ctext%20x='16'%20y='23'%20text-anchor='middle'%20font-family='Georgia,serif'%20font-size='19'%20font-weight='bold'%20fill='%23f7f3ea'%3ED%3C/text%3E%3C/svg%3E";
+
+/**
+ * The `<link rel="icon">` for a page: the frontmatter `icon:` path verbatim
+ * (author-controlled, so HTML-escaped here), else the first convention file
+ * that exists in `site/pages` (`icon.svg` → `icon.png` → `favicon.ico`, served
+ * at the site root because page-colocated assets copy to `dist/` at their own
+ * path), else the built-in data-URI mark.
+ * @param {Meta} meta Page frontmatter.
+ * @param {Paths} context Resolved project paths.
+ * @param {import("./reader.js").Reader} reader Source reader for the existence probe.
+ * @returns {{ href: string, type: string }} The href (already markup-safe) and
+ *   the MIME type for the known extensions ("" when unknown).
+ */
+function faviconFor(meta, context, reader) {
+  const icon = typeof meta.icon === "string" ? meta.icon.trim() : "";
+  if (icon) return { href: escapeHtml(icon), type: iconTypeFor(icon) };
+  for (const name of ["icon.svg", "icon.png", "favicon.ico"]) {
+    if (context.routesRoot && reader.exists(path.join(context.routesRoot, name)))
+      return { href: `/${name}`, type: iconTypeFor(name) };
+  }
+  return { href: FAVICON_FALLBACK, type: "" };
+}
+
+/**
+ * The favicon MIME type by file extension (svg/png/ico), "" for anything else —
+ * the browser sniffs the rest.
+ * @param {string} href
+ * @returns {string}
+ */
+function iconTypeFor(href) {
+  const ext = path.extname(href.split(/[?#]/)[0]).toLowerCase();
+  if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".png") return "image/png";
+  if (ext === ".ico") return "image/x-icon";
+  return "";
+}
+
+/**
+ * Whether a page's frontmatter opts out of indexing (`noindex: true`). Mirrors
+ * the router's `isDraft`: the scalar parser yields a boolean or the string
+ * `"true"`, and only those opt in. The builder excludes the same routes from
+ * sitemap.xml/rss.xml/llms.txt via `isNoindex` in src/feeds.js.
+ * @param {Meta} meta
+ * @returns {boolean}
+ */
+function isNoindex(meta) {
+  return meta.noindex === true || meta.noindex === "true";
 }
 
 /**
@@ -388,6 +460,16 @@ export function compileDocument(
     0,
     null
   );
+  // Shared skins (frontmatter `skins:`) join the page's asset set through the
+  // exact same pipeline as colocated skins (compile through compileSkin at emit,
+  // scoping honored), and the CSS cascade is then ordered so the page always
+  // wins ties: include/base skins first (in include order), then the page's
+  // shared skins (in listed order), then the page's own colocated skin LAST.
+  const sharedHrefs = [];
+  for (const source of resolveSharedSkins(result.meta, file, context, comp.reader)) {
+    sharedHrefs.push(registerSharedSkin(comp, source, context));
+  }
+  comp.assets.skins = orderSkins(comp.assets.skins, sharedHrefs, pageSkinHref(comp, file));
   return {
     meta: result.meta,
     html: result.html,
@@ -470,9 +552,150 @@ export function compileFile(
     compileBody,
     compileFile
   };
-  const html = compileBody(body.replace(/\r\n?/g, "\n").split("\n"), ctx);
+  const html = compileBody(foldBuildBindings(body).replace(/\r\n?/g, "\n").split("\n"), ctx);
   if (htmlHasHighlight(html)) comp.assets.hasCode = true;
   return { meta, html };
+}
+
+/**
+ * Register a shared `.skin` (frontmatter `skins:`) as a page asset: the same
+ * public-path derivation, `files`/`skins` bookkeeping, scoped-skin detection,
+ * and dependency tracking a colocated skin gets in `collectColocatedAssets`, so
+ * the emit and dev-rebuild paths treat it identically.
+ * @param {Compilation} comp
+ * @param {string} source Absolute path of the resolved `.skin` file.
+ * @param {Paths} context
+ * @returns {string} The public stylesheet href.
+ */
+function registerSharedSkin(comp, source, context) {
+  const rel = path.relative(context.cwd, source).replaceAll(path.sep, "/");
+  const publicPath = `/__wd/styles/${rel.slice(0, -".skin".length).replace(/[/.]/g, "_")}.css`;
+  comp.assets.files.set(source, publicPath);
+  comp.assets.skins.add(publicPath);
+  comp.deps.add(source);
+  if (scopeInfoForSkin(source, context.cwd, comp.reader).scoped)
+    comp.assets.scopedSkins.add(source);
+  return publicPath;
+}
+
+/**
+ * The public href of the page's OWN colocated skin, or null when it has none.
+ * Read back from the asset map `collectColocatedAssets` filled, rather than
+ * re-derived, so the two can never disagree.
+ * @param {Compilation} comp
+ * @param {string} file Absolute page source path.
+ * @returns {string | null}
+ */
+function pageSkinHref(comp, file) {
+  const stem = file.slice(0, -path.extname(file).length);
+  return comp.assets.files.get(`${stem}.skin`) ?? null;
+}
+
+/**
+ * Order a page's stylesheet links for the cascade contract: include/base skins
+ * first (in the order the includes were compiled), then the page's shared skins
+ * (in `skins:` listing order), then the page's own colocated skin LAST — so a
+ * page-level rule overrides the design system on equal specificity, instead of
+ * needing a stronger selector.
+ * @param {Set<string>} skins Hrefs in collection order.
+ * @param {string[]} sharedHrefs Shared-skin hrefs, in `skins:` listing order.
+ * @param {string | null} pageSkin The page's own colocated skin href.
+ * @returns {Set<string>}
+ */
+function orderSkins(skins, sharedHrefs, pageSkin) {
+  const shared = sharedHrefs.filter((href) => href !== pageSkin);
+  const sharedSet = new Set(shared);
+  const rest = [...skins].filter((href) => !sharedSet.has(href) && href !== pageSkin);
+  return new Set([...rest, ...shared, ...(pageSkin ? [pageSkin] : [])]);
+}
+
+// ---------------------------------------------------------------------------
+// Build-time bindings: `{ $build.year }`, `{ $build.date }`,
+// `{ $build.datetime }` fold to the compile timestamp in `.wd` sources. This is
+// a source-level pass (not scope state), so it can never flip a page reactive,
+// never collides with the `$index`/`$first`/… loop row variables, and an
+// unknown `$build.*` name simply never matches and stays literal text. Fenced
+// code blocks and inline code spans are left untouched, mirroring where
+// `{ name }` interpolation does not run.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fold the `$build` bindings in a `.wd` body. Pure text substitution, so line
+ * numbers (and therefore `file:line` errors) are unchanged.
+ * @param {string} text The post-frontmatter body.
+ * @param {Date} [now] Compile timestamp (injectable for tests).
+ * @returns {string}
+ */
+export function foldBuildBindings(text, now = new Date()) {
+  const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
+  /** @type {Record<string, string>} */
+  const values = {
+    year: String(now.getFullYear()).padStart(4, "0"),
+    date: `${String(now.getFullYear()).padStart(4, "0")}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    datetime: now.toISOString()
+  };
+  /** @type {string | null} */
+  let fence = null;
+  return text
+    .split("\n")
+    .map((line) => {
+      const fenceMatch = line.match(/^(```+|~~~+)/);
+      if (fence) {
+        if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+          fence = null;
+        return line;
+      }
+      if (fenceMatch) {
+        fence = fenceMatch[1];
+        return line;
+      }
+      return foldBuildBindingsLine(line, values);
+    })
+    .join("\n");
+}
+
+/**
+ * Fold the `$build` bindings in one non-fence line, skipping inline code spans
+ * (backtick runs): a span's content is copied verbatim, and an unmatched run is
+ * literal text (CommonMark), so scanning resumes after it.
+ * @param {string} line
+ * @param {Record<string, string>} values
+ * @returns {string}
+ */
+function foldBuildBindingsLine(line, values) {
+  const fold = (/** @type {string} */ text) =>
+    text.replace(/\{\s*\$build\.(year|date|datetime)\s*\}/g, (_, name) => values[name]);
+  let out = "";
+  let cursor = 0;
+  while (cursor < line.length) {
+    const tick = line.indexOf("`", cursor);
+    if (tick === -1) return out + fold(line.slice(cursor));
+    out += fold(line.slice(cursor, tick));
+    let runEnd = tick;
+    while (line[runEnd] === "`") runEnd++;
+    const ticks = line.slice(tick, runEnd);
+    // CommonMark closes a code span on a run of EXACTLY the same length.
+    let close = -1;
+    for (let scan = runEnd; ; ) {
+      const atTick = line.indexOf("`", scan);
+      if (atTick === -1) break;
+      let end = atTick;
+      while (line[end] === "`") end++;
+      if (end - atTick === ticks.length) {
+        close = atTick;
+        break;
+      }
+      scan = end;
+    }
+    if (close === -1) {
+      out += ticks; // unmatched run: literal text — keep scanning after it
+      cursor = runEnd;
+      continue;
+    }
+    out += line.slice(tick, close + ticks.length);
+    cursor = close + ticks.length;
+  }
+  return out;
 }
 
 /**

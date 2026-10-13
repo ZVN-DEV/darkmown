@@ -74,6 +74,14 @@ export function compileFile(file: string, context: Paths, stack: string[], scope
     html: string;
 };
 /**
+ * Fold the `$build` bindings in a `.wd` body. Pure text substitution, so line
+ * numbers (and therefore `file:line` errors) are unchanged.
+ * @param {string} text The post-frontmatter body.
+ * @param {Date} [now] Compile timestamp (injectable for tests).
+ * @returns {string}
+ */
+export function foldBuildBindings(text: string, now?: Date): string;
+/**
  * Compile a page entirely from an in-memory file map — no filesystem, no
  * `node:fs`. `files` maps PROJECT-RELATIVE POSIX paths (`site/pages/index.wd`,
  * `site/_/nav.wd`) to their source strings; `entryPath` is the project-relative
