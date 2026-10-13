@@ -15,8 +15,10 @@ description: That route does not exist. Head back to the Darkmown homepage.
 
 The route you asked for is hidden, was never created, or has moved. Nothing was lost — Markdown that runs is still one click away.
 
+<div class="actions">
 <a class="btn primary" href="/">Back to home</a>
 <a class="btn" href="/docs/">Read the docs</a>
+</div>
 </section>
 
 </main>

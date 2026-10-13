@@ -50,6 +50,7 @@ free number in their block.
 | `WD014` | Duplicate `:else` | A conditional has more than one bare `:else` branch. | Keep one `:else`; turn the others into `:else if` branches. |  |
 | `WD015` | Missing `:endif` | An `:if` region is never closed. | Close the region with `:endif`. | `:if count > 0` |
 | `WD016` | Unknown structured-data type | Frontmatter `schema:` names a type outside the supported whitelist. | Use one of the listed schema.org types; the message names every one. |  |
+| `WD017` | Invalid `skins:` frontmatter entry | A `skins:` entry is missing, is not a `.skin` file, escapes `site/pages`/`site/_`, or the value is not an inline array of paths. | Write `skins: [/base.skin]` — an inline array of .skin paths inside site/pages or site/_. |  |
 
 ## WD1xx — Loops & collections
 
@@ -211,7 +212,9 @@ free number in their block.
 | `WD702` | Unknown `:video`/`:audio` flag | The bare flag is outside the supported set for that element. | Use `controls`, `autoplay`, `loop`, `muted`, or (video only) `playsinline`. | `:video /demo.mp4 controls` |
 | `WD703` | Unknown `:video`/`:audio` attribute | The attribute is outside the supported set for that element. | Use `poster`, `width`, `height`, or `preload` (audio takes `preload` only). | `:video /demo.mp4 controls` |
 | `WD704` | Malformed `:embed` | The line carries no URL. | Give the share or watch URL, then an optional title. | `:embed https://youtu.be/dQw4w9WgXcQ title="Demo"` |
-| `WD705` | Unknown `:embed` attribute | `title` is the only supported attribute. | Remove the attribute, or set the accessible title. | `:embed https://youtu.be/dQw4w9WgXcQ title="Demo"` |
+| `WD705` | Unknown `:embed` attribute | The attribute is not `title`, `height`, `aspect`, or `allow`. | Remove the attribute, or use one of the supported ones. | `:embed https://youtu.be/dQw4w9WgXcQ title="Demo"` |
+| `WD706` | Unknown `:embed allow` token | An `allow="…"` permission token is outside the fixed whitelist. | Use only the listed tokens; the message names every one. | `:embed https://youtu.be/dQw4w9WgXcQ title="Demo"` |
+| `WD707` | Invalid `:embed` sizing | `aspect=` is not a `<w>:<h>` ratio, or `height=` is not a plain CSS length. | Write `aspect=4:3`, or a length like `height=400px`. | `:embed https://youtu.be/dQw4w9WgXcQ title="Demo"` |
 
 ## WD8xx — Skins & styling
 

@@ -296,8 +296,9 @@ const DIRECTIVES = [
   {
     name: ":embed",
     kind: "line",
-    syntax: ':embed <url> [title="…"]',
-    description: "A lazy, privacy-friendly YouTube/Vimeo/iframe embed.",
+    syntax: ':embed <url> [title="…"] [aspect=<w>:<h>] [height=<length>] [allow="token …"]',
+    description:
+      "A lazy, privacy-friendly YouTube/Vimeo/iframe embed. aspect= swaps the 16:9 ratio box, height= pins the frame, allow= replaces the permission set (whitelisted tokens).",
     example: EMBED_EXAMPLE,
     reactive: "static"
   },
@@ -597,6 +598,24 @@ const FRONTMATTER_KEYS = [
     name: "draft",
     description: "Excluded from builds and feeds until published.",
     example: "draft: true"
+  },
+  {
+    name: "noindex",
+    description:
+      "Keep the page out of discovery surfaces: robots noindex meta, sitemap.xml, rss.xml, llms.txt.",
+    example: "noindex: true"
+  },
+  {
+    name: "icon",
+    description:
+      "Favicon path or URL. Overrides the site/pages/icon.svg|png|favicon.ico convention and the built-in mark.",
+    example: "icon: /icon.svg"
+  },
+  {
+    name: "skins",
+    description:
+      "Shared .skin files to load for this page, before its colocated skin (inline array).",
+    example: "skins: [/base.skin]"
   },
   {
     name: "html",

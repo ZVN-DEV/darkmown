@@ -42,7 +42,7 @@ no install and no build step.
 - [Quick start](#quick-start) · [Showcase](#showcase) · [Working from this repo](#working-from-this-repo) · [Commands](#commands)
 - **Authoring:** [Authoring model](#authoring-model) · [Directive lines](#directive-lines) · [Interpolation](#interpolation) · [Frontmatter](#frontmatter) · [Static assets](#static-assets) · [SEO & feeds](#seo--feeds-sitemap-rss-robots) · [Loops](#loops) · [Content collections](#content-collections) · [Sections](#sections)
 - **Reactivity:** [Reactive directives](#reactive-directives) · [Fetching data](#fetching-data) · [Global state](#global-state--store) · [URL as state](#url-as-state-from-url) · [Forms and persistence](#forms-and-persistence) · [Backends & deploy](#backends--deploy) · [Interactions](#interactions--slider-sortable-carousel)
-- **Presentation:** [Inline attributes](#inline-attributes) · [Media](#media--video-audio-embed) · [Syntax highlighting](#syntax-highlighting) · [Dark mode](#dark-mode--tokens-dark) · [Scoped styles](#scoped-styles--scoped)
+- **Presentation:** [Inline attributes](#inline-attributes) · [Media](#media--video-audio-embed) · [Syntax highlighting](#syntax-highlighting) · [Dark mode](#dark-mode--tokens-dark) · [Scoped styles](#scoped-styles--scoped) · [Skin at-rules](#skin-at-rules-font-face-and-keyframes)
 - **Extending:** [The escape hatch](#the-escape-hatch) · [Programmatic compile](#programmatic-compile--compilefrommemory) · [Compile error codes](#compile-error-codes) · [AI authoring](#ai-authoring) · [Editor support](#editor-support)
 - **Before you commit:** [Accessibility](#accessibility) · [Security](#security) · [**Limits**](#limits) · [Spec status](#spec-status)
 
@@ -74,7 +74,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - `darkmown build [--target cloudflare] [--drafts]` writes static output to `dist` (plus `sitemap.xml`/`rss.xml`/`robots.txt`); `--drafts` includes `draft: true` pages for staging.
 - `darkmown validate [path]` compile-checks `site/pages` (or one file or directory) against the real compiler without writing `dist`. Each page reports `compiles.` with its static/reactive status, warnings as bullets, or the coded error with its file, line, and fix hint; drafts are included and the exit code is 1 when any page fails, so it gates CI.
 - `darkmown deploy <vercel|cloudflare> [--prod]` builds and deploys via the platform CLI.
-- `darkmown serve` previews the built `dist` locally.
+- `darkmown serve` previews the built `dist` locally. It also runs the project's `api/` functions (same handler contract and routing as `darkmown dev` and the production hosts, so `:form action="/api/…"` posts and `:fetch … from "/api/…"` demos work in the preview), and it compresses text responses: brotli preferred, then gzip, negotiated off the request's `Accept-Encoding` with `Vary: Accept-Encoding` set. `darkmown dev` is deliberately uncompressed.
 - `darkmown catalog [--llms|--llms-full]` prints the machine-readable directive catalog (JSON), a compact cheatsheet with `--llms`, or the complete reference including every error code with `--llms-full`. See [AI authoring](#ai-authoring).
 - `darkmown version` prints the installed package version.
 - `darkmown help` prints CLI usage.
@@ -108,6 +108,7 @@ One syntax everywhere: `{ name }` or `{ name.path }`.
 - Anything else stays literal text — braces in prose never break a page or pull in the runtime.
 - Values resolve **inside a link or image destination** too (`[{ item.label }]({ item.url })`, `![{ p.alt }]({ p.src })`), so an `@loop` can drive an `href`/`src` and the page stays static. Every brace in the destination resolves, not just one filling the whole value: `[Docs](/docs/{ region }/)` works. A reactive value there becomes a live binding; see [Destinations that bind](#destinations-that-bind) below.
 - Values resolve in **raw HTML** too (attributes and html blocks, HTML-escaped) on an `html: true` page. Those are painted once at build time, not bound. Fenced code blocks and inline code spans are never rewritten, so a page can still show `` `[x](/p/{ p.slug }/)` `` as syntax.
+- `{ $build.year }`, `{ $build.date }`, and `{ $build.datetime }` fold the build's date at compile time (`2026`, `2026-10-13`, and a full ISO timestamp), in prose, raw HTML, link destinations, and directive lines alike. They always fold, so a page using only `$build` bindings stays zero-JS, and a footer like `© { $build.year }` is the standard use. An unknown `$build.*` name stays literal text, and `.md` files are not folded (they have no interpolation at all).
 
 ### Destinations that bind
 
@@ -160,6 +161,19 @@ A pipe shapes a value that is **in scope** — a loop variable, `:state`/`:store
 
 The five **aggregates** double as pipes over a list — `{ cart \| count }`, `{ cart \| sum:"price" \| money }`, plus `avg` / `min` / `max` — and `join:", ":"name"` flattens a list of rows to a string. `date`/`time`/`datetime` are `Intl`-backed (`short` / `medium` / `long`); there is deliberately **no relative "time ago"** formatter, so builds stay byte-for-byte reproducible. An unknown pipe name is a compile error with the valid list.
 
+Pipes also fold inside **raw HTML** on an `html: true` page (an attribute value or an html block), with the same chaining and literal arguments as prose. A static value there, a collection row, a JSON-file row, or `meta`, formats at build time and stays zero-JS:
+
+```wd-fragment
+@loop blog into post sort by post.date desc
+<div class="card">
+<h2>{ post.title }</h2>
+<p>{ post.date | date:"medium" }</p>
+</div>
+@endloop
+```
+
+A **reactive** value (`:state`/`:store`, a reactive loop row) can never fold in raw HTML, because raw HTML is a one-time paint with no element for the runtime to mark. Since 2.8 that hits a build hint naming the position (a `:state` pipe paints its seed once; a reactive row pipe stays literal) instead of the old behavior, which emitted the whole `{ … | pipe }` expression as literal text with no diagnostic. Move the value into ordinary text or a Markdown destination to make it live.
+
 ## Frontmatter
 
 YAML-style `key: value` frontmatter between `---` fences. Values are strings, plus inline arrays:
@@ -177,6 +191,15 @@ tags: [sales, revenue, "q1, q2"]
 
 Three keys also drive the document `<head>`: `title` sets `<title>`, `description` adds the meta description plus Open Graph / Twitter tags, and `image` (an absolute URL) sets the social-share preview (`og:image` / `twitter:image` and a `summary_large_image` card). `lang:` sets the document language on `<html lang>` (`lang: fr`, `lang: pt-BR`, …) — it defaults to `en`.
 
+Two more head keys arrived in 2.8:
+
+- **`icon: /path`** sets the favicon, emitted verbatim as `<link rel="icon" href="…">` with a `type` for the known extensions (`.svg`, `.png`, `.ico`). Without it, a convention file in `site/pages` wins, first hit in the order `icon.svg`, `icon.png`, `favicon.ico` (page-colocated assets already copy to `dist/`, so `/icon.svg` just resolves). Without either, the built-in data-URI mark stays the fallback.
+- **`noindex: true`** keeps a built page out of every discovery surface: it emits `<meta name="robots" content="noindex,nofollow">` and excludes the route from `sitemap.xml`, `rss.xml`, and the generated `llms.txt` / `llms-full.txt`. The page itself still builds and serves; it is only removed from discovery. (A `noindex:` field on a collection entry with a `_schema.wd` must be declared in the schema as `noindex: boolean?`, same as any other key.)
+
+And one key moves styling into frontmatter: **`skins: [/base.skin, /marketing.skin]`** loads extra `.skin` files for just that page. Entries resolve like `@include` paths (a leading `/` checks the `site/_/` shelf then `site/pages/`; a relative path checks beside the page first), must exist, must end in `.skin`, and must stay inside the project sandbox, with violations reported as `[WD017]`. A shared skin whose first line is `scoped` scopes to the whole page body, so the practical rule is one scoped skin per page.
+
+**Cascade order changed in 2.8 (behavior change).** A page's stylesheet links now emit in this order: the framework highlight sheet (code pages only), then include skins in the order their includes compiled, then the page's `skins:` entries in listed order, and **the page's own colocated `.skin` last**, so the page wins ties at equal specificity. Before 2.8 the page's own skin came first and an override of an include rule needed a higher-specificity selector. A page rule that unknowingly relied on losing to an include rule now wins; the migration is to delete specificity hacks that only existed to beat the old order.
+
 A few reserved keys drive **drafts and feeds** (see [SEO & feeds](#seo--feeds-sitemap-rss-robots) below): `draft: true` excludes a page from production builds; `site_url` on the home page turns on `sitemap.xml` + `rss.xml`; `rss_limit:` on the home page caps how many posts the feed carries; `date:` marks a page as a blog post (it lands in `rss.xml` and sets the page's `<lastmod>`); `excerpt:` is the RSS summary. The same frontmatter is queryable when the page is an entry in a [content collection](#content-collections): `{ post.date }`, `{ post.excerpt }`, `{ post.tags }`, and any custom key resolve in an `@loop` over the folder.
 
 `transitions: true` opts a page into **instant, flash-free navigation** — zero JavaScript, all declarative. It emits a directional fade+slide **view transition** for the page swap (old lifts up and out, new rises up and in — replacing the default cross-fade, which left both pages ghosted at ~50 % opacity mid-navigation), plus a **`<script type="speculationrules">` prerender** hint that renders the next same-origin page on hover/pointerdown so the click activates an already-painted page (no white render-gap flash). It honors `prefers-reduced-motion`. Only same-origin pages that both opt in transition; browsers without support — or with page-preloading disabled — navigate normally. Off by default; opt out with `transitions: false`. Mark a link `{.no-prefetch}` to exclude it from prerendering. (Chrome disables prerendering while DevTools is open, so test the built site with DevTools closed.)
@@ -191,6 +214,22 @@ Images, fonts, icons, and other non-page files live on the include shelf at `sit
 Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`serve` layer returns the correct `Content-Type` per extension.
 
 **Images are hardened at compile time.** Every `<img>` the compiler emits is stamped with its intrinsic `width`/`height` (read from the source file, so the browser reserves space and the page doesn't reflow as images decode), `decoding="async"`, and a load-priority split — the first image on the page stays eager with `fetchpriority="high"` (the LCP candidate), the rest get `loading="lazy"`. Author-set attributes always win, and remote or unreadable sources just skip the dimensions. The compiler **measures**, it doesn't resize — keep source images web-sized (modern formats, sensible dimensions).
+
+**Responsive variants via the `@width` convention.** Darkmown still resizes nothing, but it wires the variants you already exported. Put pre-sized copies next to the source, same directory, same extension, `@<width>` before it (`dr-x.webp` beside `dr-x@640.webp` and `dr-x@1280.webp`), and a Markdown image gains a `srcset` with the original kept as `src`:
+
+```html
+<img src="/doctors/dr-x.webp" alt="Dr X"
+     srcset="/doctors/dr-x@640.webp 600w, /doctors/dr-x@1280.webp 1280w, /doctors/dr-x.webp 2400w"
+     width="2400" height="1600" decoding="async" fetchpriority="high">
+```
+
+- **Descriptor widths are measured, not parsed from the filename.** Each variant's intrinsic width is read from its file header (PNG/JPEG/GIF/WebP/SVG), so a file named `@640` that really holds 600px emits `600w`; the filename width is only the fallback when the bytes cannot be read. The original joins the srcset at its intrinsic width when that can be measured, and all candidates sort ascending, so an original narrower than a variant sorts between them.
+- **Discovery probes a fixed width list** (64, 96, 128, 160, 256, 320, 480, 640, 768, 960, 1024, 1280, 1440, 1536, 1920, 2048, 2560, 3840) through existence checks rather than a directory listing, which is what lets `compileFromMemory` resolve the convention from its in-memory map too. An off-list width like `x@500.webp` is a documented miss: never wired, never an error.
+- **`sizes` is never emitted.** The inline-attribute syntax on images carries only classes and ids, so there is no way to supply `sizes` in Markdown, and the compiler will not invent one. An author who needs `sizes` writes raw `<img srcset sizes>` on an `html: true` page.
+- **Never wired, by design:** a bound src (`![a]({ photo })` or a loop row's `![a]({ p.photo })`, which the runtime repaints and a build-time srcset would contradict), remote (`https://`, protocol-relative) and `data:` sources, srcs with a query/hash, page-relative or extensionless srcs, and raw-HTML `<img>` tags (author territory). With no variant present, the emitted tag is byte-identical to before the feature.
+- Variant files are ordinary colocated assets: they copy to `dist/` at their own path like any image, and an `@`-suffixed filename is never a route. Shelf images work too: variants beside `site/_/team/x.webp` resolve against the `/__wd/media/` public path.
+- The srcset composes with the load-priority split above: the first image stays eager with `fetchpriority="high"`, later variant-wired images get `loading="lazy"`, and author-set `loading`/`decoding`/`fetchpriority`/`width`/`height` are never overwritten.
+- **`.md` caveat:** variant wiring runs in the `.wd` compile path. A plain `.md` page still gets the width/height/lazy hardening but no srcset.
 
 **Or colocate an asset next to the page that uses it.** Any non-page file under `site/pages/` (anything but `.md`/`.wd` routes and the colocated `.skin`/`.js`) is copied to `dist/` at its own path, so a clean relative URL just works:
 
@@ -1138,6 +1177,14 @@ The block must follow the element with no space, and works on links, images, and
 
 **Headings get anchors for free.** Every markdown heading carries a stable, GitHub-style slug `id` at build time (lowercased, punctuation stripped, whitespace → hyphens; duplicates dedupe with `-1`/`-2` suffixes across the whole document), so any section of any page is deep-linkable with a plain `#the-slug` fragment — zero JS. The [docs page's](https://darkmown.com/docs/) "On this page" table of contents is just markdown links to those anchors.
 
+**Consecutive raw-HTML lines collapse into one paragraph.** On an `html: true` page, a run of consecutive lines that each start with an inline-level or unknown tag (`<a class="card">`, `<picture>`, a custom element) parses as ONE paragraph: the elements render inline inside a single `<p>` instead of as layout siblings, which is how a card grid collapses to one column. Lines starting with a block-level tag (`<div>`, `<section>`, `<article>`, …) never hit this, because CommonMark hoists them into an HTML block even mid-paragraph, so sixteen consecutive `<div class="card">` lines render fine. Since 2.8 the compiler warns once per run when 2+ consecutive lines of one paragraph each open with a component-looking tag, meaning one that carries a `class` or `id` (classless `<a href>` prose links are meant to share a paragraph and stay quiet):
+
+```
+site/pages/index.wd:6: 16 sibling HTML block lines will render inline in one <p>; wrap them in a container (e.g. a raw <div>)
+```
+
+The fix is the wrap: put the run inside a raw `<div class="grid">…</div>`, which is one HTML block and renders as real siblings. The hint stays silent for runs already inside a raw container, inside fenced code, separated by blank lines, led by a `{ state }` binding, and on `.md` pages; a run inside a `:::` directive container DOES warn, because directive containers are not raw HTML and the collapse is real there too.
+
 ## Media — `:video`, `:audio`, `:embed`
 
 Three one-line directives replace hand-written `<video>` / `<iframe>` markup. They are **compile-time only** — they emit no `data-wd-*`, so a media-only page still ships **zero** framework JavaScript.
@@ -1149,7 +1196,7 @@ Three one-line directives replace hand-written `<video>` / `<iframe>` markup. Th
 ```
 
 - **`:video` / `:audio`** compile to a hardened HTML5 player. `preload="metadata"` and `controls` are added by default; flags (`controls`, `autoplay`, `loop`, `muted`, `playsinline`) and attributes (`poster`, `width`, `height`, `preload`) are validated against a per-element whitelist, and `autoplay` silently implies `muted` (browsers block sound-on autoplay). The `src`/`poster` URLs run through the same scheme guard as `:fetch` — relative or `http(s)` only.
-- **`:embed`** rewrites a YouTube or Vimeo URL to its **no-cookie / player** form, wraps it in a responsive `16/9` box, and marks the iframe `loading="lazy"` with a locked-down `referrerpolicy`. Any other `http(s)` URL becomes a generic lazy iframe. Add `title="…"` for the accessible name.
+- **`:embed`** rewrites a YouTube or Vimeo URL to its **no-cookie / player** form, wraps it in a responsive `16/9` box, and marks the iframe `loading="lazy"` with a locked-down `referrerpolicy`. Any other `http(s)` URL becomes a generic lazy iframe. Add `title="…"` for the accessible name. Three more attributes shape the frame (an embed with none of them emits byte-identical HTML to before): `aspect=4:3` swaps the ratio box for any `<w>:<h>` ratio, `height=400px` pins the frame height and drops the ratio box (units `px`, `rem`, `em`, `vh`, `vw`, `%`; `height` wins when both are given), and `allow="payment"` **replaces** the default iframe permission set with your own tokens from a fixed whitelist: `payment`, `autoplay`, `encrypted-media`, `fullscreen`, `picture-in-picture`, `clipboard-write`, `camera`, `microphone`, `geolocation` (`allow=""` strips all permissions). An unknown attribute is `[WD705]`, an unknown allow token `[WD706]`, and a malformed ratio or length `[WD707]`.
 
 Darkmown's shipped CSP pre-authorizes exactly the two embed origins (`youtube-nocookie.com`, `player.vimeo.com`) and `media-src 'self' https:`, so embeds and remote media work out of the box on the bundled server, Cloudflare `_headers`, and Vercel.
 
@@ -1250,6 +1297,7 @@ A second component's `.card` gets a **different** id, so the two never collide. 
 | `tokens` / `tokens dark` / `tokens [data-theme=…]` | **Global** — design tokens always emit on `:root`, so `$accent` and dark mode keep working site-wide |
 | `:global(.toast)` (whole selector) | **Opts back out** — emits a plain, unscoped `.toast { … }` |
 | `@media` / `@supports` wrappers | Untouched; only the inner rule's selector is scoped |
+| `@font-face` / `@keyframes` | **Global**, never stamped with the scope attribute, same contract as `tokens` |
 | `page` / `*` / `html` / `body` / `::selection` | **Compile error** — page-level styles belong in a global skin, not a scoped one |
 
 Where the scope applies depends on **where the skin lives**:
@@ -1262,6 +1310,33 @@ Where the scope applies depends on **where the skin lives**:
 - **Whole-selector `:global()` only.** A descendant `:global` (`.card :global(.x)`) is **not** supported yet — use a whole-selector `:global(.x)`.
 - **Unused selectors warn, they aren't removed.** If a scoped selector's class/element/id never appears in the stamped subtree, the build prints `hint: scoped selector ".badge" in card.skin matches no element` — but the rule is **kept** (a colocated `.js` may add the class at runtime). It's a typo nudge, not a dead-code remover.
 - **Scoping is opt-in.** Every existing `.skin` (no `scoped` marker) is byte-for-byte unchanged.
+
+## Skin at-rules: `@font-face` and `@keyframes`
+
+A `.skin` already wraps nested rules in `@media` and `@supports`. Two more CSS at-rules compile as self-contained blocks, because their indented children are not page selectors: `@font-face` takes font descriptors, and `@keyframes` takes keyframe selectors.
+
+```skin
+@font-face
+  font-family "Newsreader"
+  src url("/fonts/newsreader.woff2") format("woff2")
+  font-weight 200 800
+  font-display swap
+
+@keyframes fade-in
+  from
+    opacity 0
+  50%, 75%
+    opacity .5
+  to
+    opacity 1
+```
+
+- `@font-face` takes a bare line with plain `.skin` declarations indented beneath it, and several blocks per skin are allowed. A name on the `@font-face` line, a block with no declarations, or a nested rule inside one is a compile error.
+- `@keyframes <name>` requires a plain CSS identifier. Each indented child is a keyframe selector, `from`, `to`, a percentage (`50%`, `12.5%`), or a comma list (`50%, 75%`), with its declarations one level deeper. A child that matches none of those is a compile error, so a keyframe selector is never misread as a declaration or an element selector.
+- Both run the normal declaration pipeline: property aliases (`bg`, `radius`, `font`) and `$token` refs work inside them. Indented under an `@media` line, the emitted block is wrapped in that query, which is the right home for `@media (prefers-reduced-motion: no-preference)` animations.
+- **Both stay global in a `scoped` skin**, the same contract as `tokens` blocks: font and keyframe names are page-global by nature, so the blocks are never stamped with the `data-wd-scope` attribute. Ordinary selectors in the same file are still scoped.
+
+Since 2.8 the body parser also tracks raw `<style>` and `<script>` blocks on `html: true` pages, so `@font-face {` or `@media … {` lines inside a raw `<style>` no longer trip the "looks like a directive" hint on every line; the hint still fires for directive-shaped lines in ordinary prose and other raw HTML.
 
 ## The escape hatch
 

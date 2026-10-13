@@ -108,7 +108,12 @@ The deploy URL is printed when the CLI reports it. If the platform CLI isn't sig
 
 ### `darkmown serve`
 
-Serves the already-built `dist` directory for local preview (static only — use `darkmown dev` to exercise `api/*` locally). Run `darkmown build` first.
+Serves the already-built `dist` directory for local preview. Run `darkmown build` first.
+
+Since 2.8 the preview is at parity with dev for two things:
+
+- **`api/` functions run.** A request to `/api/*` that matches a handler under the project's top-level `api/` directory executes it (same contract and file routing as `darkmown dev` and the production hosts: `api/echo.js` → `/api/echo`, `api/users/[id].js` → `/api/users/:id`); anything else falls through to static serving. `:form action="/api/…"` posts and `:fetch … from "/api/…"` demos that worked in dev now work in the preview too, and editing a handler is picked up without a restart. A project with no `api/` directory behaves exactly as before.
+- **Text responses are compressed.** The server negotiates off the request's `Accept-Encoding` (brotli preferred, then gzip, q-values honored) and sets `Vary: Accept-Encoding`, appending to an existing `Vary` rather than clobbering it. Compressible: `text/*`, `application/javascript`, `application/json`, `application/xml`, and `image/svg+xml`, across static files, the built 404 page, and `api/` responses (a handler that set its own `Content-Encoding` is never double-compressed). Images, video, audio, and fonts are never compressed. `darkmown dev` is intentionally uncompressed, byte-identical to 2.7.
 
 ### `darkmown catalog [--llms|--llms-full]`
 
@@ -138,7 +143,7 @@ export default async function (request, context) {
 }
 ```
 
-`api/users/[id].js` maps to `/api/users/:id` (`context.params.id`). These run in `darkmown dev` (local runner), on **Vercel** natively, and on **Cloudflare Pages** via the `dist/_worker.js` that `darkmown deploy cloudflare` emits. `:fetch`/`:form` point at `/api/*` with no extra config. Need a Node-only API on Vercel? Drop `export const config` and use `(req, res)` — note local-dev parity is then lost for that function.
+`api/users/[id].js` maps to `/api/users/:id` (`context.params.id`). These run in `darkmown dev` and in `darkmown serve` (same local runner), on **Vercel** natively, and on **Cloudflare Pages** via the `dist/_worker.js` that `darkmown deploy cloudflare` emits. `:fetch`/`:form` point at `/api/*` with no extra config. Need a Node-only API on Vercel? Drop `export const config` and use `(req, res)`, noting that local-dev parity is then lost for that function.
 
 **Custom server / remote backend.** Point `:fetch`/`:form` at an absolute URL (`https://api.example.com/…`) and widen the CSP `connect-src` (and `form-action` for native form POSTs) in `vercel.json` / `dist/_headers` / your serve config. Darkmown still ships static; only the requests leave your origin.
 

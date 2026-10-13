@@ -41,9 +41,10 @@ package.json
 - Files/folders starting with `.`, `-`, or `_` are **hidden** from routing (drafts, partials).
 - A `page.skin` next to `page.wd` attaches styling; a `page.js` attaches behavior. Matched by basename.
 - **Colocated assets:** any other file under `site/pages/` (not a `.md`/`.wd` route, not a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type — so `site/pages/logo.svg` is served at `/logo.svg`. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
+- **Responsive image variants:** export pre-sized copies next to the source image, same directory, same extension, `@<width>` before it (`dr-x@640.webp`, `dr-x@1280.webp`), and a Markdown image gains a `srcset` automatically, the original kept as `src`. Widths are MEASURED from file headers (a `@640` file really holding 600px emits `600w`; the filename is only a fallback), candidates sort ascending, and discovery probes a fixed width list (64 through 3840: 64, 96, 128, 160, 256, 320, 480, 640, 768, 960, 1024, 1280, 1440, 1536, 1920, 2048, 2560, 3840), so an off-list width is a documented miss, never an error. `sizes` is never emitted (write raw `<img srcset sizes>` on an `html: true` page for that). Never wired: bound srcs (`![a]({ photo })`), remote/`data:` sources, query/hash srcs, page-relative or extensionless srcs, and raw-HTML `<img>` tags. Variant files are ordinary colocated assets (they copy to `dist/`, never routes); shelf images resolve variants against `/__wd/media/`. The first image on the page stays eager with `fetchpriority="high"`, the rest lazy-load, and author-set attributes always win. `.md` pages get the width/height/lazy hardening but no srcset.
 - Shelf `.json` files publish to `/__wd/data/<name>`; every other shelf file publishes to `/__wd/media/<path>`.
 
-Commands: `darkmown dev`, `darkmown build [--drafts]`, `darkmown serve`, `darkmown deploy <vercel|cloudflare>`, `darkmown catalog [--llms|--llms-full]`.
+Commands: `darkmown dev`, `darkmown build [--drafts]`, `darkmown validate` (compile-check without writing `dist`), `darkmown serve` (previews `dist`, runs `api/` functions like dev, and compresses text responses), `darkmown deploy <vercel|cloudflare>`, `darkmown catalog [--llms|--llms-full]`.
 
 ## Frontmatter: the complete key set
 
@@ -58,6 +59,8 @@ lang: en
 html: true
 transitions: true
 draft: true
+noindex: true
+icon: /icon.svg
 date: 2026-09-04
 updated: 2026-09-05
 excerpt: A short summary for the feed.
@@ -72,6 +75,9 @@ rss_limit: 20
 - `title`, `description`, `image` drive `<title>`, the meta description, and the Open Graph / Twitter card. `lang` sets `<html lang>` (default `en`).
 - `html: true` allows raw HTML in that file's body. `transitions: true` opts into view transitions plus link prerendering.
 - `draft: true` keeps the page out of `dist`, `routes.json`, the sitemap, and the feed. `darkmown dev` still serves it; `darkmown build --drafts` includes it.
+- `noindex: true` builds the page but removes it from discovery: a robots `noindex,nofollow` meta, and exclusion from `sitemap.xml`, `rss.xml`, and the generated `llms.txt`/`llms-full.txt`. On a collection entry with a `_schema.wd`, declare it as `noindex: boolean?`.
+- `icon: /path` sets the favicon verbatim (a `type` is added for `.svg`/`.png`/`.ico`). With no `icon:` key, the first of `site/pages/icon.svg`, `icon.png`, `favicon.ico` wins; with neither, the built-in mark is the fallback.
+- `skins: [/base.skin]` (an inline array, same parsing as `tags:`) loads shared `.skin` files for that page only. Paths resolve like `@include` paths; the file must exist, end in `.skin`, and stay inside `site/pages`/`site/_`, or the build fails with `[WD017]`. One scoped skin per page: a shared `scoped` skin scopes to the whole page body.
 - `date` marks the page a post (RSS item, sitemap `lastmod`, `og:type=article`). `updated` and `excerpt` refine that. `author` feeds an article `schema:`.
 - `schema:` emits JSON-LD. One value, or a list. The closed set: `Article`, `BlogPosting`, `TechArticle`, `WebSite`, `Organization`. `organization:` and `logo:` support the `Organization` type. Anything else is a compile error.
 - **Home page only:** `site_url: https://example.com` (no trailing slash) turns on `sitemap.xml`, `rss.xml`, and canonical URLs. `ai_crawlers: allow` (default) or `deny` flips every AI-crawler group in `robots.txt`. `rss_limit: 50` sets how many newest posts `rss.xml` carries (default 20).
@@ -95,6 +101,8 @@ Values resolve **inside a link or image destination** too, and every brace in th
 
 Values in URL position are percent-encoded, and the runtime refuses a `javascript:`, `data:`, or `vbscript:` result by applying an empty attribute. Values resolve in **raw HTML** too (attributes and html blocks, HTML-escaped, `html: true` only), but raw HTML is a build-time paint, **not** a binding: `<a href="{ url }">` never updates, and the compiler warns. Fenced code and inline code spans are never rewritten.
 
+**Build-time bindings** fold the build's date at compile time, anywhere a binding can appear: `{ $build.year }` (`2026`), `{ $build.date }` (`2026-10-13`), `{ $build.datetime }` (full ISO timestamp). They always fold, so a page using only `$build` bindings stays zero-JS; `© { $build.year }` in a footer include is the standard use. An unknown `$build.*` name stays literal text, and `.md` files are never folded.
+
 ### Format pipes: `{ value | name:arg }`
 
 Shape a value for display. Pipes chain left to right and take literal arguments. They fold at build time for static values and re-apply on every render for `:state`/`:store` bindings, same syntax either way.
@@ -112,6 +120,8 @@ Shape a value for display. Pipes chain left to right and take literal arguments.
 The whitelist, and nothing else: `money[:currency[:locale]]`, `number[:decimals]`, `percent[:decimals]`, `round[:decimals]`, `date` / `time` / `datetime` `[:style]` (`short`/`medium`/`long`), `upper`, `lower`, `capitalize`, `truncate:n`, `trim`, `pluralize:"item"[:"plural"]`, `default:"text"`, `join:", "`, and the five list aggregates `sum` / `avg` / `min` / `max` / `count` (each takes an optional `"field"` argument). There is no custom-pipe hook and no relative "time ago". An unknown pipe name is a compile error listing the valid ones.
 
 A pipe only shapes a value the page can **resolve**. `{ 89 | money }` is not a name in scope, so it stays literal text, braces and all.
+
+Pipes also fold inside **raw HTML** on an `html: true` page (attribute values and html blocks): a static value (a collection row, a JSON row, `meta`) formats at build time with full pipe semantics, so a static `@loop` with pipes in raw HTML stays zero-JS. A reactive value there can never fold, so it is painted once (or stays literal) with a build hint; before 2.8 it was emitted as literal text with no diagnostic.
 
 ## Directives — the complete set (nothing else exists)
 
@@ -448,7 +458,7 @@ Volume: { volume }
 :audio /track.mp3 controls
 :embed https://youtu.be/aqz-KE-bpKQ title="Big Buck Bunny"
 ```
-All three are **compile-time only** and emit no `data-wd-*`, so a media page stays zero-JS. `:video`/`:audio` take whitelisted flags (`controls`, `autoplay`, `loop`, `muted`, `playsinline`) and attributes (`poster`, `width`, `height`, `preload`); `autoplay` implies `muted`. `:embed` rewrites a YouTube/Vimeo URL to its no-cookie/player form inside a lazy, responsive 16/9 box; any other `http(s)` URL becomes a generic lazy iframe.
+All three are **compile-time only** and emit no `data-wd-*`, so a media page stays zero-JS. `:video`/`:audio` take whitelisted flags (`controls`, `autoplay`, `loop`, `muted`, `playsinline`) and attributes (`poster`, `width`, `height`, `preload`); `autoplay` implies `muted`. `:embed` rewrites a YouTube/Vimeo URL to its no-cookie/player form inside a lazy, responsive 16/9 box; any other `http(s)` URL becomes a generic lazy iframe. `:embed` also takes `aspect=4:3` (any `<w>:<h>` ratio replaces 16/9), `height=400px` (pins the height and drops the ratio box; units `px`/`rem`/`em`/`vh`/`vw`/`%`, wins over `aspect=`), and `allow="payment clipboard-write"` (REPLACES the default iframe permissions; the whitelist is `payment`, `autoplay`, `encrypted-media`, `fullscreen`, `picture-in-picture`, `clipboard-write`, `camera`, `microphone`, `geolocation`, and `allow=""` strips all). A bad token is `[WD706]`, a bad ratio/length `[WD707]`.
 
 ### Carousel: `:carousel`
 ```wd
@@ -586,6 +596,10 @@ Always include: a tokens block, a real type scale, generous spacing, a `max-widt
 
 **Syntax highlighting is free.** A fenced code block tagged with a language is highlighted at build time (no client JS), and its token classes read `$code-*` tokens from your skin, so highlighted code follows dark mode with no extra wiring.
 
+**`@font-face` and `@keyframes` are skin at-rules.** Their indented children are font descriptors and keyframe selectors, not page selectors, so they compile as self-contained blocks. `@font-face` takes plain declarations (`font-family "Newsreader"`, `src url("/fonts/n.woff2") format("woff2")`, `font-weight 200 800`, `font-display swap`). `@keyframes <name>` requires a plain identifier; each indented child is a keyframe selector (`from`, `to`, a percentage, or a comma list) with its own declarations one level deeper, and anything else is a compile error. Aliases and `$token` refs work inside both, both stay **global** in a `scoped` skin (same contract as `tokens`), and both can nest under an `@media` line (the home for `prefers-reduced-motion` animation guards).
+
+**Stylesheet order (changed in 2.8):** include skins compile first, then the page's `skins:` entries in listed order, and the page's own colocated `.skin` LAST, so the page wins ties at equal specificity. Before 2.8 the page's skin came first; delete any specificity hacks that only existed to beat the old order.
+
 **Layout gotcha — CTAs and link rows.** Markdown wraps adjacent links/buttons on consecutive lines into a single `<p>`, so putting `display:flex` on their container won't space them. To lay out a row of buttons or nav links, wrap them in explicit raw HTML and style that (the page needs `html: true` in its frontmatter for the raw `<div>`/`<a>` to render — see the raw-HTML note above):
 ```wd
 <div class="actions">
@@ -593,6 +607,8 @@ Always include: a tokens block, a real type scale, generous spacing, a `max-widt
 <a class="btn ghost" href="/docs">Docs</a>
 </div>
 ```
+
+**Sibling raw HTML collapses into one `<p>`.** Consecutive lines that each open with an inline-level or unknown tag (`<a class="card">`, `<picture>`, a custom element) parse as ONE paragraph: the elements render inline instead of as layout siblings, which collapses a grid to one column. Lines opening with a block-level tag (`<div>`, `<section>`, …) are hoisted by CommonMark into an HTML block and never hit this. The compiler warns once per run of 2+ such lines when the opening tag carries a `class` or `id` (classless prose links stay quiet), naming the count and the fix: wrap the run in a raw container (`<div class="grid">…</div>`). No warning inside a raw container, fenced code, blank-line-separated lines, or `{ state }`-led lines, and none on `.md` pages; a run inside a `:::` directive container DOES warn, because directive containers are not raw HTML.
 
 ### Page structure & hierarchy — required for styles to apply
 - **Wrap every page's body in `<main>`.** Your `main { … }` rules (centering, `max-width`, page padding) are dead unless the element exists.
@@ -613,6 +629,66 @@ wd.subscribe("slide", (i) => {
 ```
 
 Set `window.wd.debug = true` to log any `:computed` or `@loop … where` expression that fails to evaluate.
+
+Every bound control (`:bind`, `:slider`, and the bound `:select`/`:radio`/`:checkbox`) carries a `data-wd-bind-input="<key>"` attribute naming the exact state key it is bound to, section scope included (`data-wd-bind-input="ba1:ba1"`). That attribute is the supported way for escape-hatch code to find a bound input instead of guessing a key.
+
+## Recipes from real rebuilds
+
+Patterns that came out of rebuilding a 67-route marketing site in Darkmown. Each is short on purpose; steal the shape.
+
+### Zero-JS nav menu
+
+A `:state open` + `:button` menu forces the ~6.6 KB runtime onto every page that includes the nav, even pages that are otherwise static. If the page's only state is chrome state, a CSS-only disclosure menu keeps the whole page zero-JS:
+
+```wd
+---
+title: Home
+html: true
+---
+
+<nav class="menu">
+<details class="menu-drawer">
+<summary>Menu</summary>
+<a href="/about/">About</a>
+<a href="/services/">Services</a>
+<a href="/contact/">Contact</a>
+</details>
+</nav>
+```
+
+Style `summary` as the hamburger and `.menu-drawer[open]` as the drawer in the shared skin (a checkbox + `:checked` sibling works the same way). The tradeoff to say out loud: CSS-only menus cost focus and ARIA quality (`aria-expanded` is not managed, there is no Escape-to-close), so once a page is reactive anyway, the `:button` menu is the better menu. The decision rule is which side of the runtime line the page already sits on.
+
+### Fonts done right
+
+Raw TTFs are the most expensive asset a marketing site ships: in the measured rebuild, three variable TTFs cost 1.07 MB on the homepage where the original site served 93 to 158 KB of subset woff2 for the same two families, roughly a 7x difference. The recipe:
+
+1. Convert every font to **woff2** and **subset** it to the glyphs the site actually uses.
+2. Serve it from the shelf (`site/_/fonts/`, published at `/__wd/media/fonts/`) or colocate it under `site/pages/`.
+3. Declare it with `@font-face` in a shared skin, always with `font-display swap`.
+4. Preload the one critical face with a raw `<link rel="preload" as="font" type="font/woff2" crossorigin>` on an `html: true` page, or an HTTP `Link` header on the host.
+
+### Pre-fill a form message from query params
+
+A booking page that arrives as `/request-appointment?service=whitening` should preselect and pre-fill. `:state from-url` reads the parameter, and a colocated `.js` composes the message, because the action whitelist deliberately cannot build strings:
+
+```wd
+:state service = "" from-url
+:state message = "" from-url
+
+:bind service placeholder="Service"
+:bind message placeholder="How can we help?"
+```
+
+```js
+// index.js, colocated beside the page
+wd.subscribe("service", (service) => {
+  if (service && !wd.get("message")) {
+    wd.set("message", `I'd like to ask about ${service}.`);
+  }
+});
+```
+
+`wd.set` writes the state and the runtime reflects it into the bound input. If the script needs the element itself, select it with `[data-wd-bind-input="message"]`, which is the supported selector for bound inputs (a section-scoped key appears as its full `sectionId:name`).
 
 ## Compile errors: read the code, not just the prose
 
