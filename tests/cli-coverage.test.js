@@ -215,6 +215,26 @@ test("buildSummary appends feed counts only when feeds were emitted", () => {
   );
 });
 
+test("buildSummary reports image variants only when the pre-pass materialized any", () => {
+  const feeds = { sitemap: null, rss: null };
+  assert.equal(
+    buildSummary(
+      { routes: new Array(2), feeds, images: { generated: 2, cached: 3, unavailable: false } },
+      "dist"
+    ),
+    "Built 2 routes, image variants (2 generated, 3 cached) into dist"
+  );
+  // Nothing generated and nothing cached (sharp absent, or no large images):
+  // the summary stays silent — the hint already said what there was to say.
+  assert.equal(
+    buildSummary(
+      { routes: new Array(2), feeds, images: { generated: 0, cached: 0, unavailable: true } },
+      "dist"
+    ),
+    "Built 2 routes into dist"
+  );
+});
+
 test("buildSummary reports an incremental rebuild, naming routes only when few", () => {
   const feeds = { sitemap: 14, rss: 6 };
   assert.equal(

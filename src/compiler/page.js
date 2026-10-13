@@ -45,7 +45,7 @@ const SKIP_LINK_STYLE =
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader }} [options]
+ * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader, imageVariants?: Map<string, number[]> | null }} [options]
  *   When a site-wide RSS feed is emitted (the home page set `site_url` and the
  *   site has dated posts), `feed` carries its absolute href + title so every page
  *   links it. `site` carries the origin + this page's own route (and its resolved
@@ -53,14 +53,23 @@ const SKIP_LINK_STYLE =
  *   build-time collection index a bare-name `@loop` resolves against; `vars` seeds
  *   the document scope (the pager `page` object on a paginated route). `reader` is
  *   the source reader (fs-backed by default via `src/compiler.js`; in-memory for
- *   `compileFromMemory`).
+ *   `compileFromMemory`). `imageVariants` is the builder's generated-variant map
+ *   (2.9.0): original absolute source path → `@<width>` sizes resized into dist.
  * @returns {CompiledPage}
  */
 export function compilePage(file, context, options = {}) {
   // The raw entry point requires a reader — the Node barrel (`src/compiler.js`)
   // injects `fsReader()`, and `compileFromMemory` injects a `memoryReader`.
   const reader = /** @type {import("./reader.js").Reader} */ (options.reader);
-  const compiled = compileDocument(file, context, [], options.vars, options.collections, reader);
+  const compiled = compileDocument(
+    file,
+    context,
+    [],
+    options.vars,
+    options.collections,
+    reader,
+    options.imageVariants ?? null
+  );
   const title = String(compiled.meta.title || "Darkmown");
   const description = String(compiled.meta.description || "");
   // Per-page document language for the `<html lang>` attribute (`lang: fr` in
@@ -434,6 +443,10 @@ function measureImage(src, paths, reader) {
  *   Build-time collection index a bare-name `@loop` resolves against.
  * @param {import("./reader.js").Reader} [reader] Source reader (fs-backed when
  *   omitted via `src/compiler.js`; in-memory for `compileFromMemory`).
+ * @param {Map<string, number[]> | null} [imageVariants] Build-time-generated
+ *   responsive variants (original's absolute source path → widths), threaded by
+ *   the builder so the srcset wiring includes them alongside author-provided
+ *   `@<width>` siblings.
  * @returns {CompiledDocument}
  */
 export function compileDocument(
@@ -442,13 +455,15 @@ export function compileDocument(
   stack = [],
   vars = {},
   collections = new Map(),
-  reader
+  reader,
+  imageVariants = null
 ) {
   // reader is injected by every caller (the Node barrel's `fsReader()` or
   // `compileFromMemory`'s `memoryReader`); it is only trailing-optional here so
   // the defaulted `vars`/`collections` params can precede it.
   const comp = createCompilation(/** @type {import("./reader.js").Reader} */ (reader));
   comp.collections = collections;
+  comp.imageVariants = imageVariants;
   const result = compileFile(
     file,
     context,

@@ -43,7 +43,7 @@ export {
  * a different source (see `compileFromMemory`).
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {import("./config.js").Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, site?: import("./compiler/page.js").SiteContext, collections?: Map<string, import("./compiler/collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./compiler/reader.js").Reader }} [options]
+ * @param {{ feed?: { href: string, title: string }, site?: import("./compiler/page.js").SiteContext, collections?: Map<string, import("./compiler/collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./compiler/reader.js").Reader, imageVariants?: Map<string, number[]> | null }} [options]
  * @returns {CompiledPage}
  */
 export function compilePage(file, context, options = {}) {
@@ -59,10 +59,20 @@ export function compilePage(file, context, options = {}) {
  * @param {Record<string, unknown>} [vars] Initial static scope variables.
  * @param {Map<string, import("./compiler/collections.js").CollectionRow[]>} [collections]
  * @param {import("./compiler/reader.js").Reader} [reader] Source reader.
+ * @param {Map<string, number[]> | null} [imageVariants] Builder-generated
+ *   responsive variants (original's absolute source path → widths).
  * @returns {CompiledDocument}
  */
-export function compileDocument(file, context, stack, vars, collections, reader = fsReader()) {
-  return compileDocumentImpl(file, context, stack, vars, collections, reader);
+export function compileDocument(
+  file,
+  context,
+  stack,
+  vars,
+  collections,
+  reader = fsReader(),
+  imageVariants = null
+) {
+  return compileDocumentImpl(file, context, stack, vars, collections, reader, imageVariants);
 }
 
 /**

@@ -66,6 +66,11 @@
  *   read threads through — the real filesystem by default, or an in-memory map
  *   for `compileFromMemory`. Set once by `createCompilation` and reached via
  *   `ctx.comp.reader` in the directive handlers (includes, loop data).
+ * @property {Map<string, number[]> | null} imageVariants Build-time-GENERATED
+ *   responsive variants (2.9.0): the original image's absolute source path →
+ *   the sorted `@<width>` sizes the builder's pre-pass resized into dist. Null
+ *   outside a builder-driven compile (e.g. `compileFromMemory`), where the
+ *   srcset wiring probes author-provided variants only.
  * @property {Symbol[]} symbols Every declared thing this compile saw, in source
  *   order, recorded by {@link recordSymbol} from the handler that parsed it.
  *   Surfaced on {@link CompiledPage} so a tool layer can answer "what is in this
@@ -488,6 +493,14 @@ export type Compilation = {
      * `ctx.comp.reader` in the directive handlers (includes, loop data).
      */
     reader: import("./reader.js").Reader;
+    /**
+     * Build-time-GENERATED
+     * responsive variants (2.9.0): the original image's absolute source path →
+     * the sorted `@<width>` sizes the builder's pre-pass resized into dist. Null
+     * outside a builder-driven compile (e.g. `compileFromMemory`), where the
+     * srcset wiring probes author-provided variants only.
+     */
+    imageVariants: Map<string, number[]> | null;
     /**
      * Every declared thing this compile saw, in source
      * order, recorded by {@link recordSymbol} from the handler that parsed it.

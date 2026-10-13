@@ -98,6 +98,15 @@ export type BuildResult = {
         sitemap: number | null;
         rss: number | null;
     };
+    /**
+     *   Responsive-variant pre-pass counts (2.9.0): freshly resized, cache-served,
+     *   and whether sharp could not be loaded at all.
+     */
+    images: {
+        generated: number;
+        cached: number;
+        unavailable: boolean;
+    };
     incremental?: {
         changed: string[];
         rebuilt: string[];

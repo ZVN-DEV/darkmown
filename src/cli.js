@@ -604,7 +604,7 @@ Authoring:
  * An incremental (dev `--changed`) build reports what it actually rebuilt —
  * `Rebuilt 2 of 14 routes (/blog/, /blog/hello/) into dist` — naming the routes
  * when there are few enough to read.
- * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null }, incremental?: { rebuilt: string[], total: number } }} result
+ * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null }, incremental?: { rebuilt: string[], total: number }, images?: { generated: number, cached: number, unavailable: boolean } }} result
  * @param {string} relativeRoot `dist` relative to cwd, for the message tail.
  * @returns {string}
  */
@@ -617,6 +617,12 @@ export function buildSummary(result, relativeRoot) {
   const parts = [`Built ${result.routes.length} routes`];
   if (result.feeds.sitemap !== null) parts.push(`sitemap (${result.feeds.sitemap} urls)`);
   if (result.feeds.rss !== null) parts.push(`rss (${result.feeds.rss} posts)`);
+  // Image pre-pass (2.9.0): worth reporting only when variants materialized.
+  if (result.images && result.images.generated + result.images.cached > 0) {
+    parts.push(
+      `image variants (${result.images.generated} generated, ${result.images.cached} cached)`
+    );
+  }
   return `${parts.join(", ")} into ${relativeRoot}`;
 }
 

@@ -363,25 +363,36 @@ function attrBindPlugin(mdInstance) {
 }
 
 // ---------------------------------------------------------------------------
-// RESPONSIVE IMAGE VARIANTS (the `@width` convention, 2.8.0 / A2).
+// RESPONSIVE IMAGE VARIANTS (the `@width` convention, 2.8.0 / A2; generated
+// variants, 2.9.0).
 //
-// Darkmown has no image pipeline and never will (no resize dependency), so the
-// convention wires variants the AUTHOR (or their CDN tooling) already made:
+// Variants come from two places, and this wiring treats them identically:
 // next to `/doctors/dr-x.webp` sit `dr-x@640.webp`, `dr-x@1280.webp` — same
 // directory, same extension, `@<width>` before it. When at least one exists,
 // the markdown image gains a `srcset` (variants ascending, then the original
 // at its intrinsic width) so the browser downloads the size it needs instead
 // of the full-resolution file. The original stays the `src` fallback.
 //
-// Discovery is an existence PROBE over {@link VARIANT_WIDTHS} through the
-// injected reader: the Reader contract has no directory listing, so an off-list
-// width (say `@500`) is simply not wired — a deliberate, documented miss, never
-// an error. Each variant's descriptor width is its REAL intrinsic width from
-// the image header (a `@640` file that actually holds 600px says 600w); when
-// the bytes cannot be read or parsed (the in-memory reader has no binaries), the
-// filename width is the fallback. The original's intrinsic width follows the
-// same rule, except it has no filename fallback: unreadable means it is left
-// out of the srcset and stays the plain `src` default.
+//  * AUTHOR-PROVIDED (2.8.0): files the author (or their CDN tooling) placed
+//    beside the source. Discovery is an existence PROBE over
+//    {@link VARIANT_WIDTHS} through the injected reader: the Reader contract
+//    has no directory listing, so an off-list width (say `@500`) is simply not
+//    wired — a deliberate, documented miss, never an error. Each variant's
+//    descriptor width is its REAL intrinsic width from the image header (a
+//    `@640` file that actually holds 600px says 600w); when the bytes cannot
+//    be read or parsed (the in-memory reader has no binaries), the filename
+//    width is the fallback.
+//  * BUILD-TIME GENERATED (2.9.0): the builder's pre-pass (src/image-variants.js)
+//    resized the source with the optional sharp dependency and wrote the
+//    variants into dist. It hands this compile a map (original's absolute
+//    source path → widths) via `comp.imageVariants`; the widths ARE the
+//    descriptor widths because the generator made them so. An author-provided
+//    file at the same width always wins — the generator skips those widths,
+//    and the href dedupe below keeps it that way even against a stale map.
+//
+// The original's intrinsic width follows the same measure-with-fallback rule,
+// except it has no filename fallback: unreadable means it is left out of the
+// srcset and stays the plain `src` default.
 //
 // A bound src (`![alt]({ photo })`) is repainted by the runtime, so a srcset
 // computed from the seed would go stale on the first render — those images are
@@ -482,6 +493,18 @@ function buildSrcset(src, ctx) {
     const abs = path.join(root, `${relBase}@${width}${ext}`);
     if (!reader.exists(abs)) continue;
     candidates.push({ href: `${base}@${width}${ext}`, width: measureWidth(abs, reader) ?? width });
+  }
+  // Builder-generated variants (2.9.0): resized into dist by the pre-pass, so
+  // the reader cannot probe them — they arrive through the compile instead.
+  // An author-provided sibling at the same width wins (the generator skips
+  // those widths; the href check keeps precedence even against a stale map).
+  const generated = ctx.comp.imageVariants?.get(path.join(root, `${relBase}${ext}`));
+  if (generated) {
+    for (const width of generated) {
+      const href = `${base}@${width}${ext}`;
+      if (candidates.some((c) => c.href === href)) continue;
+      candidates.push({ href, width });
+    }
   }
   if (!candidates.length) return null;
   const intrinsic = measureWidth(path.join(root, `${relBase}${ext}`), reader);

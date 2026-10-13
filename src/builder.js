@@ -21,6 +21,7 @@ import {
 } from "./feeds.js";
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
 import { HIGHLIGHT_CSS } from "./highlight.js";
+import { generateImageVariants } from "./image-variants.js";
 import { discoverRoutes, outputPathForRoute } from "./router.js";
 import { compileSkin, scopeIdFor } from "./skin.js";
 
@@ -105,6 +106,9 @@ export function buildSite(cwd = process.cwd(), options = {}) {
  * @property {RouteManifestEntry[]} routes
  * @property {string} distRoot
  * @property {{ sitemap: number | null, rss: number | null }} feeds
+ * @property {{ generated: number, cached: number, unavailable: boolean }} images
+ *   Responsive-variant pre-pass counts (2.9.0): freshly resized, cache-served,
+ *   and whether sharp could not be loaded at all.
  * @property {{ changed: string[], rebuilt: string[], total: number }} [incremental]
  */
 
@@ -119,6 +123,12 @@ function buildFull(cwd, paths, options) {
   fs.rmSync(paths.distRoot, { recursive: true, force: true });
   fs.mkdirSync(paths.distRoot, { recursive: true });
   emitShelfAssets(paths);
+  // Responsive image variants (2.9.0): resize the large raster photos in
+  // site/pages into dist and collect the variant map BEFORE any route compiles,
+  // so the srcset wiring can reference what was generated. With the optional
+  // sharp dependency absent (or everything cache-served) this is cheap and
+  // never fails the build.
+  const images = generateImageVariants(paths, { quiet: options.quietFeedHints });
   const routes = discoverRoutes(paths.routesRoot, { includeDrafts: options.includeDrafts });
   // Build the collection index from the (post-draft-filter) routes — every
   // site/pages/<name>/ subdirectory's entries become queryable rows a bare-name
@@ -152,7 +162,17 @@ function buildFull(cwd, paths, options) {
   const mapRoutes = {};
 
   for (const route of routes) {
-    const built = buildRoute(route, cwd, paths, collections, feedLink, warned, identity, titles);
+    const built = buildRoute(
+      route,
+      cwd,
+      paths,
+      collections,
+      feedLink,
+      warned,
+      identity,
+      titles,
+      images.variants
+    );
     manifest.push(...built.mapEntry.pages);
     if (built.notFoundHtml !== undefined) notFoundHtml = built.notFoundHtml;
     for (const entry of built.mapEntry.pages) {
@@ -192,7 +212,12 @@ function buildFull(cwd, paths, options) {
 
   if (options.depMap) writeDepMap(paths, feedLink, siteInputs(identity, titles), mapRoutes);
 
-  return { routes: manifest, distRoot: paths.distRoot, feeds };
+  return {
+    routes: manifest,
+    distRoot: paths.distRoot,
+    feeds,
+    images: { generated: images.generated, cached: images.cached, unavailable: images.unavailable }
+  };
 }
 
 /**
@@ -284,13 +309,30 @@ function buildIncremental(cwd, paths, options, changed) {
     }
   }
 
+  // Rebuilt routes must compile byte-identically to a full rebuild, so the
+  // generated-variant map the srcset wiring consults is recomputed here too.
+  // An image CHANGE never reaches this point (no dependency graph tracks
+  // images, so it already forced a full rebuild above), which makes this scan
+  // all cache hits: it refreshes dist copies and the map, and spawns nothing.
+  const images = generateImageVariants(paths, { quiet: options.quietFeedHints });
+
   const byRoute = new Map(routes.map((route) => [route.route, route]));
   /** @type {Set<string>} */
   const warned = new Set();
   const rebuilt = [...affected].sort();
   for (const routePath of rebuilt) {
     const route = /** @type {Route} */ (byRoute.get(routePath));
-    const built = buildRoute(route, cwd, paths, collections, feedLink, warned, identity, titles);
+    const built = buildRoute(
+      route,
+      cwd,
+      paths,
+      collections,
+      feedLink,
+      warned,
+      identity,
+      titles,
+      images.variants
+    );
     // A shrunk pagination leaves stale `/page/N/` outputs behind — remove any
     // previously-emitted page this rebuild no longer produces.
     const kept = new Set(built.mapEntry.pages.map((entry) => entry.route));
@@ -326,6 +368,7 @@ function buildIncremental(cwd, paths, options, changed) {
     routes: manifest,
     distRoot: paths.distRoot,
     feeds,
+    images: { generated: images.generated, cached: images.cached, unavailable: images.unavailable },
     incremental: { changed, rebuilt, total: routes.length }
   };
 }
@@ -344,10 +387,30 @@ function buildIncremental(cwd, paths, options, changed) {
  * @param {SiteIdentity} identity Resolved site identity (its `siteUrl` is what
  *   makes a canonical URL possible).
  * @param {Map<string, string>} titles Route path → page title, for breadcrumbs.
+ * @param {Map<string, number[]>} imageVariants Generated responsive variants
+ *   (original's absolute source path → widths), threaded into each compile.
  * @returns {{ mapEntry: DepMapEntry, notFoundHtml: string | undefined }}
  */
-function buildRoute(route, cwd, paths, collections, feedLink, warned, identity, titles) {
-  const compiled = compileRoutePages(route, paths, collections, feedLink, identity, titles);
+function buildRoute(
+  route,
+  cwd,
+  paths,
+  collections,
+  feedLink,
+  warned,
+  identity,
+  titles,
+  imageVariants
+) {
+  const compiled = compileRoutePages(
+    route,
+    paths,
+    collections,
+    feedLink,
+    identity,
+    titles,
+    imageVariants
+  );
   /** @type {RouteManifestEntry[]} */
   const entries = [];
   /** @type {string | undefined} */
@@ -694,9 +757,11 @@ function copyChangedAsset(file, cwd, paths) {
  * @param {{ href: string, title: string } | undefined} feedLink
  * @param {SiteIdentity} identity
  * @param {Map<string, string>} titles Route path → page title, for breadcrumbs.
+ * @param {Map<string, number[]>} imageVariants Generated responsive variants
+ *   (original's absolute source path → widths) for the srcset wiring.
  * @returns {{ pages: EmittedPage[], deps: Set<string>, collections: Set<string> }}
  */
-function compileRoutePages(route, paths, collections, feedLink, identity, titles) {
+function compileRoutePages(route, paths, collections, feedLink, identity, titles, imageVariants) {
   /** @type {Set<string>} */
   const deps = new Set();
   /** @type {Set<string>} */
@@ -721,7 +786,8 @@ function compileRoutePages(route, paths, collections, feedLink, identity, titles
     feed: feedLink,
     site: siteFor(route.route),
     collections,
-    vars: { page: pagerVars(route.route, 1, 1) }
+    vars: { page: pagerVars(route.route, 1, 1) },
+    imageVariants
   });
   track(first);
   if (!first.pagination || first.pagination.total <= 1) {
@@ -746,7 +812,8 @@ function compileRoutePages(route, paths, collections, feedLink, identity, titles
       feed: feedLink,
       site: siteFor(pageRoute(route.route, n)),
       collections,
-      vars: { page: pagerVars(route.route, n, total) }
+      vars: { page: pagerVars(route.route, n, total) },
+      imageVariants
     });
     track(page);
     pages.push({

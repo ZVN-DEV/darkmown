@@ -2,7 +2,7 @@
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader }} [options]
+ * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader, imageVariants?: Map<string, number[]> | null }} [options]
  *   When a site-wide RSS feed is emitted (the home page set `site_url` and the
  *   site has dated posts), `feed` carries its absolute href + title so every page
  *   links it. `site` carries the origin + this page's own route (and its resolved
@@ -10,7 +10,8 @@
  *   build-time collection index a bare-name `@loop` resolves against; `vars` seeds
  *   the document scope (the pager `page` object on a paginated route). `reader` is
  *   the source reader (fs-backed by default via `src/compiler.js`; in-memory for
- *   `compileFromMemory`).
+ *   `compileFromMemory`). `imageVariants` is the builder's generated-variant map
+ *   (2.9.0): original absolute source path → `@<width>` sizes resized into dist.
  * @returns {CompiledPage}
  */
 export function compilePage(file: string, context: Paths, options?: {
@@ -22,6 +23,7 @@ export function compilePage(file: string, context: Paths, options?: {
     collections?: Map<string, import("./collections.js").CollectionRow[]>;
     vars?: Record<string, unknown>;
     reader?: import("./reader.js").Reader;
+    imageVariants?: Map<string, number[]> | null;
 }): CompiledPage;
 /**
  * Harden every `<img>` in the assembled page body — compile-time only, zero
@@ -47,9 +49,13 @@ export function enhanceImages(html: string, paths: Paths, reader: import("./read
  *   Build-time collection index a bare-name `@loop` resolves against.
  * @param {import("./reader.js").Reader} [reader] Source reader (fs-backed when
  *   omitted via `src/compiler.js`; in-memory for `compileFromMemory`).
+ * @param {Map<string, number[]> | null} [imageVariants] Build-time-generated
+ *   responsive variants (original's absolute source path → widths), threaded by
+ *   the builder so the srcset wiring includes them alongside author-provided
+ *   `@<width>` siblings.
  * @returns {CompiledDocument}
  */
-export function compileDocument(file: string, context: Paths, stack?: string[], vars?: Record<string, unknown>, collections?: Map<string, import("./collections.js").CollectionRow[]>, reader?: import("./reader.js").Reader): CompiledDocument;
+export function compileDocument(file: string, context: Paths, stack?: string[], vars?: Record<string, unknown>, collections?: Map<string, import("./collections.js").CollectionRow[]>, reader?: import("./reader.js").Reader, imageVariants?: Map<string, number[]> | null): CompiledDocument;
 /**
  * Compile a single file: parse frontmatter, collect assets, render body.
  * @param {string} file
