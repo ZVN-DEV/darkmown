@@ -452,6 +452,12 @@ function startDevServer({ cwd, log, warn, error }) {
 /**
  * Start the static preview server for an existing `dist/`. Throws `CliError`
  * when there is nothing built to serve.
+ *
+ * Preview mirrors production more closely than dev in two ways: project
+ * `api/*.js` functions run on `/api/*` (same runner and `(request) => Response`
+ * contract as dev — a project without `api/` falls straight through to static),
+ * and compressible responses are brotli/gzip-negotiated off Accept-Encoding so
+ * local weight checks see transfer sizes, not raw bytes.
  * @param {{ cwd: string, log: typeof console.log, error: typeof console.error }} io
  * @returns {Promise<{ command: "serve", server: import("node:http").Server, close: () => Promise<void> }>}
  */
@@ -463,7 +469,21 @@ function startPreviewServer({ cwd, log, error }) {
     error("No dist directory found. Run `darkmown build` first.");
     throw new CliError("No dist directory found. Run `darkmown build` first.", { silent: true });
   }
-  const server = http.createServer((req, res) => serve(distRoot, req.url || "/", res));
+  const apiDir = path.join(cwd, "api");
+  const server = http.createServer((req, res) => {
+    const acceptEncoding = req.headers["accept-encoding"];
+    // Serverless parity, exactly as in dev: run a project api/*.js function when
+    // the path matches; otherwise serve static (compressed when negotiated). A
+    // throw on either path (e.g. a malformed dynamic segment) becomes a clean 500.
+    handleApiRequest({ apiDir, req, res, acceptEncoding })
+      .then((handled) => {
+        if (!handled) serve(distRoot, req.url || "/", res, { acceptEncoding });
+      })
+      .catch((err) => {
+        res.writeHead(500, { "content-type": "text/plain" });
+        res.end((err instanceof Error && err.stack) || String(err));
+      });
+  });
   return new Promise((resolve) => {
     server.listen(port, host, () => {
       log(`Darkmown preview of dist at http://${host}:${port}`);

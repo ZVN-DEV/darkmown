@@ -56,11 +56,19 @@ export function matchApiRoute(routes: ApiRoute[], pathname: string): {
 export function nodeRequestToWeb(req: import("node:http").IncomingMessage): Promise<Request>;
 /**
  * Write a Web-standard `Response` back onto a Node `ServerResponse`.
+ *
+ * `acceptEncoding` is the request's Accept-Encoding header when the caller
+ * negotiates compression (the preview server); a JSON/text/svg body is then
+ * sent brotli- or gzip-compressed with `Content-Encoding` + `Vary`. When it
+ * is omitted (the dev server) the response is written exactly as before — no
+ * re-encoding, no extra headers. A handler that already set Content-Encoding
+ * is never double-compressed.
  * @param {Response} response
  * @param {import("node:http").ServerResponse} res
+ * @param {string | string[] | undefined} [acceptEncoding]
  * @returns {Promise<void>}
  */
-export function writeWebResponse(response: Response, res: import("node:http").ServerResponse): Promise<void>;
+export function writeWebResponse(response: Response, res: import("node:http").ServerResponse, acceptEncoding?: string | string[] | undefined): Promise<void>;
 /**
  * Handle a request as an API call if its pathname matches a function under
  * `apiDir`. Returns `true` when it owned the request (a route matched, whether
@@ -71,12 +79,15 @@ export function writeWebResponse(response: Response, res: import("node:http").Se
  * @param {string} io.apiDir Absolute path to the project's `api/` directory.
  * @param {import("node:http").IncomingMessage} io.req
  * @param {import("node:http").ServerResponse} io.res
+ * @param {string | string[] | undefined} [io.acceptEncoding] The request's
+ *   Accept-Encoding header, when the caller negotiates compression (preview).
  * @returns {Promise<boolean>}
  */
-export function handleApiRequest({ apiDir, req, res }: {
+export function handleApiRequest({ apiDir, req, res, acceptEncoding }: {
     apiDir: string;
     req: import("node:http").IncomingMessage;
     res: import("node:http").ServerResponse;
+    acceptEncoding?: string | string[] | undefined;
 }): Promise<boolean>;
 /**
  * A discovered API route.

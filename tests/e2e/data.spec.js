@@ -1,8 +1,8 @@
 import { expect, test } from "./coverage.js";
 
 // Drives /data/: declarative :fetch into a loop, a :form that writes state,
-// the computed cart total, and the error fallback when a server form posts
-// to an endpoint that doesn't exist under the static `serve` (no dev echo).
+// the computed cart total, the echo round-trip now that serve runs api/
+// functions, and the error fallback when a server form's endpoint fails.
 
 test.describe("/data/ — fetch, forms, computed", () => {
   test.beforeEach(async ({ page }) => {
@@ -78,9 +78,20 @@ test.describe("/data/ — fetch, forms, computed", () => {
     await expect(page.getByText(/Authenticated fetch returned 5 row/)).toBeVisible();
   });
 
-  test("server form surfaces the error fallback when the endpoint 404s", async ({ page }) => {
-    // Under the static `serve`, /__wd/echo doesn't exist, so the fetch fails
-    // and the :if reply_error branch must render.
+  test("server form round-trips through the echo endpoint under serve", async ({ page }) => {
+    // Since 2.8.0 `serve` runs api/ functions like dev does, so /api/echo/
+    // answers 200 and the :if reply branch renders the echoed message.
+    await page.getByPlaceholder("Say something to the server").fill("hi");
+    await page.getByRole("button", { name: "Send to server" }).click();
+    await expect(page.getByText(/The server answered with hi at/)).toBeVisible();
+  });
+
+  test("server form surfaces the error fallback when the endpoint fails", async ({ page }) => {
+    // Intercept the echo route and force a 404 so the :if reply_error branch
+    // renders, independent of how the server handles /api/echo/.
+    await page.route("**/api/echo/**", (route) =>
+      route.fulfill({ status: 404, contentType: "text/plain", body: "not here" })
+    );
     await page.getByPlaceholder("Say something to the server").fill("hi");
     await page.getByRole("button", { name: "Send to server" }).click();
     await expect(page.getByText(/The request failed:/)).toBeVisible();

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { appendVary, compressBody, isCompressibleType, negotiateEncoding } from "./statics.js";
 
 /**
  * The local-dev serverless API runner. Gives `darkmown dev` the SAME `/api/*`
@@ -140,11 +141,19 @@ function readBody(req) {
 
 /**
  * Write a Web-standard `Response` back onto a Node `ServerResponse`.
+ *
+ * `acceptEncoding` is the request's Accept-Encoding header when the caller
+ * negotiates compression (the preview server); a JSON/text/svg body is then
+ * sent brotli- or gzip-compressed with `Content-Encoding` + `Vary`. When it
+ * is omitted (the dev server) the response is written exactly as before — no
+ * re-encoding, no extra headers. A handler that already set Content-Encoding
+ * is never double-compressed.
  * @param {Response} response
  * @param {import("node:http").ServerResponse} res
+ * @param {string | string[] | undefined} [acceptEncoding]
  * @returns {Promise<void>}
  */
-export async function writeWebResponse(response, res) {
+export async function writeWebResponse(response, res, acceptEncoding) {
   /** @type {Record<string, string | string[]>} */
   const headers = {};
   // `Headers.forEach` folds multiple Set-Cookie into one comma-joined value, which
@@ -158,8 +167,19 @@ export async function writeWebResponse(response, res) {
   const cookies =
     typeof response.headers.getSetCookie === "function" ? response.headers.getSetCookie() : [];
   if (cookies.length > 0) headers["set-cookie"] = cookies;
+  let buffer = /** @type {Buffer} */ (Buffer.from(await response.arrayBuffer()));
+  const encoding = negotiateEncoding(acceptEncoding);
+  if (encoding && isCompressibleType(String(headers["content-type"] || ""))) {
+    if (!headers["content-encoding"]) {
+      headers["content-encoding"] = encoding;
+      headers.vary = appendVary(
+        /** @type {string | undefined} */ (headers.vary),
+        "Accept-Encoding"
+      );
+      buffer = compressBody(buffer, encoding);
+    }
+  }
   res.writeHead(response.status, headers);
-  const buffer = Buffer.from(await response.arrayBuffer());
   res.end(buffer);
 }
 
@@ -173,9 +193,11 @@ export async function writeWebResponse(response, res) {
  * @param {string} io.apiDir Absolute path to the project's `api/` directory.
  * @param {import("node:http").IncomingMessage} io.req
  * @param {import("node:http").ServerResponse} io.res
+ * @param {string | string[] | undefined} [io.acceptEncoding] The request's
+ *   Accept-Encoding header, when the caller negotiates compression (preview).
  * @returns {Promise<boolean>}
  */
-export async function handleApiRequest({ apiDir, req, res }) {
+export async function handleApiRequest({ apiDir, req, res, acceptEncoding }) {
   const pathname = new URL(req.url || "/", "http://localhost").pathname;
   const match = matchApiRoute(discoverApiRoutes(apiDir), pathname);
   if (!match) return false;
@@ -191,11 +213,10 @@ export async function handleApiRequest({ apiDir, req, res }) {
           "Use: return Response.json({ ... })"
       );
     }
-    await writeWebResponse(response, res);
+    await writeWebResponse(response, res, acceptEncoding);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    res.writeHead(500, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: false, error: message }));
+    await writeWebResponse(Response.json({ ok: false, error: message }, { status: 500 }), res);
   }
   return true;
 }

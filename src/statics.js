@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import zlib from "node:zlib";
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
 
 /**
@@ -64,32 +65,145 @@ function routeIsReactive(distRoot, route) {
 
 /**
  * Serve a built file for a request URL out of `distRoot`, or a 404 page.
+ *
+ * When `options.acceptEncoding` carries the request's Accept-Encoding header,
+ * a compressible body (HTML, CSS, JS, JSON, SVG, …) is negotiated and sent
+ * brotli- or gzip-compressed with `Content-Encoding` + `Vary: Accept-Encoding`.
+ * Callers that omit the option (the dev server) get the exact pre-compression
+ * behavior: 200 bodies stream, nothing is re-encoded.
  * @param {string} distRoot Absolute path to the build output directory.
  * @param {string} url Request URL (may include a query string).
  * @param {http.ServerResponse} res Response to write to.
+ * @param {{ acceptEncoding?: string | string[] }} [options]
  * @returns {void}
  */
-export function serve(distRoot, url, res) {
+export function serve(distRoot, url, res, options = {}) {
+  const encoding = negotiateEncoding(options.acceptEncoding);
   const file = resolvePublicFile(distRoot, url || "/");
   if (!file || !isServableFile(file)) {
-    res.writeHead(404, {
-      "content-type": "text/html; charset=utf-8",
-      ...htmlSecurityHeaders(distRoot, url)
-    });
     const notFound = path.join(distRoot, "404.html");
-    if (fs.existsSync(notFound)) {
-      res.end(fs.readFileSync(notFound));
-      return;
-    }
-    res.end("<h1>Not found</h1><p>This route is hidden or has not been created.</p>");
+    const body = fs.existsSync(notFound)
+      ? fs.readFileSync(notFound)
+      : "<h1>Not found</h1><p>This route is hidden or has not been created.</p>";
+    // The 404 body is always text/html, always compressible.
+    sendBuffered(
+      res,
+      404,
+      { "content-type": "text/html; charset=utf-8", ...htmlSecurityHeaders(distRoot, url) },
+      body,
+      encoding
+    );
     return;
   }
   const type = contentType(file);
+  /** @type {Record<string, string>} */
   const headers = type.startsWith("text/html")
     ? { "content-type": type, ...htmlSecurityHeaders(distRoot, url) }
     : { "content-type": type };
-  res.writeHead(200, headers);
-  pipeFile(file, res);
+  if (!encoding || !isCompressibleType(type)) {
+    // Identity path (or a non-compressible asset): stream, exactly as before.
+    // A compressible type still varies on Accept-Encoding even when this
+    // response is identity, so caches key correctly.
+    if (isCompressibleType(type)) headers.vary = appendVary(headers.vary, "Accept-Encoding");
+    res.writeHead(200, headers);
+    pipeFile(file, res);
+    return;
+  }
+  let body;
+  try {
+    body = fs.readFileSync(file);
+  } catch {
+    // The file was statted servable a moment ago but cannot be read now (deleted
+    // by a rebuild, permissions). Mirror pipeFile's never-crash contract.
+    res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+    res.end("500 Internal Server Error");
+    return;
+  }
+  sendBuffered(res, 200, headers, body, encoding);
+}
+
+/**
+ * Write a buffered response body for a COMPRESSIBLE content-type, compressing
+ * when an encoding was negotiated. Always appends `Vary: Accept-Encoding` so
+ * the identity and compressed variants never poison a shared cache.
+ * @param {http.ServerResponse} res
+ * @param {number} status
+ * @param {Record<string, string>} headers Must include a compressible `content-type`.
+ * @param {string | Buffer} body
+ * @param {"br" | "gzip" | null} encoding
+ * @returns {void}
+ */
+function sendBuffered(res, status, headers, body, encoding) {
+  headers.vary = appendVary(headers.vary, "Accept-Encoding");
+  if (encoding) {
+    headers["content-encoding"] = encoding;
+    body = compressBody(body, encoding);
+  }
+  res.writeHead(status, headers);
+  res.end(body);
+}
+
+/**
+ * Pick the response encoding from an Accept-Encoding header value: brotli when
+ * accepted, else gzip, else null (identity). Honors q-values, including an
+ * explicit `q=0` refusal, and the `*` wildcard (an explicit entry beats it).
+ * @param {string | string[] | undefined} header
+ * @returns {"br" | "gzip" | null}
+ */
+export function negotiateEncoding(header) {
+  if (!header) return null;
+  /** @type {Map<string, number>} */
+  const accepted = new Map();
+  for (const part of String(header).split(",")) {
+    const [token, ...params] = part.split(";");
+    const name = token.trim().toLowerCase();
+    if (!name) continue;
+    let q = 1;
+    for (const param of params) {
+      const [key, value] = param.split("=").map((piece) => piece.trim());
+      if (key === "q") q = Number.parseFloat(value) || 0;
+    }
+    accepted.set(name, q);
+  }
+  const br = accepted.get("br") ?? accepted.get("*") ?? 0;
+  const gzip = accepted.get("gzip") ?? accepted.get("*") ?? 0;
+  if (br > 0 && br >= gzip) return "br";
+  if (gzip > 0) return "gzip";
+  return null;
+}
+
+/**
+ * Whether a content-type is worth compressing: any text/* type plus JSON,
+ * JavaScript, XML, and SVG. Binary media, fonts, and already-compressed
+ * formats are excluded — re-encoding them wastes CPU for no bytes saved.
+ * @param {string} type A Content-Type value (parameters allowed).
+ * @returns {boolean}
+ */
+export function isCompressibleType(type) {
+  return /^(text\/|application\/(javascript|json|xml)|image\/svg\+xml)/.test(type);
+}
+
+/**
+ * Append a token to a Vary header value without clobbering or duplicating
+ * existing tokens (case-insensitive).
+ * @param {string | undefined} existing
+ * @param {string} value
+ * @returns {string}
+ */
+export function appendVary(existing, value) {
+  if (!existing) return value;
+  const tokens = existing.split(",").map((token) => token.trim().toLowerCase());
+  if (tokens.includes(value.toLowerCase())) return existing;
+  return `${existing}, ${value}`;
+}
+
+/**
+ * @param {string | Buffer} body
+ * @param {"br" | "gzip"} encoding
+ * @returns {Buffer}
+ */
+export function compressBody(body, encoding) {
+  return encoding === "br" ? zlib.brotliCompressSync(body) : zlib.gzipSync(body);
 }
 
 /**
