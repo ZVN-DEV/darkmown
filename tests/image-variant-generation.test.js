@@ -252,7 +252,11 @@ test("a sharp-level failure on one image skips just that image", async () => {
   assert.equal(result.images.generated, 2, "the good image's two widths");
 });
 
-test("an unreadable image file is a hint, not a throw", async () => {
+// Windows ignores POSIX mode bits, so chmod 0o000 never makes the file
+// unreadable there. The hint path stays covered by the POSIX CI legs.
+test("an unreadable image file is a hint, not a throw", {
+  skip: process.platform === "win32"
+}, async () => {
   const root = freshRoot();
   await makeImage(path.join(root, "site/pages/img/locked.jpg"), 2400, 1600, "jpeg");
   const file = path.join(root, "site/pages/img/locked.jpg");
