@@ -18,6 +18,7 @@
 // below pins one.
 
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import { compileFromMemory } from "../src/compiler/index.js";
 
@@ -33,6 +34,11 @@ function compile(body, frontmatter = "html: true\n", ext = "wd") {
 /** Just the F11 hints a compile produced (other warnings filtered out). */
 const siblingHints = (warnings) => warnings.filter((w) => /sibling HTML block lines/.test(w));
 
+// compileFromMemory resolves entryPath against the virtual cwd with
+// path.resolve, which is drive-lettered on Windows. Build expectations from
+// the same resolution so the assertion means the same thing on every OS.
+const FILE = path.resolve("/", "site/pages/index.wd");
+
 /** The rebuild repro: N consecutive card lines. */
 const cards = (n, tag = "a") =>
   Array.from({ length: n }, (_, i) =>
@@ -44,7 +50,7 @@ const cards = (n, tag = "a") =>
 test("the 16-card rebuild repro warns once, naming the count and the fix", () => {
   const hints = siblingHints(compile(cards(16)));
   assert.deepEqual(hints, [
-    "/site/pages/index.wd:6: 16 sibling HTML block lines will render inline in one <p>; " +
+    `${FILE}:6: 16 sibling HTML block lines will render inline in one <p>; ` +
       "wrap them in a container (e.g. a raw <div>)"
   ]);
 });
@@ -69,7 +75,7 @@ test("a single card line does not warn", () => {
 test("a run of exactly two warns with N=2", () => {
   const hints = siblingHints(compile(cards(2)));
   assert.deepEqual(hints, [
-    "/site/pages/index.wd:6: 2 sibling HTML block lines will render inline in one <p>; " +
+    `${FILE}:6: 2 sibling HTML block lines will render inline in one <p>; ` +
       "wrap them in a container (e.g. a raw <div>)"
   ]);
 });
@@ -78,9 +84,9 @@ test("two runs in one paragraph warn once each, on their own lines", () => {
   // <a>x</a> x2, a plain text line (breaks the run), then <a>x</a> x2 again.
   const hints = siblingHints(compile(`${cards(2)}\nsome text\n${cards(2)}`));
   assert.deepEqual(hints, [
-    "/site/pages/index.wd:6: 2 sibling HTML block lines will render inline in one <p>; " +
+    `${FILE}:6: 2 sibling HTML block lines will render inline in one <p>; ` +
       "wrap them in a container (e.g. a raw <div>)",
-    "/site/pages/index.wd:9: 2 sibling HTML block lines will render inline in one <p>; " +
+    `${FILE}:9: 2 sibling HTML block lines will render inline in one <p>; ` +
       "wrap them in a container (e.g. a raw <div>)"
   ]);
 });

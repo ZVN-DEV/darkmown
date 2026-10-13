@@ -217,7 +217,12 @@ test("serve falls back to the inline 404 (compressible) when dist/404.html is ab
   }
 });
 
-test("serve answers 500 (never crashes) when a negotiated file turns unreadable", async () => {
+// Windows ignores POSIX mode bits, so chmod 0o000 never makes the file
+// unreadable there and the race this test simulates cannot occur. The EACCES
+// path stays covered by the Linux/macOS CI legs.
+test("serve answers 500 (never crashes) when a negotiated file turns unreadable", {
+  skip: process.platform === "win32"
+}, async () => {
   const dist = makeDist();
   const target = path.join(dist, "app.js");
   try {
