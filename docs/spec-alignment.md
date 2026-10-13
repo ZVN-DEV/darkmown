@@ -2,6 +2,10 @@
 
 This audit compares the current Darkmown implementation with the original MARROW/WhateverDown vision and the follow-up decisions made on 2026-06-11.
 
+## 2.9.0 additions (unreleased, 2026-10-13)
+
+- **The framework now makes the image variants itself, closing the rebuild's largest asset gap.** With the optional sharp dependency installed, `darkmown build` resizes page-colocated raster photos over 700px into 640/1280 `name@width.ext` siblings (never upscaling, EXIF-aware, cached by content hash under `node_modules/.cache/darkmown-images/` so rebuilds and dev reloads do no sharp work), the 2.8.0 author-provided `@width` convention stays the per-width override, and a build without sharp behaves exactly like 2.8.0 plus one hint.
+
 ## 2.8.0 additions: the client-site rebuild release (2026-10-13)
 
 A 67-route marketing site rebuilt in Darkmown produced a friction report, and this release is the report answered: every item either became a feature, a coded error, or a documented recipe. Nothing in it moves the core thesis; it rounds out the authoring surface a real design system needs while keeping static pages zero-JS.

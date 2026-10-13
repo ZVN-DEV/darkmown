@@ -215,21 +215,23 @@ Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`
 
 **Images are hardened at compile time.** Every `<img>` the compiler emits is stamped with its intrinsic `width`/`height` (read from the source file, so the browser reserves space and the page doesn't reflow as images decode), `decoding="async"`, and a load-priority split — the first image on the page stays eager with `fetchpriority="high"` (the LCP candidate), the rest get `loading="lazy"`. Author-set attributes always win, and remote or unreadable sources just skip the dimensions. The compiler **measures**, it doesn't resize — keep source images web-sized (modern formats, sensible dimensions).
 
-**Responsive variants via the `@width` convention.** Darkmown still resizes nothing, but it wires the variants you already exported. Put pre-sized copies next to the source, same directory, same extension, `@<width>` before it (`dr-x.webp` beside `dr-x@640.webp` and `dr-x@1280.webp`), and a Markdown image gains a `srcset` with the original kept as `src`:
+**Responsive variants, generated at build time.** Drop one photo into `site/pages` and the build does the rest: with [sharp](https://sharp.pixelplumbing.com/) installed (`npm i -D sharp`, an optional dependency; every build works without it), each raster image large enough to matter is resized to the default widths **640 and 1280**, written into `dist/` as `name@<width>.ext` siblings, and the Markdown image that references the original gains a `srcset`:
 
 ```html
-<img src="/doctors/dr-x.webp" alt="Dr X"
-     srcset="/doctors/dr-x@640.webp 600w, /doctors/dr-x@1280.webp 1280w, /doctors/dr-x.webp 2400w"
+<img src="/doctors/dr-aurora.jpg" alt="Dr. Aurora"
+     srcset="/doctors/dr-aurora@640.jpg 640w, /doctors/dr-aurora@1280.jpg 1280w, /doctors/dr-aurora.jpg 2400w"
      width="2400" height="1600" decoding="async" fetchpriority="high">
 ```
 
-- **Descriptor widths are measured, not parsed from the filename.** Each variant's intrinsic width is read from its file header (PNG/JPEG/GIF/WebP/SVG), so a file named `@640` that really holds 600px emits `600w`; the filename width is only the fallback when the bytes cannot be read. The original joins the srcset at its intrinsic width when that can be measured, and all candidates sort ascending, so an original narrower than a variant sorts between them.
-- **Discovery probes a fixed width list** (64, 96, 128, 160, 256, 320, 480, 640, 768, 960, 1024, 1280, 1440, 1536, 1920, 2048, 2560, 3840) through existence checks rather than a directory listing, which is what lets `compileFromMemory` resolve the convention from its in-memory map too. An off-list width like `x@500.webp` is a documented miss: never wired, never an error.
-- **`sizes` is never emitted.** The inline-attribute syntax on images carries only classes and ids, so there is no way to supply `sizes` in Markdown, and the compiler will not invent one. An author who needs `sizes` writes raw `<img srcset sizes>` on an `html: true` page.
-- **Never wired, by design:** a bound src (`![a]({ photo })` or a loop row's `![a]({ p.photo })`, which the runtime repaints and a build-time srcset would contradict), remote (`https://`, protocol-relative) and `data:` sources, srcs with a query/hash, page-relative or extensionless srcs, and raw-HTML `<img>` tags (author territory). With no variant present, the emitted tag is byte-identical to before the feature.
-- Variant files are ordinary colocated assets: they copy to `dist/` at their own path like any image, and an `@`-suffixed filename is never a route. Shelf images work too: variants beside `site/_/team/x.webp` resolve against the `/__wd/media/` public path.
-- The srcset composes with the load-priority split above: the first image stays eager with `fetchpriority="high"`, later variant-wired images get `loading="lazy"`, and author-set `loading`/`decoding`/`fetchpriority`/`width`/`height` are never overwritten.
-- **`.md` caveat:** variant wiring runs in the `.wd` compile path. A plain `.md` page still gets the width/height/lazy hardening but no srcset.
+- **Only widths below the intrinsic size are generated (never upscale)**, and variants keep the source format: webp re-encodes at quality 82, jpeg at quality 82 progressive, png stays png. EXIF orientation is applied before resizing, so rotated phone photos come out upright. (The build is synchronous and sharp is not, so the resizes run in one child process per build; a fully cached build spawns nothing.)
+- **Skipped silently:** images at or under 700px wide (already small everywhere), `name@<width>.ext` files themselves (output, never sources), hidden path segments (`.`, `-`, `_`) and symlinks (matching what the build publishes), and formats that are not resized (svg, gif, avif). The generator scans `site/pages` only; shelf images under `site/_` are not resized, though author-provided shelf variants still wire through the convention below.
+- **Without sharp, the build behaves exactly as before plus one hint per build:** `hint: 5 images could gain responsive variants (site/pages/carousel/slide-1.jpg, ...). Run npm i -D sharp to generate them at build time.` A corrupt image (dimensions unreadable) or a sharp failure on one file prints a hint naming that file, and that image ships without variants; the build never fails because of an image.
+- **Resizes are cached in `node_modules/.cache/darkmown-images/`**, keyed by content hash + width + format. A second build does zero sharp work for unchanged images and does not even load sharp when everything is cached (cached variants ship even if sharp is later removed). The cache lives under `node_modules`, which every project's `.gitignore` already excludes. Dev rebuilds recompute the variant map from the cache (no sharp spawn), so a partially rebuilt page is byte-identical to a full rebuild, srcset included; changing an image itself forces a full rebuild, which re-runs the pre-pass.
+- The build summary reports the pre-pass when variants materialized: `Built 14 routes, sitemap (14 urls), rss (6 posts), image variants (2 generated, 5 cached) into dist`.
+
+**Author-provided variants win (the `@width` convention).** Export `dr-aurora@640.jpg` yourself, same directory, same extension, and the build does not touch that width: your file is copied verbatim and measured from its own header (a `@640` file really holding 600px emits `600w`). Generation fills only the widths you did not provide, and the convention picks up any width on the compiler's fixed probe list (64, 96, 128, …, 3840), so other sizes are a hand export away; an off-list width like `x@500.webp` is a documented miss, never an error. Variant files (yours or generated) are ordinary colocated assets: they copy to `dist/` at their own path, and an `@`-suffixed filename is never a route. Everything else about the wiring is unchanged: descriptor widths are measured from file headers, candidates sort ascending with the original joining at its intrinsic width, `sizes` is never emitted (write raw `<img srcset sizes>` on an `html: true` page for that), and a page with no resizable images emits exactly what it did before.
+
+**Never wired, by design:** a bound src (`![a]({ photo })` or a loop row's `![a]({ p.photo })`, which the runtime repaints), remote (`https://`, protocol-relative) and `data:` sources, srcs with a query/hash, page-relative or extensionless srcs, and raw-HTML `<img>` tags. **`.md` caveat:** variant wiring runs in the `.wd` compile path, so a plain `.md` page gets the width/height/lazy hardening but no srcset.
 
 **Or colocate an asset next to the page that uses it.** Any non-page file under `site/pages/` (anything but `.md`/`.wd` routes and the colocated `.skin`/`.js`) is copied to `dist/` at its own path, so a clean relative URL just works:
 
@@ -357,7 +359,7 @@ draft: true
 
 Drafts are filtered at one point — route discovery — so nothing downstream ever sees them. This is **separate from** the permanent `.`/`-`/`_` filename hiding: a hidden name (`-notes.wd`) is private forever; `draft:` is a toggle you flip when the page is ready to ship.
 
-The `build` summary reports what it emitted: `Built 14 routes, sitemap (14 urls), rss (6 posts) into dist`.
+The `build` summary reports what it emitted: `Built 14 routes, sitemap (14 urls), rss (6 posts) into dist`, with an `image variants (2 generated, 5 cached)` clause appended whenever the image pre-pass produced or served cached responsive variants (see [Static assets](#static-assets)).
 
 ## Loops
 
