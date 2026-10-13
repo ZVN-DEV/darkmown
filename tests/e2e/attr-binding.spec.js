@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // F1 — a markdown link/image destination that reads state or a loop row is a
 // live binding, not a build-time paint. /attr-binding/ drives all three shapes:

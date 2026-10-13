@@ -69,9 +69,10 @@ jobs:
       # and aggregates LINE coverage over src/** only (tests/** and scripts/**
       # are excluded from the denominator). `test:cov` enforces 100% src-only
       # line coverage (scripts/test-coverage-gate.mjs 100). Works identically on
-      # Node 20/22/24. src/runtime.js is
-      # browser-only (loaded as a vm string in unit tests) so it is disclosed
-      # but not in this line gate — the Playwright e2e job is its enforced net.
+      # Node 20/22/24. src/runtime.js and src/behaviors/*.js are browser-only
+      # (loaded as a vm string in unit tests / never imported by Node) so they
+      # are disclosed but not in this line gate — their measured net is the
+      # runtime coverage gate on the chromium e2e leg (see the e2e job).
       - run: npm run test:cov
 
   lint:
@@ -156,6 +157,17 @@ jobs:
 
       # playwright.config.js builds + serves the demo site via webServer.
       - run: npm run test:e2e -- --project=${{ matrix.browser }}
+      # Browser runtime coverage: on the chromium leg every spec records V8
+      # coverage for /__wd/runtime.js and /__wd/behaviors/*.js through the
+      # shared fixture (tests/e2e/coverage.js — Playwright's page.coverage API
+      # is Chromium-only, so the other two engines write nothing). The gate
+      # merges .runtime-coverage/ and enforces the thresholds committed in
+      # .runtime-coverage-snapshot.json. Chromium leg only, by design: the
+      # three-engine matrix exists for correctness votes, and one engine's
+      # coverage is the same byte ranges as any other's.
+      - name: Runtime coverage gate (chromium leg)
+        if: matrix.browser == 'chromium'
+        run: npm run runtime-coverage
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v7

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // ---------------------------------------------------------------------------
 // The SEO head, verified in a real browser against the REAL security headers

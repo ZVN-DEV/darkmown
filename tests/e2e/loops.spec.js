@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // Drives the real runtime loop pipeline on /loops/: sort asc/desc, limit/offset,
 // reverse, per-row meta vars ($index/$first/$last), the @empty branch, and a

@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
 import { compilePage } from "../../src/compiler.js";
 import { createPaths } from "../../src/config.js";
+import { expect, test } from "./coverage.js";
 
 // ---------------------------------------------------------------------------
 // Fetch lifecycle e2e. The published e2e suite serves the static `dist`, but

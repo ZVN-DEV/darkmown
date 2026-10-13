@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // Drives /data/: declarative :fetch into a loop, a :form that writes state,
 // the computed cart total, and the error fallback when a server form posts

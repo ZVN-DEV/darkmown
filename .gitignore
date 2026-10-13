@@ -17,6 +17,8 @@ screenshots/
 test-results/
 playwright-report/
 /playwright/.cache
+# Raw browser coverage from the chromium e2e leg (input to scripts/runtime-coverage-gate.mjs)
+.runtime-coverage/
 
 # Local agent worktrees & session state
 .claude/

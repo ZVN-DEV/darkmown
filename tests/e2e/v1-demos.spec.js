@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // The 1.0 demos, driven in a real browser: aggregates + reactive sort (Ledger),
 // the wd.subscribe escape hatch incl. pointer drag (Swiper/carousel), and the

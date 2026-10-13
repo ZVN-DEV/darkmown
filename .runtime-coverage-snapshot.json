@@ -1,0 +1,16 @@
+{
+  "files": {
+    "/__wd/runtime.js": {
+      "threshold": 85,
+      "note": "Measured 89.07% of src/runtime.js lines (644/723, mapped through the committed sourcemap) on the chromium e2e leg, 2026-10-12. The uncovered ~11% is mostly error-guard and rarely-hit branches the demo pages do not drive; the threshold sits ~4pt below the measured value so noise never flakes the gate but a real regression trips it."
+    },
+    "/__wd/behaviors/carousel.js": {
+      "threshold": 75,
+      "note": "Measured 81.42% of served lines (92/113) via tests/e2e/interactions.spec.js, 2026-10-12. The remainder is the autoplay branch (the demo carousel sets no autoplay=) and the prefers-reduced-motion paths; raising coverage means extending the demo or the spec, not lowering this number quietly."
+    },
+    "/__wd/behaviors/sortable.js": {
+      "threshold": 90,
+      "note": "Measured 97.48% of served lines (116/119) via tests/e2e/interactions.spec.js, 2026-10-12. The few uncovered lines are the data-wd-drag-handle variant, which no demo page uses."
+    }
+  }
+}

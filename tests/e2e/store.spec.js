@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // Drives the real :store machinery on /store/: durable persistence across a
 // reload, cross-tab sync via the `storage` event (two browser contexts on one

@@ -37,6 +37,8 @@
     "test": "node --test tests/*.test.js",
     "test:cov": "node scripts/test-coverage-gate.mjs 100",
     "test:e2e": "playwright test",
+    "test:e2e:coverage": "playwright test --project=chromium && node scripts/runtime-coverage-gate.mjs",
+    "runtime-coverage": "node scripts/runtime-coverage-gate.mjs",
     "test:extension": "npm --prefix editors/vscode ci && npm --prefix editors/vscode test",
     "pack:extension": "cd editors/vscode && npx --yes @vscode/vsce package",
     "typecheck": "tsc --noEmit",

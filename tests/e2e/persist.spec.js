@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // The #cart section declares `:state items = [] persist`, so its value is
 // mirrored to localStorage under `wd:cart:items`. Change it, reload, and the

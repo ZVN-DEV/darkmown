@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // F2 — `:state … from-url` mirrors a value into the query string with
 // replaceState: reload keeps it, a shared link arrives with it applied, and the

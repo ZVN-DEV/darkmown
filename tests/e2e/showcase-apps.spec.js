@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage.js";
 
 // The four flagship showcase apps, driven in a real browser. These lock in the
 // core interaction of each — proving the apps are reactive, not just rendered.

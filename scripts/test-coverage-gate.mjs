@@ -42,8 +42,9 @@
 //   The classic example is `src/runtime.js`: the browser reactive core, loaded
 //   by the unit suite as a STRING through `vm.runInContext`, so V8 never
 //   attributes coverage to it and it is physically absent from the coverage
-//   JSON. Its real net is the Playwright e2e job, which drives the runtime in a
-//   real browser. Honesty over a pretty number.
+//   JSON. Its measured net is the browser coverage gate,
+//   scripts/runtime-coverage-gate.mjs, which merges V8 coverage recorded by the
+//   chromium e2e leg and thresholds it. Honesty over a pretty number.
 //
 //   THE 0/0 LOOPHOLE (closed). This gate used to score a file with ZERO
 //   instrumented lines as `pct: 100` — `total ? (hit / total) * 100 : 100`. Four
@@ -86,25 +87,32 @@ export const NOT_MEASURED = new Map([
   [
     "runtime.js",
     "browser reactive core, loaded as a vm string by the unit suite, so V8 cannot" +
-      " instrument it here. Enforced net: the Playwright e2e job drives the real" +
-      " runtime in a browser."
+      " instrument it here. Enforced net: the chromium e2e leg records browser V8" +
+      " coverage of the served minified runtime, mapped back to this file's lines" +
+      " through the committed sourcemap and gated by scripts/runtime-coverage-gate.mjs" +
+      " against .runtime-coverage-snapshot.json."
   ],
   [
     "runtime.min.js",
     "GENERATED artifact: the minified runtime that `emitRuntime` copies to" +
       " /__wd/runtime.js, built from runtime.js by scripts/build-runtime.mjs. Node never" +
-      " imports it. Enforced net: tests/runtime-min.test.js boots these exact bytes in a vm" +
-      " and the Playwright e2e job serves them to three engines."
+      " imports it. Enforced net: tests/runtime-min.test.js boots these exact bytes in a vm," +
+      " and the chromium e2e coverage gate (scripts/runtime-coverage-gate.mjs) measures" +
+      " these served bytes directly before mapping them back to runtime.js."
   ],
   [
     "behaviors/carousel.js",
     "browser-only behavior module: emitted to the page and executed by the browser," +
-      " never imported by Node. Enforced net: the Playwright e2e job."
+      " never imported by Node. Enforced net: the chromium e2e coverage gate" +
+      " (scripts/runtime-coverage-gate.mjs) measures the served comment-stripped module" +
+      " directly; tests/e2e/interactions.spec.js drives it."
   ],
   [
     "behaviors/sortable.js",
     "browser-only behavior module: emitted to the page and executed by the browser," +
-      " never imported by Node. Enforced net: the Playwright e2e job."
+      " never imported by Node. Enforced net: the chromium e2e coverage gate" +
+      " (scripts/runtime-coverage-gate.mjs) measures the served comment-stripped module" +
+      " directly; tests/e2e/interactions.spec.js drives it."
   ],
   [
     "templates/dashboard/api/metrics.js",
