@@ -27,9 +27,17 @@ export function shortPath(p: string): string;
  * @param {Record<string, string>} files Project-relative path → contents, e.g.
  *   `{"site/pages/index.wd": "---\ntitle: X\n---\n"}`.
  * @param {string} entry Which file to compile, in the same key form.
+ * @param {{collections?: Map<string, import("../compiler/collections.js").CollectionRow[]>, vars?: Record<string, unknown>}} [options]
+ *   Forwarded to `compileFromMemory`. The CLI passes the project-wide collection
+ *   index and the build's discovery pager vars here so a page looping
+ *   `@loop blog into post` or reading `{ page.next }` validates the way it
+ *   builds; tool sessions leave them out.
  * @returns {{ok: boolean, text: string, data: object}}
  */
-export function validate(files: Record<string, string>, entry: string): {
+export function validate(files: Record<string, string>, entry: string, options?: {
+    collections?: Map<string, import("../compiler/collections.js").CollectionRow[]>;
+    vars?: Record<string, unknown>;
+}): {
     ok: boolean;
     text: string;
     data: object;

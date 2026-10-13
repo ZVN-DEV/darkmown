@@ -85,6 +85,18 @@ Static pages do not receive `/__wd/runtime.js`; reactive pages do. Pay-for-what-
 
 When a `.md` file contains `.wd` syntax (directives, includes, loops), the build prints a hint suggesting a rename to `.wd` — the syntax stays plain text in `.md` by design.
 
+### `darkmown validate [path]`
+
+Compile-checks pages against the real compiler without writing `dist`. With no argument it checks every route under `site/pages/`, drafts included (a broken draft breaks `darkmown dev`, so it counts). A file argument checks one page or shelf include; a directory argument checks one subtree.
+
+Each page prints one line in the same vocabulary as the `validate` tool: `compiles. static (ships zero JavaScript), 1 skin.` for a clean page, `compiles with N warnings.` with a bullet per warning when the compiler has something non-fatal to say, or the coded `WD` error with its file, line, corrective `use:` template, and a concrete `e.g.` line. Includes, colocated `.skin` files, `@loop` JSON data, and collection `_schema.wd` files are resolved exactly the way the build resolves them, so a page that validates is a page that builds.
+
+The exit code is 0 when everything compiles and 1 when any page fails, so it gates CI:
+
+```sh
+darkmown validate && darkmown build
+```
+
 ### `darkmown deploy <vercel|cloudflare> [--prod]`
 
 Builds (target-aware) and deploys to the platform by wrapping its CLI:

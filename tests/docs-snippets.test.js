@@ -17,6 +17,7 @@ const supportedCliCommands = new Set([
   "serve",
   "deploy",
   "catalog",
+  "validate",
   "version",
   "help"
 ]);

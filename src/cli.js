@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { handleApiRequest } from "./api-runner.js";
 import { buildSite } from "./builder.js";
 import { directiveCatalog, llmsFullText, llmsText } from "./catalog.js";
+import { buildCollections } from "./compiler/collections.js";
 import { createPaths } from "./config.js";
 import { DEPLOY_TARGETS, deploy } from "./deploy.js";
 import {
@@ -20,6 +21,7 @@ import {
 import { discoverRoutes, isDraft, outputPathForRoute } from "./router.js";
 import { availableTemplates, initProject } from "./scaffold.js";
 import { contentType, isServableFile, pipeFile, resolvePublicFile, serve } from "./statics.js";
+import { validate as validateSource } from "./tools/validate.js";
 
 const cliPath = fileURLToPath(import.meta.url);
 
@@ -103,6 +105,10 @@ export async function run(argv, env = {}) {
       log("Emitted dist/_worker.js for Cloudflare Pages api/* functions");
     return { command: "build" };
   }
+  if (command === "validate") {
+    const target = argv.slice(1).find((arg) => !arg.startsWith("-"));
+    return runValidate({ cwd, target, log, error });
+  }
   if (command === "dev") {
     return startDevServer({ cwd, log, warn, error });
   }
@@ -140,6 +146,159 @@ export class CliError extends Error {
     this.name = "CliError";
     this.silent = Boolean(options.silent);
   }
+}
+
+/**
+ * File extensions the compiler can read as TEXT during a page compile: page and
+ * include sources, colocated `.skin`/`.js` siblings, and `@loop` JSON data.
+ * Everything else under `site/` (images, fonts) is either binary or never read
+ * by the compiler, so the in-memory copy `validate` runs against skips it.
+ * @type {Set<string>}
+ */
+const VALIDATE_SOURCE_EXTENSIONS = new Set([".md", ".wd", ".skin", ".js", ".json"]);
+
+/**
+ * `darkmown validate [path]`: compile-check pages without writing `dist`.
+ *
+ * Every check goes through the SAME validator the agent tools surface exposes
+ * (`src/tools/validate.js`), against an in-memory copy of `site/` — so this
+ * command and a tool-loop `validate` call can never disagree about what
+ * compiles, and the headline vocabulary (`compiles. …`, `compiles with N
+ * warnings. …` plus a bullet per warning) is shared byte-for-byte. Collections
+ * are resolved project-wide (validating `_schema.wd` entries first), exactly as
+ * the build resolves them, so a `@loop blog into post` page checks clean.
+ *
+ * Drafts are included: `darkmown dev` serves them, so a broken draft is a
+ * broken project even though a production build skips it. Throws `CliError`
+ * (exit 1) when any page fails.
+ * @param {{ cwd: string, target: string | undefined, log: typeof console.log, error: typeof console.error }} io
+ * @returns {{ command: "validate" }}
+ */
+function runValidate({ cwd, target, log, error }) {
+  const paths = createPaths(cwd);
+  if (!fs.existsSync(paths.routesRoot)) {
+    error("No site/pages directory found. Run `darkmown init` to scaffold a project first.");
+    throw new CliError("No site/pages directory found.", { silent: true });
+  }
+  const files = slurpSiteSources(cwd);
+  const routes = discoverRoutes(paths.routesRoot, { includeDrafts: true });
+  let collections;
+  try {
+    collections = buildCollections(routes, paths);
+  } catch (err) {
+    // A `_schema.wd` violation is a project-level failure, not one page's: the
+    // message already carries the entry file, line, and corrective hint.
+    error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+    throw new CliError("Collection validation failed.", { silent: true });
+  }
+
+  const entries = validateEntries({ cwd, target, routes, files, error });
+  let failures = 0;
+  let warnings = 0;
+  for (const entry of entries) {
+    // The pager vars mirror the build's discovery compile (page 1 of 1, no
+    // prev/next), so a paginated listing's `:if page.prev` / `{ page.next }`
+    // resolve exactly the way its first compile resolves them.
+    const result = validateSource(files, entry, {
+      collections,
+      vars: { page: { current: 1, total: 1, prev: "", next: "" } }
+    });
+    const [headline, ...rest] = result.text.split("\n");
+    if (result.ok) {
+      warnings += rest.length;
+      log(`✓ ${entry} — ${headline}`);
+      for (const line of rest) log(`  ${line}`);
+    } else {
+      failures++;
+      error(`✗ ${entry} — ${headline}`);
+      for (const line of rest) error(`  ${line}`);
+    }
+  }
+  if (failures > 0) {
+    error(`✗ ${failures} of ${entries.length} ${plural(entries.length, "page")} failed validation`);
+    throw new CliError("Validation failed.", { silent: true });
+  }
+  log(
+    `✓ ${entries.length} ${plural(entries.length, "page")} validated` +
+      (warnings ? `, ${warnings} ${plural(warnings, "warning")}` : "")
+  );
+  return { command: "validate" };
+}
+
+/**
+ * Which pages `validate` checks, as project-relative POSIX keys into the
+ * in-memory source map: every route for no argument, the routes under a
+ * directory argument, or the one file for a file argument (which may be a shelf
+ * include — anything under `site/` the compiler can read).
+ * @param {{ cwd: string, target: string | undefined, routes: import("./router.js").Route[], files: Record<string, string>, error: typeof console.error }} io
+ * @returns {string[]}
+ */
+function validateEntries({ cwd, target, routes, files, error }) {
+  const keyOf = (/** @type {string} */ abs) => path.relative(cwd, abs).split(path.sep).join("/");
+  if (!target) return routes.map((route) => keyOf(route.file));
+
+  const abs = path.resolve(cwd, target);
+  if (!fs.existsSync(abs)) {
+    error(`Nothing to validate at "${target}": no such file or directory.`);
+    throw new CliError(`No such file or directory: ${target}`, { silent: true });
+  }
+  if (fs.statSync(abs).isDirectory()) {
+    const prefix = `${abs}${path.sep}`;
+    const entries = routes
+      .filter((route) => route.file.startsWith(prefix))
+      .map((route) => keyOf(route.file));
+    if (entries.length === 0) {
+      error(`No pages found under "${target}".`);
+      throw new CliError(`No pages found under ${target}`, { silent: true });
+    }
+    return entries;
+  }
+  const ext = path.extname(abs);
+  if (ext !== ".md" && ext !== ".wd") {
+    error(`Cannot validate "${target}": only .md and .wd sources compile.`);
+    throw new CliError(`Not a page source: ${target}`, { silent: true });
+  }
+  const key = keyOf(abs);
+  if (!(key in files)) {
+    error(`Cannot validate "${target}": validate checks pages and includes under site/.`);
+    throw new CliError(`Outside site/: ${target}`, { silent: true });
+  }
+  return [key];
+}
+
+/**
+ * Read every compiler-readable text source under `site/` into the
+ * project-relative key → contents map `compileFromMemory` compiles against.
+ * @param {string} cwd Project working directory.
+ * @returns {Record<string, string>}
+ */
+function slurpSiteSources(cwd) {
+  /** @type {Record<string, string>} */
+  const files = {};
+  /** @param {string} dir */
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs);
+        continue;
+      }
+      if (!VALIDATE_SOURCE_EXTENSIONS.has(path.extname(entry.name))) continue;
+      files[path.relative(cwd, abs).split(path.sep).join("/")] = fs.readFileSync(abs, "utf8");
+    }
+  };
+  const siteRoot = path.join(cwd, "site");
+  if (fs.existsSync(siteRoot)) walk(siteRoot);
+  return files;
+}
+
+/**
+ * @param {number} n
+ * @param {string} word
+ * @returns {string}
+ */
+function plural(n, word) {
+  return n === 1 ? word : `${word}s`;
 }
 
 /**
@@ -398,6 +557,7 @@ Usage:
   darkmown dev                              Start the live compiler dev server
   darkmown build [--target cloudflare]      Compile site/pages into dist
             [--drafts]                      Include draft: true pages (staging)
+  darkmown validate [path]                  Compile-check pages without building (exit 1 on errors)
   darkmown deploy <${DEPLOY_TARGETS.join("|")}> [--prod]    Build + deploy to a platform
   darkmown serve                            Preview the built dist locally
   darkmown catalog [--llms|--llms-full]     Print the .wd directive catalog (JSON, --llms cheatsheet, or --llms-full reference)
