@@ -27,6 +27,11 @@ export function scopeIdFor(relPath: string): string;
  * site-wide. A whole-selector `:global(.x)` escapes scoping. Page-level selectors
  * (`page`/`*`/`html`/`body`/`::selection`) are a compile error in scoped mode.
  * Without `opts.scope`, output is byte-identical to before this feature existed.
+ *
+ * `@font-face` and `@keyframes <name>` are self-contained at-rule blocks: their
+ * indented children are descriptors / keyframe selectors (never page
+ * selectors), they are ALWAYS global (never scope-stamped, same contract as
+ * `tokens`), and their declaration values use the same alias/`$token` pipeline.
  * @param {string} source
  * @param {{ scope?: string, subjects?: Set<string> }} [opts] `scope`: the scope
  *   id enabling scoped mode. `subjects`: an optional set the compiler fills with

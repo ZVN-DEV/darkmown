@@ -88,6 +88,13 @@ export function compileBody(lines, ctx) {
   // reports the offending line and not the top of the file.
   let proseStart = 0;
   let fence = null;
+  // Raw <style>/<script> block tracking (pages with `html: true`). Inside one,
+  // lines are CSS/JS, not directive territory, so the "looks like a directive"
+  // hint is suppressed — otherwise every `@font-face {` / `@keyframes x {` in
+  // an author's raw <style> warns once per page. Line-based like the fence
+  // tracking above; a `</style>` inside a CSS string is out of scope.
+  /** @type {"style" | "script" | null} */
+  let rawTag = null;
 
   // Append one chunk, splicing it into the previous one when the seam between
   // them is a table split in half. Markdown only sees a table when a header row
@@ -125,6 +132,20 @@ export function compileBody(lines, ctx) {
       fence = fenceMatch[1];
       prose.push(line);
       continue;
+    }
+
+    // Update the raw-block state BEFORE the line is classified, so both the
+    // opener's contents and the closing tag line itself count as "inside".
+    // A same-line `<script src="…"></script>` opens and closes at once and
+    // never suppresses anything.
+    const inRawBlock = rawTag !== null;
+    if (rawTag) {
+      if (RAW_BLOCK_CLOSE.test(line)) rawTag = null;
+    } else {
+      const rawOpen = line.match(RAW_BLOCK_OPEN);
+      if (rawOpen && !RAW_BLOCK_CLOSE.test(line)) {
+        rawTag = /** @type {"style" | "script"} */ (rawOpen[1].toLowerCase());
+      }
     }
 
     // A directive name ALONE on a line is a mistake with one obvious fix: it is
@@ -331,7 +352,7 @@ export function compileBody(lines, ctx) {
         file: ctx.file
       });
     }
-    warnUnknownDirective(line, ctx);
+    if (!inRawBlock) warnUnknownDirective(line, ctx);
     prose.push(line);
   }
 
@@ -351,6 +372,14 @@ export function compileBody(lines, ctx) {
 // from the demo handler and are gone from here for exactly that reason.)
 const KNOWN_DIRECTIVE =
   /^(?:(?:@(?:include|loop|empty|endloop)|:(?:state|store|fetch|computed|effect|every|theme|video|audio|embed|form|endform|input|textarea|select|checkbox|radio|bind|slider|submit|button|carousel|endcarousel|if|endif|else))(?:\s|$)|:try\s)/;
+
+// Raw HTML blocks whose contents are CSS/JS, never directive territory. The
+// lookalike hint is suppressed between `<style …>`/`<script …>` and their
+// close tag (line-based, matching the rest of this dispatcher). The close is
+// deliberately tag-agnostic: `<style>` and `<script>` never nest, so either
+// closer ends the open block.
+const RAW_BLOCK_OPEN = /<(style|script)(?=[\s>])/i;
+const RAW_BLOCK_CLOSE = /<\/(?:style|script)\s*>/i;
 /**
  * @param {string} line
  * @param {Ctx} ctx

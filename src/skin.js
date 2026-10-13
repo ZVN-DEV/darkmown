@@ -64,6 +64,11 @@ const PAGE_LEVEL_SELECTORS = new Set(["page", "*", "html", "body", "::selection"
  * site-wide. A whole-selector `:global(.x)` escapes scoping. Page-level selectors
  * (`page`/`*`/`html`/`body`/`::selection`) are a compile error in scoped mode.
  * Without `opts.scope`, output is byte-identical to before this feature existed.
+ *
+ * `@font-face` and `@keyframes <name>` are self-contained at-rule blocks: their
+ * indented children are descriptors / keyframe selectors (never page
+ * selectors), they are ALWAYS global (never scope-stamped, same contract as
+ * `tokens`), and their declaration values use the same alias/`$token` pipeline.
  * @param {string} source
  * @param {{ scope?: string, subjects?: Set<string> }} [opts] `scope`: the scope
  *   id enabling scoped mode. `subjects`: an optional set the compiler fills with
@@ -165,6 +170,22 @@ export function compileSkin(source, opts = {}) {
 
     if (tokenIndent !== null && indent <= tokenIndent) tokenIndent = null;
     while (stack.length && (stack.at(-1)?.indent ?? -1) >= indent) stack.pop();
+
+    // `@font-face` / `@keyframes` are self-contained at-rule BLOCKS, not
+    // selector wrappers like `@media`/`@supports`: their indented children are
+    // font descriptors / keyframe selectors, so the generic "wrap nested rules"
+    // path would mangle them (`@font-face { :root { … } }`). The whole subtree
+    // is consumed here and the loop resumes after it. Like `tokens`, both are
+    // ALWAYS global — a `scoped` skin never stamps them — and their values run
+    // through the same declaration pipeline (aliases, `$token` refs).
+    const atRule = /^@(font-face|keyframes)(?:\s+(.+))?$/.exec(text);
+    if (atRule) {
+      const media = stack.find((frame) => frame.media)?.media;
+      const block = collectAtRule(atRule[1], atRule[2], lines, i);
+      css.push(media ? `${media} {\n${block.css}\n}` : block.css);
+      i = block.end;
+      continue;
+    }
 
     if (opensBlock) {
       const parent = stack.at(-1)?.selector;
@@ -338,4 +359,118 @@ function normalizeSelector(text, parent) {
       return clean.startsWith("&") ? clean.replace("&", parent) : `${parent} ${clean}`;
     })
     .join(", ");
+}
+
+// A keyframe selector: `from`, `to`, a percentage (`50%`), or a comma list of
+// those (`50%, 75%`). Anything else inside `@keyframes` is an authoring error,
+// never a declaration or an element selector.
+const KEYFRAME_SELECTOR = /^(?:from|to|\d+(?:\.\d+)?%)(?:\s*,\s*(?:from|to|\d+(?:\.\d+)?%))*$/;
+
+/**
+ * A plain Error, no WD code: the code registry (`src/errors.js`) and its drift
+ * guard (`tests/error-codes.test.js`) are owned by a parallel change, so a
+ * `code: "WD8xx"` here would fail the "every code thrown is registered" gate
+ * and an inline throw would fail the "no author-facing throw bypasses wdError"
+ * scan. Messages still lead with the construct and end with a corrective
+ * example, registry-style.
+ * @param {string} message
+ * @returns {Error}
+ */
+function skinError(message) {
+  return new Error(message);
+}
+
+/**
+ * One declaration line (`prop value`, space-separated, no colon/semicolon)
+ * rendered as `prop: value;` through the shared pipeline: property aliases
+ * (`radius`, `bg`, `font`) resolve and `$token` refs become `var(--token)`.
+ * @param {string} text
+ * @returns {string}
+ */
+function declaration(text) {
+  const [prop, ...rest] = text.split(/\s+/);
+  const cssProp = resolveProp(prop, rest);
+  const value = rest.join(" ").replace(/\$([a-zA-Z0-9_-]+)/g, "var(--$1)");
+  return `${cssProp}: ${value};`;
+}
+
+/**
+ * Compile one `@font-face`/`@keyframes` subtree into a self-contained,
+ * always-global at-rule block.
+ *
+ * `@font-face` children are declarations (descriptors); nesting is invalid.
+ * `@keyframes <name>` children are keyframe selectors (`from`, `to`, `50%`,
+ * `50%, 75%`), each with its own indented declarations; a keyframe selector is
+ * validated against KEYFRAME_SELECTOR so it can never be misread as a
+ * declaration or an element selector, and declarations cannot nest further.
+ * @param {string} kind `font-face` or `keyframes`.
+ * @param {string | undefined} rest Text after the at-rule keyword (the
+ *   keyframes name; invalid on `@font-face`).
+ * @param {{ indent: number, text: string }[]} lines Preprocessed skin lines.
+ * @param {number} start Index of the at-rule line.
+ * @returns {{ css: string, end: number }} `end` = last consumed line index.
+ */
+function collectAtRule(kind, rest, lines, start) {
+  const indent = lines[start].indent;
+
+  if (kind === "font-face") {
+    if (rest)
+      throw skinError(
+        `@font-face takes no name, got "${rest}" — write the descriptors indented beneath a bare @font-face line, e.g. font-family "Newsreader"`
+      );
+    /** @type {string[]} */
+    const decls = [];
+    let i = start;
+    while (i + 1 < lines.length && lines[i + 1].indent > indent) {
+      i++;
+      if (i + 1 < lines.length && lines[i + 1].indent > lines[i].indent)
+        throw skinError(
+          `@font-face only takes declarations — "${lines[i].text}" opens a nested block, which is not valid inside @font-face`
+        );
+      decls.push(`  ${declaration(lines[i].text)}`);
+    }
+    if (!decls.length)
+      throw skinError(
+        '@font-face has no declarations — indent its descriptors beneath it, e.g. font-family "Newsreader"'
+      );
+    return { css: `@font-face {\n${decls.join("\n")}\n}`, end: i };
+  }
+
+  if (!rest) throw skinError("@keyframes needs a name — e.g. @keyframes fade-in");
+  if (!/^-?[A-Za-z_][\w-]*$/.test(rest))
+    throw skinError(
+      `invalid @keyframes name "${rest}" — use a plain CSS identifier, e.g. @keyframes fade-in`
+    );
+  /** @type {string[]} */
+  const stops = [];
+  let i = start;
+  while (i + 1 < lines.length && lines[i + 1].indent > indent) {
+    i++;
+    const selector = lines[i].text;
+    const selectorIndent = lines[i].indent;
+    if (!KEYFRAME_SELECTOR.test(selector))
+      throw skinError(
+        `"${selector}" is not a keyframe selector in @keyframes ${rest} — use from, to, or a percentage (50%, or a list like 50%, 75%)`
+      );
+    /** @type {string[]} */
+    const decls = [];
+    while (i + 1 < lines.length && lines[i + 1].indent > selectorIndent) {
+      i++;
+      if (i + 1 < lines.length && lines[i + 1].indent > lines[i].indent)
+        throw skinError(
+          `@keyframes declarations cannot nest — "${lines[i].text}" opens a block inside keyframe "${selector}"`
+        );
+      decls.push(`    ${declaration(lines[i].text)}`);
+    }
+    if (!decls.length)
+      throw skinError(
+        `keyframe "${selector}" in @keyframes ${rest} has no declarations — indent them beneath it`
+      );
+    stops.push(`  ${selector} {\n${decls.join("\n")}\n  }`);
+  }
+  if (!stops.length)
+    throw skinError(
+      `@keyframes ${rest} has no keyframe selectors — indent from/to/percentage blocks beneath it`
+    );
+  return { css: `@keyframes ${rest} {\n${stops.join("\n")}\n}`, end: i };
 }
