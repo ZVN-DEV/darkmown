@@ -5,10 +5,12 @@
 // against the loop item / static scope / declared state.
 // ---------------------------------------------------------------------------
 
+import path from "node:path";
 import MarkdownIt from "markdown-it";
 import { highlightCode } from "../highlight.js";
 import { LOOP_META, lineOf, recordRead, wdError } from "./context.js";
 import { applyPipeline, fmtAttr, validatePipes } from "./format.js";
+import { imageSize } from "./image-size.js";
 import {
   escapeHtml,
   getPath,
@@ -37,8 +39,10 @@ const md = new MarkdownIt({ html: false, highlight: highlightCode });
 md.use(bindingPlugin);
 md.use(attrsPlugin);
 md.use(attrBindPlugin);
+md.use(imageVariantsPlugin);
 md.use(rawHtmlPlugin);
 md.use(anchorPlugin);
+md.use(siblingHtmlPlugin);
 
 // Raw HTML in markdown is escaped by default: a stray `<script>` or `onerror=`
 // attribute in content renders as inert text, so multi-author content (blog
@@ -60,8 +64,10 @@ export function selectMd(meta) {
     mdRawHtml.use(bindingPlugin);
     mdRawHtml.use(attrsPlugin);
     mdRawHtml.use(attrBindPlugin);
+    mdRawHtml.use(imageVariantsPlugin);
     mdRawHtml.use(rawHtmlPlugin);
     mdRawHtml.use(anchorPlugin);
+    mdRawHtml.use(siblingHtmlPlugin);
   }
   return mdRawHtml;
 }
@@ -356,6 +362,254 @@ function attrBindPlugin(mdInstance) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// RESPONSIVE IMAGE VARIANTS (the `@width` convention, 2.8.0 / A2).
+//
+// Darkmown has no image pipeline and never will (no resize dependency), so the
+// convention wires variants the AUTHOR (or their CDN tooling) already made:
+// next to `/doctors/dr-x.webp` sit `dr-x@640.webp`, `dr-x@1280.webp` — same
+// directory, same extension, `@<width>` before it. When at least one exists,
+// the markdown image gains a `srcset` (variants ascending, then the original
+// at its intrinsic width) so the browser downloads the size it needs instead
+// of the full-resolution file. The original stays the `src` fallback.
+//
+// Discovery is an existence PROBE over {@link VARIANT_WIDTHS} through the
+// injected reader: the Reader contract has no directory listing, so an off-list
+// width (say `@500`) is simply not wired — a deliberate, documented miss, never
+// an error. Each variant's descriptor width is its REAL intrinsic width from
+// the image header (a `@640` file that actually holds 600px says 600w); when
+// the bytes cannot be read or parsed (the in-memory reader has no binaries), the
+// filename width is the fallback. The original's intrinsic width follows the
+// same rule, except it has no filename fallback: unreadable means it is left
+// out of the srcset and stays the plain `src` default.
+//
+// A bound src (`![alt]({ photo })`) is repainted by the runtime, so a srcset
+// computed from the seed would go stale on the first render — those images are
+// skipped, exactly as `enhanceImages` skips stamping their dimensions. Raw-HTML
+// `<img>` tags are author territory and never pass through this rule.
+// ---------------------------------------------------------------------------
+
+// The widths probed for a `@<width>` sibling: the union of the common srcset
+// breakpoints (320-2048) and the small avatar/thumbnail sizes. Sorted; the
+// emitted srcset is re-sorted by MEASURED width, so this order is only probe
+// order and carries no output meaning.
+const VARIANT_WIDTHS = [
+  64, 96, 128, 160, 256, 320, 480, 640, 768, 960, 1024, 1280, 1440, 1536, 1920, 2048, 2560, 3840
+];
+
+// srcset computation per image src, memoized per compilation: a page that
+// references the same image twice (or in a loop template and a hero) probes
+// the reader once. WeakMap so a finished compilation takes its cache with it.
+/** @type {WeakMap<object, Map<string, string | null>>} */
+const srcsetCache = new WeakMap();
+
+/**
+ * markdown-it plugin (core rule): wire `@<width>` sibling files into a `srcset`
+ * on every markdown image. Registered AFTER `attrBindPlugin` so a bound src is
+ * already marked `data-wd-attr`/`data-wd-each-attr` and can be skipped.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
+function imageVariantsPlugin(mdInstance) {
+  mdInstance.core.ruler.push("wd_image_variants", (state) => {
+    /** @type {{ ctx: Ctx } | undefined} */
+    const wd = state.env?.wd;
+    if (!wd) return false; // a bare `.md` render carries no compile context
+    for (const block of state.tokens) {
+      for (const token of block.children ?? []) {
+        if (token.type !== "image") continue;
+        if (token.attrGet("data-wd-attr") || token.attrGet("data-wd-each-attr")) continue;
+        const srcset = srcsetFor(token.attrGet("src") ?? "", wd.ctx);
+        if (srcset) token.attrSet("srcset", srcset);
+      }
+    }
+    return false;
+  });
+}
+
+/**
+ * The srcset value for one image src, or null when there is nothing to wire
+ * (no variants, or a src this layer must not touch). Memoized per compilation.
+ * @param {string} src
+ * @param {Ctx} ctx
+ * @returns {string | null}
+ */
+function srcsetFor(src, ctx) {
+  let perComp = srcsetCache.get(ctx.comp);
+  if (!perComp) srcsetCache.set(ctx.comp, (perComp = new Map()));
+  else if (perComp.has(src)) return perComp.get(src) ?? null;
+  const built = buildSrcset(src, ctx);
+  perComp.set(src, built);
+  return built;
+}
+
+/**
+ * Build the srcset for one src: probe for `@<width>` siblings, measure each
+ * one, sort ascending. Null when no sibling variant exists.
+ * @param {string} src
+ * @param {Ctx} ctx
+ * @returns {string | null}
+ */
+function buildSrcset(src, ctx) {
+  if (!src || /^(?:https?:)?\/\//i.test(src) || src.startsWith("data:")) return null;
+  // A query/hash suffix would corrupt the `@width` filename surgery; such a src
+  // points at a dynamic endpoint anyway, which the convention does not cover.
+  if (/[?#]/.test(src)) return null;
+  const dot = src.lastIndexOf(".");
+  if (dot <= src.lastIndexOf("/") + 1) return null; // no extension
+  const base = src.slice(0, dot);
+  const ext = src.slice(dot);
+  // Resolve the src to a reader path, mirroring the asset emit (and page.js's
+  // measureImage): shelf media comes from `site/_`, other absolute paths from
+  // `site/pages`. A page-relative src is unresolvable after assembly.
+  /** @type {string} */
+  let relBase;
+  /** @type {string} */
+  let root;
+  if (base.startsWith("/__wd/media/")) {
+    root = ctx.context.shelfRoot;
+    relBase = base.slice("/__wd/media/".length);
+  } else if (src.startsWith("/")) {
+    root = ctx.context.routesRoot;
+    relBase = base.slice(1);
+  } else {
+    return null;
+  }
+  const reader = ctx.comp.reader;
+  /** @type {{ href: string, width: number }[]} */
+  const candidates = [];
+  for (const width of VARIANT_WIDTHS) {
+    const abs = path.join(root, `${relBase}@${width}${ext}`);
+    if (!reader.exists(abs)) continue;
+    candidates.push({ href: `${base}@${width}${ext}`, width: measureWidth(abs, reader) ?? width });
+  }
+  if (!candidates.length) return null;
+  const intrinsic = measureWidth(path.join(root, `${relBase}${ext}`), reader);
+  if (intrinsic) candidates.push({ href: src, width: intrinsic });
+  candidates.sort((a, b) => a.width - b.width);
+  return candidates.map((c) => `${c.href} ${c.width}w`).join(", ");
+}
+
+/**
+ * An image file's intrinsic width from its header bytes, or null when the file
+ * cannot be read (missing, or the in-memory reader's unsupported binary read)
+ * or holds no parseable size. Never throws — a build never fails on an image.
+ * @param {string} abs Absolute path the reader understands.
+ * @param {import("./reader.js").Reader} reader
+ * @returns {number | null}
+ */
+function measureWidth(abs, reader) {
+  try {
+    return imageSize(reader.readBinary(abs))?.width ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PARAGRAPH-WRAPPED SIBLING HTML (compile-time hint, 2.8.0 / F11).
+//
+// CommonMark hoists a line that STARTS with a block-level tag (`<div>`,
+// `<section>`, …) into an `html_block`, even mid-run — so sixteen consecutive
+// `<div class="card">` lines render fine. But a line starting with any OTHER
+// tag (`<a class="card">`, `<picture>`, a custom element) stays inline, and a
+// run of those becomes ONE `<p>` with softbreaks: the "cards" render inline
+// inside a single paragraph, collapsing the grid they were meant to populate
+// (the real rebuild bug: 16 carrier cards, one column, fixed by hand-wrapping
+// them in a raw `<div class="grid">`).
+//
+// The hint therefore keys on the OUTCOME, not a tag list: a core rule inspects
+// paragraph (`inline`) tokens — the parser has already decided what hoisted —
+// and warns once per run of 2+ consecutive lines that each open with a
+// COMPONENT-LOOKING tag (one carrying a class or id). That makes the no-warn
+// cases structural rather than special-cased: lines inside a container
+// (`<div class="grid">` and everything to `</div>`) are one `html_block`,
+// fenced code is a code token, and blank-line-separated lines are separate
+// paragraphs, so none of them can false-positive here. The class/id signal is
+// the other half of staying conservative: two consecutive classless
+// `<a href>` lines are ordinary prose links that are MEANT to share a
+// paragraph, and a hint about them would be noise on a correct page.
+// ---------------------------------------------------------------------------
+
+// An opening tag at the very start of a line: `<a …`, `<x-card …`. Closing
+// tags (`</`), comments (`<!--`) and declarations (`<!`, `<?`) never match —
+// only an OPEN tag can be a sibling element that loses its block box.
+const SIBLING_TAG = /^<[A-Za-z][A-Za-z0-9-]*(?=[\s/>])/;
+
+// What makes a tag-led line a "component" rather than prose: the opening tag
+// carries a class or id, so the author styles it — plausibly as a block or a
+// grid/flex child, exactly the box that collapses inside a `<p>`.
+const COMPONENT_TAG = /\s(?:class|id)\s*=/i;
+
+/**
+ * markdown-it plugin (core rule): warn when 2+ consecutive source lines of one
+ * paragraph each open with a component-looking raw HTML tag (class or id) —
+ * they will render inline in that one `<p>`. Only meaningful where raw HTML
+ * renders (`html: true`); on the strict instance the tags are escaped text and
+ * there is nothing to warn about.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
+function siblingHtmlPlugin(mdInstance) {
+  mdInstance.core.ruler.push("wd_html_siblings", (state) => {
+    if (!state.md.options.html) return false;
+    /** @type {{ ctx: Ctx, index: number } | undefined} */
+    const wd = state.env?.wd;
+    if (!wd) return false; // a bare `.md` render has no warnings channel
+    for (const block of state.tokens) {
+      if (block.type !== "inline" || !block.children) continue;
+      warnSiblingHtmlRuns(block, wd, wd.ctx);
+    }
+    return false;
+  });
+}
+
+/**
+ * Warn once per run of 2+ consecutive tag-led lines inside one paragraph.
+ * @param {any} block The paragraph's `inline` token.
+ * @param {{ index: number }} wd The prose chunk's env (0-based slice offset).
+ * @param {Ctx} ctx
+ * @returns {void}
+ */
+function warnSiblingHtmlRuns(block, wd, ctx) {
+  // A line "opens with a component tag" when its FIRST token is author HTML
+  // carrying a class or id. A `{ name }` binding is an html_inline token too,
+  // but `meta.wdText` marks those — and a bound span is MEANT to be inline, so
+  // it can neither start a run nor (being real inline content) break one.
+  /** @type {boolean[]} */
+  const tagLine = [];
+  let first = true; // still looking for the current line's first token
+  for (const tok of block.children) {
+    if (tok.type === "softbreak" || tok.type === "hardbreak") {
+      first = true;
+      continue;
+    }
+    if (!first) continue;
+    first = false;
+    tagLine.push(
+      tok.type === "html_inline" &&
+        tok.meta?.wdText === undefined &&
+        SIBLING_TAG.test(tok.content) &&
+        COMPONENT_TAG.test(tok.content)
+    );
+  }
+  let runStart = -1;
+  for (let i = 0; i <= tagLine.length; i++) {
+    if (i < tagLine.length && tagLine[i]) {
+      if (runStart === -1) runStart = i;
+      continue;
+    }
+    if (runStart !== -1 && i - runStart >= 2) {
+      ctx.comp.warnings.push(
+        `${ctx.file}:${lineOf(ctx, wd.index + (block.map ? block.map[0] : 0) + runStart)}: ` +
+          `${i - runStart} sibling HTML block lines will render inline in one <p>; ` +
+          `wrap them in a container (e.g. a raw <div>)`
+      );
+    }
+    runStart = -1;
+  }
+}
+
 /**
  * markdown-it plugin (core rule): resolve `{ expr }` inside RAW HTML — the
  * opaque `html_inline` tokens a tag becomes and the `html_block` tokens a
@@ -436,7 +690,10 @@ function warnUnsafeUrl(ctx, index, expr) {
  * @returns {string}
  */
 function fillRawHtml(html, ctx, index) {
-  const brace = /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g;
+  // The capture mirrors the inline `wd_binding` rule: path plus an optional
+  // `| pipe:arg` chain. A pipe-only divergence here left `{ d | date }` literal
+  // in raw HTML while the same expression folded in prose.
+  const brace = /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*(?:\|[^}]*)?)\}/g;
   let out = "";
   let last = 0;
   /** @type {RegExpExecArray | null} */
@@ -444,7 +701,7 @@ function fillRawHtml(html, ctx, index) {
   while ((hit = brace.exec(html))) {
     out += html.slice(last, hit.index);
     last = hit.index + hit[0].length;
-    const expr = hit[1];
+    const expr = hit[1].trim();
     const found = resolveBinding(expr, ctx);
     if (!found) {
       out += hit[0];
