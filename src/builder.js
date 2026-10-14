@@ -19,7 +19,7 @@ import {
   sitemapDate,
   sitemapDocuments
 } from "./feeds.js";
-import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
+import { BASE_SECURITY_HEADERS, REACTIVE_CSP, routeCsp } from "./headers.js";
 import { HIGHLIGHT_CSS } from "./highlight.js";
 import { generateImageVariants } from "./image-variants.js";
 import { discoverRoutes, outputPathForRoute } from "./router.js";
@@ -37,7 +37,10 @@ import { compileSkin, scopeIdFor } from "./skin.js";
  * @typedef {object} RouteManifestEntry
  * @property {string} route Public route path.
  * @property {string} file Source file path, relative to cwd, POSIX-separated.
- * @property {{ skins: string[], scripts: string[], runtime: boolean }} assets
+ * @property {{ skins: string[], scripts: string[], runtime: boolean, embedHosts?: string[] }} assets
+ *   `embedHosts` is present only when the page's `:embed`s frame at least one
+ *   source the base CSP does not already cover — absent keeps a no-embed
+ *   site's routes.json byte-identical.
  */
 
 /**
@@ -60,8 +63,10 @@ import { compileSkin, scopeIdFor } from "./skin.js";
 export const DEP_MAP_FILE = ".wd-dev-deps.json";
 
 // Bumped whenever the map's shape changes, so a stale map from an older
-// Darkmown falls back to a full rebuild instead of being misread.
-const DEP_MAP_VERSION = 2;
+// Darkmown falls back to a full rebuild instead of being misread. (3: manifest
+// entries gained `assets.embedHosts` — a v2 map's entries would silently drop
+// them from a reassembled `_headers`/`routes.json`.)
+const DEP_MAP_VERSION = 3;
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -430,6 +435,10 @@ function buildRoute(
     emitBehaviors(page.assets, paths);
     if (page.assets.hasCode) emitHighlight(paths);
     const behaviorSrcs = [...page.assets.behaviors].map((name) => `/__wd/behaviors/${name}.js`);
+    // The page's :embed frame sources (origins, or 'self'), sorted for a stable
+    // manifest; omitted entirely when empty so a no-embed site's routes.json is
+    // byte-identical to before.
+    const embedHosts = [...page.assets.embedHosts].sort();
     entries.push({
       route: page.route,
       file: relPosix(cwd, route.file),
@@ -440,7 +449,8 @@ function buildRoute(
           ...behaviorSrcs,
           ...page.assets.scripts
         ],
-        runtime: page.assets.runtime
+        runtime: page.assets.runtime,
+        ...(embedHosts.length > 0 ? { embedHosts } : {})
       }
     });
   }
@@ -708,7 +718,10 @@ function collectionMemberOf(file) {
  * this point — in practice `@loop` JSON data files, published under
  * `/__wd/data/` (shelf) or beside their page (site/pages). Page/skin/script
  * sources have their own emit paths and hidden segments are never published, so
- * both are skipped.
+ * both are skipped. The publish rules mirror the full sweep exactly, shelf
+ * included: a hidden (`.`, `-`, `_`) segment or a symlink is never copied —
+ * a symlink's target lives outside the project and its bytes would publish
+ * verbatim.
  * @param {string} file Project-relative POSIX path of the changed file.
  * @param {string} cwd
  * @param {Paths} paths
@@ -717,10 +730,12 @@ function collectionMemberOf(file) {
 function copyChangedAsset(file, cwd, paths) {
   const ext = path.posix.extname(file).toLowerCase();
   if ([".md", ".wd", ".skin", ".js"].includes(ext)) return;
+  if (fs.lstatSync(path.join(cwd, file)).isSymbolicLink()) return;
   /** @type {string} */
   let out;
   if (file.startsWith(`${shelfDir}/`)) {
     const rel = file.slice(shelfDir.length + 1);
+    if (rel.split("/").some((segment) => /^[._-]/.test(segment))) return;
     out = path.join(paths.distRoot, ext === ".json" ? "__wd/data" : "__wd/media", rel);
   } else {
     const rel = file.slice(routesDir.length + 1);
@@ -1210,7 +1225,11 @@ export default {
       if (response instanceof Response) return response;
       return Response.json({ ok: false, error: "Handler did not return a Response" }, { status: 500 });
     } catch (err) {
-      return Response.json({ ok: false, error: String((err && err.message) || err) }, { status: 500 });
+      // Log the real error server-side; the client gets a generic 500 — a
+      // handler's message can carry internals (paths, query text) that a
+      // public response must not leak. Dev keeps the message (api-runner).
+      console.error(err);
+      return Response.json({ ok: false, error: "Internal error" }, { status: 500 });
     }
   }
 };
@@ -1255,6 +1274,12 @@ export function stripRuntimeComments(source) {
  *
  * Clean URLs mean a route like `/docs/` is served at both `/docs` and `/docs/`,
  * so each static route emits a path glob (`/docs`, `/docs/*`) that covers both.
+ *
+ * A page whose `:embed`s frame hosts beyond the base policy (a booking widget,
+ * a map) carries those hosts on its manifest entry (`assets.embedHosts`), and
+ * its block — static or reactive — states the unioned per-route policy
+ * ({@link routeCsp}). A reactive route with embed hosts can no longer inherit
+ * the catch-all, so it always gets its own block.
  * @param {RouteManifestEntry[]} manifest
  * @returns {string}
  */
@@ -1265,9 +1290,10 @@ export function renderCloudflareHeaders(manifest) {
   const blocks = [["/*", [...baseLines, `  Content-Security-Policy: ${REACTIVE_CSP}`]]];
 
   for (const entry of manifest) {
-    if (entry.assets.runtime) continue; // reactive routes keep the catch-all (eval-free) CSP
+    if (entry.assets.runtime) continue; // plain reactive routes keep the catch-all (eval-free) CSP
+    const csp = routeCsp(false, entry.assets.embedHosts ?? []);
     for (const pattern of cloudflarePathPatterns(entry.route)) {
-      blocks.push([pattern, [`  Content-Security-Policy: ${STATIC_CSP}`]]);
+      blocks.push([pattern, [`  Content-Security-Policy: ${csp}`]]);
     }
   }
 
@@ -1276,18 +1302,21 @@ export function renderCloudflareHeaders(manifest) {
   // was silently resolving to the static policy from its parent. It is a no-op
   // only while the two policies happen to be identical. A shadowed reactive
   // route therefore re-states its own policy AFTER the static globs, so the
-  // route always lands on the policy its own manifest entry declares.
+  // route always lands on the policy its own manifest entry declares. A
+  // reactive route whose `:embed` hosts widen its policy needs its own block
+  // for the same reason — the catch-all no longer states it.
   const shadowingRoutes = manifest
     .filter((entry) => !entry.assets.runtime && entry.route !== "/")
     .map((entry) => entry.route);
   for (const entry of manifest) {
     if (!entry.assets.runtime) continue;
+    const csp = routeCsp(true, entry.assets.embedHosts ?? []);
     const shadowed = shadowingRoutes.some(
       (parent) => entry.route !== parent && entry.route.startsWith(parent)
     );
-    if (!shadowed) continue;
+    if (!shadowed && csp === REACTIVE_CSP) continue;
     for (const pattern of cloudflarePathPatterns(entry.route)) {
-      blocks.push([pattern, [`  Content-Security-Policy: ${REACTIVE_CSP}`]]);
+      blocks.push([pattern, [`  Content-Security-Policy: ${csp}`]]);
     }
   }
 
@@ -1509,6 +1538,11 @@ function hasColocatedPage(file) {
  * STANDALONE `.skin`/`.js` (no sibling page) is a plain shelf asset the docs
  * promise at `/__wd/media/<path>` (`<script src="/__wd/media/lib/helper.js">`),
  * so it is still published.
+ *
+ * The publish boundary matches `emitPageAssets`: a hidden (`.`, `-`, `_`) path
+ * segment is private framework input, and a symlink is never followed — its
+ * target lives anywhere on the disk and copying it would publish those bytes
+ * verbatim under `/__wd/media/`.
  * @param {Paths} paths
  * @returns {void}
  */
@@ -1519,6 +1553,7 @@ function emitShelfAssets(paths) {
     if (ext === ".md" || ext === ".wd") continue;
     if ((ext === ".skin" || ext === ".js") && hasColocatedPage(file)) continue;
     const rel = path.relative(paths.shelfRoot, file);
+    if (hasHiddenPathSegment(rel) || fs.lstatSync(file).isSymbolicLink()) continue;
     const folder = ext === ".json" ? "__wd/data" : "__wd/media";
     const out = path.join(paths.distRoot, folder, rel);
     fs.mkdirSync(path.dirname(out), { recursive: true });

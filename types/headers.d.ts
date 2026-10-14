@@ -1,4 +1,18 @@
 /**
+ * The CSP for one route: its base policy (`REACTIVE_CSP`/`STATIC_CSP`) with the
+ * page's `:embed` frame hosts unioned into `frame-src`. The compiler records the
+ * FINAL iframe src of every `:embed` (after the YouTube/Vimeo rewrite), so a
+ * generic embed — a booking widget, a map — is authorized on exactly the pages
+ * that carry it instead of being blocked by the shipped policy. YouTube/Vimeo
+ * embeds dedupe against the base list, so a page whose embeds are all covered
+ * already produces a byte-identical policy, as does a page with no embeds.
+ * @param {boolean} reactive Whether the route ships the reactive runtime.
+ * @param {Iterable<string>} [embedHosts] Origins (`https://app.example.com`) or
+ *   `'self'` for a same-origin embed, collected at compile time.
+ * @returns {string}
+ */
+export function routeCsp(reactive: boolean, embedHosts?: Iterable<string>): string;
+/**
  * The full security-header set for one response, including the CSP variant.
  * @param {boolean} reactive Whether the route ships the reactive runtime.
  * @returns {Record<string, string>}

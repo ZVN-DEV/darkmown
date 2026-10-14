@@ -9,6 +9,7 @@ import { parseFrontmatter } from "../src/compiler.js";
 import {
   BASE_SECURITY_HEADERS,
   REACTIVE_CSP,
+  routeCsp,
   SPECULATION_RULES_HASH,
   SPECULATION_RULES_JSON,
   STATIC_CSP,
@@ -70,6 +71,41 @@ test("CSP pre-authorizes exactly the media/embed targets the framework emits", (
 test("static CSP drops unsafe-eval and keeps inline style for view-transition styles", () => {
   assert.doesNotMatch(STATIC_CSP, /unsafe-eval/);
   assert.match(STATIC_CSP, /style-src 'self' 'unsafe-inline'/);
+});
+
+// ---------------------------------------------------------------------------
+// Per-route frame-src: a page's :embed hosts (collected by the compiler after
+// the YouTube/Vimeo rewrite) union into that route's policy. Pages whose embeds
+// the base list already covers — and pages with no embeds — are byte-identical.
+// ---------------------------------------------------------------------------
+
+test("routeCsp is byte-identical for no hosts and for already-covered hosts", () => {
+  assert.equal(routeCsp(true), REACTIVE_CSP);
+  assert.equal(routeCsp(true, []), REACTIVE_CSP);
+  assert.equal(routeCsp(false, []), STATIC_CSP);
+  // YouTube/Vimeo embeds dedupe against the base frame-src — no change.
+  assert.equal(
+    routeCsp(false, ["https://www.youtube-nocookie.com", "https://player.vimeo.com"]),
+    STATIC_CSP
+  );
+  assert.equal(routeCsp(true, ["https://player.vimeo.com"]), REACTIVE_CSP);
+});
+
+test("routeCsp appends new embed hosts to frame-src (sorted, deduped)", () => {
+  const base = "frame-src https://www.youtube-nocookie.com https://player.vimeo.com";
+  const widened = routeCsp(false, ["https://app.nexhealth.com"]);
+  assert.match(widened, new RegExp(escapeRe(`${base} https://app.nexhealth.com`)));
+  // Every other directive is untouched — the result differs from STATIC_CSP only
+  // inside frame-src.
+  assert.equal(widened.replace(`${base} https://app.nexhealth.com`, base), STATIC_CSP);
+  const two = routeCsp(false, [
+    "https://b.example.com",
+    "https://a.example.com",
+    "https://b.example.com"
+  ]);
+  assert.match(two, new RegExp(escapeRe(`${base} https://a.example.com https://b.example.com`)));
+  // A same-origin embed adds 'self'.
+  assert.match(routeCsp(true, ["'self'"]), new RegExp(escapeRe(`${base} 'self'`)));
 });
 
 // ---------------------------------------------------------------------------
@@ -225,6 +261,68 @@ test("a static route's glob does not shadow a reactive route nested under it", (
   // And the policy the shadowed route resolves to is its own.
   const block = out.split("\n\n").find((b) => b.startsWith("/docs/guide/*\n"));
   assert.match(block, new RegExp(`Content-Security-Policy: ${escapeRe(REACTIVE_CSP)}`));
+});
+
+test("renderCloudflareHeaders gives a reactive route with embed hosts its own block", () => {
+  // A reactive route normally inherits the catch-all policy — but with :embed
+  // hosts its policy differs, so it can no longer inherit: it gets its own
+  // block, exactly like a shadowed nested route.
+  const manifest = [
+    { route: "/", file: "site/pages/index.wd", assets: { skins: [], scripts: [], runtime: true } },
+    {
+      route: "/booking/",
+      file: "site/pages/booking.wd",
+      assets: {
+        skins: [],
+        scripts: ["/__wd/runtime.js"],
+        runtime: true,
+        embedHosts: ["https://app.nexhealth.com"]
+      }
+    }
+  ];
+  const out = renderCloudflareHeaders(manifest);
+
+  assert.match(out, /^\/booking\n {2}Content-Security-Policy:/m);
+  assert.match(out, /^\/booking\/\*\n {2}Content-Security-Policy:/m);
+  const block = out.split("\n\n").find((b) => b.startsWith("/booking/*\n"));
+  assert.match(block, /frame-src [^;]*https:\/\/app\.nexhealth\.com/);
+  // The plain reactive root still inherits the catch-all — no dedicated block.
+  assert.doesNotMatch(out, /^\/\n/m);
+  assert.doesNotMatch(out, /^\/index\.html\n/m);
+});
+
+test("a real build records :embed hosts on the route and unions them into _headers; other routes unchanged", () => {
+  const root = fixture();
+  write(root, "site/pages/index.md", "# Home\n\nStatic.");
+  write(
+    root,
+    "site/pages/booking.wd",
+    '# Book\n\n:embed https://app.nexhealth.com/booking/practice title="Book a visit"\n'
+  );
+  write(root, "site/pages/demo.wd", "# Demo\n\n:embed https://youtu.be/aqz-KE-bpKQ\n");
+  buildSite(root);
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "dist/routes.json"), "utf8"));
+  const booking = manifest.find((entry) => entry.route === "/booking/");
+  assert.deepEqual(booking.assets.embedHosts, ["https://app.nexhealth.com"]);
+  // A YouTube embed IS recorded (the compiler does not know the CSP base list)…
+  const demo = manifest.find((entry) => entry.route === "/demo/");
+  assert.deepEqual(demo.assets.embedHosts, ["https://www.youtube-nocookie.com"]);
+  // …and a no-embed page carries no key at all, keeping its entry as before.
+  const home = manifest.find((entry) => entry.route === "/");
+  assert.equal("embedHosts" in home.assets, false);
+
+  const headers = fs.readFileSync(path.join(root, "dist/_headers"), "utf8");
+  const block = headers.split("\n\n").find((b) => b.startsWith("/booking\n"));
+  assert.match(
+    block,
+    /frame-src https:\/\/www\.youtube-nocookie\.com https:\/\/player\.vimeo\.com https:\/\/app\.nexhealth\.com/
+  );
+  // The YouTube-only page's policy dedupes to the byte-identical base CSP.
+  const demoBlock = headers.split("\n\n").find((b) => b.startsWith("/demo\n"));
+  assert.match(demoBlock, new RegExp(`Content-Security-Policy: ${escapeRe(STATIC_CSP)}`));
+  const homeBlock = headers.split("\n\n").find((b) => b.startsWith("/\n"));
+  assert.match(homeBlock, new RegExp(`Content-Security-Policy: ${escapeRe(STATIC_CSP)}`));
 });
 
 test("a real build's _headers gives a nested reactive route its own block", () => {

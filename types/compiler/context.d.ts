@@ -26,6 +26,12 @@
  *   that opted into scoping (`scoped` first line). The builder emits these with
  *   the scope attribute and runs the unused-selector warning against the stamped
  *   subtree; the HTML stamp uses them to scope the matching page/include subtree.
+ * @property {Set<string>} embedHosts Frame sources (origins like
+ *   `https://app.example.com`, or `'self'` for a same-origin embed) of every
+ *   `:embed` on the page, collected AFTER the YouTube/Vimeo rewrite. The builder
+ *   records them on the route manifest entry so the per-route CSP's `frame-src`
+ *   authorizes exactly the hosts this page frames (see `routeCsp` in
+ *   src/headers.js).
  */
 /**
  * The pagination intent a `@loop … paginate N` records during compile, so the
@@ -410,6 +416,15 @@ export type Assets = {
      * subtree; the HTML stamp uses them to scope the matching page/include subtree.
      */
     scopedSkins: Set<string>;
+    /**
+     * Frame sources (origins like
+     * `https://app.example.com`, or `'self'` for a same-origin embed) of every
+     * `:embed` on the page, collected AFTER the YouTube/Vimeo rewrite. The builder
+     * records them on the route manifest entry so the per-route CSP's `frame-src`
+     * authorizes exactly the hosts this page frames (see `routeCsp` in
+     * src/headers.js).
+     */
+    embedHosts: Set<string>;
 };
 /**
  * The pagination intent a `@loop … paginate N` records during compile, so the

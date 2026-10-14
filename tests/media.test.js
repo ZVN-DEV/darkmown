@@ -88,3 +88,42 @@ test("media and embed directives report a malformed (empty) argument", () => {
   assert.throws(() => compile(`:audio   `), /Malformed :audio/);
   assert.throws(() => compile(`:embed   `), /Malformed :embed/);
 });
+
+// ---------------------------------------------------------------------------
+// CSP frame-src collection: every :embed records the ORIGIN its emitted iframe
+// actually loads (after the YouTube/Vimeo rewrite) on `assets.embedHosts`, so
+// the build can union exactly those hosts into the route's CSP frame-src.
+// ---------------------------------------------------------------------------
+
+test(":embed records the generic embed's origin for the per-route CSP", () => {
+  const doc = compile(`:embed https://app.nexhealth.com/booking/practice?ref=1`);
+  assert.deepEqual([...doc.assets.embedHosts], ["https://app.nexhealth.com"]);
+});
+
+test(":embed records the rewritten YouTube/Vimeo origins (deduped against the base CSP)", () => {
+  const youtube = compile(`:embed https://youtu.be/dQw4w9WgXcQ`);
+  assert.deepEqual([...youtube.assets.embedHosts], ["https://www.youtube-nocookie.com"]);
+  const vimeo = compile(`:embed https://vimeo.com/76979871`);
+  assert.deepEqual([...vimeo.assets.embedHosts], ["https://player.vimeo.com"]);
+});
+
+test(":embed records 'self' for a same-origin (relative) embed", () => {
+  const doc = compile(`:embed /booking/widget.html`);
+  assert.deepEqual([...doc.assets.embedHosts], ["'self'"]);
+});
+
+test("repeated embeds of one origin record it once; a page with no embed records nothing", () => {
+  const doc = compile(`:embed https://app.nexhealth.com/a\n\n:embed https://app.nexhealth.com/b`);
+  assert.deepEqual([...doc.assets.embedHosts], ["https://app.nexhealth.com"]);
+  const plain = compile("# Hi\n\nNo embeds here.");
+  assert.equal(plain.assets.embedHosts.size, 0);
+});
+
+test(":embed with a state-driven or unparseable URL records no host", () => {
+  // A `{ state }` URL is unknowable at compile time (widening that policy is the
+  // app's deploy-config decision); a bare scheme paints as-is and has no origin.
+  const stateDriven = compile(`:embed { widget }`);
+  assert.equal(stateDriven.assets.embedHosts.size, 0);
+  const bare = compile(`:embed https://`);
+  assert.equal(bare.assets.embedHosts.size, 0);
+});

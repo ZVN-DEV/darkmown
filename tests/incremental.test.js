@@ -135,7 +135,7 @@ test("a dev build records per-route deps: page, include, colocated skin, loop da
   const root = site();
   devBuild(root);
   const map = depMap(root);
-  assert.equal(map.version, 2);
+  assert.equal(map.version, 3);
   assert.deepEqual(map.feed, { href: "https://example.com/rss.xml", title: "Home" });
   // The whole-site inputs no per-route dependency graph can see: the origin
   // every canonical URL is built from, and every route's title (which the

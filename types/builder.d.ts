@@ -53,6 +53,12 @@ export function stripRuntimeComments(source: string): string;
  *
  * Clean URLs mean a route like `/docs/` is served at both `/docs` and `/docs/`,
  * so each static route emits a path glob (`/docs`, `/docs/*`) that covers both.
+ *
+ * A page whose `:embed`s frame hosts beyond the base policy (a booking widget,
+ * a map) carries those hosts on its manifest entry (`assets.embedHosts`), and
+ * its block — static or reactive — states the unioned per-route policy
+ * ({@link routeCsp}). A reactive route with embed hosts can no longer inherit
+ * the catch-all, so it always gets its own block.
  * @param {RouteManifestEntry[]} manifest
  * @returns {string}
  */
@@ -68,7 +74,10 @@ export function renderCloudflareHeaders(manifest: RouteManifestEntry[]): string;
  * @typedef {object} RouteManifestEntry
  * @property {string} route Public route path.
  * @property {string} file Source file path, relative to cwd, POSIX-separated.
- * @property {{ skins: string[], scripts: string[], runtime: boolean }} assets
+ * @property {{ skins: string[], scripts: string[], runtime: boolean, embedHosts?: string[] }} assets
+ *   `embedHosts` is present only when the page's `:embed`s frame at least one
+ *   source the base CSP does not already cover — absent keeps a no-embed
+ *   site's routes.json byte-identical.
  */
 /**
  * One source route's record in the dev dependency map (`dist/.wd-dev-deps.json`),
@@ -168,10 +177,16 @@ export type RouteManifestEntry = {
      * Source file path, relative to cwd, POSIX-separated.
      */
     file: string;
+    /**
+     *   `embedHosts` is present only when the page's `:embed`s frame at least one
+     *   source the base CSP does not already cover — absent keeps a no-embed
+     *   site's routes.json byte-identical.
+     */
     assets: {
         skins: string[];
         scripts: string[];
         runtime: boolean;
+        embedHosts?: string[];
     };
 };
 /**

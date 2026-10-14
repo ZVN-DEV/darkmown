@@ -14,6 +14,7 @@ import { parseFrontmatter, resolveSharedSkins, warnLikelyFrontmatter } from "./f
 import { imageSize } from "./image-size.js";
 import {
   collectColocatedAssets,
+  isAllowedInclude,
   scanMarkdownHints,
   scopedSkinFor,
   scopeInfoForSkin,
@@ -408,6 +409,10 @@ function srcOf(tag) {
  * Read an image's intrinsic dimensions from disk, or null when the src is
  * remote/relative/unreadable. Resolution mirrors the asset emit: `/__wd/media/x`
  * comes from the shelf (`site/_`), other absolute paths from `site/pages`.
+ * Containment mirrors the `@include` sandbox ({@link isAllowedInclude}): a src
+ * that resolves OUTSIDE those roots — `![x](/../../anywhere.png)`, or a symlink
+ * pointing out — is treated exactly like a missing image (no dimensions), never
+ * read.
  * @param {string} src
  * @param {Paths} paths
  * @param {import("./reader.js").Reader} reader
@@ -423,6 +428,7 @@ function measureImage(src, paths, reader) {
   } else {
     return null; // page-relative: the source directory is lost after assembly
   }
+  if (!isAllowedInclude(filePath, paths, reader)) return null;
   try {
     // `imageSize` itself never throws (an unsupported or malformed image is just
     // null); the try/catch is for the read, which does throw on a missing file.

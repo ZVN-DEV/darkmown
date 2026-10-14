@@ -39,6 +39,12 @@
  *   that opted into scoping (`scoped` first line). The builder emits these with
  *   the scope attribute and runs the unused-selector warning against the stamped
  *   subtree; the HTML stamp uses them to scope the matching page/include subtree.
+ * @property {Set<string>} embedHosts Frame sources (origins like
+ *   `https://app.example.com`, or `'self'` for a same-origin embed) of every
+ *   `:embed` on the page, collected AFTER the YouTube/Vimeo rewrite. The builder
+ *   records them on the route manifest entry so the per-route CSP's `frame-src`
+ *   authorizes exactly the hosts this page frames (see `routeCsp` in
+ *   src/headers.js).
  */
 
 /**
@@ -303,7 +309,8 @@ export function createCompilation(reader) {
       runtime: false,
       behaviors: new Set(),
       hasCode: false,
-      scopedSkins: new Set()
+      scopedSkins: new Set(),
+      embedHosts: new Set()
     },
     state: new Map(),
     stores: new Set(),

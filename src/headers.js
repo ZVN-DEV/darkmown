@@ -30,7 +30,10 @@
  *   - `data:` favicon and remote images — `img-src 'self' data: https:`.
  *   - `:video`/`:audio` allow relative or `http(s)` sources — `media-src 'self' https:`.
  *   - `:embed` rewrites to exactly the YouTube no-cookie and Vimeo player origins,
- *     so `frame-src` pre-authorizes those two hosts (and nothing else).
+ *     so `frame-src` pre-authorizes those two hosts; a generic `:embed` host
+ *     (a booking widget, a map) is unioned in PER ROUTE at build time (see
+ *     {@link routeCsp}), recorded in routes.json, so only pages that embed a
+ *     host authorize it.
  *   - A native `:form action="/api/…"` POSTs same-origin, so `form-action 'self'`
  *     authorizes it (and blocks a form exfiltrating to a third-party origin). Apps
  *     posting to a remote backend widen this alongside `connect-src`.
@@ -118,6 +121,30 @@ export const REACTIVE_CSP = [SCRIPT_SRC, ...COMMON_CSP_DIRECTIVES].join("; ");
  * @type {string}
  */
 export const STATIC_CSP = [SCRIPT_SRC, ...COMMON_CSP_DIRECTIVES].join("; ");
+
+/**
+ * The CSP for one route: its base policy (`REACTIVE_CSP`/`STATIC_CSP`) with the
+ * page's `:embed` frame hosts unioned into `frame-src`. The compiler records the
+ * FINAL iframe src of every `:embed` (after the YouTube/Vimeo rewrite), so a
+ * generic embed — a booking widget, a map — is authorized on exactly the pages
+ * that carry it instead of being blocked by the shipped policy. YouTube/Vimeo
+ * embeds dedupe against the base list, so a page whose embeds are all covered
+ * already produces a byte-identical policy, as does a page with no embeds.
+ * @param {boolean} reactive Whether the route ships the reactive runtime.
+ * @param {Iterable<string>} [embedHosts] Origins (`https://app.example.com`) or
+ *   `'self'` for a same-origin embed, collected at compile time.
+ * @returns {string}
+ */
+export function routeCsp(reactive, embedHosts = []) {
+  const base = reactive ? REACTIVE_CSP : STATIC_CSP;
+  const hosts = [...new Set(embedHosts)].sort();
+  if (hosts.length === 0) return base;
+  return base.replace(/frame-src ([^;]*)/, (directive, sources) => {
+    const existing = sources.split(/\s+/);
+    const added = hosts.filter((host) => !existing.includes(host));
+    return added.length === 0 ? directive : `frame-src ${sources} ${added.join(" ")}`;
+  });
+}
 
 /**
  * Baseline security headers applied to every HTML response, independent of the

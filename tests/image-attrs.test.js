@@ -141,3 +141,70 @@ test("author-set sizing/loading is never clobbered", () => {
   assert.match(tag, /loading="eager"/);
   assert.doesNotMatch(tag, /loading="lazy"/);
 });
+
+// ---------------------------------------------------------------------------
+// Containment: measuring resolves the src against site/pages (or site/_ for
+// /__wd/media/) and must never READ outside those roots — the same sandbox the
+// @include resolver enforces (WD601). An escaping src behaves exactly like a
+// missing image: no dimensions, no throw, no bytes read.
+// ---------------------------------------------------------------------------
+
+// Creating a symlink needs Developer Mode or elevation on Windows — skip there.
+const noSymlinks = (() => {
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), "wd-symlink-probe-"));
+  try {
+    fs.symlinkSync(path.join(probe, "target"), path.join(probe, "link"));
+    return false;
+  } catch {
+    return "symlinks are not creatable on this platform";
+  } finally {
+    fs.rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
+test("an image src escaping site/pages via ../ is never measured", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-imgattrs-escape-"));
+  try {
+    // A REAL, measurable image outside the sandbox — if the measurer reads it,
+    // its dimensions leak into the page as proof.
+    fs.writeFileSync(path.join(root, "secret.png"), makePng(333, 111));
+    const file = path.join(root, "site/pages/index.wd");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "![x](/../../secret.png)");
+    const html = compilePage(file, createPaths(root)).html;
+    const tag = img(html, 0);
+    assert.doesNotMatch(tag, /width=/, "an escaping src is never read");
+    assert.doesNotMatch(tag, /height=/);
+    assert.match(tag, /decoding="async"/, "still gets the safe attrs");
+    // The sibling-prefix case too: site/pages-secret is not site/pages.
+    fs.mkdirSync(path.join(root, "site/pages-secret"), { recursive: true });
+    fs.writeFileSync(path.join(root, "site/pages-secret/sibling.png"), makePng(222, 100));
+    fs.writeFileSync(file, "![x](/../pages-secret/sibling.png)");
+    const html2 = compilePage(file, createPaths(root)).html;
+    assert.doesNotMatch(img(html2, 0), /width=/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a symlinked image pointing outside site/pages is never measured", {
+  skip: noSymlinks
+}, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-imgattrs-symlink-"));
+  try {
+    fs.writeFileSync(path.join(root, "secret.png"), makePng(333, 111));
+    const pagesDir = path.join(root, "site/pages");
+    fs.mkdirSync(pagesDir, { recursive: true });
+    // Lexically inside site/pages; canonically outside — the include sandbox's
+    // canonical check is what catches it.
+    fs.symlinkSync(path.join(root, "secret.png"), path.join(pagesDir, "link.png"));
+    const file = path.join(pagesDir, "index.wd");
+    fs.writeFileSync(file, "![x](/link.png)");
+    const html = compilePage(file, createPaths(root)).html;
+    const tag = img(html, 0);
+    assert.doesNotMatch(tag, /width=/, "the symlink's target is never read");
+    assert.doesNotMatch(tag, /height=/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

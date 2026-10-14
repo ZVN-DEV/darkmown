@@ -2,14 +2,16 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import zlib from "node:zlib";
-import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
+import { BASE_SECURITY_HEADERS, REACTIVE_CSP, routeCsp } from "./headers.js";
 
 /**
  * The security headers (including the right CSP variant) for an HTML response.
  * Mirrors what production ships. Since 2.1 both variants are eval-free (the
  * reactive runtime walks a validated AST, not `new Function`), so a reactive and a
- * static route resolve to the same CSP — the per-route selection is kept for parity
- * with the `_headers` / `vercel.json` structure the same build writes. Anything not
+ * static route resolve to the same base CSP — the per-route selection is kept for
+ * parity with the `_headers` / `vercel.json` structure the same build writes, and
+ * it is what lets a route's own `:embed` hosts (recorded on its manifest entry as
+ * `assets.embedHosts`) widen `frame-src` for exactly that route. Anything not
  * found in `routes.json` (an unknown route, a 404, a missing manifest) falls back
  * to the reactive CSP, exactly like the production `_headers` catch-all block.
  * @param {string} distRoot Absolute path to the build output directory.
@@ -17,9 +19,12 @@ import { BASE_SECURITY_HEADERS, REACTIVE_CSP, STATIC_CSP } from "./headers.js";
  * @returns {Record<string, string>}
  */
 function htmlSecurityHeaders(distRoot, url) {
+  const entry = routeEntry(distRoot, routeOf(url));
   return {
     ...BASE_SECURITY_HEADERS,
-    "Content-Security-Policy": routeIsReactive(distRoot, routeOf(url)) ? REACTIVE_CSP : STATIC_CSP
+    "Content-Security-Policy": entry
+      ? routeCsp(Boolean(entry.assets?.runtime), entry.assets?.embedHosts ?? [])
+      : REACTIVE_CSP
   };
 }
 
@@ -43,24 +48,23 @@ function routeOf(url) {
 }
 
 /**
- * Whether the route ships the reactive runtime, per the build's `routes.json`.
- * Defaults to `true` (reactive) when the route is absent or the manifest can't be
- * read — matching the production `_headers` catch-all, so an unknown route is
- * never accidentally served the stricter policy.
+ * The route's own manifest entry from the build's `routes.json`, or null when
+ * the route is absent or the manifest can't be read — in which case the caller
+ * falls back to the reactive CSP, matching the production `_headers` catch-all,
+ * so an unknown route is never accidentally served the stricter policy.
  * @param {string} distRoot
  * @param {string | null} route
- * @returns {boolean}
+ * @returns {{ route: string, assets?: { runtime?: boolean, embedHosts?: string[] } } | null}
  */
-function routeIsReactive(distRoot, route) {
-  if (!route) return true;
+function routeEntry(distRoot, route) {
+  if (!route) return null;
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(distRoot, "routes.json"), "utf8"));
-    const entry = manifest.find((/** @type {{ route: string }} */ e) => e.route === route);
-    if (entry) return Boolean(entry.assets?.runtime);
+    return manifest.find((/** @type {{ route: string }} */ e) => e.route === route) ?? null;
   } catch {
     /* no/unreadable manifest → reactive default (the catch-all policy) */
+    return null;
   }
-  return true;
 }
 
 /**
@@ -256,6 +260,10 @@ export function resolvePublicFile(distRoot, url) {
   } catch {
     return null;
   }
+  // A decoded NUL (%00) is a valid string here but every fs call on the
+  // resulting path throws ERR_INVALID_ARG_VALUE out of the request handler,
+  // killing the server. It can never name a built file, so it is a miss.
+  if (cleanUrl.includes("\0")) return null;
   const base = cleanUrl.startsWith("/__wd/")
     ? cleanUrl
     : path.join(cleanUrl, path.extname(cleanUrl) ? "" : "index.html");

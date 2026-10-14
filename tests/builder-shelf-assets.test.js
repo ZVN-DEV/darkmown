@@ -57,3 +57,105 @@ test("a .skin beside a .md include is colocated too", () => {
   buildSite(root);
   assert.ok(!fs.existsSync(path.join(root, "dist/__wd/media/note.skin")));
 });
+
+// ---------------------------------------------------------------------------
+// Publish boundary: the shelf mirrors the page-asset rules (emitPageAssets) —
+// a hidden (`.`, `-`, `_`) path segment is private framework input, and a
+// symlink is never followed. Before this, `site/_/.env.backup` and a symlink
+// pointing anywhere on the disk both published their bytes to /__wd/media/.
+// ---------------------------------------------------------------------------
+
+// Creating a symlink needs Developer Mode or elevation on Windows, so the
+// symlink tests skip where the OS refuses rather than failing the suite.
+const noSymlinks = (() => {
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), "wd-symlink-probe-"));
+  try {
+    fs.symlinkSync(path.join(probe, "target"), path.join(probe, "link"));
+    return false;
+  } catch {
+    return "symlinks are not creatable on this platform";
+  } finally {
+    fs.rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
+/** Run `fn` with console.warn swallowed; returns its return value. */
+function quiet(fn) {
+  const original = console.warn;
+  console.warn = () => {};
+  try {
+    return fn();
+  } finally {
+    console.warn = original;
+  }
+}
+
+test("hidden shelf files (.env.backup, -draft/, _private/) are never published", () => {
+  const root = project();
+  write(root, "site/_/.env.backup", "SECRET_KEY=1\n");
+  write(root, "site/_/-draft/notes.txt", "draft\n");
+  write(root, "site/_/_private/internal.svg", "<svg/>\n");
+  buildSite(root);
+  const media = path.join(root, "dist/__wd/media");
+  assert.ok(!fs.existsSync(path.join(media, ".env.backup")), "dotfile is private");
+  assert.ok(!fs.existsSync(path.join(media, "-draft/notes.txt")), "dash segment is private");
+  assert.ok(
+    !fs.existsSync(path.join(media, "_private/internal.svg")),
+    "underscore segment is private"
+  );
+  // The public shelf files still publish.
+  assert.ok(fs.existsSync(path.join(media, "logo.svg")));
+});
+
+test("a symlinked shelf asset does not publish its target's bytes", { skip: noSymlinks }, () => {
+  const root = project();
+  write(root, "outside-secret.txt", "TOP SECRET\n");
+  fs.symlinkSync(path.join(root, "outside-secret.txt"), path.join(root, "site/_/leaked.txt"));
+  buildSite(root);
+  const out = path.join(root, "dist/__wd/media/leaked.txt");
+  assert.ok(!fs.existsSync(out), "the symlink is skipped, its target never copied");
+});
+
+test("incremental builds never re-copy a symlinked or hidden shelf asset", {
+  skip: noSymlinks
+}, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-shelf-assets-incremental-"));
+  write(root, "site/pages/index.md", "---\ntitle: Home\n---\n\n# Home\n");
+  // A shelf JSON symlinked to an in-shelf target is a legitimate @loop source
+  // (the include sandbox allows in-sandbox symlinks), so it lands in the dep
+  // map and reaches copyChangedAsset on change — the publish side must still
+  // refuse it, exactly like the full build's sweep.
+  write(root, "site/_/real.json", JSON.stringify([{ name: "ok" }]));
+  fs.symlinkSync(path.join(root, "site/_/real.json"), path.join(root, "site/_/linked.json"));
+  write(root, "site/pages/linked.wd", "@loop /linked.json into row\n- { row.name }\n@endloop\n");
+  // A hidden shelf path is readable as a loop source but never published.
+  write(root, "site/_/-hidden/data.json", JSON.stringify([{ name: "hidden" }]));
+  write(
+    root,
+    "site/pages/hidden.wd",
+    "@loop /-hidden/data.json into row\n- { row.name }\n@endloop\n"
+  );
+
+  quiet(() => buildSite(root, { depMap: true }));
+  assert.ok(
+    !fs.existsSync(path.join(root, "dist/__wd/data/linked.json")),
+    "full build skips the symlink"
+  );
+  assert.ok(
+    !fs.existsSync(path.join(root, "dist/__wd/data/-hidden/data.json")),
+    "full build skips hidden paths"
+  );
+
+  for (const changed of ["site/_/linked.json", "site/_/-hidden/data.json"]) {
+    const result = quiet(() => buildSite(root, { changed: [changed] }));
+    assert.ok(result.incremental, `${changed} stays on the incremental path (it is a known dep)`);
+  }
+  assert.ok(
+    !fs.existsSync(path.join(root, "dist/__wd/data/linked.json")),
+    "incremental re-copy refused the symlink"
+  );
+  assert.ok(
+    !fs.existsSync(path.join(root, "dist/__wd/data/-hidden/data.json")),
+    "incremental re-copy refused the hidden path"
+  );
+});

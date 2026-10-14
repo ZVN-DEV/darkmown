@@ -142,3 +142,36 @@ test("generated cloudflare worker routes /api/* and falls through to ASSETS", as
   assert.equal(await stat.text(), "STATIC");
   assert.deepEqual(assetsCalls, ["/about/"]);
 });
+
+// A throwing handler must not leak its error message to the client — a message
+// can carry internals (paths, query text, connection strings). The worker logs
+// the real error server-side (console.error lands in the host's logs) and
+// answers a generic 500. (Dev keeps the message — src/api-runner.js is the
+// local surface where the developer IS the audience.)
+test("generated cloudflare worker answers a generic 500 and logs the real error server-side", async () => {
+  const root = project({
+    "boom.js": "export default () => { throw new Error('connection to db at 10.0.0.4 failed'); }"
+  });
+  buildSite(root, { target: "cloudflare" });
+  const workerUrl = pathToFileURL(path.join(root, "dist/_worker.js/index.js"));
+  const worker = (await import(workerUrl.href)).default;
+
+  const logged = [];
+  const original = console.error;
+  console.error = (...args) => logged.push(args);
+  let response;
+  try {
+    response = await worker.fetch(
+      new Request("https://x/api/boom"),
+      { ASSETS: { fetch: () => new Response("STATIC") } },
+      {}
+    );
+  } finally {
+    console.error = original;
+  }
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { ok: false, error: "Internal error" });
+  assert.equal(logged.length, 1, "the real error is logged server-side");
+  assert.match(String(logged[0][0]), /10\.0\.0\.4/);
+});

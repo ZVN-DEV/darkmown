@@ -175,6 +175,7 @@ export function handleEmbed(line, ctx, index) {
   const sizing = embedSizing(attrs, ctx, index);
   const allow = embedAllow(attrs, ctx, index);
   const { url, label } = resolveEmbed(raw, ctx);
+  recordEmbedHost(ctx, url);
   const title = attrs.get("title") || "";
   const iframe =
     `<iframe src="${escapeHtml(url)}" title="${escapeHtml(title || label)}" loading="lazy" ` +
@@ -235,6 +236,30 @@ function embedAllow(attrs, ctx, index) {
       );
   }
   return tokens.join("; ");
+}
+
+/**
+ * Record the frame source the emitted iframe actually loads, so the builder can
+ * union it into this route's CSP `frame-src`. An absolute http(s) URL contributes
+ * its origin; a relative URL frames the page's own origin, so it contributes
+ * `'self'`. A `{ state }`-driven URL is unknowable at compile time and records
+ * nothing (widening that policy is the app's deploy-config decision, exactly
+ * like a remote `:fetch` target widening `connect-src`).
+ * @param {Ctx} ctx
+ * @param {string} url The FINAL iframe src (post YouTube/Vimeo rewrite).
+ * @returns {void}
+ */
+function recordEmbedHost(ctx, url) {
+  if (url.startsWith("{")) return;
+  if (!/^https?:\/\//i.test(url)) {
+    ctx.comp.assets.embedHosts.add("'self'");
+    return;
+  }
+  try {
+    ctx.comp.assets.embedHosts.add(new URL(url).origin);
+  } catch {
+    /* a malformed-but-scheme-valid URL paints as-is; nothing to authorize */
+  }
 }
 
 /**

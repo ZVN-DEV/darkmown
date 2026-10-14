@@ -4,7 +4,8 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { contentType, serve } from "../src/statics.js";
+import { STATIC_CSP } from "../src/headers.js";
+import { contentType, resolvePublicFile, serve } from "../src/statics.js";
 
 test("contentType maps known extensions and defaults unknown ones to octet-stream", () => {
   assert.equal(contentType("/dist/__wd/media/logo.svg"), "image/svg+xml");
@@ -152,6 +153,73 @@ test("serve sets security headers on the 404 response", () => {
     assert.equal(captured.res.headers["Referrer-Policy"], "strict-origin-when-cross-origin");
     assert.equal(captured.res.headers["X-Frame-Options"], "SAMEORIGIN");
     assert.match(captured.res.headers["Content-Security-Policy"], /default-src 'self'/);
+  } finally {
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
+});
+
+test("serve answers 404 for a URL carrying a NUL byte instead of crashing", async () => {
+  // `decodeURIComponent("/%00")` SUCCEEDS — it yields "\0" — and every fs call
+  // on the resulting path throws ERR_INVALID_ARG_VALUE out of the request
+  // handler, which took the whole `darkmown serve` process down. A NUL can
+  // never name a built file, so it resolves as a miss.
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), "wd-serve-nul-"));
+  try {
+    fs.writeFileSync(path.join(dist, "404.html"), "<h1>Custom not found</h1>");
+    assert.equal(resolvePublicFile(dist, "/%00"), null);
+    assert.equal(resolvePublicFile(dist, "/%00/index.html"), null);
+    assert.equal(resolvePublicFile(dist, "/%2e%2e/%00secret.txt"), null);
+
+    const res = await request(dist, "/%00");
+    assert.equal(res.statusCode, 404);
+    assert.match(res.body, /Custom not found/);
+
+    // Traversal containment is intact alongside the NUL guard: an encoded `..`
+    // URL never serves a file outside dist (it resolves to a miss).
+    const traversed = await request(dist, "/%2e%2e/%2e%2e/etc/passwd.txt");
+    assert.equal(traversed.statusCode, 404);
+  } finally {
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
+});
+
+test("serve unions a route's :embed hosts into frame-src, per routes.json", async () => {
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), "wd-serve-embedcsp-"));
+  try {
+    fs.mkdirSync(path.join(dist, "booking"), { recursive: true });
+    fs.writeFileSync(path.join(dist, "index.html"), "<h1>Home</h1>");
+    fs.writeFileSync(path.join(dist, "booking", "index.html"), "<h1>Book</h1>");
+    fs.writeFileSync(
+      path.join(dist, "routes.json"),
+      JSON.stringify([
+        {
+          route: "/",
+          file: "site/pages/index.md",
+          assets: { skins: [], scripts: [], runtime: false }
+        },
+        {
+          route: "/booking/",
+          file: "site/pages/booking.wd",
+          assets: {
+            skins: [],
+            scripts: [],
+            runtime: false,
+            embedHosts: ["https://app.nexhealth.com"]
+          }
+        }
+      ])
+    );
+
+    const embedRes = await request(dist, "/booking/");
+    assert.equal(embedRes.statusCode, 200);
+    assert.match(
+      embedRes.headers["content-security-policy"],
+      /frame-src https:\/\/www\.youtube-nocookie\.com https:\/\/player\.vimeo\.com https:\/\/app\.nexhealth\.com/
+    );
+
+    // A no-embed route keeps the byte-identical base policy.
+    const homeRes = await request(dist, "/");
+    assert.equal(homeRes.headers["content-security-policy"], STATIC_CSP);
   } finally {
     fs.rmSync(dist, { recursive: true, force: true });
   }
