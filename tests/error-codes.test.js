@@ -98,7 +98,9 @@ const NOT_SCANNED = {
 // so there is nothing for an author to look up.
 const INTERNAL_INVARIANTS = {
   "compiler/expr-ast.js": "re-parses the compiler's own already-validated expression output",
-  "compiler/reader.js": "guards the host Reader contract behind compileFromMemory"
+  "compiler/reader.js": "guards the host Reader contract behind compileFromMemory",
+  "font-subset-worker.js":
+    "child-process wasm worker: a throw there signals a toolchain/font failure, is caught per job, and reaches the author only as a hint naming the file"
 };
 
 // Author-facing throws that are NOT yet routed through `wdError`, with the code

@@ -604,7 +604,7 @@ Authoring:
  * An incremental (dev `--changed`) build reports what it actually rebuilt —
  * `Rebuilt 2 of 14 routes (/blog/, /blog/hello/) into dist` — naming the routes
  * when there are few enough to read.
- * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null }, incremental?: { rebuilt: string[], total: number }, images?: { generated: number, cached: number, unavailable: boolean } }} result
+ * @param {{ routes: unknown[], feeds: { sitemap: number | null, rss: number | null }, incremental?: { rebuilt: string[], total: number }, images?: { generated: number, cached: number, unavailable: boolean }, fonts?: { subsetted: number, cached: number, unavailable: boolean } }} result
  * @param {string} relativeRoot `dist` relative to cwd, for the message tail.
  * @returns {string}
  */
@@ -622,6 +622,10 @@ export function buildSummary(result, relativeRoot) {
     parts.push(
       `image variants (${result.images.generated} generated, ${result.images.cached} cached)`
     );
+  }
+  // Font post-pass (2.10.0): same rule — report only when subsets materialized.
+  if (result.fonts && result.fonts.subsetted + result.fonts.cached > 0) {
+    parts.push(`fonts (${result.fonts.subsetted} subsetted, ${result.fonts.cached} cached)`);
   }
   return `${parts.join(", ")} into ${relativeRoot}`;
 }

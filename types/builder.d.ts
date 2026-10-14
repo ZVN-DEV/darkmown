@@ -116,6 +116,15 @@ export type BuildResult = {
         cached: number;
         unavailable: boolean;
     };
+    /**
+     *   Font-subset post-pass counts (2.10.0): freshly subsetted, cache-served, and
+     *   whether harfbuzzjs/wawoff2 could not be loaded at all.
+     */
+    fonts: {
+        subsetted: number;
+        cached: number;
+        unavailable: boolean;
+    };
     incremental?: {
         changed: string[];
         rebuilt: string[];

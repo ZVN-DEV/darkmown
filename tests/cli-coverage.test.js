@@ -235,6 +235,26 @@ test("buildSummary reports image variants only when the pre-pass materialized an
   );
 });
 
+test("buildSummary reports font subsets only when the post-pass materialized any", () => {
+  const feeds = { sitemap: null, rss: null };
+  assert.equal(
+    buildSummary(
+      { routes: new Array(2), feeds, fonts: { subsetted: 2, cached: 1, unavailable: false } },
+      "dist"
+    ),
+    "Built 2 routes, fonts (2 subsetted, 1 cached) into dist"
+  );
+  // Nothing subsetted and nothing cached (toolchain absent, or no @font-face):
+  // the summary stays silent — the hint already said what there was to say.
+  assert.equal(
+    buildSummary(
+      { routes: new Array(2), feeds, fonts: { subsetted: 0, cached: 0, unavailable: true } },
+      "dist"
+    ),
+    "Built 2 routes into dist"
+  );
+});
+
 test("buildSummary reports an incremental rebuild, naming routes only when few", () => {
   const feeds = { sitemap: 14, rss: 6 };
   assert.equal(

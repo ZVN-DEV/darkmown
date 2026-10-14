@@ -19,6 +19,7 @@ import {
   sitemapDate,
   sitemapDocuments
 } from "./feeds.js";
+import { subsetFonts } from "./font-subset.js";
 import { BASE_SECURITY_HEADERS, REACTIVE_CSP, routeCsp } from "./headers.js";
 import { HIGHLIGHT_CSS } from "./highlight.js";
 import { generateImageVariants } from "./image-variants.js";
@@ -114,6 +115,9 @@ export function buildSite(cwd = process.cwd(), options = {}) {
  * @property {{ generated: number, cached: number, unavailable: boolean }} images
  *   Responsive-variant pre-pass counts (2.9.0): freshly resized, cache-served,
  *   and whether sharp could not be loaded at all.
+ * @property {{ subsetted: number, cached: number, unavailable: boolean }} fonts
+ *   Font-subset post-pass counts (2.10.0): freshly subsetted, cache-served, and
+ *   whether harfbuzzjs/wawoff2 could not be loaded at all.
  * @property {{ changed: string[], rebuilt: string[], total: number }} [incremental]
  */
 
@@ -205,6 +209,13 @@ function buildFull(cwd, paths, options) {
   // sees every emitted route/framework file already on disk.
   emitPageAssets(paths);
 
+  // Font subsetting (2.10.0): a post-pass over the emitted dist — every local
+  // font an emitted `@font-face` references is subsetted to the site's charset
+  // as `<name>-subset.woff2` beside the original, and the dist CSS is rewritten
+  // to lead with it. With the optional harfbuzzjs/wawoff2 toolchain absent (or
+  // everything cache-served) this is cheap and never fails the build.
+  const fonts = subsetFonts(paths, { quiet: options.quietFeedHints });
+
   // Surface api/ routing footguns on every build (target-independent): two files
   // that resolve to the same /api path mean one is silently unreachable.
   const apiDir = path.join(cwd, "api");
@@ -221,7 +232,8 @@ function buildFull(cwd, paths, options) {
     routes: manifest,
     distRoot: paths.distRoot,
     feeds,
-    images: { generated: images.generated, cached: images.cached, unavailable: images.unavailable }
+    images: { generated: images.generated, cached: images.cached, unavailable: images.unavailable },
+    fonts: { subsetted: fonts.subsetted, cached: fonts.cached, unavailable: fonts.unavailable }
   };
 }
 
@@ -369,11 +381,17 @@ function buildIncremental(cwd, paths, options, changed) {
   const feeds = emitFeeds([...routes, ...extraRoutes], identity, paths, options.quietFeedHints);
   writeDepMap(paths, feedLink, siteInputs(identity, titles), map.routes);
 
+  // The font post-pass re-scans the whole emitted dist (all cache hits when
+  // neither the fonts nor the content changed), so a partially rebuilt route
+  // leaves the rewritten CSS and the subset files whole-site consistent.
+  const fonts = subsetFonts(paths, { quiet: options.quietFeedHints });
+
   return {
     routes: manifest,
     distRoot: paths.distRoot,
     feeds,
     images: { generated: images.generated, cached: images.cached, unavailable: images.unavailable },
+    fonts: { subsetted: fonts.subsetted, cached: fonts.cached, unavailable: fonts.unavailable },
     incremental: { changed, rebuilt, total: routes.length }
   };
 }
