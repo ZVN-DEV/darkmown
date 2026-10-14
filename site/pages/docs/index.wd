@@ -117,6 +117,44 @@ A directive is a whole line, written flush against the left margin. Four rules c
 - `with title={ feature.title }` passes a value already in scope — including whole objects.
 - Includes inside a loop inherit the loop value automatically.
 
+An include declares fallbacks for its `with` arguments in its own frontmatter with `defaults: [title="Untitled", cta="Learn more"]`. The caller's `with` value always wins; the default fills in when the caller is silent; an argument with neither renders as literal `{ title }` text, as before. Values are strings (frontmatter is string-typed), entries split on top-level commas only (so `cta="Learn more, today"` works), and a malformed `defaults:` is `[WD613]`.
+
+The block form turns an include into a wrapper component. The lines between the call and `@endinclude` compile once in the **caller's** scope (its `:state`, and the loop item inside a `@loop`) and land wherever the include puts a standalone `{ children }` line:
+
+```wd
+@include /card.wd with title="Pricing"
+
+Everything in **this paragraph** is the card body.
+
+@endinclude
+```
+
+with `site/_/card.wd`:
+
+```wd
+---
+defaults: [title="Untitled"]
+---
+
+::: card
+## { title }
+
+{ children }
+:::
+```
+
+The slot is a standalone line only (mid-paragraph or fenced `{ children }` stays literal; on a top-level page it is literal too; a `.md` include cannot host one). Called without a block, the slot renders empty; a block given to an include that never uses `{ children }` is dropped with a build warning. `@endinclude` closes the nearest preceding unpaired `@include`, so an inline `@include` written between opener and closer consumes the pairing; one level of block nesting is supported (deeper is `[WD616]`), and a stray closer is `[WD614]`. There is deliberately no unclosed-block error: an unpaired opener is the inline form, and the inline form must stay legal. Per-row components in a loop are the payoff, and stay zero-JS over a static source:
+
+```wd
+@loop /products.json into product
+@include /card.wd with title={ product.name }
+
+Price: { product.price | money }
+
+@endinclude
+@endloop
+```
+
 ## Loops
 
 `@loop <things> into <thing>` is the only loop. The body is normal Markdown (or more directives) and repeats once per row:
@@ -862,6 +900,8 @@ Two CSS at-rules compile as self-contained blocks in a `.skin`, because their in
 
 `@font-face` takes plain declarations, several blocks per skin allowed. `@keyframes <name>` requires a plain identifier; each indented child is a keyframe selector (`from`, `to`, a percentage, or a comma list) with its declarations one level deeper, and anything else is a compile error, so a keyframe selector is never misread as a declaration. Aliases and `$token` refs work inside both, both can nest under an `@media` line (the home for `prefers-reduced-motion` animation guards), and both stay **global** in a `scoped` skin, same as `tokens` blocks.
 
+**Build-time font subsetting.** With the wasm toolchain installed (`npm i -D harfbuzzjs wawoff2`, both optional dependencies), a post-pass subsets every project-local `.ttf`/`.otf`/`.woff` referenced by an `@font-face src url(...)` to the site's character set (every code point in the emitted HTML, plus a base set of ASCII, Latin-1, punctuation, arrows, and ★ ☆ ✓ ✕ ✗), encodes it as woff2, emits `<name>-subset.woff2` beside the original, and rewrites the dist CSS so `src:` lists the subset first; the source `.skin` is never touched, and layout features and variable axes survive. Without the toolchain the build is unchanged plus one hint per build, a font that fails to parse ships as-is with its own hint, and the build never fails over a font. Subsets cache in `node_modules/.cache/darkmown-fonts/` keyed by font and charset hashes, and the CSS rewrite is idempotent, so incremental dev builds are safe. The build summary reports `fonts (3 subsetted, 0 cached)` when the post-pass did work.
+
 ## Inline attributes
 
 A trailing `{.class .class #id}` attaches classes or an id to the inline element directly before it, most often to style a link as a button without a wrapper:
@@ -1047,7 +1087,7 @@ Builds emit security response headers, so a deployed site gets sane defaults wit
 - **`X-Content-Type-Options: nosniff`**, a **`Referrer-Policy`**, and a **`frame-ancestors`** directive (clickjacking protection) on every page.
 - A raw inline `<script>` you write into an `html: true` page is blocked by that policy. Put it in a colocated `.js` file (same-origin, allowed by `'self'`) or widen `script-src` deliberately.
 - Calling another host with `:fetch` or `:form action=`? Widen `connect-src` (and `form-action` for a native form POST) in your deploy config. It is not derived from your page sources.
-- The two embed origins (`youtube-nocookie.com`, `player.vimeo.com`) and `media-src 'self' https:` are pre-authorized, so `:embed` and remote media work out of the box.
+- The two built-in embed origins (`youtube-nocookie.com`, `player.vimeo.com`) are pre-authorized on every page, and any other `:embed` host is unioned into `frame-src` for exactly the pages that embed it, so a third-party booking or checkout iframe works under the shipped headers. `media-src 'self' https:` is unchanged, so `:embed` and remote media work out of the box. The per-route union ships in Cloudflare's `dist/_headers` and is honored by `darkmown serve`; Vercel reads `vercel.json` before the build, so on Vercel you widen `frame-src` in your own `vercel.json` for a non-YouTube/Vimeo host.
 
 ## Limits
 
@@ -1073,7 +1113,7 @@ Darkmown is small on purpose. Here is what it deliberately refuses and what it g
 - **Reactive rows cannot fill a Markdown table.** A reactive row is cloned into a `<div>`, which is not a legal child of `<table>`, so `[WD191]` refuses it. Static loops fill tables fine; for reactive rows, build them from containers (`::: trow` / `::: td`) and style them as a table.
 - **No i18n beyond `lang:`.** No `hreflang`, no message catalog, no ambient locale, no locale routing. A multilingual site means duplicating the tree per locale.
 - **Every framework asset URL is absolute** (`/__wd/...`), so a Darkmown site cannot be mounted at a subpath. It is all-or-nothing per origin.
-- **Includes are macros, not components.** No children, no slots, no default arguments, and a missing argument renders `{ title }` literally rather than erroring.
+- **Includes are macros, not components.** One slot (`{ children }`), string-typed `defaults:` fallbacks, and no props interface beyond `with`; a missing argument with no default still renders `{ title }` literally rather than erroring.
 - **No `darkmown test`.** There is no built-in way to assert your own site's behavior. Use [`compileFromMemory`](#programmatic-compile-compilefrommemory) or a browser test runner.
 
 **Migrating out is easy, and that is on purpose.** `dist/` is portable static HTML plus one runtime file of ~6.6 KB gzipped. No server to port, no proprietary component format, no framework baked into the output. Point any host at the folder, or hand it to whatever you move to next, and the site keeps working.

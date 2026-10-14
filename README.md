@@ -40,7 +40,7 @@ no install and no build step.
 **On this page**
 
 - [Quick start](#quick-start) · [Showcase](#showcase) · [Benchmarks](#benchmarks) · [Working from this repo](#working-from-this-repo) · [Commands](#commands)
-- **Authoring:** [Authoring model](#authoring-model) · [Directive lines](#directive-lines) · [Interpolation](#interpolation) · [Frontmatter](#frontmatter) · [Static assets](#static-assets) · [SEO & feeds](#seo--feeds-sitemap-rss-robots) · [Loops](#loops) · [Content collections](#content-collections) · [Sections](#sections)
+- **Authoring:** [Authoring model](#authoring-model) · [Directive lines](#directive-lines) · [Includes](#includes) · [Interpolation](#interpolation) · [Frontmatter](#frontmatter) · [Static assets](#static-assets) · [SEO & feeds](#seo--feeds-sitemap-rss-robots) · [Loops](#loops) · [Content collections](#content-collections) · [Sections](#sections)
 - **Reactivity:** [Reactive directives](#reactive-directives) · [Fetching data](#fetching-data) · [Global state](#global-state--store) · [URL as state](#url-as-state-from-url) · [Forms and persistence](#forms-and-persistence) · [Backends & deploy](#backends--deploy) · [Interactions](#interactions--slider-sortable-carousel)
 - **Presentation:** [Inline attributes](#inline-attributes) · [Media](#media--video-audio-embed) · [Syntax highlighting](#syntax-highlighting) · [Dark mode](#dark-mode--tokens-dark) · [Scoped styles](#scoped-styles--scoped) · [Skin at-rules](#skin-at-rules-font-face-and-keyframes)
 - **Extending:** [The escape hatch](#the-escape-hatch) · [Programmatic compile](#programmatic-compile--compilefrommemory) · [Compile error codes](#compile-error-codes) · [AI authoring](#ai-authoring) · [Editor support](#editor-support)
@@ -107,6 +107,79 @@ A directive is a whole line, written flush against the left margin. Four rules c
 - **A bare keyword is an error.** A line that is exactly `:state`, `:button`, `@loop`, or any other directive that needs arguments used to render as literal text with no warning at all. It now reaches that directive's own handler and fails with that directive's coded message and `Use:` hint, so `:state` alone gives `[WD201]` and `:button` alone gives `[WD301]`. Three keywords stay valid bare, because they mean something bare: `:::` opens or closes a container, `:theme` declares the theme store, and `:carousel` opens a carousel with no autoplay.
 - **To show a directive name as text, escape it.** `\:fetch` renders the literal text `:fetch`. That is the ordinary CommonMark backslash escape, so it works anywhere Markdown does, including inside a container.
 - **There is no comment syntax.** A trailing `#` or arrow note on a directive line is parsed as part of the value, not as a comment. `html: true  ← required` seeds the *string* `true  ← required`, which compiles clean while doing the opposite of what it looks like. Put explanations in the prose around the line.
+
+## Includes
+
+`@include /nav.wd` inlines a file from the `site/_/` shelf (or `site/pages/`); `@include ./-note.wd` resolves beside the current page. Arguments pass Liquid-style: `@include /card.wd with title="Hello" count=3`, and `with title={ feature.title }` passes a value already in scope, including whole objects. Includes inside a loop inherit the loop value automatically. Includes are compile-time macros: they expand at build time, so a static page stays static and there is no runtime marker.
+
+### Default values for include arguments
+
+An include declares fallbacks for its `with` arguments in its own frontmatter, so every optional argument has a value even when the caller passes nothing:
+
+```wd
+---
+defaults: [title="Untitled", cta="Learn more"]
+---
+
+::: banner
+## { title }
+
+[Read the docs](/docs/) — { cta }
+:::
+```
+
+- A caller's `with title="…"` always wins; the default fills in only when the caller is silent. An argument with neither a caller value nor a default keeps the old behavior: it renders as literal `{ title }` text.
+- Values are strings, because frontmatter is string-typed: `count="3"` is the string `"3"`, while a caller can still pass a typed `with count=5` and it wins as-is.
+- Entries split on top-level commas only, so a value may contain a comma (`cta="Learn more, today"`); single quotes work too (`cta='Go'`).
+- Defaults scope like `with` arguments: they apply inside the include that declares them, including includes nested inside its body.
+- A malformed `defaults:` (not an inline array, or an entry that is not `name="value"`) is `[WD613]`.
+
+### The children slot: `@include … @endinclude`
+
+The block form turns an include into a real wrapper component. The lines between the call and `@endinclude` compile once, in the **caller's** context (its scope, its `:state`, and the loop item when the call sits inside a `@loop`), and land wherever the include puts a standalone `{ children }` line:
+
+```wd
+@include /card.wd with title="Pricing"
+
+Everything in **this paragraph** is the card body.
+
+@endinclude
+```
+
+with `site/_/card.wd`:
+
+```wd
+---
+defaults: [title="Untitled"]
+---
+
+::: card
+## { title }
+
+{ children }
+:::
+```
+
+Rules worth knowing:
+
+- **Caller scope, build time.** Children lines compile as if written where the call is, so `Price: { product.price | money }` inside a loop's block sees the loop row, and the whole thing stays zero-JS when the source is static.
+- **The slot is a standalone line.** `{ children }` written mid-paragraph is literal text, one inside a fenced code block is documentation rather than a slot, and one on a top-level page (not an include) stays literal too. A `.md` include cannot host a slot at all.
+- **Called without a block, the slot renders empty.** An include may place `{ children }` more than once; the children still compile once, so state a child line declares is declared once in the caller.
+- **A block given to an include that never uses `{ children }` is dropped with a build warning**, so a forgotten slot is loud rather than silent.
+- **Pairing: `@endinclude` closes the nearest preceding unpaired `@include`.** The caveat that follows: an inline `@include` written between a block opener and its `@endinclude` is itself the nearest unpaired opener and consumes the closer, so keep inline includes outside a block's span. One level of block nesting is supported (a block inside children, or inside a nested include's body); deeper is `[WD616]`. A closer with no unpaired opener is `[WD614]`.
+- **There is deliberately no "unclosed block" error.** An `@include` that never pairs with an `@endinclude` IS the inline form, and the inline form must stay legal (every pre-feature page is full of `@include /nav.wd` followed by prose, which is syntactically identical to an unclosed block), so the two cannot be distinguished without false positives. Unpaired opener = inline include, unpaired closer = `[WD614]`, a slotted include called without a block renders its slot empty. Treat "close every block" as an authoring rule, not an error.
+
+A component per loop row is the payoff pattern, and it stays zero-JS over a static source:
+
+```wd
+@loop /products.json into product
+@include /card.wd with title={ product.name }
+
+Price: { product.price | money }
+
+@endinclude
+@endloop
+```
 
 ## Interpolation
 
@@ -248,7 +321,7 @@ Reference them with a normal URL: `![logo](/__wd/media/logo.svg)`. The preview/`
 - `site/pages/logo.svg` → `dist/logo.svg` → `![logo](/logo.svg)`
 - `site/pages/blog/cover.png` → `dist/blog/cover.png` → `![cover](/blog/cover.png)`
 
-Hidden/private page paths stay private: any `site/pages` asset below a path segment starting with `.`, `-`, or `_` is skipped, and symlinked page assets are never copied. Keep drafts, private notes, and local secrets out of public output by naming them like routes: `.env`, `_private/secret.txt`, or `-draft/notes.txt`.
+Hidden/private page paths stay private: any `site/pages` asset below a path segment starting with `.`, `-`, or `_` is skipped, and symlinked page assets are never copied. Keep drafts, private notes, and local secrets out of public output by naming them like routes: `.env`, `_private/secret.txt`, or `-draft/notes.txt`. The shelf follows the same rule: `site/_/.env.backup` is never published, and a symlink inside `site/_/` is never copied to `dist` (it still works as an `@include`/`@loop` source, unrolling into pages at build time; it just no longer appears as a file at `/__wd/media/` or `/__wd/data/`).
 
 Use the shelf for assets shared across many pages; colocate the ones that belong to a single page or section. Both ship untouched with the correct content-type.
 
@@ -1210,7 +1283,7 @@ Three one-line directives replace hand-written `<video>` / `<iframe>` markup. Th
 - **`:video` / `:audio`** compile to a hardened HTML5 player. `preload="metadata"` and `controls` are added by default; flags (`controls`, `autoplay`, `loop`, `muted`, `playsinline`) and attributes (`poster`, `width`, `height`, `preload`) are validated against a per-element whitelist, and `autoplay` silently implies `muted` (browsers block sound-on autoplay). The `src`/`poster` URLs run through the same scheme guard as `:fetch` — relative or `http(s)` only.
 - **`:embed`** rewrites a YouTube or Vimeo URL to its **no-cookie / player** form, wraps it in a responsive `16/9` box, and marks the iframe `loading="lazy"` with a locked-down `referrerpolicy`. Any other `http(s)` URL becomes a generic lazy iframe. Add `title="…"` for the accessible name. Three more attributes shape the frame (an embed with none of them emits byte-identical HTML to before): `aspect=4:3` swaps the ratio box for any `<w>:<h>` ratio, `height=400px` pins the frame height and drops the ratio box (units `px`, `rem`, `em`, `vh`, `vw`, `%`; `height` wins when both are given), and `allow="payment"` **replaces** the default iframe permission set with your own tokens from a fixed whitelist: `payment`, `autoplay`, `encrypted-media`, `fullscreen`, `picture-in-picture`, `clipboard-write`, `camera`, `microphone`, `geolocation` (`allow=""` strips all permissions). An unknown attribute is `[WD705]`, an unknown allow token `[WD706]`, and a malformed ratio or length `[WD707]`.
 
-Darkmown's shipped CSP pre-authorizes exactly the two embed origins (`youtube-nocookie.com`, `player.vimeo.com`) and `media-src 'self' https:`, so embeds and remote media work out of the box on the bundled server, Cloudflare `_headers`, and Vercel.
+Darkmown's shipped CSP pre-authorizes the two built-in embed origins (`youtube-nocookie.com`, `player.vimeo.com`) on every page, and **unions any other `:embed` host into `frame-src` for exactly the pages that embed it** (a same-origin embed records `'self'`): a NexHealth-style booking iframe works under the shipped headers with no hand-edited policy. The per-route union is emitted in Cloudflare's `dist/_headers` and honored by `darkmown serve`; a page with no extra embed hosts keeps a byte-identical CSP. `media-src 'self' https:` is unchanged, so remote media works out of the box. **Vercel caveat:** Vercel reads `vercel.json` before the build runs, so the generated default carries only the base policy; a project embedding a non-YouTube/Vimeo host on Vercel widens `frame-src` in its own `vercel.json`, the same pattern as `connect-src` for remote `:fetch` targets.
 
 ## Syntax highlighting
 
@@ -1349,6 +1422,22 @@ A `.skin` already wraps nested rules in `@media` and `@supports`. Two more CSS a
 - **Both stay global in a `scoped` skin**, the same contract as `tokens` blocks: font and keyframe names are page-global by nature, so the blocks are never stamped with the `data-wd-scope` attribute. Ordinary selectors in the same file are still scoped.
 
 Since 2.8 the body parser also tracks raw `<style>` and `<script>` blocks on `html: true` pages, so `@font-face {` or `@media … {` lines inside a raw `<style>` no longer trip the "looks like a directive" hint on every line; the hint still fires for directive-shaped lines in ordinary prose and other raw HTML.
+
+### Build-time font subsetting
+
+Declaring `@font-face` against a project-local `.ttf`/`.otf`/`.woff` gets you the font; with the wasm toolchain installed, the build also shrinks it. After every page and stylesheet is emitted, a post-pass scans `dist/**/*.css` for `@font-face` blocks, subsets each project-local font `src url(...)` to the site's character set, encodes it as woff2, emits `<name>-subset.woff2` beside the original, and rewrites the dist CSS so `src:` lists the subset first with the original as fallback. The source `.skin` is never touched, and every other descriptor (`font-display`, `font-weight` ranges, …) passes through byte-identically. Layout features (kern, liga, calt) and variable-font axes survive subsetting.
+
+```sh
+npm i -D harfbuzzjs wawoff2
+```
+
+Both are optional dependencies, lazily loaded in a child process behind the same seam as the image-variant sharp integration (the build is synchronous; the wasm toolchain is not, so one `spawnSync` worker per build does the work, and a fully cached build spawns nothing).
+
+- **The charset is the union of every code point in the emitted HTML** (numeric character references like `&#9733;` decoded first) plus a base set: printable ASCII (U+0020–U+007E), the Latin-1 supplement (U+00A0–U+00FF), punctuation U+2010–U+2027 (hyphens, dashes, curly quotes, ellipsis, bullets), primes and per-mille (U+2030–U+2033), single guillemets (U+2039–U+203A), the arrows ← ↑ → ↓ and diagonals (U+2190–U+2199), and ★ ☆ ✓ ✕ ✗. The base set exists so text a colocated `.js` injects at runtime is still covered; non-latin scripts flow in through the page-text union. Known boundary: glyphs used only in CSS `content` are not collected, and the original font stays listed as the fallback, so nothing breaks visually.
+- **Without the toolchain** the build is unchanged plus one hint per build: `hint: 2 fonts could be subsetted to woff2 (site/_/fonts/a.ttf, site/_/fonts/b.ttf). Run npm i -D harfbuzzjs wawoff2 to subset fonts at build time.` A font that fails to parse or subset gets its own hint and ships as-is; the build never fails over a font.
+- **Skips, all silent:** remote, protocol-relative, `data:`, and relative `src` URLs; already-`.woff2` sources; paths that escape the project; missing files.
+- **Cache:** `node_modules/.cache/darkmown-fonts/<fontHash>-<charsetHash>.woff2`, so a second build with unchanged fonts and content does zero wasm work and needs no toolchain for cached entries. The CSS rewrite is idempotent, which is what makes incremental dev builds safe.
+- The build summary gains a `fonts (3 subsetted, 0 cached)` clause when the post-pass did work. Measured on a 67-route marketing rebuild: three variable TTFs totaling 1.07 MB became 288 KB of subset woff2 (a 3.7x reduction), first build about 9.6 s, cached rebuilds about 1.0 s.
 
 ## The escape hatch
 
@@ -1561,7 +1650,7 @@ Darkmown is small on purpose. Here is what it deliberately refuses and what it g
 - **Reactive rows cannot fill a Markdown table.** A reactive row is cloned into a `<div>`, which is not a legal child of `<table>`, so `[WD191]` refuses it. Static loops fill tables fine; for reactive rows, build them from containers (`::: trow` / `::: td`) and style them as a table.
 - **No i18n beyond `lang:`.** No `hreflang`, no message catalog, no ambient locale, no locale routing. A multilingual site means duplicating the tree per locale.
 - **Every framework asset URL is absolute** (`/__wd/...`), so a Darkmown site cannot be mounted at a subpath. It is all-or-nothing per origin.
-- **Includes are macros, not components.** No children, no slots, no default arguments, and a missing argument renders `{ title }` literally rather than erroring.
+- **Includes are macros, not components.** One slot (`{ children }`), string-typed `defaults:` fallbacks, and no props interface beyond `with`; a missing argument with no default still renders `{ title }` literally rather than erroring.
 - **No `darkmown test`.** There is no built-in way to assert your own site's behavior. Use [`compileFromMemory`](#programmatic-compile--compilefrommemory) against your own pages, or a browser test runner.
 
 **Migrating out is easy, and that is on purpose.** `dist/` is portable static HTML plus one runtime file of ~6.6 KB gzipped. There is no server to port, no proprietary component format, no framework runtime baked through the output, and nothing to un-eject. Point any host at the folder, or hand it to whatever you move to next, and the site keeps working. The lock-in is a directory of Markdown files you already own.

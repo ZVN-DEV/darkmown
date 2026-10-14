@@ -1,0 +1,189 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - paragraph [ref=e5]:
+        - link "ToothDocs home" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img "ToothDocs" [ref=e7]
+      - navigation "Primary" [ref=e8]:
+        - button "Services" [ref=e10] [cursor=pointer]
+        - link "Locations" [ref=e13] [cursor=pointer]:
+          - /url: /locations/
+        - link "Our team" [ref=e14] [cursor=pointer]:
+          - /url: /doctors/
+        - link "New patients" [ref=e15] [cursor=pointer]:
+          - /url: /patient-info/
+      - generic [ref=e16]:
+        - link "NYC(212) 969-9490" [ref=e17] [cursor=pointer]:
+          - /url: tel:+12129699490
+        - link "Roslyn(516) 625-0088" [ref=e18] [cursor=pointer]:
+          - /url: tel:+15166250088
+      - paragraph [ref=e19]:
+        - link "Book a visit" [ref=e20] [cursor=pointer]:
+          - /url: /request-appointment/
+  - main [ref=e21]:
+    - generic [ref=e23]:
+      - navigation "Breadcrumb" [ref=e24]:
+        - link "Home" [ref=e25] [cursor=pointer]:
+          - /url: /
+        - generic [aria-hidden] [ref=e26]: /
+        - generic [ref=e27]: Financing
+      - paragraph [ref=e28]: Flexible Financing
+      - heading "Care you need, on a plan that fits" [level=1] [ref=e29]
+      - paragraph [ref=e30]: No coverage, or a larger treatment plan? You have options. Join our in-house membership plan, or apply with one of our trusted financing partners for low- and no-interest monthly payments.
+    - generic [ref=e33]:
+      - article [ref=e34]:
+        - img "Cherry" [ref=e36]
+        - paragraph [ref=e37]: "The Cherry payment plan is a smart, convenient way to pay for dental care: split larger costs into smaller, manageable monthly installments."
+        - link "Apply with Cherry" [ref=e38] [cursor=pointer]:
+          - /url: https://pay.withcherry.com/toothdocsdental?utm_source=practice&m=15022
+      - article [ref=e42]:
+        - img "CareCredit" [ref=e44]
+        - paragraph [ref=e45]: A health and wellness credit card with flexible financing options tailored to your circumstances, so you can pay for the care you want at your own pace.
+        - link "Apply with CareCredit" [ref=e46] [cursor=pointer]:
+          - /url: https://www.carecredit.com/
+      - article [ref=e50]:
+        - img "Alphaeon" [ref=e52]
+        - paragraph [ref=e53]: The Alphaeon Credit card unlocks a diverse range of monthly payment options for your dental care, tailored to suit your needs.
+        - link "Apply with Alphaeon" [ref=e54] [cursor=pointer]:
+          - /url: https://goalphaeon.com/
+      - article [ref=e58]:
+        - img "Proceed Finance" [ref=e60]
+        - paragraph [ref=e61]: Lending solutions built for dental and medical cases, with affordable monthly payment plans so cost never stands between you and necessary treatment.
+        - link "Apply with Proceed Finance" [ref=e62] [cursor=pointer]:
+          - /url: https://www.proceedfinance.com/application/create?referrer=23802-8573-267D
+    - generic [ref=e67]:
+      - generic [ref=e68]:
+        - paragraph [ref=e69]: No insurance? No problem.
+        - heading "Ask about the ToothDocs Dental Membership Plan" [level=2] [ref=e70]
+        - paragraph [ref=e71]: Our in-house membership plan offers specially discounted rates on preventive care and treatment, tailored for single patients, couples, and families. No insurance, no claim forms, no paperwork.
+        - paragraph [ref=e72]:
+          - link "View Our Membership Plans" [ref=e73] [cursor=pointer]:
+            - /url: /membership/
+      - paragraph [ref=e74]:
+        - text: Have dental insurance instead?
+        - link "See the plans we accept" [ref=e75] [cursor=pointer]:
+          - /url: /insurance/
+        - text: .
+    - generic [ref=e78]:
+      - heading "Ready for a smile you'll love?" [level=2] [ref=e80]
+      - paragraph [ref=e81]: Book your visit at our New York or Roslyn office; new patients are always welcome.
+      - generic [ref=e82]:
+        - link "Book a visit" [ref=e83] [cursor=pointer]:
+          - /url: /request-appointment/
+        - link "Call the office" [ref=e84] [cursor=pointer]:
+          - /url: tel:+12129699490
+  - contentinfo [ref=e85]:
+    - generic [ref=e86]:
+      - generic [ref=e87]:
+        - generic [ref=e88]:
+          - link "ToothDocs home" [ref=e89] [cursor=pointer]:
+            - /url: /
+            - img "ToothDocs" [ref=e90]
+          - paragraph [ref=e91]: Kind, modern dentistry in NYC & Roslyn.
+          - generic [ref=e92]:
+            - heading "New York" [level=3] [ref=e93]
+            - paragraph [ref=e94]:
+              - link "(212) 969-9490" [ref=e95] [cursor=pointer]:
+                - /url: tel:+12129699490
+              - link "info.nyc@toothdocsdental.com" [ref=e96] [cursor=pointer]:
+                - /url: mailto:info.nyc@toothdocsdental.com
+              - link "630 5th Avenue, Suite 1815, New York, NY 10111" [ref=e97] [cursor=pointer]:
+                - /url: https://www.google.com/maps/search/?api=1&query=630+5th+Avenue+Suite+1815+New+York+NY+10111
+            - paragraph [ref=e98]: Mon–Fri 9:00 AM – 5:00 PMSaturday 9:00 AM – 4:00 PMSunday Closed
+          - generic [ref=e99]:
+            - heading "Roslyn" [level=3] [ref=e100]
+            - paragraph [ref=e101]:
+              - link "(516) 625-0088" [ref=e102] [cursor=pointer]:
+                - /url: tel:+15166250088
+              - link "info.roslyn@toothdocsdental.com" [ref=e103] [cursor=pointer]:
+                - /url: mailto:info.roslyn@toothdocsdental.com
+              - link "1044 Northern Blvd., Suite 106, Roslyn, NY 11576" [ref=e104] [cursor=pointer]:
+                - /url: https://www.google.com/maps/search/?api=1&query=1044+Northern+Blvd+Suite+106+Roslyn+NY+11576
+            - paragraph [ref=e105]: Monday 9:00 AM – 6:00 PMTuesday 9:00 AM – 5:00 PMWednesday 9:00 AM – 6:00 PMThu–Fri 9:00 AM – 5:00 PMSat–Sun Closed
+        - navigation "Popular services" [ref=e106]:
+          - heading "Popular Services" [level=3] [ref=e107]
+          - list [ref=e108]:
+            - listitem [ref=e109]:
+              - link "Dental Implants" [ref=e110] [cursor=pointer]:
+                - /url: /services/dental-implants/
+            - listitem [ref=e111]:
+              - link "All-on-4 Implants" [ref=e112] [cursor=pointer]:
+                - /url: /services/all-on-4-implants/
+            - listitem [ref=e113]:
+              - link "Invisalign" [ref=e114] [cursor=pointer]:
+                - /url: /services/clear-aligners/
+            - listitem [ref=e115]:
+              - link "Teeth Whitening" [ref=e116] [cursor=pointer]:
+                - /url: /services/teeth-whitening/
+            - listitem [ref=e117]:
+              - link "Veneers" [ref=e118] [cursor=pointer]:
+                - /url: /services/dental-veneers/
+            - listitem [ref=e119]:
+              - link "Emergency Dentistry" [ref=e120] [cursor=pointer]:
+                - /url: /services/emergency-dentistry/
+        - navigation "Practice" [ref=e121]:
+          - heading "Practice" [level=3] [ref=e122]
+          - list [ref=e123]:
+            - listitem [ref=e124]:
+              - link "About Us" [ref=e125] [cursor=pointer]:
+                - /url: /about/
+            - listitem [ref=e126]:
+              - link "Meet Our Doctors" [ref=e127] [cursor=pointer]:
+                - /url: /doctors/
+            - listitem [ref=e128]:
+              - link "Patient Information" [ref=e129] [cursor=pointer]:
+                - /url: /patient-info/
+            - listitem [ref=e130]:
+              - link "Insurance" [ref=e131] [cursor=pointer]:
+                - /url: /insurance/
+            - listitem [ref=e132]:
+              - link "Membership Plan" [ref=e133] [cursor=pointer]:
+                - /url: /membership/
+            - listitem [ref=e134]:
+              - link "Reviews" [ref=e135] [cursor=pointer]:
+                - /url: /reviews/
+            - listitem [ref=e136]:
+              - link "Blog" [ref=e137] [cursor=pointer]:
+                - /url: /blog/
+        - navigation "Visit" [ref=e138]:
+          - heading "Visit" [level=3] [ref=e139]
+          - list [ref=e140]:
+            - listitem [ref=e141]:
+              - link "New York Office" [ref=e142] [cursor=pointer]:
+                - /url: /locations/new-york/
+            - listitem [ref=e143]:
+              - link "New York Services" [ref=e144] [cursor=pointer]:
+                - /url: /specialty/new-york-dental-services/
+            - listitem [ref=e145]:
+              - link "Roslyn Office" [ref=e146] [cursor=pointer]:
+                - /url: /locations/roslyn/
+            - listitem [ref=e147]:
+              - link "Roslyn Services" [ref=e148] [cursor=pointer]:
+                - /url: /specialty/roslyn-dental-services/
+            - listitem [ref=e149]:
+              - link "Request an Appointment" [ref=e150] [cursor=pointer]:
+                - /url: /request-appointment/
+            - listitem [ref=e151]:
+              - link "Virtual Consult" [ref=e152] [cursor=pointer]:
+                - /url: /virtual-consult/
+      - generic [ref=e153]:
+        - paragraph [ref=e154]: © 2026 ToothDocs. All rights reserved.
+        - navigation "Legal" [ref=e155]:
+          - link "Privacy Policy" [ref=e156] [cursor=pointer]:
+            - /url: /privacy-policy/
+          - link "Terms & Conditions" [ref=e157] [cursor=pointer]:
+            - /url: /terms/
+          - link "Accessibility Statement" [ref=e158] [cursor=pointer]:
+            - /url: /accessibility/
+          - link "AI Disclaimer" [ref=e159] [cursor=pointer]:
+            - /url: /ai-disclaimer/
+        - generic [ref=e160]:
+          - link "@toothdocs.dental on Instagram" [ref=e161] [cursor=pointer]:
+            - /url: https://www.instagram.com/toothdocs.dental
+          - link "ToothDocs on Facebook" [ref=e166] [cursor=pointer]:
+            - /url: https://www.facebook.com/toothdocsnyc
+          - link "ToothDocs on Google" [ref=e169] [cursor=pointer]:
+            - /url: https://www.google.com/maps?cid=17462961931135561102

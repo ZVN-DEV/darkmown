@@ -1,0 +1,218 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - paragraph [ref=e5]:
+        - link "ToothDocs home" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img "ToothDocs" [ref=e7]
+      - navigation "Primary" [ref=e8]:
+        - button "Services" [ref=e10] [cursor=pointer]
+        - link "Locations" [ref=e13] [cursor=pointer]:
+          - /url: /locations/
+        - link "Our team" [ref=e14] [cursor=pointer]:
+          - /url: /doctors/
+        - link "New patients" [ref=e15] [cursor=pointer]:
+          - /url: /patient-info/
+      - generic [ref=e16]:
+        - link "NYC(212) 969-9490" [ref=e17] [cursor=pointer]:
+          - /url: tel:+12129699490
+        - link "Roslyn(516) 625-0088" [ref=e18] [cursor=pointer]:
+          - /url: tel:+15166250088
+      - paragraph [ref=e19]:
+        - link "Book a visit" [ref=e20] [cursor=pointer]:
+          - /url: /request-appointment/
+  - main [ref=e21]:
+    - generic [ref=e23]:
+      - navigation "Breadcrumb" [ref=e24]:
+        - link "Home" [ref=e25] [cursor=pointer]:
+          - /url: /
+        - generic [aria-hidden] [ref=e26]: /
+        - generic [ref=e27]: About
+      - paragraph [ref=e28]: About ToothDocs
+      - heading "Premier dentistry, delivered with kindness" [level=1] [ref=e29]
+      - paragraph [ref=e30]: ToothDocs is a premier dental practice with offices in Roslyn, New York, and on 5th Avenue in Manhattan, offering an array of exceptional services to care for every aspect of your oral health.
+    - generic [ref=e33]:
+      - img "Cosmetic and restorative dental care at ToothDocs" [ref=e35]
+      - generic [ref=e36]:
+        - heading "Our mission" [level=2] [ref=e37]
+        - paragraph [ref=e38]: Our unwavering mission is to deliver outstanding implant and cosmetic dentistry, ensuring that each patient's smile radiates confidence and happiness. Our team provides comprehensive care spanning preventive treatments, restorative procedures, and oral health education.
+        - paragraph [ref=e39]: With a perfect blend of top-notch patient care and cutting-edge technology, we've mastered the art of treating individuals across all age groups within a serene and comforting environment. Putting patient satisfaction first, we listen attentively, explain treatment plans thoroughly, and address every concern to tailor each appointment specifically for you.
+    - generic [ref=e42]:
+      - generic [ref=e43]:
+        - term [ref=e44]: "2"
+        - definition [ref=e45]: Convenient Locations
+      - generic [ref=e46]:
+        - term [ref=e47]: "10"
+        - definition [ref=e48]: Specialists & Doctors
+      - generic [ref=e49]:
+        - term [ref=e50]: 20+
+        - definition [ref=e51]: Treatments Offered
+      - generic [ref=e52]:
+        - term [ref=e53]: 4.9★
+        - definition [ref=e54]: Average Patient Rating
+    - generic [ref=e56]:
+      - generic [ref=e57]:
+        - paragraph [ref=e58]: What We Stand For
+        - heading "The values behind every visit" [level=2] [ref=e59]
+      - generic [ref=e60]:
+        - article [ref=e61]:
+          - heading "Kindness First" [level=3] [ref=e65]
+          - paragraph [ref=e66]: Every interaction starts with empathy. We listen before we treat, and we treat you like family.
+        - article [ref=e67]:
+          - heading "Cutting-Edge Technology" [level=3] [ref=e72]
+          - paragraph [ref=e73]: "Digital scanning, same-day restorations, and microscope-assisted care: modern tools for better outcomes."
+        - article [ref=e74]:
+          - heading "Comprehensive Care" [level=3] [ref=e80]
+          - paragraph [ref=e81]: From a child's first checkup to full-mouth reconstruction, every specialty under one roof.
+        - article [ref=e82]:
+          - heading "Honest & Transparent" [level=3] [ref=e89]
+          - paragraph [ref=e90]: Clear treatment plans and upfront pricing. You'll always understand your options before deciding.
+    - generic [ref=e92]:
+      - generic [ref=e93]:
+        - paragraph [ref=e94]: Where to Find Us
+        - heading "Two New York offices, one standard of care" [level=2] [ref=e95]
+      - generic [ref=e96]:
+        - article [ref=e97]:
+          - iframe [ref=e99]:
+            - generic: This content is blocked. Contact the site owner to fix the issue.
+          - generic [ref=e100]:
+            - heading "New York" [level=3] [ref=e101]
+            - paragraph [ref=e102]: 630 5th Avenue, Suite 1815, New York, NY 10111
+            - generic [ref=e103]:
+              - link "Get directions" [ref=e104] [cursor=pointer]:
+                - /url: https://www.google.com/maps/dir/?api=1&destination=630%205th%20Avenue%2C%20Suite%201815%2C%20New%20York%2C%20NY%2010111
+              - link "Office details" [ref=e105] [cursor=pointer]:
+                - /url: /locations/new-york/
+        - article [ref=e106]:
+          - iframe [ref=e108]:
+            - generic: This content is blocked. Contact the site owner to fix the issue.
+          - generic [ref=e109]:
+            - heading "Roslyn" [level=3] [ref=e110]
+            - paragraph [ref=e111]: 1044 Northern Blvd., Suite 106, Roslyn, NY 11576
+            - generic [ref=e112]:
+              - link "Get directions" [ref=e113] [cursor=pointer]:
+                - /url: https://www.google.com/maps/dir/?api=1&destination=1044%20Northern%20Blvd%2C%20Suite%20106%2C%20Roslyn%2C%20NY%2011576
+              - link "Office details" [ref=e114] [cursor=pointer]:
+                - /url: /locations/roslyn/
+    - generic [ref=e117]:
+      - heading "Ready for a smile you'll love?" [level=2] [ref=e119]
+      - paragraph [ref=e120]: Book your visit at our New York or Roslyn office; new patients are always welcome.
+      - generic [ref=e121]:
+        - link "Book a visit" [ref=e122] [cursor=pointer]:
+          - /url: /request-appointment/
+        - link "Call the office" [ref=e123] [cursor=pointer]:
+          - /url: tel:+12129699490
+  - contentinfo [ref=e124]:
+    - generic [ref=e125]:
+      - generic [ref=e126]:
+        - generic [ref=e127]:
+          - link "ToothDocs home" [ref=e128] [cursor=pointer]:
+            - /url: /
+            - img "ToothDocs" [ref=e129]
+          - paragraph [ref=e130]: Kind, modern dentistry in NYC & Roslyn.
+          - generic [ref=e131]:
+            - heading "New York" [level=3] [ref=e132]
+            - paragraph [ref=e133]:
+              - link "(212) 969-9490" [ref=e134] [cursor=pointer]:
+                - /url: tel:+12129699490
+              - link "info.nyc@toothdocsdental.com" [ref=e135] [cursor=pointer]:
+                - /url: mailto:info.nyc@toothdocsdental.com
+              - link "630 5th Avenue, Suite 1815, New York, NY 10111" [ref=e136] [cursor=pointer]:
+                - /url: https://www.google.com/maps/search/?api=1&query=630+5th+Avenue+Suite+1815+New+York+NY+10111
+            - paragraph [ref=e137]: Mon–Fri 9:00 AM – 5:00 PMSaturday 9:00 AM – 4:00 PMSunday Closed
+          - generic [ref=e138]:
+            - heading "Roslyn" [level=3] [ref=e139]
+            - paragraph [ref=e140]:
+              - link "(516) 625-0088" [ref=e141] [cursor=pointer]:
+                - /url: tel:+15166250088
+              - link "info.roslyn@toothdocsdental.com" [ref=e142] [cursor=pointer]:
+                - /url: mailto:info.roslyn@toothdocsdental.com
+              - link "1044 Northern Blvd., Suite 106, Roslyn, NY 11576" [ref=e143] [cursor=pointer]:
+                - /url: https://www.google.com/maps/search/?api=1&query=1044+Northern+Blvd+Suite+106+Roslyn+NY+11576
+            - paragraph [ref=e144]: Monday 9:00 AM – 6:00 PMTuesday 9:00 AM – 5:00 PMWednesday 9:00 AM – 6:00 PMThu–Fri 9:00 AM – 5:00 PMSat–Sun Closed
+        - navigation "Popular services" [ref=e145]:
+          - heading "Popular Services" [level=3] [ref=e146]
+          - list [ref=e147]:
+            - listitem [ref=e148]:
+              - link "Dental Implants" [ref=e149] [cursor=pointer]:
+                - /url: /services/dental-implants/
+            - listitem [ref=e150]:
+              - link "All-on-4 Implants" [ref=e151] [cursor=pointer]:
+                - /url: /services/all-on-4-implants/
+            - listitem [ref=e152]:
+              - link "Invisalign" [ref=e153] [cursor=pointer]:
+                - /url: /services/clear-aligners/
+            - listitem [ref=e154]:
+              - link "Teeth Whitening" [ref=e155] [cursor=pointer]:
+                - /url: /services/teeth-whitening/
+            - listitem [ref=e156]:
+              - link "Veneers" [ref=e157] [cursor=pointer]:
+                - /url: /services/dental-veneers/
+            - listitem [ref=e158]:
+              - link "Emergency Dentistry" [ref=e159] [cursor=pointer]:
+                - /url: /services/emergency-dentistry/
+        - navigation "Practice" [ref=e160]:
+          - heading "Practice" [level=3] [ref=e161]
+          - list [ref=e162]:
+            - listitem [ref=e163]:
+              - link "About Us" [ref=e164] [cursor=pointer]:
+                - /url: /about/
+            - listitem [ref=e165]:
+              - link "Meet Our Doctors" [ref=e166] [cursor=pointer]:
+                - /url: /doctors/
+            - listitem [ref=e167]:
+              - link "Patient Information" [ref=e168] [cursor=pointer]:
+                - /url: /patient-info/
+            - listitem [ref=e169]:
+              - link "Insurance" [ref=e170] [cursor=pointer]:
+                - /url: /insurance/
+            - listitem [ref=e171]:
+              - link "Membership Plan" [ref=e172] [cursor=pointer]:
+                - /url: /membership/
+            - listitem [ref=e173]:
+              - link "Reviews" [ref=e174] [cursor=pointer]:
+                - /url: /reviews/
+            - listitem [ref=e175]:
+              - link "Blog" [ref=e176] [cursor=pointer]:
+                - /url: /blog/
+        - navigation "Visit" [ref=e177]:
+          - heading "Visit" [level=3] [ref=e178]
+          - list [ref=e179]:
+            - listitem [ref=e180]:
+              - link "New York Office" [ref=e181] [cursor=pointer]:
+                - /url: /locations/new-york/
+            - listitem [ref=e182]:
+              - link "New York Services" [ref=e183] [cursor=pointer]:
+                - /url: /specialty/new-york-dental-services/
+            - listitem [ref=e184]:
+              - link "Roslyn Office" [ref=e185] [cursor=pointer]:
+                - /url: /locations/roslyn/
+            - listitem [ref=e186]:
+              - link "Roslyn Services" [ref=e187] [cursor=pointer]:
+                - /url: /specialty/roslyn-dental-services/
+            - listitem [ref=e188]:
+              - link "Request an Appointment" [ref=e189] [cursor=pointer]:
+                - /url: /request-appointment/
+            - listitem [ref=e190]:
+              - link "Virtual Consult" [ref=e191] [cursor=pointer]:
+                - /url: /virtual-consult/
+      - generic [ref=e192]:
+        - paragraph [ref=e193]: © 2026 ToothDocs. All rights reserved.
+        - navigation "Legal" [ref=e194]:
+          - link "Privacy Policy" [ref=e195] [cursor=pointer]:
+            - /url: /privacy-policy/
+          - link "Terms & Conditions" [ref=e196] [cursor=pointer]:
+            - /url: /terms/
+          - link "Accessibility Statement" [ref=e197] [cursor=pointer]:
+            - /url: /accessibility/
+          - link "AI Disclaimer" [ref=e198] [cursor=pointer]:
+            - /url: /ai-disclaimer/
+        - generic [ref=e199]:
+          - link "@toothdocs.dental on Instagram" [ref=e200] [cursor=pointer]:
+            - /url: https://www.instagram.com/toothdocs.dental
+          - link "ToothDocs on Facebook" [ref=e205] [cursor=pointer]:
+            - /url: https://www.facebook.com/toothdocsnyc
+          - link "ToothDocs on Google" [ref=e208] [cursor=pointer]:
+            - /url: https://www.google.com/maps?cid=17462961931135561102

@@ -1,0 +1,168 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - paragraph [ref=e5]:
+        - link "ToothDocs home" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img "ToothDocs" [ref=e7]
+      - navigation "Primary" [ref=e8]:
+        - button "Services" [ref=e10] [cursor=pointer]
+        - link "Locations" [ref=e13] [cursor=pointer]:
+          - /url: /locations/
+        - link "Our team" [ref=e14] [cursor=pointer]:
+          - /url: /doctors/
+        - link "New patients" [ref=e15] [cursor=pointer]:
+          - /url: /patient-info/
+      - generic [ref=e16]:
+        - link "NYC(212) 969-9490" [ref=e17] [cursor=pointer]:
+          - /url: tel:+12129699490
+        - link "Roslyn(516) 625-0088" [ref=e18] [cursor=pointer]:
+          - /url: tel:+15166250088
+      - paragraph [ref=e19]:
+        - link "Book a visit" [ref=e20] [cursor=pointer]:
+          - /url: /request-appointment/
+  - main [ref=e21]:
+    - generic [ref=e23]:
+      - navigation "Breadcrumb" [ref=e24]:
+        - link "Home" [ref=e25] [cursor=pointer]:
+          - /url: /
+        - generic [aria-hidden] [ref=e26]: /
+        - generic [ref=e27]: Privacy Policy
+      - paragraph [ref=e28]: Legal
+      - heading "Privacy Policy" [level=1] [ref=e29]
+      - paragraph [ref=e30]: How we collect, use, and protect your information.
+      - paragraph [ref=e31]: Last updated June 18, 2026
+    - generic [ref=e34]:
+      - heading "Privacy Statement" [level=2] [ref=e35]
+      - paragraph [ref=e36]: We are committed to protecting your privacy and developing technology that gives you the most powerful and safe online experience. This Statement of Privacy applies to our Web site and governs data collection and usage. By using this website, you consent to the data practices described in this statement.
+      - heading "Collection of your Personal Information" [level=2] [ref=e37]
+      - paragraph [ref=e38]: We collect personally identifiable information, such as your e-mail address, name, home or work address or telephone number. We also collect anonymous demographic information, which is not unique to you, such as your ZIP code, age, gender, preferences, interests and favorites.
+      - paragraph [ref=e39]: "There is also information about your computer hardware and software that is automatically collected by this website. This information can include: your IP address, browser type, domain names, access times and referring Web site addresses. This information is used for the operation of the service, to maintain quality of the service, and to provide general statistics regarding use of this Web site."
+      - paragraph [ref=e40]: We encourages you to review the privacy statements of Web sites you choose to link to from the website so that you can understand how those Web sites collect, use and share your information. We are not responsible for the privacy statements or other content on any other Web sites.
+      - heading "Use of your Personal Information" [level=2] [ref=e41]
+      - paragraph [ref=e42]: We collect and use your personal information to operate the Web site and deliver the services you have requested. We may also use your personally identifiable information to inform you of other products or services available from our affiliates and us. We may also contact you via surveys to conduct research about your opinion of current services or of potential new services that may be offered.
+      - paragraph [ref=e43]: We do not sell, rent or lease its customer lists to third parties. We may, from time to time, share data with trusted partners to help us perform statistical analysis, send you email or postal mail, provide customer support, or arrange for deliveries. All such third parties are prohibited from using your personal information except to provide these services and they are required to maintain the confidentiality of your information.
+      - paragraph [ref=e44]: We do not use or disclose sensitive personal information, such as race, religion, or political affiliations, without your explicit consent.
+      - paragraph [ref=e45]: We will disclose your personal information, without notice, only if required to do so by law or in the good faith belief that such action is necessary.
+      - heading "Use of Cookies" [level=2] [ref=e46]
+      - paragraph [ref=e47]: This Web site uses "cookies" to personalize your online experience. A cookie is a text file that is placed on your hard disk by a Web page server. Cookies cannot be used to run programs or deliver viruses to your computer. Cookies are uniquely assigned to you, and can only be read by a web server in the domain that issued the cookie to you.
+      - paragraph [ref=e48]: One of the primary purposes of cookies is to provide a convenience feature to save you time. The purpose of a cookie is to tell the Web server that you have returned to a specific page.
+      - paragraph [ref=e49]: You have the ability to accept or decline cookies. Most Web browsers automatically accept cookies, but you can usually modify your browser setting to decline cookies if you prefer. If you choose to decline cookies, you may not be able to fully experience the interactive features of the Web site.
+      - heading "Security of your Personal Information" [level=2] [ref=e50]
+      - paragraph [ref=e51]: This Web site secures your personal information from unauthorized access, use or disclosure. This Web site secures the personally identifiable information you provide on computer servers in a controlled, secure environment, protected from unauthorized access, use or disclosure. When personal information (such as a credit card number) is transmitted to other Web sites, it is protected through the use of encryption, such as the Secure Socket Layer (SSL) protocol.
+      - heading "Changes to this Statement" [level=2] [ref=e52]
+      - paragraph [ref=e53]: We will occasionally update this Statement of Privacy to reflect company and customer feedback. We encourage you to periodically review this Statement to be informed of how we are protecting your information.
+  - contentinfo [ref=e54]:
+    - generic [ref=e55]:
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - link "ToothDocs home" [ref=e58] [cursor=pointer]:
+            - /url: /
+            - img "ToothDocs" [ref=e59]
+          - paragraph [ref=e60]: Kind, modern dentistry in NYC & Roslyn.
+          - generic [ref=e61]:
+            - heading "New York" [level=3] [ref=e62]
+            - paragraph [ref=e63]:
+              - link "(212) 969-9490" [ref=e64] [cursor=pointer]:
+                - /url: tel:+12129699490
+              - link "info.nyc@toothdocsdental.com" [ref=e65] [cursor=pointer]:
+                - /url: mailto:info.nyc@toothdocsdental.com
+              - link "630 5th Avenue, Suite 1815, New York, NY 10111" [ref=e66] [cursor=pointer]:
+                - /url: https://www.google.com/maps/search/?api=1&query=630+5th+Avenue+Suite+1815+New+York+NY+10111
+            - paragraph [ref=e67]: Mon–Fri 9:00 AM – 5:00 PMSaturday 9:00 AM – 4:00 PMSunday Closed
+          - generic [ref=e68]:
+            - heading "Roslyn" [level=3] [ref=e69]
+            - paragraph [ref=e70]:
+              - link "(516) 625-0088" [ref=e71] [cursor=pointer]:
+                - /url: tel:+15166250088
+              - link "info.roslyn@toothdocsdental.com" [ref=e72] [cursor=pointer]:
+                - /url: mailto:info.roslyn@toothdocsdental.com
+              - link "1044 Northern Blvd., Suite 106, Roslyn, NY 11576" [ref=e73] [cursor=pointer]:
+                - /url: https://www.google.com/maps/search/?api=1&query=1044+Northern+Blvd+Suite+106+Roslyn+NY+11576
+            - paragraph [ref=e74]: Monday 9:00 AM – 6:00 PMTuesday 9:00 AM – 5:00 PMWednesday 9:00 AM – 6:00 PMThu–Fri 9:00 AM – 5:00 PMSat–Sun Closed
+        - navigation "Popular services" [ref=e75]:
+          - heading "Popular Services" [level=3] [ref=e76]
+          - list [ref=e77]:
+            - listitem [ref=e78]:
+              - link "Dental Implants" [ref=e79] [cursor=pointer]:
+                - /url: /services/dental-implants/
+            - listitem [ref=e80]:
+              - link "All-on-4 Implants" [ref=e81] [cursor=pointer]:
+                - /url: /services/all-on-4-implants/
+            - listitem [ref=e82]:
+              - link "Invisalign" [ref=e83] [cursor=pointer]:
+                - /url: /services/clear-aligners/
+            - listitem [ref=e84]:
+              - link "Teeth Whitening" [ref=e85] [cursor=pointer]:
+                - /url: /services/teeth-whitening/
+            - listitem [ref=e86]:
+              - link "Veneers" [ref=e87] [cursor=pointer]:
+                - /url: /services/dental-veneers/
+            - listitem [ref=e88]:
+              - link "Emergency Dentistry" [ref=e89] [cursor=pointer]:
+                - /url: /services/emergency-dentistry/
+        - navigation "Practice" [ref=e90]:
+          - heading "Practice" [level=3] [ref=e91]
+          - list [ref=e92]:
+            - listitem [ref=e93]:
+              - link "About Us" [ref=e94] [cursor=pointer]:
+                - /url: /about/
+            - listitem [ref=e95]:
+              - link "Meet Our Doctors" [ref=e96] [cursor=pointer]:
+                - /url: /doctors/
+            - listitem [ref=e97]:
+              - link "Patient Information" [ref=e98] [cursor=pointer]:
+                - /url: /patient-info/
+            - listitem [ref=e99]:
+              - link "Insurance" [ref=e100] [cursor=pointer]:
+                - /url: /insurance/
+            - listitem [ref=e101]:
+              - link "Membership Plan" [ref=e102] [cursor=pointer]:
+                - /url: /membership/
+            - listitem [ref=e103]:
+              - link "Reviews" [ref=e104] [cursor=pointer]:
+                - /url: /reviews/
+            - listitem [ref=e105]:
+              - link "Blog" [ref=e106] [cursor=pointer]:
+                - /url: /blog/
+        - navigation "Visit" [ref=e107]:
+          - heading "Visit" [level=3] [ref=e108]
+          - list [ref=e109]:
+            - listitem [ref=e110]:
+              - link "New York Office" [ref=e111] [cursor=pointer]:
+                - /url: /locations/new-york/
+            - listitem [ref=e112]:
+              - link "New York Services" [ref=e113] [cursor=pointer]:
+                - /url: /specialty/new-york-dental-services/
+            - listitem [ref=e114]:
+              - link "Roslyn Office" [ref=e115] [cursor=pointer]:
+                - /url: /locations/roslyn/
+            - listitem [ref=e116]:
+              - link "Roslyn Services" [ref=e117] [cursor=pointer]:
+                - /url: /specialty/roslyn-dental-services/
+            - listitem [ref=e118]:
+              - link "Request an Appointment" [ref=e119] [cursor=pointer]:
+                - /url: /request-appointment/
+            - listitem [ref=e120]:
+              - link "Virtual Consult" [ref=e121] [cursor=pointer]:
+                - /url: /virtual-consult/
+      - generic [ref=e122]:
+        - paragraph [ref=e123]: © 2026 ToothDocs. All rights reserved.
+        - navigation "Legal" [ref=e124]:
+          - link "Privacy Policy" [ref=e125] [cursor=pointer]:
+            - /url: /privacy-policy/
+          - link "Terms & Conditions" [ref=e126] [cursor=pointer]:
+            - /url: /terms/
+          - link "Accessibility Statement" [ref=e127] [cursor=pointer]:
+            - /url: /accessibility/
+          - link "AI Disclaimer" [ref=e128] [cursor=pointer]:
+            - /url: /ai-disclaimer/
+        - generic [ref=e129]:
+          - link "@toothdocs.dental on Instagram" [ref=e130] [cursor=pointer]:
+            - /url: https://www.instagram.com/toothdocs.dental
+          - link "ToothDocs on Facebook" [ref=e135] [cursor=pointer]:
+            - /url: https://www.facebook.com/toothdocsnyc
+          - link "ToothDocs on Google" [ref=e138] [cursor=pointer]:
+            - /url: https://www.google.com/maps?cid=17462961931135561102

@@ -42,7 +42,7 @@ package.json
 - A `page.skin` next to `page.wd` attaches styling; a `page.js` attaches behavior. Matched by basename.
 - **Colocated assets:** any other file under `site/pages/` (not a `.md`/`.wd` route, not a basename-matched `.skin`/`.js`) copies to `dist/` at its own path with the right content-type — so `site/pages/logo.svg` is served at `/logo.svg`. Use the `site/_/` shelf for assets shared across pages; colocate the ones a single page owns.
 - **Responsive image variants:** with sharp installed (`npm i -D sharp`, an optional dependency; builds work without it), the build scans `site/pages` for raster photos (jpg/jpeg/png/webp) over 700px wide and writes resized `name@640.ext` / `name@1280.ext` variants into `dist`, wiring a `srcset` onto the Markdown image with the original kept as `src`. Only widths below the intrinsic size are generated (never upscale), variants keep the source format, and EXIF orientation is applied. **Author-provided `name@<width>.ext` exports win per width**: your file is copied verbatim and measured from its own header (a `@640` file holding 600px emits `600w`), and generation fills only the uncovered widths; other sizes are hand exports on the probe list (64, 96, 128, …, 3840). Skipped silently: images ≤700px, `@width` files, hidden/symlinked paths, svg/gif/avif, and shelf images (the generator covers page-colocated images only). Without sharp the build behaves as before plus one `npm i -D sharp` hint per build; a corrupt image or a sharp failure on one file is a hint naming the file, never a build failure. Resizes cache in `node_modules/.cache/darkmown-images/` (content hash + width + format), so rebuilds and dev reloads do zero sharp work for unchanged images. Never wired: bound srcs (`![a]({ photo })`), remote/`data:`/query-hash srcs, page-relative or extensionless srcs, and raw-HTML `<img>` tags; `sizes` is never emitted (raw `<img srcset sizes>` on an `html: true` page is the way). `.md` pages get the width/height/lazy hardening but no srcset. The first image on the page stays eager with `fetchpriority="high"`, the rest lazy-load, and author-set attributes always win.
-- Shelf `.json` files publish to `/__wd/data/<name>`; every other shelf file publishes to `/__wd/media/<path>`.
+- Shelf `.json` files publish to `/__wd/data/<name>`; every other shelf file publishes to `/__wd/media/<path>`. Hidden segments (`.`, `-`, `_`) and symlinks are never published, matching the page-asset rule; a symlink that stays inside `site/_/` still works as an `@include`/`@loop` source (it unrolls into pages at build time), it is just never copied to `dist`.
 
 Commands: `darkmown dev`, `darkmown build [--drafts]`, `darkmown validate` (compile-check without writing `dist`), `darkmown serve` (previews `dist`, runs `api/` functions like dev, and compresses text responses), `darkmown deploy <vercel|cloudflare>`, `darkmown catalog [--llms|--llms-full]`.
 
@@ -78,6 +78,7 @@ rss_limit: 20
 - `noindex: true` builds the page but removes it from discovery: a robots `noindex,nofollow` meta, and exclusion from `sitemap.xml`, `rss.xml`, and the generated `llms.txt`/`llms-full.txt`. On a collection entry with a `_schema.wd`, declare it as `noindex: boolean?`.
 - `icon: /path` sets the favicon verbatim (a `type` is added for `.svg`/`.png`/`.ico`). With no `icon:` key, the first of `site/pages/icon.svg`, `icon.png`, `favicon.ico` wins; with neither, the built-in mark is the fallback.
 - `skins: [/base.skin]` (an inline array, same parsing as `tags:`) loads shared `.skin` files for that page only. Paths resolve like `@include` paths; the file must exist, end in `.skin`, and stay inside `site/pages`/`site/_`, or the build fails with `[WD017]`. One scoped skin per page: a shared `scoped` skin scopes to the whole page body.
+- `defaults: [name="value"]` (include files only) sets fallback values for `with` arguments; see Includes & sections.
 - `date` marks the page a post (RSS item, sitemap `lastmod`, `og:type=article`). `updated` and `excerpt` refine that. `author` feeds an article `schema:`.
 - `schema:` emits JSON-LD. One value, or a list. The closed set: `Article`, `BlogPosting`, `TechArticle`, `WebSite`, `Organization`. `organization:` and `logo:` support the `Organization` type. Anything else is a compile error.
 - **Home page only:** `site_url: https://example.com` (no trailing slash) turns on `sitemap.xml`, `rss.xml`, and canonical URLs. `ai_crawlers: allow` (default) or `deny` flips every AI-crawler group in `robots.txt`. `rss_limit: 50` sets how many newest posts `rss.xml` carries (default 20).
@@ -125,7 +126,7 @@ Pipes also fold inside **raw HTML** on an `html: true` page (attribute values an
 
 ## Directives — the complete set (nothing else exists)
 
-Twenty-five directives. `@include`, `@loop`, `:::`, `:if`, `:state`, `:store`, `:computed`, `:fetch`, `:effect`, `:every`, `:theme`, `:button`, `:form`, `:input`, `:textarea`, `:select`, `:checkbox`, `:radio`, `:submit`, `:bind`, `:slider`, `:video`, `:audio`, `:embed`, `:carousel`. Block forms close with `@endloop`, `:endif`, `:endform`, `:endcarousel`, or a bare `:::`. Run `darkmown catalog` for the same list as JSON.
+Twenty-five directives. `@include`, `@loop`, `:::`, `:if`, `:state`, `:store`, `:computed`, `:fetch`, `:effect`, `:every`, `:theme`, `:button`, `:form`, `:input`, `:textarea`, `:select`, `:checkbox`, `:radio`, `:submit`, `:bind`, `:slider`, `:video`, `:audio`, `:embed`, `:carousel`. Block forms close with `@endloop`, `:endif`, `:endform`, `@endinclude`, `:endcarousel`, or a bare `:::`. Run `darkmown catalog` for the same list as JSON.
 
 ### State, stores, and computed
 ```wd
@@ -315,12 +316,22 @@ The closed vocabulary: `string`, `number`, `boolean`, `date`, `string[]`, each w
 @include /nav.wd
 @include /card.wd with title="Aurora"
 
+@include /card.wd with title="Pricing"
+
+Children compile in the caller's scope and land at the include's standalone { children } line.
+
+@endinclude
+
 ::: section #cart .panel
 :state items = []
 { items.length } items
 :::
 ```
-- `@include /partial.wd [with key="value" …]` inlines a file from `site/_/` or `site/pages/`. Paths are **static literals**; there is no dynamic include path. Includes are macros, not components: no children, no slots, no default arguments. A missing argument renders `{ title }` literally.
+- `@include /partial.wd [with key="value" …]` inlines a file from `site/_/` or `site/pages/`. Paths are **static literals**; there is no dynamic include path. Includes are compile-time macros with one slot (below); a missing argument with no default renders `{ title }` literally.
+- **`defaults:` frontmatter** (include files only) sets fallback values for `with` arguments: `defaults: [title="Untitled", cta="Learn more"]`. The caller's `with` value always wins; values are strings (`count="3"` is `"3"`, while a caller's `with count=5` stays typed); entries split on top-level commas only, so `cta="Learn more, today"` works. A malformed `defaults:` is `[WD613]`.
+- **Block form:** `@include /card.wd with title="Pricing"` … `@endinclude` compiles the enclosed lines once in the CALLER's scope (its `:state`, and the loop item when the call sits inside a `@loop`) and inlines them where the include puts a standalone `{ children }` line. Zero runtime cost. Called without a block, the slot renders empty; a block given to an include with no `{ children }` line warns that the content is dropped.
+- `{ children }` is a standalone line only: mid-paragraph or fenced it stays literal, and on a top-level page it is literal text. A `.md` include cannot host a slot. An include may place `{ children }` more than once; the children still compile once.
+- **Pairing:** `@endinclude` closes the nearest preceding unpaired `@include`, so an inline `@include` between opener and closer consumes the pairing (keep inline includes outside a block's span). One level of block nesting is supported; deeper is `[WD616]`, and a stray closer is `[WD614]`. There is NO unclosed-block error: an unpaired opener is simply the inline form, which must stay legal.
 - `::: [tag] [.class …] [#id] [.class when …] [role="…"] [aria-…="…"] [title="…"] … :::` groups content. A container named `section`, `nav`, or `main` emits that real element; any other name is a `<div>` with that class. State declared inside a section is scoped to it (`sectionId:name`).
 - Container attributes are **exactly three names** (`role=`, any `aria-…=`, `title=`), always double-quoted static text, interleaved freely with `.class`/`#id` tokens: `::: nav .menu role="navigation" aria-label="Main"`. Anything else (`class=`, `id=`, `style=`, `onclick=`, `data-…=`) is `[WD650]`; a missing quoted value is `[WD651]`. No `{ state }` inside an aria value: it emits the literal braces. Zero runtime cost, a static page stays static.
 - There is **no layout or shell inheritance**. Every page includes its own nav and footer.
@@ -596,7 +607,7 @@ Always include: a tokens block, a real type scale, generous spacing, a `max-widt
 
 **Syntax highlighting is free.** A fenced code block tagged with a language is highlighted at build time (no client JS), and its token classes read `$code-*` tokens from your skin, so highlighted code follows dark mode with no extra wiring.
 
-**`@font-face` and `@keyframes` are skin at-rules.** Their indented children are font descriptors and keyframe selectors, not page selectors, so they compile as self-contained blocks. `@font-face` takes plain declarations (`font-family "Newsreader"`, `src url("/fonts/n.woff2") format("woff2")`, `font-weight 200 800`, `font-display swap`). `@keyframes <name>` requires a plain identifier; each indented child is a keyframe selector (`from`, `to`, a percentage, or a comma list) with its own declarations one level deeper, and anything else is a compile error. Aliases and `$token` refs work inside both, both stay **global** in a `scoped` skin (same contract as `tokens`), and both can nest under an `@media` line (the home for `prefers-reduced-motion` animation guards).
+**`@font-face` and `@keyframes` are skin at-rules.** Their indented children are font descriptors and keyframe selectors, not page selectors, so they compile as self-contained blocks. `@font-face` takes plain declarations (`font-family "Newsreader"`, `src url("/fonts/n.woff2") format("woff2")`, `font-weight 200 800`, `font-display swap`). `@keyframes <name>` requires a plain identifier; each indented child is a keyframe selector (`from`, `to`, a percentage, or a comma list) with its own declarations one level deeper, and anything else is a compile error. Aliases and `$token` refs work inside both, both stay **global** in a `scoped` skin (same contract as `tokens`), and both can nest under an `@media` line (the home for `prefers-reduced-motion` animation guards). With `harfbuzzjs` + `wawoff2` installed, project-local font srcs are also subsetted to woff2 at build time (see the fonts recipe below).
 
 **Stylesheet order (changed in 2.8):** include skins compile first, then the page's `skins:` entries in listed order, and the page's own colocated `.skin` LAST, so the page wins ties at equal specificity. Before 2.8 the page's skin came first; delete any specificity hacks that only existed to beat the old order.
 
@@ -660,12 +671,12 @@ Style `summary` as the hamburger and `.menu-drawer[open]` as the drawer in the s
 
 ### Fonts done right
 
-Raw TTFs are the most expensive asset a marketing site ships: in the measured rebuild, three variable TTFs cost 1.07 MB on the homepage where the original site served 93 to 158 KB of subset woff2 for the same two families, roughly a 7x difference. The recipe:
+Raw TTFs are the most expensive asset a marketing site ships: in the measured rebuild, three variable TTFs cost 1.07 MB on the homepage where the original site served 93 to 158 KB of subset woff2 for the same two families, roughly a 7x difference. Two ways to get there:
 
-1. Convert every font to **woff2** and **subset** it to the glyphs the site actually uses.
-2. Serve it from the shelf (`site/_/fonts/`, published at `/__wd/media/fonts/`) or colocate it under `site/pages/`.
-3. Declare it with `@font-face` in a shared skin, always with `font-display swap`.
-4. Preload the one critical face with a raw `<link rel="preload" as="font" type="font/woff2" crossorigin>` on an `html: true` page, or an HTTP `Link` header on the host.
+1. **Let the build do it:** `npm i -D harfbuzzjs wawoff2` (both optional dependencies) and a post-pass subsets every project-local `.ttf`/`.otf`/`.woff` in an `@font-face src url(...)` to the site's charset (every code point in the emitted HTML, plus a base set of ASCII, Latin-1, punctuation, arrows, and ★ ✓ ✗), emits `<name>-subset.woff2` beside the original, and rewrites the dist CSS to list the subset first. Cached in `node_modules/.cache/darkmown-fonts/`, idempotent under dev rebuilds, and absent the toolchain you get one hint per build and unchanged output. Measured on the rebuild: 1.07 MB of TTFs became 288 KB of woff2.
+2. Or do it by hand: convert to **woff2**, subset to the glyphs the site uses, and ship the result yourself.
+
+Either way: serve fonts from the shelf (`site/_/fonts/`, published at `/__wd/media/fonts/`) or colocate them, declare them with `@font-face` in a shared skin, always with `font-display swap`, and preload the one critical face with a raw `<link rel="preload" as="font" type="font/woff2" crossorigin>` on an `html: true` page, or an HTTP `Link` header on the host.
 
 ### Pre-fill a form message from query params
 
