@@ -60,6 +60,7 @@ Darkmown is a Markdown-native framework for mostly-static sites with tiny reacti
 - [Compile error codes](#compile-error-codes)
 - [CLI reference](#cli-reference)
 - [Editor support](#editor-support)
+- [Benchmarks](#benchmarks)
 - [Accessibility](#accessibility)
 - [Security](#security)
 - [Limits](#limits)
@@ -1009,6 +1010,10 @@ The `darkmown` command (installed by `npx @zvndev/darkmown`) is the whole tool â
 ## Editor support
 
 A [VS Code extension](https://github.com/ZVN-DEV/darkmown/tree/master/editors/vscode) gives `.wd` and `.skin` files syntax highlighting, snippets, and folding, so a `.wd` file reads as Markdown-plus-directives instead of broken Markdown. Build a `.vsix` from the framework repo and install it with `code --install-extension`; a Marketplace listing is pending.
+
+## Benchmarks
+
+A live production marketing site (Next.js 16, React 19, Tailwind, on Vercel) was rebuilt in Darkmown with the same copy, images, and CMS content pipeline, then both sides were measured (median of three loads, four matched routes): 225-227 KB of compressed JavaScript on every Next.js page vs 18-23 KB total in Darkmown, 46-70 requests vs 11-20, and full builds of 16.6 s cold / 23.2 s warm vs 2.7-3.6 s for all 67 routes. The rebuild lost two categories honestly: raw TTF fonts (1.07 MB vs 158 KB of subset woff2) and unoptimized photos (1,045 KB vs 147 KB of CDN width variants), both addressed by the 2.8/2.9 font recipe and build-time responsive images. The full tables, the per-route breakdown, and the methodology are at [/benchmarks/](/benchmarks/).
 
 ## Accessibility
 

@@ -1,0 +1,126 @@
+---
+title: Benchmarks: a production Next.js site, rebuilt in Markdown
+description: We rebuilt a live production marketing site (Next.js 16, React 19, Tailwind, Vercel) in Darkmown and measured both sides. Same copy, same images, same CMS. A tenth of the JavaScript, a third of the requests, and the two places the rebuild lost, stated plainly.
+image: https://darkmown.com/__wd/media/og.png
+site_url: https://darkmown.com
+transitions: true
+schema: TechArticle
+---
+
+@include /nav.wd
+@include /base.wd
+
+::: main
+
+::: eyebrow
+Benchmarks
+:::
+
+# Same site. Same copy. A tenth of the JavaScript.
+
+We took a live production marketing site, a multi-location dental practice running **Next.js 16, React 19, and Tailwind on Vercel**, and rebuilt it in Darkmown: same copy, same images, same fonts, same CMS content pipeline. Then we measured both. This page is every number we found, including the two categories where the rebuild is worse.
+
+The rebuild lives in a private demo repository, so there is no source link; every figure below is the median of three measured page loads, and the [methodology](#methodology) section says exactly how we measured.
+
+## The headline numbers
+
+::: stats
+
+::: stat
+10x
+::: statlabel
+less JavaScript on the homepage: 22 KB against 225 KB, raw bytes against compressed. Gzip to gzip it is 28x.
+:::
+:::
+
+::: stat
+3.3x
+::: statlabel
+fewer requests per page: 11 to 20 across the four measured routes, against 46 to 70.
+:::
+:::
+
+::: stat
+5.6x
+::: statlabel
+smaller HTML document: 56.7 KB raw against 318 KB. Compressed both ways, still 2.4x leaner.
+:::
+:::
+
+::: stat
+~6x
+::: statlabel
+faster full builds: 2.7 to 3.6 seconds for 67 routes, against 16.6 s cold and 23.2 s warm.
+:::
+:::
+
+:::
+
+## What every page pays
+
+| | Next.js on Vercel | Darkmown rebuild |
+|---|---|---|
+| JavaScript per page | 225 to 227 KB compressed, 16 chunks | 18 to 23 KB total (the whole runtime is 6.6 KB gzipped) |
+| Requests per page | 46 to 70 | 11 to 20 |
+| Homepage HTML document | 318 KB raw, 24.9 KB brotli | 56.7 KB raw, 10.6 KB gzip |
+| Third-party JavaScript | ~357 KB (Google Tag Manager, DoubleClick) | 0 B |
+
+Two things worth saying out loud. The live site sends the **same 16 chunks, byte-identical, on all four measured routes**: whatever route-level code splitting Next.js is doing never showed up, so every page pays the full 226 KB. And the Darkmown column is raw bytes off an uncompressed preview server while the Next.js column is compressed transfer, so the real gap is wider than the table shows.
+
+## Route by route
+
+::: tablewrap
+
+| Route | JS: Next.js | JS: Darkmown | Requests: Next.js | Requests: Darkmown | Total wire: Next.js | Total wire: Darkmown |
+|---|---|---|---|---|---|---|
+| `/` | 225 KB | 22 KB | 50 | 15 | 2.16 MB | 1.79 MB |
+| `/services/dental-implants/` | 226 KB | 18 KB | 54 | 12 | 828 KB | 793 KB |
+| `/doctors/` | 227 KB | 18 KB | 70 | 20 | 965 KB | **1.69 MB** |
+| `/request-appointment/` | 226 KB | 23 KB | 46 | 11 | 784 KB | 678 KB |
+
+:::
+
+The doctors route is the one page where the rebuild's total wire bytes are **higher**, and it is not a rounding error: the rebuild shipped unoptimized headshots where the live site serves CDN width variants. That is the next section.
+
+## Build time and source size
+
+Measured on the same machine, 67 routes on both sides:
+
+| | Next.js 16 | Darkmown |
+|---|---|---|
+| Cold build | 16.6 s | 2.7 to 3.6 s |
+| Warm build | 23.2 s | 2.7 to 3.6 s (there is no build cache) |
+| CPU time per build | ~30 s | ~0.6 s |
+
+| | Next.js project | Darkmown rebuild |
+|---|---|---|
+| Maintained source | ~33,000 lines (24.5k code + 8.4k CMS JSON) | 17,300 lines total |
+| Project on disk | 39 MB | 5.5 MB |
+| `node_modules` | 932 MB | 15 MB (62x smaller) |
+
+## Where Darkmown loses
+
+Both of these were real losses on measured bytes, not hypotheticals, and both shaped what shipped next.
+
+- **Fonts, badly.** The rebuild served three raw variable TTFs: 1.07 MB on the homepage, against `next/font`'s 158 KB of subset woff2. Fonts were the single largest byte category on every rebuilt page. The 2.8 documentation now ships a font recipe (convert to woff2, subset to the glyphs used, `font-display swap`, preload the critical face), and build-time subsetting is on the roadmap.
+- **Photos.** The doctors page shipped 1,045 KB of headshots against the live site's 147 KB of CDN width variants. Darkmown 2.8 added the `@width` convention (drop in `photo@640.jpg` and the build wires the `srcset`), and 2.9 generates those variants at build time when sharp is installed. Run the same rebuild today and this category flips.
+- **A shared cost neither side avoids:** both sites load the same ~594 KB hero video on the homepage. No edge for anyone there.
+
+## Methodology
+
+- Measured on 2026-10-13 with Chromium via Playwright: 1280x900 desktop viewport, cache disabled, three fresh loads per URL, median reported. Wire bytes are CDP `encodedDataLength`, which is compressed transfer size plus response headers.
+- The live site runs on Vercel's edge network; the rebuild was measured from a local static build (`darkmown serve`). Local timings reflect zero network latency, so **we do not compare timing columns at all**. Bytes and request counts are the fair comparison.
+- The preview server did not compress responses in this run, so the rebuild's text wire bytes overstate what the same `dist/` transfers behind a compressing host: its homepage HTML is 57.4 KB on the wire but 10.6 KB gzipped, and any Vercel or Cloudflare deploy of the same output gets brotli and edge caching for free.
+- Four routes measured out of 67. The content pipeline is identical on both sides: the same Capa CMS snapshot drives both sites, and the Darkmown sync regenerates its 41 managed pages byte-identically in 0.05 s.
+- **What Next.js does that Darkmown does not:** server rendering, streaming, per-request personalization, edge caching, an image CDN, and automatic font subsetting. This site exercises none of the dynamic ones; its pages are the same for every visitor, which is exactly the case a static build exists for. Where Next.js's automatic asset optimization (fonts, responsive images) would win, it did win, and that is the section above.
+- Whether a production dental site keeps Google Tag Manager is a business decision, not a framework property. The rebuild demonstrates the site works without it, and the ~357 KB saving is stated as such.
+
+::: bench-cta
+[Read the docs](/docs/){.btn .primary}
+[Try Darkmown in your browser](/playground/){.btn}
+[Darkmown vs. Markdoc](/vs/markdoc/){.btn}
+:::
+
+:::
+
+@include /footer.wd

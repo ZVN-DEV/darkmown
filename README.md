@@ -39,7 +39,7 @@ no install and no build step.
 
 **On this page**
 
-- [Quick start](#quick-start) · [Showcase](#showcase) · [Working from this repo](#working-from-this-repo) · [Commands](#commands)
+- [Quick start](#quick-start) · [Showcase](#showcase) · [Benchmarks](#benchmarks) · [Working from this repo](#working-from-this-repo) · [Commands](#commands)
 - **Authoring:** [Authoring model](#authoring-model) · [Directive lines](#directive-lines) · [Interpolation](#interpolation) · [Frontmatter](#frontmatter) · [Static assets](#static-assets) · [SEO & feeds](#seo--feeds-sitemap-rss-robots) · [Loops](#loops) · [Content collections](#content-collections) · [Sections](#sections)
 - **Reactivity:** [Reactive directives](#reactive-directives) · [Fetching data](#fetching-data) · [Global state](#global-state--store) · [URL as state](#url-as-state-from-url) · [Forms and persistence](#forms-and-persistence) · [Backends & deploy](#backends--deploy) · [Interactions](#interactions--slider-sortable-carousel)
 - **Presentation:** [Inline attributes](#inline-attributes) · [Media](#media--video-audio-embed) · [Syntax highlighting](#syntax-highlighting) · [Dark mode](#dark-mode--tokens-dark) · [Scoped styles](#scoped-styles--scoped) · [Skin at-rules](#skin-at-rules-font-face-and-keyframes)
@@ -57,6 +57,16 @@ Five complete apps, each a readable `.wd` file — see them at **[darkmown.com/s
 - **[Ledger](https://darkmown.com/ledger/)** — a spreadsheet-grade expense table: clickable-header reactive sort, a live filter, running totals via `sum`/`avg`/`max`, `| money`/`| date` format pipes, and a `:theme` toggle.
 
 Plus focused feature demos: a draggable, keyboard-navigable **[Swiper](https://darkmown.com/carousel/)** (the `wd.subscribe` escape hatch) and a zero-JS **[Media](https://darkmown.com/media/)** page (`:video` / `:audio` / `:embed`).
+
+## Benchmarks
+
+We rebuilt a live production marketing site (Next.js 16, React 19, Tailwind, on Vercel) in Darkmown: same copy, same images, same CMS content pipeline, 67 routes. Then we measured both sides, median of three loads per route. Full tables, losses included, at **[darkmown.com/benchmarks](https://darkmown.com/benchmarks/)**:
+
+- **JavaScript per page:** 225-227 KB compressed across 16 identical chunks on every Next.js page, vs 18-23 KB total in Darkmown (the whole framework runtime is 6.6 KB gzipped).
+- **Requests per page:** 46-70 vs 11-20. The live site also loads ~357 KB of third-party JS (GTM, DoubleClick); the rebuild loads zero.
+- **Build time (same machine):** 16.6 s cold / 23.2 s warm vs 2.7-3.6 s for all 67 routes, with no build cache.
+
+The honest losses, because a benchmark that only wins is marketing: the rebuild shipped 1.07 MB of raw TTF fonts against `next/font`'s 158 KB of subset woff2, and 1,045 KB of unoptimized photos against 147 KB of CDN width variants. Fonts now have a documented woff2 + subsetting recipe (2.8), and responsive image variants are generated at build time (2.9).
 
 ## Working from this repo
 

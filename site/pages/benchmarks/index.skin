@@ -1,0 +1,67 @@
+/* The benchmarks page: measured numbers from rebuilding a production
+   Next.js marketing site in Darkmown. Layers on /base.wd. Class names
+   match the `::: name .class` containers in index.wd. The page contains
+   no directives and no raw HTML, so it ships zero JavaScript. */
+
+.stats
+  display grid
+  grid-template-columns repeat(4, 1fr)
+  gap 1rem
+  margin 1.75rem 0 2.25rem
+  padding 1.5rem 0
+  border-top 1px solid $line-soft
+  border-bottom 1px solid $line-soft
+
+/* The value line and its label must stay separate containers, otherwise
+   Markdown folds them into one paragraph (same trick as the homepage). */
+.stat
+  display flex
+  flex-direction column
+  gap .25rem
+  min-width 0
+
+.stat > p
+  margin 0
+  font-size 2rem
+  line-height 1.05
+  color $accent
+  letter-spacing -.02em
+  font-variant-numeric tabular-nums
+
+.statlabel
+  font-size .85rem
+  line-height 1.4
+  color $ink-soft
+
+.statlabel p
+  margin 0
+
+/* The route-by-route table is wide; let it scroll sideways on a phone
+   instead of crushing the columns. */
+.tablewrap
+  overflow-x auto
+  margin 1.5rem 0
+
+.tablewrap table
+  margin 0
+  min-width 720px
+  font-size .88rem
+
+.tablewrap th, .tablewrap td
+  white-space nowrap
+
+/* Numeric columns read better right-aligned and tabular. */
+.tablewrap th:nth-child(n+2), .tablewrap td:nth-child(n+2)
+  text-align right
+  font-variant-numeric tabular-nums
+
+.bench-cta
+  display flex
+  flex-wrap wrap
+  gap .6rem
+  margin 2.5rem 0 0
+
+@media (max-width: 760px)
+  .stats
+    grid-template-columns 1fr 1fr
+    gap 1.25rem

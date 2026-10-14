@@ -188,6 +188,7 @@ The echo endpoint is only live on the deployed site: { reply_error }
 [Deploy to Vercel](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FZVN-DEV%2Fdarkmown){.btn .primary}
 [Read the docs](/docs/){.btn}
 [How it compares to Markdoc](/vs/markdoc/){.btn}
+[Benchmarks vs. a real Next.js site](/benchmarks/){.btn}
 :::
 
 :::
