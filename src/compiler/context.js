@@ -153,6 +153,11 @@
  *   opener's `file:line` + raw text, set when descending into a loop body so the
  *   reactive-nesting-depth error can point at the offending opener.
  * @property {boolean} [loopMeta] Inside a loop body, so `$index`/`$first`/… are valid.
+ * @property {number} [includeBlockDepth] Enclosing block-form `@include`
+ *   CHILDREN levels (0 at page level, absent on a fresh file compile). Set
+ *   while compiling a block's children so a block include nested past one
+ *   level inside children is a compile error (WD616, together with the
+ *   include-stack depth check for include bodies).
  * @property {import("markdown-it").default} [md] Markdown-it instance selected for this file.
  * @property {(lines: string[], ctx: Ctx) => string} compileBody The body
  *   dispatcher, threaded through the context so block handlers (`:if`, `:::`,

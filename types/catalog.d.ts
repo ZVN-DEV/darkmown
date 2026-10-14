@@ -107,9 +107,10 @@ export type DirectiveEntry = {
      */
     name: string;
     /**
-     * A single line, or an opener with a closer.
+     * A single line, an opener with a
+     * closer, or a line that may optionally open a block (`@include … @endinclude`).
      */
-    kind: "line" | "block";
+    kind: "line" | "block" | "either";
     /**
      * One-line schematic (`[…]` = optional, `<…>` = slot).
      */

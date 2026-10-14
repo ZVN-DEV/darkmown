@@ -3,7 +3,7 @@
 
 root ::= directive | closer | binding
 directive ::= dir-include | dir-loop | dir-container | dir-if | dir-state | dir-store | dir-computed | dir-fetch | dir-effect | dir-every | dir-theme | dir-button | dir-form | dir-input | dir-textarea | dir-select | dir-checkbox | dir-radio | dir-submit | dir-bind | dir-slider | dir-video | dir-audio | dir-embed | dir-carousel
-closer ::= "@endloop" | "@empty" | ":endif" | ":endform" | ":endcarousel" | ":::" | ":else if" sp condition ( sp joiner sp condition )* | ":else if" sp path | ":else"
+closer ::= "@endloop" | "@empty" | "@endinclude" | ":endif" | ":endform" | ":endcarousel" | ":::" | ":else if" sp condition ( sp joiner sp condition )* | ":else if" sp path | ":else"
 
 dir-loop ::= "@loop" sp operand sp "into" sp ident loop-clauses
 dir-if ::= ":if" sp ( condition (sp joiner sp condition)* | path )

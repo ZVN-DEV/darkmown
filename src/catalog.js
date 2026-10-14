@@ -58,7 +58,8 @@ import { ERROR_AREAS, errorCatalog } from "./errors.js";
 /**
  * @typedef {object} DirectiveEntry
  * @property {string} name The directive token (`@loop`, `:state`, `:::`, …).
- * @property {"line" | "block"} kind A single line, or an opener with a closer.
+ * @property {"line" | "block" | "either"} kind A single line, an opener with a
+ *   closer, or a line that may optionally open a block (`@include … @endinclude`).
  * @property {string} syntax One-line schematic (`[…]` = optional, `<…>` = slot).
  * @property {string} description One-line, plain-language summary.
  * @property {string} example One concrete, compilable line.
@@ -97,10 +98,11 @@ import { ERROR_AREAS, errorCatalog } from "./errors.js";
 const DIRECTIVES = [
   {
     name: "@include",
-    kind: "line",
-    syntax: '@include /partial.wd [with key="value" …]',
+    kind: "either",
+    syntax:
+      '@include /partial.wd [with key="value" …]  |  @include /partial.wd [with …] …children… @endinclude',
     description:
-      "Inline another .wd/.md file from site/pages or site/_, passing optional scope args.",
+      'Inline another .wd/.md file from site/pages or site/_, passing optional scope args. Block form compiles the lines before @endinclude in the caller\'s scope and places them where the file puts a standalone `{ children }` line (empty when called without a block). The file may declare `defaults: [name="value"]` frontmatter for args the caller did not pass.',
     example: INCLUDE_EXAMPLE,
     reactive: "static"
   },
@@ -623,6 +625,12 @@ const FRONTMATTER_KEYS = [
     example: "html: true"
   },
   {
+    name: "defaults",
+    description:
+      'INCLUDE FILES ONLY: fallback values for `with` arguments the caller did not pass (an inline array of name="value" entries; values are strings).',
+    example: 'defaults: [title="Untitled"]'
+  },
+  {
     name: "transitions",
     description: "Opt into cross-document view transitions and link prerendering.",
     example: "transitions: true"
@@ -693,6 +701,7 @@ function blockStructureSection() {
     "- `@loop … @endloop`. `@empty` inside the loop body renders when the list is empty.",
     "- `:if … :endif`, with optional `:else if <condition>` and `:else` branches before the close.",
     "- `:form … :endform`, `:carousel … :endcarousel`, and `::: … :::` (a bare `:::` closes a container).",
+    "- `@include /partial.wd … @endinclude` compiles the lines between in the caller's scope and places them at the partial's standalone `{ children }` line (the slot renders empty when called without a block). `@endinclude` pairs with the nearest preceding unpaired `@include`.",
     ""
   ];
 }

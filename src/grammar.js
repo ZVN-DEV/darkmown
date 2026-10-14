@@ -87,11 +87,12 @@ export function generateGrammar() {
   lines.push("");
   // A `.wd` line is an opener, a BLOCK CLOSER (or mid-block marker), or an
   // interpolation. The closers were missing, so constrained decoding could open
-  // an `@loop` it was then unable to close.
+  // an `@loop` it was then unable to close. `@endinclude` closes the block form
+  // of `@include` (children slot); the opener line itself stays `dir-include`.
   lines.push("root ::= directive | closer | binding");
   lines.push(`directive ::= ${dirRules.join(" | ")}`);
   lines.push(
-    'closer ::= "@endloop" | "@empty" | ":endif" | ":endform" | ":endcarousel" | ":::"' +
+    'closer ::= "@endloop" | "@empty" | "@endinclude" | ":endif" | ":endform" | ":endcarousel" | ":::"' +
       ' | ":else if" sp condition ( sp joiner sp condition )* | ":else if" sp path | ":else"'
   );
   lines.push("");

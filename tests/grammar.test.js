@@ -321,6 +321,7 @@ const SHIPPED = [
 
   // K3: block closers and mid-block markers.
   ["@endloop", "loop closer"],
+  ["@endinclude", "include block closer"],
   ["@empty", "loop empty marker"],
   [":endif", "if closer"],
   [":endform", "form closer"],

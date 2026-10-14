@@ -102,6 +102,15 @@ export function resolveInclude(spec: string, fromFile: string, context: Paths, a
  */
 export function isAllowedInclude(file: string, context: Paths, reader?: import("./reader.js").Reader): boolean;
 /**
+ * The compiled children HTML for the include currently compiling, or null when
+ * the file is not being compiled as an include at all (a top-level page) — in
+ * which case a `{ children }` line stays literal text. An include called
+ * WITHOUT a block carries "" (the slot renders empty).
+ * @param {import("./context.js").Ctx} ctx
+ * @returns {string | null}
+ */
+export function childrenSlot(ctx: import("./context.js").Ctx): string | null;
+/**
  * Warn when a plain `.md` file contains `.wd`-only syntax that stays inert.
  * @param {string} body
  * @param {string} file
@@ -109,6 +118,20 @@ export function isAllowedInclude(file: string, context: Paths, reader?: import("
  * @returns {void}
  */
 export function scanMarkdownHints(body: string, file: string, comp: Compilation): void;
+/**
+ * Scope key carrying the compiled children HTML for the include currently
+ * being compiled. Control-character-prefixed so no author-visible name can
+ * collide with it or read it through `{ }` interpolation.
+ */
+export const INCLUDE_CHILDREN: "\0children";
+/**
+ * A line that is exactly the slot marker (`{ children }`, whitespace-tolerant),
+ * matching the spelling freedom of `{ name }` interpolation. Shared by the
+ * body parser (which splices the slot) and the include handler (which scans an
+ * include's body for whether the slot is ever used).
+ * @type {RegExp}
+ */
+export const CHILDREN_SLOT_LINE: RegExp;
 export type Paths = import("./context.js").Paths;
 export type Assets = import("./context.js").Assets;
 export type Compilation = import("./context.js").Compilation;

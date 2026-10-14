@@ -33,8 +33,10 @@ import {
   handleTheme,
   renderDemoDirective
 } from "./directives.js";
+import { CHILDREN_SLOT_LINE, childrenSlot } from "./includes.js";
 import { handleLoop, spliceTables } from "./loops.js";
 import { renderProse } from "./markdown.js";
+import { scanIncludeBlock, strayEndinclude } from "./structure.js";
 
 /**
  * @typedef {import("./context.js").Ctx} Ctx
@@ -148,6 +150,21 @@ export function compileBody(lines, ctx) {
       }
     }
 
+    // A standalone `{ children }` line is an include's slot marker: when the
+    // file being compiled was called as a block-form @include, the compiled
+    // children HTML (built in the caller's context by handleInclude) splices
+    // in here. With no slot in scope — a top-level page — the line falls
+    // through to prose and stays the literal text `{ children }`; an include
+    // called without a block carries an empty slot and splices nothing.
+    if (!inRawBlock && CHILDREN_SLOT_LINE.test(line)) {
+      const slot = childrenSlot(ctx);
+      if (slot !== null) {
+        flush();
+        if (slot) push(slot);
+        continue;
+      }
+    }
+
     // A directive name ALONE on a line is a mistake with one obvious fix: it is
     // missing its arguments. Every dispatcher below requires a space after the
     // keyword, so such a line used to fall through to prose — and because
@@ -164,7 +181,15 @@ export function compileBody(lines, ctx) {
 
     if (/^@include\s/.test(line)) {
       flush();
-      push(handleInclude(line, ctx, i));
+      const block = scanIncludeBlock(lines, i);
+      if (block) {
+        const includeAt = ctx.comp.symbols.length;
+        push(handleInclude(line, ctx, i, block.body));
+        stampBlockEnd(ctx, includeAt, block.end);
+        i = block.end;
+      } else {
+        push(handleInclude(line, ctx, i));
+      }
       continue;
     }
     if (/^@loop\s/.test(line)) {
@@ -340,6 +365,10 @@ export function compileBody(lines, ctx) {
         { code: "WD009", file: ctx.file, hint: "@loop items into item ... @endloop" }
       );
     }
+    // `@endinclude` that reached the dispatcher: every opener that could pair
+    // with it already did (scanIncludeBlock consumes paired closers), so this
+    // one has no opener of its own — one obvious fix, its own WD6xx code.
+    if (/^@endinclude(?:\s|$)/.test(line)) strayEndinclude(line, ctx, i);
     // `:endcarousel` joins the family: a closer with no opener is a mistake with
     // one obvious fix, and the vague "matches none" warning it used to get named
     // the wrong problem ("check the spelling") for a token spelled correctly.

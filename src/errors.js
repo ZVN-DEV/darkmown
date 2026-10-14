@@ -1058,6 +1058,30 @@ const ENTRIES = [
     fix: "Break the loop: remove the `@include` that points back, or move the shared content into a third file both sides include."
   },
   {
+    code: "WD613",
+    title: "Invalid include `defaults`",
+    cause:
+      'An include file\'s `defaults:` frontmatter is not an inline array of `name="value"` entries.',
+    fix: 'Write an inline array of quoted entries, e.g. `defaults: [title="Untitled"]`. Values are strings; a caller-provided `with` argument always wins over a default.',
+    example: INCLUDE_EXAMPLE
+  },
+  {
+    code: "WD614",
+    title: "Stray `@endinclude`",
+    cause:
+      "An `@endinclude` has no unpaired `@include` before it — the closer pairs with the nearest preceding unpaired opener, and every opener in range already paired.",
+    fix: "Remove the extra closer, or open a block above it: `@include /partial.wd`, the children lines, then `@endinclude`.",
+    example: INCLUDE_EXAMPLE
+  },
+  {
+    code: "WD616",
+    title: "Include block nested too deep",
+    cause:
+      "A block-form `@include … @endinclude` sits inside another include block's children or inside a nested include's own body, past the one supported level.",
+    fix: "Keep one level: move the inner block into the include's own file, or use the inline form `@include /partial.wd`.",
+    example: INCLUDE_EXAMPLE
+  },
+  {
     code: "WD650",
     title: "Attribute is not on the accessibility whitelist",
     cause:

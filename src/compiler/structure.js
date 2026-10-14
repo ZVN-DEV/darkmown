@@ -11,8 +11,25 @@
 // while keeping the message text and `Use:` hints intact.
 // ---------------------------------------------------------------------------
 
-import { at, createScope, LOOP_META, lineOf, nestedCtx, recordSymbol, wdError } from "./context.js";
-import { resolveInclude, scopedSkinFor, stampScope } from "./includes.js";
+import path from "node:path";
+import {
+  at,
+  createScope,
+  LOOP_META,
+  lineOf,
+  nestedCtx,
+  normalizeNewlines,
+  recordSymbol,
+  wdError
+} from "./context.js";
+import { parseFrontmatter } from "./frontmatter.js";
+import {
+  CHILDREN_SLOT_LINE,
+  INCLUDE_CHILDREN,
+  resolveInclude,
+  scopedSkinFor,
+  stampScope
+} from "./includes.js";
 import {
   escapeHtml,
   getPath,
@@ -146,12 +163,31 @@ export function a11yAttrHtml(attrs) {
 }
 
 /**
+ * Compile an `@include` line — inline form (`@include /nav.wd`) or block form
+ * (`@include /card.wd … @endinclude`, with `childrenLines` holding the lines
+ * between opener and closer, captured by {@link scanIncludeBlock}).
+ *
+ * Block form is compile-time macro expansion and nothing more: the children
+ * lines compile in the CALLER's context (its scope, its `:state`, its loop
+ * item when the call sits in a `@loop` body) BEFORE the target compiles, and
+ * the resulting HTML rides into the include's scope under
+ * {@link INCLUDE_CHILDREN}, where the body parser splices it at each
+ * `{ children }` slot line. No runtime marker, no reactivity of its own.
+ * Children compile ONCE even when the include places the slot twice, so state
+ * a child line declares is declared once in the caller.
+ *
+ * The include file's own frontmatter may declare `defaults: [name="value" …]`
+ * fallback values for `with` arguments (see {@link parseIncludeDefaults}); a
+ * caller-provided argument always wins over a default, and an argument with
+ * neither keeps the literal-braces behavior.
  * @param {string} line
  * @param {Ctx} ctx
  * @param {number} index 0-based line index for `file:line` errors.
+ * @param {string[]} [childrenLines] Lines between `@include` and `@endinclude`
+ *   for the block form; undefined for the inline form.
  * @returns {string}
  */
-export function handleInclude(line, ctx, index) {
+export function handleInclude(line, ctx, index, childrenLines) {
   const match = line.match(/^@include\s+(\S+)(?:\s+with\s+(.+))?$/);
   if (!match)
     throw wdError(`Malformed @include in ${at(ctx, index)}: ${line}. ${INCLUDE_USE}`, {
@@ -171,7 +207,39 @@ export function handleInclude(line, ctx, index) {
   );
   const args = parseIncludeArgs(match[2] || "", ctx);
   recordSymbol(ctx, index, { kind: "include", name: match[1], detail: `@include ${match[1]}` });
-  const childScope = createScope(ctx.scope, args);
+  const component = includeComponentInfo(target, ctx);
+  let childrenHtml = "";
+  if (childrenLines) {
+    // One nesting level is the contract: a block include's children (or an
+    // include file's own body) may hold one block include, no more. Children
+    // depth travels on the ctx (children compile in the caller's context);
+    // include-FILE depth is the include stack's length (page = 1, its include
+    // = 2, an include's include = 3 — too deep for a block).
+    if ((ctx.includeBlockDepth ?? 0) >= 2 || ctx.stack.length > 2) {
+      const hint = `${INCLUDE_BLOCK_USE}`;
+      throw wdError(
+        `Block-form @include nested too deep in ${at(ctx, index)}: ${line}. A children block or an include body may hold ONE level of @include … @endinclude. Use: ${hint}`,
+        { code: "WD616", file: ctx.file, line: lineOf(ctx, index), hint, example: INCLUDE_EXAMPLE }
+      );
+    }
+    childrenHtml = ctx.compileBody(childrenLines, {
+      ...nestedCtx(ctx, index + 1),
+      includeBlockDepth: (ctx.includeBlockDepth ?? 0) + 1
+    });
+    if (childrenHtml.trim() && !component.usesChildren) {
+      ctx.comp.warnings.push(
+        `${at(ctx, index)}: the @include block for "${match[1]}" passes children, but ${target} never uses a { children } line, so the content is dropped. Add { children } where the slot content should appear, or drop the block.`
+      );
+    }
+  }
+  // Caller args sit over defaults (the caller always wins); the children slot
+  // sits alongside them. An inline call still sets the slot (""), so a nested
+  // include never sees an OUTER include's children through the scope chain.
+  const childScope = createScope(ctx.scope, {
+    ...component.defaults,
+    ...args,
+    [INCLUDE_CHILDREN]: childrenHtml
+  });
   // Thread the reactive-nesting depth (and the enclosing loop opener, so a depth
   // error names the right opener) into the include, exactly as `loopItem` is —
   // otherwise a reactive @loop inside the include would start counting from zero
@@ -194,6 +262,206 @@ export function handleInclude(line, ctx, index) {
   // the same path-derived id, so attribute and stylesheet line up.
   const scopedSkin = scopedSkinFor(target, ctx.context, ctx.comp.reader);
   return scopedSkin && scopedSkin.scoped ? stampScope(child.html, scopedSkin.scopeId) : child.html;
+}
+
+const INCLUDE_BLOCK_USE = `@include /partial.wd [with key="value"] … @endinclude — e.g. @include /card.wd with title="Pricing"`;
+
+/**
+ * Scan ahead from an `@include` opener for the `@endinclude` that pairs with
+ * it. Pairing is nearest-opener-first: a nested `@include` line pushes, an
+ * `@endinclude` line pops the most recent unclosed opener, and the first
+ * `@endinclude` found with nothing on the stack belongs to THIS opener — so
+ * nested blocks pair correctly, and an inline `@include` earlier in the file
+ * than a block (the common nav-include-then-card-block page) is unaffected.
+ * Fenced code is skipped, exactly as in the other block scanners.
+ *
+ * Returns null when no closer pairs — the include is the INLINE form, which
+ * stays legal (backward compatible): an opener that never pairs is an inline
+ * include followed by ordinary prose, and the two are indistinguishable, so
+ * there is deliberately no "unclosed block" error.
+ * @param {string[]} lines The current body slice.
+ * @param {number} start 0-based index of the `@include` opener line.
+ * @returns {{ body: string[], end: number } | null} The children lines and the
+ *   closer's 0-based index, or null for the inline form.
+ */
+export function scanIncludeBlock(lines, start) {
+  /** @type {number[]} */
+  const stack = [];
+  /** @type {string | null} */
+  let fence = null;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      continue;
+    }
+    if (/^@include\s/.test(line)) {
+      stack.push(i);
+      continue;
+    }
+    if (line.trim() === "@endinclude") {
+      if (stack.length === 0) return { body: lines.slice(start + 1, i), end: i };
+      stack.pop();
+    }
+  }
+  return null;
+}
+
+/**
+ * `@endinclude` reached the body dispatcher, meaning no `@include` opener
+ * claimed it — the one-closer-too-many case (a typo'd closer, or a nested
+ * block attempted inside a children block, where the inner opener already
+ * took the closer the author meant for the outer one). Always throws.
+ * @param {string} line The offending line, for the message.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line`.
+ * @returns {never}
+ */
+export function strayEndinclude(line, ctx, index) {
+  const hint = INCLUDE_BLOCK_USE;
+  throw wdError(
+    `Stray "${line.trim()}" with no unpaired @include before it in ${at(ctx, index)}. @endinclude pairs with the nearest preceding unpaired @include. Use: ${hint}`,
+    { code: "WD614", file: ctx.file, line: lineOf(ctx, index), hint, example: INCLUDE_EXAMPLE }
+  );
+}
+
+/**
+ * The component-facing facts about an include target's source: its declared
+ * argument `defaults` (frontmatter) and whether its body ever places the
+ * `{ children }` slot. Reads the target once, ahead of the compileFile read.
+ * @param {string} target Absolute include path.
+ * @param {Ctx} ctx
+ * @returns {{ defaults: Record<string, string>, usesChildren: boolean }}
+ */
+function includeComponentInfo(target, ctx) {
+  const raw = normalizeNewlines(ctx.comp.reader.readText(target));
+  const { meta, body } = parseFrontmatter(raw, target);
+  return {
+    defaults: parseIncludeDefaults(meta, raw, target),
+    // A `.md` include never runs the directive/interpolation layer, so a
+    // `{ children }` line in one is inert text, not a slot: the drop-hint must
+    // treat the file as slotless.
+    usesChildren: path.extname(target) !== ".md" && usesChildrenSlot(body)
+  };
+}
+
+/**
+ * Parse an include file's `defaults:` frontmatter: an inline array of
+ * `name="value"` entries, e.g. `defaults: [title="Untitled", cta="Learn more"]`.
+ * Values are STRINGS (frontmatter is string-typed) and apply only inside that
+ * include; a caller-provided `with` argument always wins.
+ *
+ * The raw `defaults:` line is split quote-aware (so a value may contain a
+ * comma) rather than trusting the generic frontmatter array items, whose
+ * splitter only honors item-leading quotes. Reached only when
+ * `parseFrontmatter` already produced an array for the key, so the source
+ * line and its `[…]` shape are guaranteed present.
+ * @param {import("./context.js").Meta} meta The include file's frontmatter.
+ * @param {string} raw The include file's full (newline-normalized) source.
+ * @param {string} target Absolute include path, for error messages.
+ * @returns {Record<string, string>}
+ */
+function parseIncludeDefaults(meta, raw, target) {
+  if (meta.defaults === undefined) return {};
+  const use = 'an inline array of name="value" entries — e.g. defaults: [title="Untitled"]';
+  if (!Array.isArray(meta.defaults)) {
+    throw wdError(`Invalid defaults frontmatter in ${target}: the value must be ${use}.`, {
+      code: "WD613",
+      file: target,
+      hint: use,
+      example: 'defaults: [title="Untitled"]'
+    });
+  }
+  const lines = raw.split("\n");
+  const lineIndex = lines.findIndex((l) => /^defaults\s*:/.test(l));
+  const valueText = lines[lineIndex].replace(/^defaults\s*:\s*/, "").trim();
+  const inner = valueText.slice(1, -1); // strip the […] the array shape guarantees
+  /** @type {Record<string, string>} */
+  const defaults = {};
+  for (const entry of splitDefaultEntries(inner)) {
+    const match =
+      entry.match(/^([A-Za-z0-9_-]+)="([^"]*)"$/) ?? entry.match(/^([A-Za-z0-9_-]+)='([^']*)'$/);
+    if (!match) {
+      throw wdError(
+        `Invalid defaults frontmatter in ${target}:${lineIndex + 1}: entry "${entry}" must look like name="value". Use: ${use}.`,
+        {
+          code: "WD613",
+          file: target,
+          line: lineIndex + 1,
+          hint: use,
+          example: 'defaults: [title="Untitled"]'
+        }
+      );
+    }
+    defaults[match[1]] = match[2];
+  }
+  return defaults;
+}
+
+/**
+ * Split the inside of a `defaults: […]` array on top-level commas, honoring
+ * quotes ANYWHERE in an entry (the value follows `name=`, so the quote is not
+ * entry-leading and the generic frontmatter splitter would break on a comma
+ * inside it). An unterminated quote leaves its entry malformed, which the
+ * caller's entry check rejects.
+ * @param {string} inner
+ * @returns {string[]} Trimmed, non-empty entries.
+ */
+function splitDefaultEntries(inner) {
+  /** @type {string[]} */
+  const entries = [];
+  let buf = "";
+  /** @type {string | null} */
+  let quote = null;
+  for (const ch of inner) {
+    if (quote) {
+      buf += ch;
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      buf += ch;
+    } else if (ch === ",") {
+      entries.push(buf);
+      buf = "";
+    } else {
+      buf += ch;
+    }
+  }
+  entries.push(buf);
+  return entries.map((entry) => entry.trim()).filter(Boolean);
+}
+
+/**
+ * Whether an include body ever places the `{ children }` slot: a standalone
+ * slot-marker line outside fenced code. Fence-aware so a documentation fence
+ * demonstrating `{ children }` does not count (its content is literal text —
+ * the slot really is unused there, and the drop-hint should still fire).
+ * @param {string} body The include file's post-frontmatter body.
+ * @returns {boolean}
+ */
+function usesChildrenSlot(body) {
+  /** @type {string | null} */
+  let fence = null;
+  for (const line of body.split("\n")) {
+    const fenceMatch = line.match(/^(```+|~~~+)/);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length)
+        fence = null;
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      continue;
+    }
+    if (CHILDREN_SLOT_LINE.test(line)) return true;
+  }
+  return false;
 }
 
 /**

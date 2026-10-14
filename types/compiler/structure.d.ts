@@ -24,12 +24,64 @@ export function takeA11yAttrs(rest: string, ctx: Ctx, index: number, what: strin
  */
 export function a11yAttrHtml(attrs: [string, string][]): string;
 /**
+ * Compile an `@include` line — inline form (`@include /nav.wd`) or block form
+ * (`@include /card.wd … @endinclude`, with `childrenLines` holding the lines
+ * between opener and closer, captured by {@link scanIncludeBlock}).
+ *
+ * Block form is compile-time macro expansion and nothing more: the children
+ * lines compile in the CALLER's context (its scope, its `:state`, its loop
+ * item when the call sits in a `@loop` body) BEFORE the target compiles, and
+ * the resulting HTML rides into the include's scope under
+ * {@link INCLUDE_CHILDREN}, where the body parser splices it at each
+ * `{ children }` slot line. No runtime marker, no reactivity of its own.
+ * Children compile ONCE even when the include places the slot twice, so state
+ * a child line declares is declared once in the caller.
+ *
+ * The include file's own frontmatter may declare `defaults: [name="value" …]`
+ * fallback values for `with` arguments (see {@link parseIncludeDefaults}); a
+ * caller-provided argument always wins over a default, and an argument with
+ * neither keeps the literal-braces behavior.
  * @param {string} line
  * @param {Ctx} ctx
  * @param {number} index 0-based line index for `file:line` errors.
+ * @param {string[]} [childrenLines] Lines between `@include` and `@endinclude`
+ *   for the block form; undefined for the inline form.
  * @returns {string}
  */
-export function handleInclude(line: string, ctx: Ctx, index: number): string;
+export function handleInclude(line: string, ctx: Ctx, index: number, childrenLines?: string[]): string;
+/**
+ * Scan ahead from an `@include` opener for the `@endinclude` that pairs with
+ * it. Pairing is nearest-opener-first: a nested `@include` line pushes, an
+ * `@endinclude` line pops the most recent unclosed opener, and the first
+ * `@endinclude` found with nothing on the stack belongs to THIS opener — so
+ * nested blocks pair correctly, and an inline `@include` earlier in the file
+ * than a block (the common nav-include-then-card-block page) is unaffected.
+ * Fenced code is skipped, exactly as in the other block scanners.
+ *
+ * Returns null when no closer pairs — the include is the INLINE form, which
+ * stays legal (backward compatible): an opener that never pairs is an inline
+ * include followed by ordinary prose, and the two are indistinguishable, so
+ * there is deliberately no "unclosed block" error.
+ * @param {string[]} lines The current body slice.
+ * @param {number} start 0-based index of the `@include` opener line.
+ * @returns {{ body: string[], end: number } | null} The children lines and the
+ *   closer's 0-based index, or null for the inline form.
+ */
+export function scanIncludeBlock(lines: string[], start: number): {
+    body: string[];
+    end: number;
+} | null;
+/**
+ * `@endinclude` reached the body dispatcher, meaning no `@include` opener
+ * claimed it — the one-closer-too-many case (a typo'd closer, or a nested
+ * block attempted inside a children block, where the inner opener already
+ * took the closer the author meant for the outer one). Always throws.
+ * @param {string} line The offending line, for the message.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line`.
+ * @returns {never}
+ */
+export function strayEndinclude(line: string, ctx: Ctx, index: number): never;
 /**
  * @param {string} header
  * @param {string[]} bodyLines

@@ -8,7 +8,7 @@
 import path from "node:path";
 import { scopeIdFor } from "../skin.js";
 import { pageIncludeExtensions, wdError } from "./context.js";
-import { stripQuotes } from "./interpolation.js";
+import { lookupVar, stripQuotes } from "./interpolation.js";
 
 /**
  * @typedef {import("./context.js").Paths} Paths
@@ -242,6 +242,49 @@ export function isAllowedInclude(file, context, reader) {
     }
   };
   return contains(canonical(path.resolve(file)), roots.map(canonical));
+}
+
+// ---------------------------------------------------------------------------
+// The `{ children }` slot (block-form @include).
+//
+// `@include /card.wd … @endinclude` compiles the lines between opener and
+// closer in the CALLER's context and hands the resulting HTML to the include
+// file, which places it with a standalone `{ children }` line. The hand-off
+// travels in the static scope chain under a key no author syntax can produce
+// (interpolation, `with` args, and `:state` names are all `[A-Za-z0-9_$-]`
+// shaped), so a `{ children }` interpolation in prose never resolves it — only
+// the body parser's slot-marker intercept reads it. Pure macro expansion: the
+// children compile once, at build time, and the include stays zero-JS unless
+// the children themselves bind state.
+// ---------------------------------------------------------------------------
+
+/**
+ * Scope key carrying the compiled children HTML for the include currently
+ * being compiled. Control-character-prefixed so no author-visible name can
+ * collide with it or read it through `{ }` interpolation.
+ */
+export const INCLUDE_CHILDREN = "\0children";
+
+/**
+ * A line that is exactly the slot marker (`{ children }`, whitespace-tolerant),
+ * matching the spelling freedom of `{ name }` interpolation. Shared by the
+ * body parser (which splices the slot) and the include handler (which scans an
+ * include's body for whether the slot is ever used).
+ * @type {RegExp}
+ */
+export const CHILDREN_SLOT_LINE = /^\s*\{\s*children\s*\}\s*$/;
+
+/**
+ * The compiled children HTML for the include currently compiling, or null when
+ * the file is not being compiled as an include at all (a top-level page) — in
+ * which case a `{ children }` line stays literal text. An include called
+ * WITHOUT a block carries "" (the slot renders empty).
+ * @param {import("./context.js").Ctx} ctx
+ * @returns {string | null}
+ */
+export function childrenSlot(ctx) {
+  const found = lookupVar(ctx.scope, INCLUDE_CHILDREN);
+  return found.found ? /** @type {string} */ (found.value) : null;
 }
 
 // ---------------------------------------------------------------------------
