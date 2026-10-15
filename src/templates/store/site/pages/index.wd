@@ -23,18 +23,9 @@ transitions: true
 
 ::: catalog
 @loop /products.json into p where p.name contains q
-::: card .product
-::: emoji
-{ p.emoji }
-:::
-::: pname
-{ p.name }
-:::
-::: price
-{ p.price | money }
-:::
+@include /card.wd
 :button "Add to cart" -> cart += p
-:::
+@endinclude
 @empty
 ::: card .empty
 Nothing matches "**{ q }**".
@@ -46,7 +37,7 @@ Nothing matches "**{ q }**".
 
 @loop cart into item
 ::: card .line
-{ item.emoji } **{ item.name }** — { item.price | money }
+**{ item.name }** — { item.price | money }
 :button "Remove" -> cart remove item
 :::
 @empty

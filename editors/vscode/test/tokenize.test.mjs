@@ -61,6 +61,7 @@ test("darkmown grammar scopes every directive", async () => {
     "@loop team into member",
     "@endloop",
     "@include /nav.wd with x={ row.name }",
+    "@endinclude",
     ':fetch team from "/data.json" when=visible',
     ":computed total = items.length * 4",
     "::: section #cart .dark",
@@ -78,6 +79,7 @@ test("darkmown grammar scopes every directive", async () => {
   assert.ok(scoped(t, "into", "keyword.control.loop.into"), "loop into");
   assert.ok(scoped(t, "@endloop", "keyword.control.loop.end"), "endloop");
   assert.ok(scoped(t, "@include", "keyword.control.include"), "include keyword");
+  assert.ok(scoped(t, "@endinclude", "keyword.control.include.end"), "endinclude (2.10 block form)");
   assert.ok(scoped(t, ":fetch", "keyword.control.fetch"), "fetch keyword");
   assert.ok(scoped(t, '"/data.json"', "string.quoted.double"), "fetch url");
   assert.ok(scoped(t, ":computed", "keyword.control.computed"), "computed keyword");

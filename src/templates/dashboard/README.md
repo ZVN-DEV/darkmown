@@ -12,7 +12,9 @@ in `darkmown dev` and on every host. Loading and error states are handled inline
 
 - `npm run dev` — live compiler + local `/api/*` runner on http://localhost:5173.
 - `npm run build` — compile to `dist/`.
-- `npm run preview` — serve the built `dist/` locally (static only; use `dev` for `/api`).
+- `npm run preview`: serve the built `dist/` locally. Since Darkmown 2.8.0 this
+  runs your `api/` functions too, so the dashboard fetches live data in preview
+  exactly like in `dev`.
 
 ## Deploy
 

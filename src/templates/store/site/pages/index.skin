@@ -93,12 +93,27 @@ input:focus-visible, select:focus-visible, textarea:focus-visible
   border-color $accent
   box-shadow 0 12px 26px -16px rgba(26,31,43,.4)
 
-.emoji
-  font-size 2.25rem
+.tile
+  width 3rem
+  height 3rem
+  margin 0 auto
+  display grid
+  place-items center
+  font-size 1.3rem
+  font-weight 700
+  color $accent-deep
+  bg $paper
+  border 1px solid $line
+  radius 10px
 
 .pname
   font-weight 600
   margin .35rem 0 .15rem
+
+.note
+  color $muted
+  font-size .82rem
+  margin-bottom .6rem
 
 .price
   color $accent

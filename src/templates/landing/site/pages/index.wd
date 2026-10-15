@@ -2,6 +2,7 @@
 title: Acme — ship faster
 description: A marketing one-pager built with Darkmown. Zero framework JS on the static parts, with a testimonials carousel.
 transitions: true
+html: true
 ---
 
 @include /nav.wd
@@ -20,15 +21,21 @@ The all-in-one toolkit your team actually enjoys using.
 
 ::: features
 ::: feature
-### ⚡ Fast
+<div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg></div>
+
+### Fast
 Static pages, zero framework JavaScript. Instant loads, perfect Lighthouse.
 :::
 ::: feature
-### 🧩 Simple
+<div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></div>
+
+### Simple
 Write Markdown. Add a directive only on the pages that need interactivity.
 :::
 ::: feature
-### 🚀 Deploy anywhere
+<div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="m6 9 6-6 6 6"/><path d="M4 21h16"/></svg></div>
+
+### Deploy anywhere
 One command to Vercel or Cloudflare — your API comes along for free.
 :::
 :::

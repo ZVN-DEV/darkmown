@@ -49,7 +49,7 @@
     "format:check": "biome format .",
     "size:check": "node scripts/size-check.mjs",
     "prepare": "husky || true",
-    "prepublish:check": "npm run typecheck && node scripts/build-runtime.mjs --check && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
+    "prepublish:check": "npm run typecheck && node scripts/build-runtime.mjs --check && node scripts/build-playground.mjs --check && npm run test:cov && npm run build && npm run runtime:size && npm audit --audit-level=high && npm run smoke",
     "prepublishOnly": "npm run prepublish:check",
     "og": "node scripts/og-image.mjs",
     "bench:build": "node scripts/bench-build.mjs"

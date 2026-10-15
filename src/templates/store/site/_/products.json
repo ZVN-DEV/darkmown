@@ -1,8 +1,8 @@
 [
-  { "name": "Ceramic Mug", "emoji": "☕️", "price": 18 },
-  { "name": "Linen Tote", "emoji": "👜", "price": 32 },
-  { "name": "Pocket Notebook", "emoji": "📓", "price": 12 },
-  { "name": "Desk Lamp", "emoji": "💡", "price": 64 },
-  { "name": "Plant Pot", "emoji": "🪴", "price": 24 },
-  { "name": "Wall Clock", "emoji": "🕰️", "price": 48 }
+  { "name": "Ceramic Mug", "initial": "C", "price": 18 },
+  { "name": "Linen Tote", "initial": "L", "price": 32 },
+  { "name": "Pocket Notebook", "initial": "P", "price": 12 },
+  { "name": "Desk Lamp", "initial": "D", "price": 64 },
+  { "name": "Plant Pot", "initial": "P", "price": 24 },
+  { "name": "Wall Clock", "initial": "W", "price": 48 }
 ]

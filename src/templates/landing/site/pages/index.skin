@@ -164,6 +164,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible
   radius 12px
   padding 1.25rem
 
+.icon
+  color $accent
+  margin-bottom .35rem
+
+.icon svg
+  display block
+
 .feature h3
   margin .25rem 0 .5rem
 

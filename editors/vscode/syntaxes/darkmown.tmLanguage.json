@@ -112,19 +112,29 @@
       ]
     },
     "include": {
-      "match": "^\\s*(@include)\\s+(\\S+)(?:\\s+(with)\\s+(.*))?$",
-      "captures": {
-        "1": { "name": "keyword.control.include.darkmown" },
-        "2": { "name": "string.unquoted.path.darkmown" },
-        "3": { "name": "keyword.control.include.with.darkmown" },
-        "4": {
-          "patterns": [
-            { "include": "#interpolation" },
-            { "match": "([A-Za-z_$][\\w$]*)(=)", "captures": { "1": { "name": "variable.parameter.darkmown" }, "2": { "name": "keyword.operator.assignment.darkmown" } } },
-            { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" }
-          ]
+      "patterns": [
+        {
+          "match": "^\\s*(@endinclude)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.include.end.darkmown" }
+          }
+        },
+        {
+          "match": "^\\s*(@include)\\s+(\\S+)(?:\\s+(with)\\s+(.*))?$",
+          "captures": {
+            "1": { "name": "keyword.control.include.darkmown" },
+            "2": { "name": "string.unquoted.path.darkmown" },
+            "3": { "name": "keyword.control.include.with.darkmown" },
+            "4": {
+              "patterns": [
+                { "include": "#interpolation" },
+                { "match": "([A-Za-z_$][\\w$]*)(=)", "captures": { "1": { "name": "variable.parameter.darkmown" }, "2": { "name": "keyword.operator.assignment.darkmown" } } },
+                { "match": "\"[^\"]*\"", "name": "string.quoted.double.darkmown" }
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "conditional": {
       "patterns": [

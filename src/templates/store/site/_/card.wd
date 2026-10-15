@@ -1,0 +1,19 @@
+---
+defaults: [note="Ships in 2 days"]
+---
+
+::: card .product
+::: tile
+{ p.initial }
+:::
+::: pname
+{ p.name }
+:::
+::: price
+{ p.price | money }
+:::
+::: note
+{ note }
+:::
+{ children }
+:::

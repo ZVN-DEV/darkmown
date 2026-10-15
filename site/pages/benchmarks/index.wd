@@ -102,7 +102,7 @@ Measured on the same machine, 67 routes on both sides:
 
 Both of these were real losses on measured bytes, not hypotheticals, and both shaped what shipped next.
 
-- **Fonts, badly.** The rebuild served three raw variable TTFs: 1.07 MB on the homepage, against `next/font`'s 158 KB of subset woff2. Fonts were the single largest byte category on every rebuilt page. The 2.8 documentation now ships a font recipe (convert to woff2, subset to the glyphs used, `font-display swap`, preload the critical face), and build-time subsetting is on the roadmap.
+- **Fonts, badly.** The rebuild served three raw variable TTFs: 1.07 MB on the homepage, against `next/font`'s 158 KB of subset woff2. Fonts were the single largest byte category on every rebuilt page. The 2.8 documentation shipped a font recipe (convert to woff2, subset to the glyphs used, `font-display swap`, preload the critical face), and 2.10 closes the gap outright: with the optional toolchain installed, the build subsets project-local fonts to the site's charset automatically. Measured on these same demo fonts, the 1.07 MB of TTFs became 288 KB of woff2.
 - **Photos.** The doctors page shipped 1,045 KB of headshots against the live site's 147 KB of CDN width variants. Darkmown 2.8 added the `@width` convention (drop in `photo@640.jpg` and the build wires the `srcset`), and 2.9 generates those variants at build time when sharp is installed. Run the same rebuild today and this category flips.
 - **A shared cost neither side avoids:** both sites load the same ~594 KB hero video on the homepage. No edge for anyone there.
 

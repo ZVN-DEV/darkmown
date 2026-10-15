@@ -71,6 +71,15 @@
     ],
     "description": "Embed a file and pass values down"
   },
+  "Include block (children slot)": {
+    "prefix": "@include block",
+    "body": [
+      "@include /${1:card.wd} with ${2:title}=\"${3:Untitled}\"",
+      "$0",
+      "@endinclude"
+    ],
+    "description": "Block include; the body fills the file's { children } slot"
+  },
   "Section": {
     "prefix": ":::",
     "body": [

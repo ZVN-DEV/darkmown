@@ -3,7 +3,9 @@
 A storefront in Markdown: a product grid with live search, a shared `:store` cart,
 and a checkout that POSTs to a serverless function.
 
-- **Static catalog** — `site/pages/index.wd` loops `site/_/products.json`.
+- **Static catalog**: `site/pages/index.wd` loops `site/_/products.json`, rendering
+  each product through the `site/_/card.wd` include (a `defaults:` fallback plus a
+  `{ children }` slot for the add-to-cart button).
 - **Cart** — a `:store` shared across the page; add/remove with `:button`.
 - **Checkout** — `:form action="/api/checkout"` posts to `api/checkout.js`, a plain
   Web-standard `(request) => Response` function that runs in `darkmown dev` and on
@@ -13,7 +15,8 @@ and a checkout that POSTs to a serverless function.
 
 - `npm run dev` — live compiler + the local `/api/*` runner on http://localhost:5173.
 - `npm run build` — compile to `dist/`.
-- `npm run preview` — serve the built `dist/` locally (static only; use `dev` for `/api`).
+- `npm run preview`: serve the built `dist/` locally. Since Darkmown 2.8.0 this
+  runs your `api/` functions too, so checkout works in preview exactly like in `dev`.
 
 ## Deploy
 

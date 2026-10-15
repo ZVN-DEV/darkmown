@@ -231,6 +231,15 @@ jobs:
       # (tests/runtime-min.test.js); this step is here so the failure is named.
       - name: runtime min artifact is not stale
         run: node scripts/build-runtime.mjs --check
+      # Same guard for the other committed esbuild artifact: the playground
+      # bundle (site/pages/playground/index.js) compiles .wd source in the
+      # browser with the framework's own compiler, so a bundle built from an
+      # old compiler silently teaches visitors a stale dialect. It lives in
+      # this job (not `test`) because it is the same class of check as the
+      # runtime artifact above: same sources + exact-pinned esbuild = same
+      # bytes, or someone regenerated and forgot to commit.
+      - name: playground bundle is not stale
+        run: node scripts/build-playground.mjs --check
       # Delegates to scripts/size-check.mjs, which reads the budget from
       # .size-snapshot.json (the single source of truth) — no hardcoded number
       # here to drift out of sync. It reports the gzip size + delta and fails at
