@@ -2,10 +2,13 @@
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader, imageVariants?: Map<string, number[]> | null }} [options]
+ * @param {{ feed?: { href: string, title: string }, mdSource?: { href: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader, imageVariants?: Map<string, number[]> | null }} [options]
  *   When a site-wide RSS feed is emitted (the home page set `site_url` and the
  *   site has dated posts), `feed` carries its absolute href + title so every page
- *   links it. `site` carries the origin + this page's own route (and its resolved
+ *   links it. When the site publishes markdown sources (the home page set
+ *   `md_source: true` and this page did not opt out), `mdSource` carries the
+ *   page's own `<route>.md` href for the alternate link. `site` carries the
+ *   origin + this page's own route (and its resolved
  *   breadcrumb trail) so the shell can state a canonical URL. `collections` is the
  *   build-time collection index a bare-name `@loop` resolves against; `vars` seeds
  *   the document scope (the pager `page` object on a paginated route). `reader` is
@@ -18,6 +21,9 @@ export function compilePage(file: string, context: Paths, options?: {
     feed?: {
         href: string;
         title: string;
+    };
+    mdSource?: {
+        href: string;
     };
     site?: SiteContext;
     collections?: Map<string, import("./collections.js").CollectionRow[]>;
@@ -103,7 +109,7 @@ export function foldBuildBindings(text: string, now?: Date): string;
  * @param {Record<string, string> | Map<string, string>} files Project-relative
  *   path → source content.
  * @param {string} entryPath Project-relative path of the page to compile.
- * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
+ * @param {{ feed?: { href: string, title: string }, mdSource?: { href: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
  *   Same shell options as {@link compilePage}; `cwd` overrides the virtual
  *   project root the relative keys resolve against (defaults to `/`).
  * @returns {CompiledPage}
@@ -112,6 +118,9 @@ export function compileFromMemory(files: Record<string, string> | Map<string, st
     feed?: {
         href: string;
         title: string;
+    };
+    mdSource?: {
+        href: string;
     };
     site?: SiteContext;
     collections?: Map<string, import("./collections.js").CollectionRow[]>;

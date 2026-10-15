@@ -169,6 +169,11 @@ export type SiteIdentity = {
      * Most-recent-first RSS item cap, from `rss_limit:`.
      */
     rssLimit: number;
+    /**
+     * Publish every page's markdown source at
+     * `<route>.md`, from the home page's `md_source: true` (2.11).
+     */
+    mdSource: boolean;
 };
 export type Paths = import("./config.js").Paths;
 export type Assets = import("./compiler.js").Assets;

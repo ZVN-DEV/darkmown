@@ -582,6 +582,12 @@ const FRONTMATTER_KEYS = [
     example: "rss_limit: 50"
   },
   {
+    name: "md_source",
+    description:
+      'HOME PAGE ONLY: publish every page\'s markdown source at <route>.md, advertised with a <link rel="alternate" type="text/markdown"> in the head. A page opts out with md_source: false.',
+    example: "md_source: true"
+  },
+  {
     name: "date",
     description: "Marks the page a post: RSS item, sitemap lastmod, og:type=article.",
     example: "date: 2026-08-09"

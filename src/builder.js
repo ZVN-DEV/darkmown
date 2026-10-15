@@ -66,8 +66,9 @@ export const DEP_MAP_FILE = ".wd-dev-deps.json";
 // Bumped whenever the map's shape changes, so a stale map from an older
 // Darkmown falls back to a full rebuild instead of being misread. (3: manifest
 // entries gained `assets.embedHosts` — a v2 map's entries would silently drop
-// them from a reassembled `_headers`/`routes.json`.)
-const DEP_MAP_VERSION = 3;
+// them from a reassembled `_headers`/`routes.json`. 4: the site record gained
+// `mdSource` — a v3 map has no answer for the incremental md_source check.)
+const DEP_MAP_VERSION = 4;
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -290,6 +291,16 @@ function buildIncremental(cwd, paths, options, changed) {
       "site_url changed, and every page's canonical URL is built from it"
     );
   }
+  // The home page's `md_source` flag is the same kind of whole-site value: it
+  // decides every page's markdown alternate link AND which `<route>.md` files
+  // dist holds, so flipping it can never be a partial rebuild (a full rebuild
+  // also wipes the now-unwanted source copies).
+  if (Boolean(map.site.mdSource) !== identity.mdSource) {
+    return fullFallback(
+      changed,
+      "md_source changed, and every page's markdown alternate link is built from it"
+    );
+  }
 
   /** @type {Set<string>} */
   const affected = new Set();
@@ -351,11 +362,13 @@ function buildIncremental(cwd, paths, options, changed) {
       images.variants
     );
     // A shrunk pagination leaves stale `/page/N/` outputs behind — remove any
-    // previously-emitted page this rebuild no longer produces.
+    // previously-emitted page this rebuild no longer produces, along with its
+    // markdown-source copy when the site publishes those.
     const kept = new Set(built.mapEntry.pages.map((entry) => entry.route));
     for (const page of map.routes[routePath].pages) {
       if (!kept.has(page.route)) {
         fs.rmSync(outputPathForRoute(paths.distRoot, page.route), { force: true });
+        fs.rmSync(mdSourcePathForRoute(paths.distRoot, page.route), { force: true });
       }
     }
     if (built.notFoundHtml !== undefined) {
@@ -425,6 +438,9 @@ function buildRoute(
   titles,
   imageVariants
 ) {
+  // Markdown-source publishing (2.11): gated site-wide by the home page's
+  // `md_source: true`, opted out per page with `md_source: false`.
+  const mdSource = identity.mdSource && !mdSourceOptOut(route.meta);
   const compiled = compileRoutePages(
     route,
     paths,
@@ -432,7 +448,8 @@ function buildRoute(
     feedLink,
     identity,
     titles,
-    imageVariants
+    imageVariants,
+    mdSource
   );
   /** @type {RouteManifestEntry[]} */
   const entries = [];
@@ -447,6 +464,7 @@ function buildRoute(
     const outFile = outputPathForRoute(paths.distRoot, page.route);
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, page.html);
+    emitMdSource(route, page.route, paths, mdSource);
     if (page.route === "/404/") notFoundHtml = page.html;
     emitAssets(page.assets, paths, page.html, warned);
     if (page.assets.runtime) emitRuntime(paths);
@@ -624,7 +642,7 @@ function relPosix(cwd, file) {
  * unreadable, or from an incompatible version — every one of which means the
  * incremental build cannot trust its picture of the site and must go full.
  * @param {Paths} paths
- * @returns {{ version: number, feed: { href: string, title: string } | null, site: { url: string, titles: Record<string, string> }, routes: Record<string, DepMapEntry> } | null}
+ * @returns {{ version: number, feed: { href: string, title: string } | null, site: { url: string, titles: Record<string, string>, mdSource: boolean }, routes: Record<string, DepMapEntry> } | null}
  */
 function readDepMap(paths) {
   try {
@@ -640,7 +658,7 @@ function readDepMap(paths) {
  * Persist the dependency map for the next incremental build.
  * @param {Paths} paths
  * @param {{ href: string, title: string } | undefined} feedLink
- * @param {{ url: string, titles: Record<string, string> }} site {@link siteInputs}.
+ * @param {{ url: string, titles: Record<string, string>, mdSource: boolean }} site {@link siteInputs}.
  * @param {Record<string, DepMapEntry>} mapRoutes
  * @returns {void}
  */
@@ -657,15 +675,17 @@ function writeDepMap(paths, feedLink, site, mapRoutes) {
  * never appear in `routesAffectedBy`.
  *
  * `url` is `site_url` (every page's canonical + `og:url`); `titles` is every
- * route's title, because a nested page's breadcrumb JSON-LD names its ANCESTORS.
+ * route's title, because a nested page's breadcrumb JSON-LD names its ANCESTORS;
+ * `mdSource` is the home page's source-publishing flag, baked into every page's
+ * head as the `<link rel="alternate" type="text/markdown">`.
  * The next incremental build diffs both against the site it discovers, which is
  * the only way it can know that editing page A invalidated page B.
  * @param {SiteIdentity} identity
  * @param {Map<string, string>} titles
- * @returns {{ url: string, titles: Record<string, string> }}
+ * @returns {{ url: string, titles: Record<string, string>, mdSource: boolean }}
  */
 function siteInputs(identity, titles) {
-  return { url: identity.siteUrl, titles: Object.fromEntries(titles) };
+  return { url: identity.siteUrl, titles: Object.fromEntries(titles), mdSource: identity.mdSource };
 }
 
 /**
@@ -792,9 +812,21 @@ function copyChangedAsset(file, cwd, paths) {
  * @param {Map<string, string>} titles Route path → page title, for breadcrumbs.
  * @param {Map<string, number[]>} imageVariants Generated responsive variants
  *   (original's absolute source path → widths) for the srcset wiring.
+ * @param {boolean} mdSource Whether this route publishes its markdown source
+ *   (site opted in AND the page did not opt out) — every emitted page then
+ *   advertises `<route>.md` with a `<link rel="alternate" type="text/markdown">`.
  * @returns {{ pages: EmittedPage[], deps: Set<string>, collections: Set<string> }}
  */
-function compileRoutePages(route, paths, collections, feedLink, identity, titles, imageVariants) {
+function compileRoutePages(
+  route,
+  paths,
+  collections,
+  feedLink,
+  identity,
+  titles,
+  imageVariants,
+  mdSource
+) {
   /** @type {Set<string>} */
   const deps = new Set();
   /** @type {Set<string>} */
@@ -813,10 +845,15 @@ function compileRoutePages(route, paths, collections, feedLink, identity, titles
     route: routePath,
     breadcrumbs: breadcrumbTrail(routePath, titles, identity.siteUrl)
   });
+  // The markdown-source alternate every emitted page of this route advertises
+  // when publishing is on: `<route>.md`, where buildRoute copies the source.
+  const mdFor = (/** @type {string} */ routePath) =>
+    mdSource ? { href: mdSourceHrefFor(routePath) } : undefined;
   // First compile (discovery): page 1 with a placeholder pager. If the page has
   // no `paginate`, this is the only compile and we emit it as-is.
   const first = compilePage(route.file, paths, {
     feed: feedLink,
+    mdSource: mdFor(route.route),
     site: siteFor(route.route),
     collections,
     vars: { page: pagerVars(route.route, 1, 1) },
@@ -843,6 +880,7 @@ function compileRoutePages(route, paths, collections, feedLink, identity, titles
     // would ask Google to drop pages 2..N from the index entirely.
     const page = compilePage(route.file, paths, {
       feed: feedLink,
+      mdSource: mdFor(pageRoute(route.route, n)),
       site: siteFor(pageRoute(route.route, n)),
       collections,
       vars: { page: pagerVars(route.route, n, total) },
@@ -890,6 +928,69 @@ function pageRoute(baseRoute, n) {
 }
 
 /**
+ * Whether a page opts OUT of markdown-source publishing (`md_source: false`).
+ * Mirrors the router's `isDraft`: the scalar parser yields a boolean or the
+ * string `"false"`, and only those opt out. Any other value — including a
+ * page-level `md_source: true` — is not an opt-out; publishing is gated
+ * site-wide by the HOME page's `md_source: true`, never per page.
+ * @param {Meta} meta
+ * @returns {boolean}
+ */
+function mdSourceOptOut(meta) {
+  return meta.md_source === false || meta.md_source === "false";
+}
+
+/**
+ * The dist path a route's markdown source publishes to: `/` → `dist/index.md`,
+ * `/docs/` → `dist/docs.md`, `/blog/post/` → `dist/blog/post.md`. The file sits
+ * at the folder level next to the route's `<route>/index.html`, so by
+ * construction it can never collide with a route output — and being dist-side
+ * only, route discovery (which reads `site/pages`) never mistakes it for a page.
+ * @param {string} distRoot Absolute path to the build output directory.
+ * @param {string} route Public route path (trailing-slashed).
+ * @returns {string}
+ */
+function mdSourcePathForRoute(distRoot, route) {
+  const clean = route === "/" ? "index" : route.replace(/^\/|\/$/g, "");
+  return path.join(distRoot, `${clean}.md`);
+}
+
+/**
+ * The public URL a route's markdown source serves at: `/` → `/index.md`,
+ * `/docs/` → `/docs.md`. Matches {@link mdSourcePathForRoute} exactly.
+ * @param {string} route Public route path (trailing-slashed).
+ * @returns {string}
+ */
+function mdSourceHrefFor(route) {
+  return route === "/" ? "/index.md" : `${route.slice(0, -1)}.md`;
+}
+
+/**
+ * Publish (or withdraw) one route's markdown source beside its HTML output.
+ * The copy is BYTE-EXACT — `fs.copyFileSync`, no transformation, no header
+ * injection — so the file an agent fetches is the file the author wrote,
+ * frontmatter and line endings included. When publishing is off for the route
+ * (site flag unset, or the page opted out) any previously emitted copy is
+ * removed instead: an incremental rebuild does not wipe dist, so a stale file
+ * would otherwise keep serving after the opt-out.
+ * @param {Route} route The source route (its `file` is what gets copied).
+ * @param {string} routePath The emitted page's public route (a paginated page
+ *   publishes the same source under its own `<route>.md`).
+ * @param {Paths} paths
+ * @param {boolean} enabled
+ * @returns {void}
+ */
+function emitMdSource(route, routePath, paths, enabled) {
+  const out = mdSourcePathForRoute(paths.distRoot, routePath);
+  if (!enabled) {
+    fs.rmSync(out, { force: true });
+    return;
+  }
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.copyFileSync(route.file, out);
+}
+
+/**
  * Build the `{ page.* }` pager exposed to the template scope of a paginated
  * listing: `current`/`total` numbers and `prev`/`next` URLs (empty string at the
  * ends, so `{ page.prev }` renders nothing on page 1). Plain links to the
@@ -916,6 +1017,8 @@ function pagerVars(baseRoute, current, total) {
  * @property {string} description Site description (also the RSS channel description).
  * @property {string} aiCrawlers `"allow"` or `"deny"`, from `ai_crawlers:`.
  * @property {number} rssLimit Most-recent-first RSS item cap, from `rss_limit:`.
+ * @property {boolean} mdSource Publish every page's markdown source at
+ *   `<route>.md`, from the home page's `md_source: true` (2.11).
  */
 
 /**
@@ -940,7 +1043,11 @@ function siteIdentity(routes) {
     title: read("title") || "Darkmown",
     description: read("description"),
     aiCrawlers: aiCrawlerPolicy(meta, home ? home.file : undefined),
-    rssLimit: rssItemLimit(meta, home ? home.file : undefined)
+    rssLimit: rssItemLimit(meta, home ? home.file : undefined),
+    // `md_source: true` opts the whole site into publishing sources; a page
+    // opts back out with `md_source: false` (see mdSourceOptOut). Accepts the
+    // boolean and the string, like `isDraft`/`isNoindex`.
+    mdSource: meta.md_source === true || meta.md_source === "true"
   };
 }
 

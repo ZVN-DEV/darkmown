@@ -3,6 +3,7 @@ title: Darkmown: Markdown that runs
 description: A .md file is a page. Rename it to .wd and the same file gets loops, state, fetched data, and forms, with no components, no JSX, and no build step. Pages with no state ship zero framework JavaScript.
 image: https://darkmown.com/__wd/media/og.png
 site_url: https://darkmown.com
+md_source: true
 transitions: true
 schema: WebSite
 ---

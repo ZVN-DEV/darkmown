@@ -46,10 +46,13 @@ const SKIP_LINK_STYLE =
  * Compile a page source file into a full HTML document plus its assets.
  * @param {string} file Absolute path to the source `.md`/`.wd` file.
  * @param {Paths} context Resolved project paths.
- * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader, imageVariants?: Map<string, number[]> | null }} [options]
+ * @param {{ feed?: { href: string, title: string }, mdSource?: { href: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, reader?: import("./reader.js").Reader, imageVariants?: Map<string, number[]> | null }} [options]
  *   When a site-wide RSS feed is emitted (the home page set `site_url` and the
  *   site has dated posts), `feed` carries its absolute href + title so every page
- *   links it. `site` carries the origin + this page's own route (and its resolved
+ *   links it. When the site publishes markdown sources (the home page set
+ *   `md_source: true` and this page did not opt out), `mdSource` carries the
+ *   page's own `<route>.md` href for the alternate link. `site` carries the
+ *   origin + this page's own route (and its resolved
  *   breadcrumb trail) so the shell can state a canonical URL. `collections` is the
  *   build-time collection index a bare-name `@loop` resolves against; `vars` seeds
  *   the document scope (the pager `page` object on a paginated route). `reader` is
@@ -154,6 +157,14 @@ export function compilePage(file, context, options = {}) {
   const feedLink = options.feed
     ? `\n  <link rel="alternate" type="application/rss+xml" title="${escapeHtml(options.feed.title)}" href="${escapeHtml(options.feed.href)}">`
     : "";
+  // Markdown-source discovery (2.11): when the site publishes its sources (home
+  // `md_source: true`, and this page did not opt out), the builder copies the
+  // page's source to `<route>.md` and the page advertises it here, so an agent
+  // can autodiscover and fetch the plain markdown instead of the HTML.
+  // Build-time only — no client JS.
+  const mdSourceLink = options.mdSource
+    ? `\n  <link rel="alternate" type="text/markdown" href="${escapeHtml(options.mdSource.href)}" title="Markdown source">`
+    : "";
   // Pay-for-what-you-use behavior modules (slider is compile-time and never here;
   // sortable/carousel each emit one) load after the runtime — sortable depends on
   // `window.wd` — and before any colocated page script.
@@ -239,7 +250,7 @@ export function compilePage(file, context, options = {}) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>${descriptionTag}
-  <link rel="icon" href="${icon.href}"${icon.type ? ` type="${icon.type}"` : ""}>${feedLink}
+  <link rel="icon" href="${icon.href}"${icon.type ? ` type="${icon.type}"` : ""}>${feedLink}${mdSourceLink}
   ${SKIP_LINK_STYLE}
   ${cssLinks}${transitions}${speculation}
 </head>
@@ -735,7 +746,7 @@ function foldBuildBindingsLine(line, values) {
  * @param {Record<string, string> | Map<string, string>} files Project-relative
  *   path → source content.
  * @param {string} entryPath Project-relative path of the page to compile.
- * @param {{ feed?: { href: string, title: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
+ * @param {{ feed?: { href: string, title: string }, mdSource?: { href: string }, site?: SiteContext, collections?: Map<string, import("./collections.js").CollectionRow[]>, vars?: Record<string, unknown>, cwd?: string }} [options]
  *   Same shell options as {@link compilePage}; `cwd` overrides the virtual
  *   project root the relative keys resolve against (defaults to `/`).
  * @returns {CompiledPage}
@@ -747,6 +758,7 @@ export function compileFromMemory(files, entryPath, options = {}) {
   const abs = path.resolve(cwd, entryPath);
   return compilePage(abs, context, {
     feed: options.feed,
+    mdSource: options.mdSource,
     site: options.site,
     collections: options.collections,
     vars: options.vars,

@@ -239,6 +239,6 @@ test("serve answers 500 (never crashes) when a negotiated file turns unreadable"
 });
 
 test("serve maps the compressed content-types from real files (sanity)", () => {
-  assert.equal(isCompressibleType(contentType("/dist/x.md")), false, ".md is octet-stream here");
+  assert.equal(isCompressibleType(contentType("/dist/x.md")), true, ".md is text/markdown");
   assert.equal(isCompressibleType(contentType("/dist/x.txt")), true);
 });
