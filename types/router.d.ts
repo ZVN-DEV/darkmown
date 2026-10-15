@@ -38,6 +38,11 @@ export function discoverRoutes(routesRoot: string, options?: {
 export function isDraft(meta: Meta): boolean;
 /**
  * Derive a public route path from a source file path.
+ *
+ * Fail-closed on control/whitespace characters: the route string flows RAW
+ * into generated config (`dist/_headers` blocks, llms.txt lines), where a
+ * newline in a filename would inject whole config lines. Rejecting here, at
+ * the one route-derivation chokepoint, protects every downstream sink at once.
  * @param {string} routesRoot Absolute path to `site/pages`.
  * @param {string} file Absolute path to the source file.
  * @returns {string}

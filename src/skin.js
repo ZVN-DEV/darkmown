@@ -1,6 +1,12 @@
 import crypto from "node:crypto";
 import { wdError } from "./compiler/context.js";
 
+// Concrete, compilable skins for the at-rule error hints + the error registry
+// (src/errors.js). Multi-line because both at-rules are block constructs; a
+// test in tests/skin-atrules.test.js compiles each verbatim.
+export const FONT_FACE_EXAMPLE = '@font-face\n  font-family "Newsreader"';
+export const KEYFRAMES_EXAMPLE = "@keyframes fade-in\n  to\n    opacity 1";
+
 const aliases = new Map([
   ["radius", "border-radius"],
   ["shadow", "box-shadow"],
@@ -70,28 +76,37 @@ const PAGE_LEVEL_SELECTORS = new Set(["page", "*", "html", "body", "::selection"
  * selectors), they are ALWAYS global (never scope-stamped, same contract as
  * `tokens`), and their declaration values use the same alias/`$token` pipeline.
  * @param {string} source
- * @param {{ scope?: string, subjects?: Set<string> }} [opts] `scope`: the scope
- *   id enabling scoped mode. `subjects`: an optional set the compiler fills with
- *   every scoped subject token (`.card`, `h2`, `#id`) for the unused-selector
- *   warning, so the caller need not re-parse the source.
+ * @param {{ scope?: string, subjects?: Set<string>, file?: string }} [opts]
+ *   `scope`: the scope id enabling scoped mode. `subjects`: an optional set the
+ *   compiler fills with every scoped subject token (`.card`, `h2`, `#id`) for
+ *   the unused-selector warning, so the caller need not re-parse the source.
+ *   `file`: the skin's path, threaded into author-facing errors so they report
+ *   `file:line` (the builder always passes it; a bare call reports `on line N`).
  * @returns {string}
  */
 export function compileSkin(source, opts = {}) {
   const scope = opts.scope;
   const subjects = opts.subjects;
+  const file = opts.file;
   const lines = source
     .replace(/\r\n?/g, "\n")
-    .replace(/\/\*[\s\S]*?\*\//g, "") // strip /* … */ block comments (any span)
+    // Strip /* … */ block comments (any span), KEEPING their newlines so the
+    // `line` recorded below stays the true file line even past a multi-line
+    // comment.
+    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ""))
     .split("\n")
-    .filter((raw) => {
-      const t = raw.trim();
-      if (!t || t.startsWith("//")) return false;
+    .map((raw, index) => ({
+      indent: (raw.match(/^\s*/)?.[0] ?? "").length,
+      text: raw.trim(),
+      line: index + 1
+    }))
+    .filter(({ text }) => {
+      if (!text || text.startsWith("//")) return false;
       // Decorative divider lines (----, ====, * * *, ~~~) carry no rule and would
       // otherwise parse as a bogus selector/declaration. Anything with a letter or
       // digit is real content; punctuation-only lines are skipped.
-      return /[A-Za-z0-9]/.test(t);
-    })
-    .map((raw) => ({ indent: (raw.match(/^\s*/)?.[0] ?? "").length, text: raw.trim() }));
+      return /[A-Za-z0-9]/.test(text);
+    });
 
   // The opt-in marker: `scoped` must be the FIRST meaningful line (the filter
   // above has already dropped comments, blanks, and dividers). Anywhere else it
@@ -181,7 +196,7 @@ export function compileSkin(source, opts = {}) {
     const atRule = /^@(font-face|keyframes)(?:\s+(.+))?$/.exec(text);
     if (atRule) {
       const media = stack.find((frame) => frame.media)?.media;
-      const block = collectAtRule(atRule[1], atRule[2], lines, i);
+      const block = collectAtRule(atRule[1], atRule[2], lines, i, file);
       css.push(media ? `${media} {\n${block.css}\n}` : block.css);
       i = block.end;
       continue;
@@ -367,17 +382,19 @@ function normalizeSelector(text, parent) {
 const KEYFRAME_SELECTOR = /^(?:from|to|\d+(?:\.\d+)?%)(?:\s*,\s*(?:from|to|\d+(?:\.\d+)?%))*$/;
 
 /**
- * A plain Error, no WD code: the code registry (`src/errors.js`) and its drift
- * guard (`tests/error-codes.test.js`) are owned by a parallel change, so a
- * `code: "WD8xx"` here would fail the "every code thrown is registered" gate
- * and an inline throw would fail the "no author-facing throw bypasses wdError"
- * scan. Messages still lead with the construct and end with a corrective
- * example, registry-style.
- * @param {string} message
- * @returns {Error}
+ * An author-facing at-rule error, routed through `wdError` like every other
+ * compile error: it carries a registered WD8xx code (src/errors.js), the true
+ * source line, and a corrective `Use:` hint. The file is named when the caller
+ * threaded one (the builder always does); a bare `compileSkin` call has no
+ * path, so the location falls back to `on line N`.
+ * @param {string} summary What is wrong, naming the offending text.
+ * @param {import("./compiler/context.js").WdErrorInfo} wd The structured mirror;
+ *   `code` is required (every at-rule error is registered in src/errors.js).
+ * @returns {Error & { wd: import("./compiler/context.js").WdErrorInfo }}
  */
-function skinError(message) {
-  return new Error(message);
+function skinError(summary, wd) {
+  const where = wd.file ? ` in ${wd.file}:${wd.line}` : ` on line ${wd.line}`;
+  return wdError(`${summary}${where}. Use: ${wd.hint}`, wd);
 }
 
 /**
@@ -403,21 +420,28 @@ function declaration(text) {
  * `50%, 75%`), each with its own indented declarations; a keyframe selector is
  * validated against KEYFRAME_SELECTOR so it can never be misread as a
  * declaration or an element selector, and declarations cannot nest further.
+ * Every rejection is a coded WD8xx error pointing at the offending line.
  * @param {string} kind `font-face` or `keyframes`.
  * @param {string | undefined} rest Text after the at-rule keyword (the
  *   keyframes name; invalid on `@font-face`).
- * @param {{ indent: number, text: string }[]} lines Preprocessed skin lines.
+ * @param {{ indent: number, text: string, line: number }[]} lines Preprocessed
+ *   skin lines, each carrying its true 1-based file line.
  * @param {number} start Index of the at-rule line.
+ * @param {string | undefined} file The skin's path, when the caller knows it.
  * @returns {{ css: string, end: number }} `end` = last consumed line index.
  */
-function collectAtRule(kind, rest, lines, start) {
+function collectAtRule(kind, rest, lines, start, file) {
   const indent = lines[start].indent;
 
   if (kind === "font-face") {
     if (rest)
-      throw skinError(
-        `@font-face takes no name, got "${rest}" — write the descriptors indented beneath a bare @font-face line, e.g. font-family "Newsreader"`
-      );
+      throw skinError(`@font-face takes no name, got "${rest}"`, {
+        code: "WD804",
+        file,
+        line: lines[start].line,
+        hint: `write the descriptors indented beneath a bare @font-face line — e.g. font-family "Newsreader"`,
+        example: FONT_FACE_EXAMPLE
+      });
     /** @type {string[]} */
     const decls = [];
     let i = start;
@@ -425,52 +449,94 @@ function collectAtRule(kind, rest, lines, start) {
       i++;
       if (i + 1 < lines.length && lines[i + 1].indent > lines[i].indent)
         throw skinError(
-          `@font-face only takes declarations — "${lines[i].text}" opens a nested block, which is not valid inside @font-face`
+          `@font-face only takes declarations — "${lines[i].text}" opens a nested block, which is not valid inside @font-face`,
+          {
+            code: "WD804",
+            file,
+            line: lines[i].line,
+            hint: `keep every @font-face child a flat prop value declaration — e.g. font-family "Newsreader"`,
+            example: FONT_FACE_EXAMPLE
+          }
         );
       decls.push(`  ${declaration(lines[i].text)}`);
     }
     if (!decls.length)
-      throw skinError(
-        '@font-face has no declarations — indent its descriptors beneath it, e.g. font-family "Newsreader"'
-      );
+      throw skinError("@font-face has no declarations", {
+        code: "WD804",
+        file,
+        line: lines[start].line,
+        hint: `indent its descriptors beneath it — e.g. font-family "Newsreader"`,
+        example: FONT_FACE_EXAMPLE
+      });
     return { css: `@font-face {\n${decls.join("\n")}\n}`, end: i };
   }
 
-  if (!rest) throw skinError("@keyframes needs a name — e.g. @keyframes fade-in");
+  if (!rest)
+    throw skinError("@keyframes needs a name", {
+      code: "WD805",
+      file,
+      line: lines[start].line,
+      hint: "@keyframes <name> — e.g. @keyframes fade-in",
+      example: KEYFRAMES_EXAMPLE
+    });
   if (!/^-?[A-Za-z_][\w-]*$/.test(rest))
-    throw skinError(
-      `invalid @keyframes name "${rest}" — use a plain CSS identifier, e.g. @keyframes fade-in`
-    );
+    throw skinError(`invalid @keyframes name "${rest}"`, {
+      code: "WD805",
+      file,
+      line: lines[start].line,
+      hint: "name it with a plain CSS identifier — e.g. @keyframes fade-in",
+      example: KEYFRAMES_EXAMPLE
+    });
   /** @type {string[]} */
   const stops = [];
   let i = start;
   while (i + 1 < lines.length && lines[i + 1].indent > indent) {
     i++;
     const selector = lines[i].text;
+    const selectorLine = lines[i].line;
     const selectorIndent = lines[i].indent;
     if (!KEYFRAME_SELECTOR.test(selector))
-      throw skinError(
-        `"${selector}" is not a keyframe selector in @keyframes ${rest} — use from, to, or a percentage (50%, or a list like 50%, 75%)`
-      );
+      throw skinError(`"${selector}" is not a keyframe selector in @keyframes ${rest}`, {
+        code: "WD806",
+        file,
+        line: selectorLine,
+        hint: "use from, to, or a percentage (50%, or a list like 50%, 75%)",
+        example: KEYFRAMES_EXAMPLE
+      });
     /** @type {string[]} */
     const decls = [];
     while (i + 1 < lines.length && lines[i + 1].indent > selectorIndent) {
       i++;
       if (i + 1 < lines.length && lines[i + 1].indent > lines[i].indent)
         throw skinError(
-          `@keyframes declarations cannot nest — "${lines[i].text}" opens a block inside keyframe "${selector}"`
+          `@keyframes declarations cannot nest — "${lines[i].text}" opens a block inside keyframe "${selector}"`,
+          {
+            code: "WD807",
+            file,
+            line: lines[i].line,
+            hint: "keep each keyframe's declarations flat, one level beneath its selector — e.g. opacity 1",
+            example: KEYFRAMES_EXAMPLE
+          }
         );
       decls.push(`    ${declaration(lines[i].text)}`);
     }
     if (!decls.length)
-      throw skinError(
-        `keyframe "${selector}" in @keyframes ${rest} has no declarations — indent them beneath it`
-      );
+      throw skinError(`keyframe "${selector}" in @keyframes ${rest} has no declarations`, {
+        code: "WD807",
+        file,
+        line: selectorLine,
+        hint: "indent the declarations beneath the keyframe selector — e.g. opacity 1",
+        example: KEYFRAMES_EXAMPLE
+      });
     stops.push(`  ${selector} {\n${decls.join("\n")}\n  }`);
   }
   if (!stops.length)
-    throw skinError(
-      `@keyframes ${rest} has no keyframe selectors — indent from/to/percentage blocks beneath it`
-    );
+    throw skinError(`@keyframes ${rest} has no keyframe selectors`, {
+      code: "WD807",
+      file,
+      line: lines[start].line,
+      hint: "indent from/to/percentage blocks beneath it — e.g. from",
+      example: KEYFRAMES_EXAMPLE
+    });
   return { css: `@keyframes ${rest} {\n${stops.join("\n")}\n}`, end: i };
 }

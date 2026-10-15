@@ -88,6 +88,11 @@ export function isDraft(meta) {
 
 /**
  * Derive a public route path from a source file path.
+ *
+ * Fail-closed on control/whitespace characters: the route string flows RAW
+ * into generated config (`dist/_headers` blocks, llms.txt lines), where a
+ * newline in a filename would inject whole config lines. Rejecting here, at
+ * the one route-derivation chokepoint, protects every downstream sink at once.
  * @param {string} routesRoot Absolute path to `site/pages`.
  * @param {string} file Absolute path to the source file.
  * @returns {string}
@@ -98,8 +103,19 @@ export function routeFromFile(routesRoot, file) {
   const parts = rel.split(path.sep);
   if (parts.at(-1) === "index") parts.pop();
   const route = `/${parts.join("/")}`;
+  if (ROUTE_UNSAFE_CHARS.test(route)) {
+    throw wdError(
+      `Refusing to route ${file} — a page filename must not contain whitespace or ` +
+        "control characters: the route is written verbatim into generated config " +
+        "(dist/_headers, llms.txt), where such a character would corrupt the file.",
+      { code: "WD908", file }
+    );
+  }
   return route === "/" ? "/" : `${route}/`;
 }
+
+/** Whitespace (`\s`) and control characters (`\p{Cc}`: C0, DEL, C1) a route string must never carry. */
+const ROUTE_UNSAFE_CHARS = /[\s\p{Cc}]/u;
 
 /**
  * Map a public route to the `index.html` output path under `distRoot`.

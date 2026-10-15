@@ -76,6 +76,7 @@ import {
   IF_EXAMPLE,
   INCLUDE_EXAMPLE
 } from "./compiler/structure.js";
+import { FONT_FACE_EXAMPLE, KEYFRAMES_EXAMPLE } from "./skin.js";
 
 /**
  * One subsystem block of the numbering scheme.
@@ -94,8 +95,9 @@ import {
  * @property {string} title Short name for the mistake.
  * @property {string} cause What the author wrote that triggers it.
  * @property {string} fix The corrective action, in one line.
- * @property {string} [example] A concrete, compilable line, sourced from the
- *   compiler's own `*_EXAMPLE` constants.
+ * @property {string} [example] A concrete, compilable line (or, for block
+ *   constructs like the `.skin` at-rules, a minimal compilable block), sourced
+ *   from the compiler's own `*_EXAMPLE` constants.
  */
 
 /** The subsystem blocks, in code order. */
@@ -1167,6 +1169,36 @@ const ENTRIES = [
     cause: "A top-level `page`/`body`/`html`/`*`/`::selection` selector escapes the scope.",
     fix: "Move page-level styles to a global (non-scoped) skin."
   },
+  {
+    code: "WD804",
+    title: "Malformed `@font-face` block",
+    cause:
+      "`@font-face` was given a name, holds a nested block, or has no descriptors — it takes plain `prop value` declaration lines only.",
+    fix: "Write a bare `@font-face` line and indent each descriptor beneath it.",
+    example: FONT_FACE_EXAMPLE
+  },
+  {
+    code: "WD805",
+    title: "Invalid `@keyframes` name",
+    cause: "The name after `@keyframes` is missing or is not a plain CSS identifier.",
+    fix: "Name the animation with a plain identifier, e.g. `@keyframes fade-in`.",
+    example: KEYFRAMES_EXAMPLE
+  },
+  {
+    code: "WD806",
+    title: "Invalid keyframe selector",
+    cause: "A child of `@keyframes` is not `from`, `to`, or a percentage.",
+    fix: "Use `from`, `to`, a percentage (`50%`), or a comma list of them (`50%, 75%`).",
+    example: KEYFRAMES_EXAMPLE
+  },
+  {
+    code: "WD807",
+    title: "Malformed `@keyframes` body",
+    cause:
+      "A keyframe's declarations nest deeper, a keyframe selector has no declarations, or the block has no keyframe selectors at all.",
+    fix: "Give each keyframe selector a flat list of declarations indented one level beneath it.",
+    example: KEYFRAMES_EXAMPLE
+  },
 
   // --- WD9xx: project, routing, CLI ----------------------------------------
   {
@@ -1210,6 +1242,13 @@ const ENTRIES = [
     title: "Unknown `ai_crawlers` policy",
     cause: "The home page's `ai_crawlers:` is neither `allow` nor `deny`.",
     fix: "Write `ai_crawlers: allow` or `ai_crawlers: deny` (absent means allow)."
+  },
+  {
+    code: "WD908",
+    title: "Unsafe route name",
+    cause:
+      "A page filename produced a route containing whitespace or control characters, which would corrupt generated config files (dist/_headers, llms.txt).",
+    fix: "Rename the file using only letters, digits, dashes, and underscores."
   },
   {
     code: "WD950",
@@ -1296,7 +1335,15 @@ export function errorsMarkdown() {
     out.push("| Code | Error | Cause | Fix | Example |");
     out.push("| --- | --- | --- | --- | --- |");
     for (const row of rows) {
-      const example = row.example ? `\`${escapeCell(row.example)}\`` : "";
+      // A multi-line example (the `.skin` at-rule blocks are block constructs)
+      // becomes one code span per line joined by <br>, keeping the table row
+      // on a single markdown line.
+      const example = row.example
+        ? row.example
+            .split("\n")
+            .map((line) => `\`${escapeCell(line)}\``)
+            .join("<br>")
+        : "";
       out.push(
         `| \`${row.code}\` | ${escapeCell(row.title)} | ${escapeCell(row.cause)} | ${escapeCell(row.fix)} | ${example} |`
       );

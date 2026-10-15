@@ -33,16 +33,21 @@ export function scopeIdFor(relPath: string): string;
  * selectors), they are ALWAYS global (never scope-stamped, same contract as
  * `tokens`), and their declaration values use the same alias/`$token` pipeline.
  * @param {string} source
- * @param {{ scope?: string, subjects?: Set<string> }} [opts] `scope`: the scope
- *   id enabling scoped mode. `subjects`: an optional set the compiler fills with
- *   every scoped subject token (`.card`, `h2`, `#id`) for the unused-selector
- *   warning, so the caller need not re-parse the source.
+ * @param {{ scope?: string, subjects?: Set<string>, file?: string }} [opts]
+ *   `scope`: the scope id enabling scoped mode. `subjects`: an optional set the
+ *   compiler fills with every scoped subject token (`.card`, `h2`, `#id`) for
+ *   the unused-selector warning, so the caller need not re-parse the source.
+ *   `file`: the skin's path, threaded into author-facing errors so they report
+ *   `file:line` (the builder always passes it; a bare call reports `on line N`).
  * @returns {string}
  */
 export function compileSkin(source: string, opts?: {
     scope?: string;
     subjects?: Set<string>;
+    file?: string;
 }): string;
+export const FONT_FACE_EXAMPLE: "@font-face\n  font-family \"Newsreader\"";
+export const KEYFRAMES_EXAMPLE: "@keyframes fade-in\n  to\n    opacity 1";
 /**
  * A nesting frame in the indentation stack.
  */

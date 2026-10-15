@@ -48,7 +48,7 @@ import {
   errorsMarkdown,
   RETIRED_CODES
 } from "../src/errors.js";
-import { compileSkin } from "../src/skin.js";
+import { compileSkin, FONT_FACE_EXAMPLE, KEYFRAMES_EXAMPLE } from "../src/skin.js";
 
 // ---------------------------------------------------------------------------
 // The drift guard for the stable `WDxxx` compile-error codes.
@@ -207,10 +207,12 @@ test("documented examples are drawn from the compiler's own example constants", 
     EMBED_EXAMPLE,
     EVERY_EXAMPLE,
     FETCH_EXAMPLE,
+    FONT_FACE_EXAMPLE,
     FORM_EXAMPLE,
     IF_EXAMPLE,
     INCLUDE_EXAMPLE,
     INPUT_EXAMPLE,
+    KEYFRAMES_EXAMPLE,
     LOOP_EXAMPLE,
     RADIO_EXAMPLE,
     SELECT_EXAMPLE,
@@ -288,12 +290,15 @@ test("no author-facing throw bypasses wdError (and therefore a code)", () => {
   const offenders = [];
   for (const [rel, source] of SOURCES) {
     if (rel in NOT_SCANNED || rel in INTERNAL_INVARIANTS || rel in PENDING_CODES) continue;
-    if (/throw new (?:Error|TypeError)\(/.test(source)) offenders.push(rel);
+    // `return new Error(` is the same evasion one step removed: a factory that
+    // hands back a plain Error (the pre-2.10.1 skinError did exactly this)
+    // throws it without a code, invisible to a `throw new`-only scan.
+    if (/(?:throw|return) new (?:Error|TypeError)\(/.test(source)) offenders.push(rel);
   }
   assert.deepEqual(
     offenders,
     [],
-    `these files throw a plain Error: route it through wdError with a code, or document it as an internal invariant`
+    `these files create a plain Error: route it through wdError with a code, or document it as an internal invariant`
   );
 });
 
@@ -305,7 +310,7 @@ test("the internal-invariant and pending allowlists still describe reality", () 
     assert.ok(source, `${rel} is allowlisted but does not exist`);
     assert.match(
       source,
-      /throw new Error\(/,
+      /(?:throw|return) new Error\(/,
       `${rel} no longer throws a plain Error — drop it from the allowlist`
     );
   }

@@ -226,6 +226,10 @@ free number in their block.
 | `WD801` | `scoped` is not the first line | The scoping opt-in appears somewhere other than the first meaningful line. | Move `scoped` to the top of the `.skin`, or delete it. |  |
 | `WD802` | Page-level declaration in a scoped skin | A declaration with no enclosing selector would write to the whole page. | Nest it under a selector, or move it to a global skin. |  |
 | `WD803` | Page-level selector in a scoped skin | A top-level `page`/`body`/`html`/`*`/`::selection` selector escapes the scope. | Move page-level styles to a global (non-scoped) skin. |  |
+| `WD804` | Malformed `@font-face` block | `@font-face` was given a name, holds a nested block, or has no descriptors — it takes plain `prop value` declaration lines only. | Write a bare `@font-face` line and indent each descriptor beneath it. | `@font-face`<br>`  font-family "Newsreader"` |
+| `WD805` | Invalid `@keyframes` name | The name after `@keyframes` is missing or is not a plain CSS identifier. | Name the animation with a plain identifier, e.g. `@keyframes fade-in`. | `@keyframes fade-in`<br>`  to`<br>`    opacity 1` |
+| `WD806` | Invalid keyframe selector | A child of `@keyframes` is not `from`, `to`, or a percentage. | Use `from`, `to`, a percentage (`50%`), or a comma list of them (`50%, 75%`). | `@keyframes fade-in`<br>`  to`<br>`    opacity 1` |
+| `WD807` | Malformed `@keyframes` body | A keyframe's declarations nest deeper, a keyframe selector has no declarations, or the block has no keyframe selectors at all. | Give each keyframe selector a flat list of declarations indented one level beneath it. | `@keyframes fade-in`<br>`  to`<br>`    opacity 1` |
 
 ## WD9xx — Project, routing & CLI
 
@@ -238,6 +242,7 @@ free number in their block.
 | `WD905` | Deploy CLI not signed in | The platform CLI rejected the deploy with an authentication failure. | Run the platform login command, then re-run the deploy. |  |
 | `WD906` | Deploy command failed | The platform CLI exited non-zero for a reason other than authentication. | Read the CLI output above the error, fix the cause, and re-run. |  |
 | `WD907` | Unknown `ai_crawlers` policy | The home page's `ai_crawlers:` is neither `allow` nor `deny`. | Write `ai_crawlers: allow` or `ai_crawlers: deny` (absent means allow). |  |
+| `WD908` | Unsafe route name | A page filename produced a route containing whitespace or control characters, which would corrupt generated config files (dist/_headers, llms.txt). | Rename the file using only letters, digits, dashes, and underscores. |  |
 | `WD950` | Invalid `rss_limit` | The home page's `rss_limit:` is not a positive whole number of items. | Write `rss_limit: 20` (absent means 20). |  |
 
 ## Errors without a code

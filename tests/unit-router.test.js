@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { buildSite } from "../src/builder.js";
 import { discoverRoutes, outputPathForRoute, routeFromFile } from "../src/router.js";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,56 @@ test("routeFromFile strips the extension regardless of .md/.wd", () => {
   const root = "/site/pages";
   assert.equal(routeFromFile(root, "/site/pages/x.md"), "/x/");
   assert.equal(routeFromFile(root, "/site/pages/x/index.wd"), "/x/");
+});
+
+// A control or whitespace character in a filename flows raw into generated
+// config (`dist/_headers` joins route strings into blocks separated by blank
+// lines), so a `evil\n . PhpC… .wd`-style name would inject whole header lines.
+// routeFromFile fails closed at the one route-derivation chokepoint instead.
+test("routeFromFile rejects whitespace and control characters in the filename", () => {
+  const root = "/site/pages";
+  for (const bad of ["evi\nl.wd", "evi\rl.md", "evi\tl.wd", "with space.wd"]) {
+    assert.throws(
+      () => routeFromFile(root, `/site/pages/${bad}`),
+      /whitespace or control characters/
+    );
+  }
+  // A NUL and a DEL are control characters too.
+  assert.throws(() => routeFromFile(root, "/site/pages/nul\0byte.wd"), /whitespace or control/);
+  assert.throws(() => routeFromFile(root, "/site/pages/del\x7f.wd"), /whitespace or control/);
+  // Normal routes, including unicode names, are unchanged.
+  assert.equal(routeFromFile(root, "/site/pages/docs/guide.wd"), "/docs/guide/");
+  assert.equal(routeFromFile(root, "/site/pages/café.wd"), "/café/");
+  assert.equal(routeFromFile(root, "/site/pages/index.wd"), "/");
+});
+
+test("discoverRoutes fails loudly on a control-character filename, naming the file", {
+  skip: process.platform === "win32"
+}, () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "# Home");
+  write(root, "site/pages/evil\ninjected.wd", "# Not a route");
+  assert.throws(
+    () => discoverRoutes(path.join(root, "site/pages")),
+    (err) =>
+      err instanceof Error &&
+      /whitespace or control characters/.test(err.message) &&
+      err.message.includes("evil"),
+    "the rejection names the offending file"
+  );
+});
+
+test("a newline filename fails the whole build before _headers is written", {
+  skip: process.platform === "win32"
+}, () => {
+  const root = fixture();
+  write(root, "site/pages/index.wd", "# Home");
+  write(root, "site/pages/evil\ninjected.wd", "# Not a route");
+  assert.throws(() => buildSite(root), /whitespace or control characters/);
+  assert.ok(
+    !fs.existsSync(path.join(root, "dist", "_headers")),
+    "no config file was emitted from a rejected route set"
+  );
 });
 
 // --- outputPathForRoute -----------------------------------------------------

@@ -33,8 +33,9 @@ export function errorsMarkdown(): string;
  * @property {string} title Short name for the mistake.
  * @property {string} cause What the author wrote that triggers it.
  * @property {string} fix The corrective action, in one line.
- * @property {string} [example] A concrete, compilable line, sourced from the
- *   compiler's own `*_EXAMPLE` constants.
+ * @property {string} [example] A concrete, compilable line (or, for block
+ *   constructs like the `.skin` at-rules, a minimal compilable block), sourced
+ *   from the compiler's own `*_EXAMPLE` constants.
  */
 /** The subsystem blocks, in code order. */
 /** @type {ErrorArea[]} */
@@ -93,8 +94,9 @@ export type ErrorEntry = {
      */
     fix: string;
     /**
-     * A concrete, compilable line, sourced from the
-     * compiler's own `*_EXAMPLE` constants.
+     * A concrete, compilable line (or, for block
+     * constructs like the `.skin` at-rules, a minimal compilable block), sourced
+     * from the compiler's own `*_EXAMPLE` constants.
      */
     example?: string | undefined;
 };
