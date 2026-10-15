@@ -162,7 +162,7 @@ defaults: [title="Untitled"]
 
 Rules worth knowing:
 
-- **Caller scope, build time.** Children lines compile as if written where the call is, so `Price: { product.price | money }` inside a loop's block sees the loop row, and the whole thing stays zero-JS when the source is static.
+- **Caller scope, build time.** Children lines compile as if written where the call is, so `Price: { product.price | money }` inside a loop's block sees the loop row, and the whole thing stays zero-JS when the source is static. One edge to know: `with` arguments resolve at expansion time, so they cannot read a REACTIVE loop's row (`[WD604]`); a component inside a reactive loop reads the loop variable directly in its children lines instead.
 - **The slot is a standalone line.** `{ children }` written mid-paragraph is literal text, one inside a fenced code block is documentation rather than a slot, and one on a top-level page (not an include) stays literal too. A `.md` include cannot host a slot at all.
 - **Called without a block, the slot renders empty.** An include may place `{ children }` more than once; the children still compile once, so state a child line declares is declared once in the caller.
 - **A block given to an include that never uses `{ children }` is dropped with a build warning**, so a forgotten slot is loud rather than silent.
@@ -965,7 +965,7 @@ The first line renders *Pick a file first.*, not *Error: HTTP 422*. Both keys ar
 
 `headers=<key>` sends a state object as request headers; pair it with `:store` to keep the token across reloads.
 
-**Seed the store empty.** A `:state`/`:store` value is a *build-time* seed: it is inlined into the page's public HTML, so a literal token written into a `.wd` file ships to every visitor. The token has to arrive at runtime, from your own `api/` endpoint:
+**Seed the store empty.** A `:state`/`:store` value is a *build-time* seed: it is inlined into the page's public HTML, so a literal token written into a `.wd` file ships to every visitor. The token has to arrive at runtime, from your own `api/` endpoint. Since 2.10.1 the compiler backs this up with a build hint (never an error) when a seed looks secret-shaped: a private-key header, a known token prefix with a real token body, a JWT, or a long mixed-case unbroken token:
 
 ```wd
 :store session = {}
