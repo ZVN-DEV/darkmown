@@ -413,7 +413,10 @@ function startDevServer({ cwd, log, warn, error }) {
     }
     // Serverless parity: run a project `api/*.js` function if the path matches,
     // exactly as Vercel/Cloudflare would in production; otherwise serve static. A
-    // throw on either path (e.g. a stat/read error) becomes a clean 500.
+    // throw on either path (e.g. a stat/read error) becomes a clean 500. Dev
+    // DELIBERATELY echoes the stack and the api runner keeps real error messages
+    // (the `discloseErrors` default) — this is the author's own machine; `serve`
+    // is the production-shaped path and discloses nothing.
     handleApiRequest({ apiDir, req, res })
       .then((handled) => {
         if (!handled) serveDev(distRoot, url, res, draftRoutes(cwd), () => lastBuildError);
@@ -473,15 +476,20 @@ function startPreviewServer({ cwd, log, error }) {
   const server = http.createServer((req, res) => {
     const acceptEncoding = req.headers["accept-encoding"];
     // Serverless parity, exactly as in dev: run a project api/*.js function when
-    // the path matches; otherwise serve static (compressed when negotiated). A
-    // throw on either path (e.g. a malformed dynamic segment) becomes a clean 500.
-    handleApiRequest({ apiDir, req, res, acceptEncoding })
+    // the path matches; otherwise serve static (compressed when negotiated).
+    // Unlike dev, serve mirrors PRODUCTION disclosure rules: the api runner gets
+    // `discloseErrors: false` (the client sees "Internal error", same shape as
+    // the generated Cloudflare worker), a malformed dynamic segment is a clean
+    // 400 inside the runner, and an unexpected throw here is logged server-side
+    // but never echoed — a stack trace leaks paths and internals to the client.
+    handleApiRequest({ apiDir, req, res, acceptEncoding, discloseErrors: false })
       .then((handled) => {
         if (!handled) serve(distRoot, req.url || "/", res, { acceptEncoding });
       })
       .catch((err) => {
+        error(err instanceof Error && err.stack ? err.stack : String(err));
         res.writeHead(500, { "content-type": "text/plain" });
-        res.end((err instanceof Error && err.stack) || String(err));
+        res.end("Internal Server Error");
       });
   });
   return new Promise((resolve) => {

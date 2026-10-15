@@ -236,3 +236,139 @@ test("handleApiRequest hot-reloads an edited handler (mtime cache-bust)", async 
     server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Security guards: malformed URL encoding (400), the request-body cap (413),
+// and the dev/serve error-disclosure split.
+// ---------------------------------------------------------------------------
+
+/** Start an http server like startServer, but with handleApiRequest options. */
+async function startServerWithOptions(apiDir, options = {}) {
+  const server = http.createServer((req, res) => {
+    handleApiRequest({ apiDir, req, res, ...options })
+      .then((handled) => {
+        if (!handled) {
+          res.writeHead(404, { "content-type": "text/plain" });
+          res.end("STATIC_FALLTHROUGH");
+        }
+      })
+      .catch((err) => {
+        res.writeHead(500);
+        res.end(String(err));
+      });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
+  return { server, base: `http://127.0.0.1:${port}` };
+}
+
+test("matchApiRoute reports a malformed dynamic segment instead of throwing", () => {
+  const routes = [{ file: "/a/users/[id].js", segments: ["users", "[id]"] }];
+  assert.deepEqual(matchApiRoute(routes, "/api/users/%E0%A4%A"), { malformed: true });
+  // A static route that matches the raw segment anyway still wins: malformed
+  // is only reported when nothing else claimed the path. (Discovery sorts
+  // static routes before dynamic ones, mirrored here.)
+  const both = [
+    { file: "/a/users/literal.js", segments: ["users", "%E0%A4%A"] },
+    { file: "/a/users/[id].js", segments: ["users", "[id]"] }
+  ];
+  assert.deepEqual(matchApiRoute(both, "/api/users/%E0%A4%A"), {
+    file: "/a/users/literal.js",
+    params: {}
+  });
+  // Unrelated paths still miss cleanly.
+  assert.equal(matchApiRoute(routes, "/api/users"), null);
+  assert.equal(matchApiRoute(routes, "/other/%E0%A4%A"), null);
+});
+
+test("handleApiRequest answers a clean 400 for a malformed dynamic segment", async () => {
+  const apiDir = makeApi({
+    "users/[id].mjs": "export default (request, ctx) => Response.json({ id: ctx.params.id })"
+  });
+  const { server, base } = await startServer(apiDir);
+  try {
+    const res = await fetch(`${base}/api/users/%E0%A4%A`);
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { ok: false, error: "Malformed URL encoding" });
+    // The server survives and keeps routing.
+    const ok = await fetch(`${base}/api/users/42`);
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { id: "42" });
+  } finally {
+    server.close();
+  }
+});
+
+test("handleApiRequest answers 413 JSON when a body crosses the 10 MB cap", async () => {
+  const apiDir = makeApi({
+    "up.mjs":
+      "export default async (request) => Response.json({ size: (await request.arrayBuffer()).byteLength })"
+  });
+  const { server, base } = await startServer(apiDir);
+  try {
+    const res = await fetch(`${base}/api/up`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: Buffer.alloc(10 * 1024 * 1024 + 1, 0x61)
+    });
+    assert.equal(res.status, 413);
+    assert.deepEqual(await res.json(), { ok: false, error: "Request body too large" });
+    // The over-cap upload did not wedge the server.
+    const ok = await fetch(`${base}/api/up`, {
+      method: "POST",
+      body: Buffer.alloc(4, 0x61)
+    });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { size: 4 });
+  } finally {
+    server.close();
+  }
+});
+
+test("handleApiRequest buffers a body at exactly the 10 MB cap", async () => {
+  const apiDir = makeApi({
+    "up.mjs":
+      "export default async (request) => Response.json({ size: (await request.arrayBuffer()).byteLength })"
+  });
+  const { server, base } = await startServer(apiDir);
+  try {
+    const res = await fetch(`${base}/api/up`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: Buffer.alloc(10 * 1024 * 1024, 0x62)
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { size: 10 * 1024 * 1024 });
+  } finally {
+    server.close();
+  }
+});
+
+test("discloseErrors: false answers the generic production-shaped 500", async () => {
+  const apiDir = makeApi({
+    "boom.mjs": 'export default () => { throw new Error("kaboom /private/path"); }'
+  });
+  const { server, base } = await startServerWithOptions(apiDir, { discloseErrors: false });
+  try {
+    const res = await fetch(`${base}/api/boom`);
+    assert.equal(res.status, 500);
+    assert.deepEqual(await res.json(), { ok: false, error: "Internal error" });
+  } finally {
+    server.close();
+  }
+});
+
+test("the default (dev) disclosure keeps the real error message", async () => {
+  const apiDir = makeApi({
+    "boom.mjs": 'export default () => { throw new Error("kaboom"); }'
+  });
+  const { server, base } = await startServerWithOptions(apiDir);
+  try {
+    const res = await fetch(`${base}/api/boom`);
+    assert.equal(res.status, 500);
+    assert.match((await res.json()).error, /kaboom/);
+  } finally {
+    server.close();
+  }
+});

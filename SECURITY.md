@@ -30,6 +30,7 @@ Things Darkmown deliberately guards at compile time and runtime:
 - **Private page assets stay private.** Page-colocated assets under `site/pages` are copied only when their relative path has no hidden segment (`.`, `-`, or `_`) and is not a symlink. This keeps `.env`, `_private/*`, `-draft/*`, and symlink-to-outside files out of `dist`.
 - **Output escaping.** Interpolated values are HTML-escaped; state scripts escape `<` to prevent script-tag breakout.
 - **Static server path containment.** The dev/preview servers resolve requests strictly inside `dist`.
+- **Build caches are trusted input.** The `node_modules/.cache/darkmown-*` directories (image variants, font subsets) are copied into `dist` verbatim when their content-hash keys match, so a poisoned shared CI cache ships attacker bytes. Pin and verify cache artifacts in CI, or delete the directories to rebuild from source.
 
 ## The #1 footgun: the raw HTML opt-in (`html: true`)
 

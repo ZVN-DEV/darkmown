@@ -36,6 +36,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fsReader } from "./compiler/fs-reader.js";
+import { isAllowedInclude } from "./compiler/includes.js";
 
 /**
  * @typedef {import("./config.js").Paths} Paths
@@ -287,21 +289,26 @@ export function subsetFonts(paths, options = {}) {
  * build is synchronous; the wasm API is not), communicating through temp JSON
  * files rather than stdio so a large payload never hits a pipe buffer. The
  * worker always writes a results file — a missing or unparsable one means the
- * child itself died, which is reported as `unavailable` (the build then behaves
- * as if the toolchain were absent: a hint, no subsets, no failure).
+ * child itself died (crashed, or killed by the spawn timeout), which is
+ * reported as `unavailable` (the build then behaves as if the toolchain were
+ * absent: a hint, no subsets, no failure).
  * @param {{ charset: number[], jobs: SubsetJob[] }} payload
  * @param {(cmd: string, args: string[], opts: object) => unknown} [spawn]
  *   Injectable for tests; the real one is `spawnSync`.
+ * @param {number} [timeoutMs] The worker is killed after this long (default
+ *   two minutes), so a hung toolchain call cannot stall a build forever. The
+ *   kill lands in the same `unavailable` path as any other dead child.
  * @returns {SubsetResult}
  */
-export function runSubsetJobs(payload, spawn = /** @type {any} */ (spawnSync)) {
+export function runSubsetJobs(payload, spawn = /** @type {any} */ (spawnSync), timeoutMs = 120000) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wd-font-subset-"));
   try {
     const jobsFile = path.join(dir, "jobs.json");
     const resultsFile = path.join(dir, "results.json");
     fs.writeFileSync(jobsFile, JSON.stringify(payload));
     spawn(process.execPath, [WORKER_PATH, jobsFile, resultsFile], {
-      stdio: ["ignore", "ignore", "inherit"]
+      stdio: ["ignore", "ignore", "inherit"],
+      timeout: timeoutMs
     });
     if (!fs.existsSync(resultsFile)) return { unavailable: true, failed: [] };
     try {
@@ -391,9 +398,10 @@ function fontUrlsInCss(css) {
  * Resolve a url() target from an emitted `@font-face` to the project font file
  * it names, or null when it is not a subset candidate: anything not
  * leading-slash (remote, protocol-relative, `data:`, relative), a non-subsettable
- * extension (already-woff2 included), an un-decodable or escaping path, or a
- * file that does not exist. `/__wd/media/<rel>` maps to the shelf; every other
- * absolute path maps to `site/pages`.
+ * extension (already-woff2 included), an un-decodable or escaping path, a
+ * symlink (whose target could live anywhere on disk, whatever the link's own
+ * path says), or a file that does not exist. `/__wd/media/<rel>` maps to the
+ * shelf; every other absolute path maps to `site/pages`.
  * @param {Paths} paths
  * @param {string} url The raw url() target.
  * @returns {FontRef | null}
@@ -416,6 +424,16 @@ function resolveFontUrl(paths, url) {
   const source = path.normalize(path.join(base, rel));
   if (!source.startsWith(base + path.sep)) return null;
   if (!fs.existsSync(source)) return null;
+  // Symlinks are never subsetted, matching the asset-copy convention
+  // (`emitPageAssets` skips them entirely, and so does the image pre-pass):
+  // the lexical containment check above reads the path as WRITTEN, so a link
+  // sitting inside the project could point anywhere on disk and the target's
+  // bytes would be read and published as a subset. An ancestor directory can
+  // be a symlink with the file itself plain, so the canonical (realpath)
+  // containment check `@include` uses runs too — a font whose real path
+  // escapes site/pages and site/_ is simply "not project-local" here.
+  if (fs.lstatSync(source).isSymbolicLink()) return null;
+  if (!isAllowedInclude(source, paths, fsReader())) return null;
   const subsetUrl = `${clean.slice(0, clean.length - ext.length)}-subset.woff2`;
   return { url, source, subsetUrl, subsetDist: path.join(paths.distRoot, subsetUrl.slice(1)) };
 }

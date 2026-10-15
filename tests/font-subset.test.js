@@ -297,6 +297,150 @@ test("non-candidate urls are skipped silently: remote, protocol-relative, data, 
   assert.equal(fs.readFileSync(path.join(root, "dist/style.css"), "utf8"), cssBefore);
 });
 
+test("a symlinked font pointing OUTSIDE the project is never subsetted — its bytes never reach dist", {
+  skip: process.platform === "win32"
+}, () => {
+  const root = freshRoot();
+  const paths = createPaths(root);
+  // The audit repro: a font linked in from outside the project (a "system
+  // font"). The fixture's real path is outside the temp project root.
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "wd-font-outside-"));
+  const outside = path.join(outsideDir, "system.ttf");
+  fs.copyFileSync(fileURLToPath(FIXTURE), outside);
+  try {
+    fs.mkdirSync(path.join(root, "site/pages/fonts"), { recursive: true });
+    fs.symlinkSync(outside, path.join(root, "site/pages/fonts/evil.ttf"));
+    fs.mkdirSync(paths.distRoot, { recursive: true });
+    write(root, "dist/index.html", "<p>Hi</p>");
+    write(
+      root,
+      "dist/style.css",
+      '@font-face { font-family: "e"; src: url("/fonts/evil.ttf") format("truetype"); }'
+    );
+    const cssBefore = fs.readFileSync(path.join(root, "dist/style.css"), "utf8");
+    const { result, warns } = withWarns(() => subsetFonts(paths));
+    assert.deepEqual(result, { subsetted: 0, cached: 0, unavailable: false });
+    assert.deepEqual(warns, [], "silent, like every other non-candidate skip");
+    assert.equal(
+      fs.readFileSync(path.join(root, "dist/style.css"), "utf8"),
+      cssBefore,
+      "the CSS keeps the original src verbatim"
+    );
+    assert.ok(!fs.existsSync(path.join(root, "dist/fonts/evil-subset.woff2")));
+    assert.ok(
+      !fs.existsSync(path.join(root, "node_modules/.cache/darkmown-fonts")),
+      "the target's bytes never even entered the subset cache"
+    );
+  } finally {
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test("a symlinked ANCESTOR directory escaping the project is also not project-local", {
+  skip: process.platform === "win32"
+}, () => {
+  const root = freshRoot();
+  const paths = createPaths(root);
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "wd-font-outdir-"));
+  fs.copyFileSync(fileURLToPath(FIXTURE), path.join(outsideDir, "evil.ttf"));
+  try {
+    // site/pages/fonts is itself the symlink; evil.ttf inside it is a plain
+    // file, so only the canonical (realpath) containment check can catch this.
+    fs.symlinkSync(outsideDir, path.join(root, "site/pages/fonts"));
+    fs.mkdirSync(paths.distRoot, { recursive: true });
+    write(root, "dist/index.html", "<p>Hi</p>");
+    write(
+      root,
+      "dist/style.css",
+      '@font-face { font-family: "e"; src: url("/fonts/evil.ttf") format("truetype"); }'
+    );
+    const { result, warns } = withWarns(() => subsetFonts(paths));
+    assert.deepEqual(result, { subsetted: 0, cached: 0, unavailable: false });
+    assert.deepEqual(warns, []);
+    assert.ok(!fs.existsSync(path.join(root, "dist/fonts/evil-subset.woff2")));
+  } finally {
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test("an IN-PROJECT symlink is skipped too, matching the asset-copy convention", {
+  skip: process.platform === "win32"
+}, () => {
+  const root = freshRoot();
+  const paths = createPaths(root);
+  // emitPageAssets (and the image pre-pass) never publish symlinks at all, so
+  // subsetting one would emit a -subset.woff2 whose original never ships.
+  const real = plantFont(root, "site/_/fonts/real.ttf");
+  fs.symlinkSync(real, path.join(root, "site/_/fonts/alias.ttf"));
+  fs.mkdirSync(paths.distRoot, { recursive: true });
+  write(root, "dist/index.html", "<p>Hi</p>");
+  write(
+    root,
+    "dist/style.css",
+    [
+      '@font-face { font-family: "a"; src: url("/__wd/media/fonts/alias.ttf") format("truetype"); }',
+      '@font-face { font-family: "r"; src: url("/__wd/media/fonts/real.ttf") format("truetype"); }'
+    ].join("\n")
+  );
+  const plan = subsetFonts(paths, {
+    runJobs: (payload) => {
+      for (const job of payload.jobs) {
+        fs.mkdirSync(path.dirname(job.out), { recursive: true });
+        fs.writeFileSync(job.out, "wOF2-fake");
+      }
+      return { unavailable: false, failed: [] };
+    }
+  });
+  assert.deepEqual(plan, { subsetted: 1, cached: 0, unavailable: false }, "only the real font");
+  assert.ok(!fs.existsSync(path.join(root, "dist/__wd/media/fonts/alias-subset.woff2")));
+  assert.ok(fs.existsSync(path.join(root, "dist/__wd/media/fonts/real-subset.woff2")));
+});
+
+test("a symlinked font in a full build stays out of dist and the CSS is untouched", {
+  skip: process.platform === "win32"
+}, () => {
+  const root = freshRoot();
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "wd-font-outside-"));
+  const outside = path.join(outsideDir, "system.ttf");
+  fs.copyFileSync(fileURLToPath(FIXTURE), outside);
+  try {
+    fs.mkdirSync(path.join(root, "site/pages/fonts"), { recursive: true });
+    fs.symlinkSync(outside, path.join(root, "site/pages/fonts/evil.ttf"));
+    fontProject(root, "/fonts/evil.ttf");
+    const { result, warns } = withWarns(() => buildSite(root));
+    assert.deepEqual(result.fonts, { subsetted: 0, cached: 0, unavailable: false });
+    assert.ok(!warns.some((w) => w.includes("evil.ttf")), "no hint either way for a symlink");
+    assert.ok(!fs.existsSync(path.join(root, "dist/fonts/evil-subset.woff2")));
+    assert.doesNotMatch(readEmittedCss(root), /subset\.woff2/, "no rewrite happened");
+  } finally {
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test("runSubsetJobs passes a spawn timeout, and a timed-out worker reads as `unavailable`", async () => {
+  // The stub captures the options: the two-minute default rides along.
+  /** @type {unknown} */
+  let seen;
+  const missing = runSubsetJobs({ charset: [65], jobs: [] }, (_cmd, _args, opts) => {
+    seen = opts;
+  });
+  assert.deepEqual(missing, { unavailable: true, failed: [] });
+  assert.equal(/** @type {{ timeout: number }} */ (seen).timeout, 120000);
+
+  // End-to-end with the REAL spawnSync and an injected short timeout: a worker
+  // that sleeps past it is killed, leaves no results file, and is reported as
+  // `unavailable` (a hint upstream), never a build failure.
+  const { spawnSync } = await import("node:child_process");
+  const result = runSubsetJobs(
+    { charset: [65], jobs: [] },
+    /** @type {any} */ (
+      (cmd, _args, opts) => spawnSync(cmd, ["-e", "setTimeout(() => {}, 30000)"], opts)
+    ),
+    100
+  );
+  assert.deepEqual(result, { unavailable: true, failed: [] });
+});
+
 test("a subsetted url with a query string still resolves and rewrites", () => {
   const root = freshRoot();
   const paths = createPaths(root);

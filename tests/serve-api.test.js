@@ -230,40 +230,75 @@ test("serve compresses static HTML through the full cli stack", async () => {
   }
 });
 
-test("serve answers the dev-shaped 500 JSON when an api handler throws", async () => {
+test("serve answers the production-shaped generic 500 when an api handler throws", async () => {
   const root = makeProject({
-    "boom.mjs": 'export default () => { throw new Error("kaboom"); }'
+    "boom.mjs": 'export default () => { throw new Error("kaboom /private/path"); }'
   });
   const { handle, origin } = await startServe(root);
   try {
     const res = await getRaw(origin, "/api/boom");
     assert.equal(res.status, 500);
-    const body = JSON.parse(res.body.toString());
-    assert.equal(body.ok, false);
-    assert.match(body.error, /kaboom/);
-    assert.doesNotMatch(res.body.toString(), /at Object|node:internal/, "no stack trace");
+    assert.deepEqual(JSON.parse(res.body.toString()), { ok: false, error: "Internal error" });
+    assert.doesNotMatch(res.body.toString(), /kaboom|at Object|node:internal/, "no internals leak");
   } finally {
     await handle.close();
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("serve answers 500 (no crash) on a malformed dynamic api segment", async () => {
+test("serve answers a clean 400 on a malformed dynamic api segment", async () => {
   const root = makeProject({
     "users/[id].mjs": "export default (request, ctx) => Response.json({ id: ctx.params.id })"
   });
   const { handle, origin } = await startServe(root);
   try {
-    // decodeURIComponent blows up on the param capture, rejecting the api
-    // runner promise; the server answers instead of dying — same as dev.
+    // decodeURIComponent fails on the param capture; the api runner answers a
+    // 400 itself, so the server's catch (and its 500) is never involved.
     const res = await getRaw(origin, "/api/users/%E0%A4%A");
-    assert.equal(res.status, 500);
-    assert.match(res.headers["content-type"], /text\/plain/);
+    assert.equal(res.status, 400);
+    assert.match(res.headers["content-type"], /application\/json/);
+    assert.deepEqual(JSON.parse(res.body.toString()), {
+      ok: false,
+      error: "Malformed URL encoding"
+    });
     // And the server is still alive for the next request.
     const home = await getRaw(origin, "/");
     assert.equal(home.status, 200);
   } finally {
     await handle.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("serve logs an unexpected api-runner failure server-side and echoes nothing", async () => {
+  const root = makeProject();
+  // `api` as a FILE: route discovery's readdir throws ENOTDIR, which rejects
+  // the runner promise and lands in the preview server's own catch.
+  fs.writeFileSync(path.join(root, "api"), "not a directory");
+  const errors = [];
+  const prevPort = process.env.PORT;
+  process.env.PORT = "0";
+  let handle;
+  try {
+    handle = await run(["serve"], {
+      cwd: root,
+      log: () => {},
+      warn: () => {},
+      error: (line) => errors.push(String(line))
+    });
+    const { port } = /** @type {import("node:net").AddressInfo} */ (handle.server.address());
+    const res = await getRaw(`http://127.0.0.1:${port}`, "/api/anything");
+    assert.equal(res.status, 500);
+    assert.equal(res.body.toString(), "Internal Server Error", "no stack reaches the client");
+    assert.doesNotMatch(res.body.toString(), /ENOTDIR|node:internal|\.js:\d+/);
+    assert.ok(
+      errors.some((line) => /ENOTDIR/.test(line)),
+      "the real error was logged server-side"
+    );
+  } finally {
+    if (prevPort === undefined) delete process.env.PORT;
+    else process.env.PORT = prevPort;
+    if (handle) await handle.close();
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

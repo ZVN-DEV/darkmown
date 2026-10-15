@@ -38,18 +38,25 @@ export function discoverApiRoutes(apiDir: string): ApiRoute[];
 /**
  * Match a request pathname against discovered routes. The pathname is expected
  * to start with `/api`; anything else returns `null` (caller serves static).
+ * A dynamic segment whose percent-encoding is malformed (`%E0%A4%A`) makes
+ * `decodeURIComponent` throw — that is reported as `{ malformed: true }` so the
+ * caller answers a clean 400 instead of crashing the request handler.
  * @param {ApiRoute[]} routes
  * @param {string} pathname Request pathname (no query string).
- * @returns {{ file: string, params: Record<string, string> } | null}
+ * @returns {{ file: string, params: Record<string, string> } | { malformed: true } | null}
  */
 export function matchApiRoute(routes: ApiRoute[], pathname: string): {
     file: string;
     params: Record<string, string>;
+} | {
+    malformed: true;
 } | null;
 /**
  * Build a Web-standard `Request` from a Node `IncomingMessage`. The body (for
- * methods that carry one) is buffered fully — dev endpoints are small and this
- * avoids the `duplex: "half"` streaming dance.
+ * methods that carry one) is buffered up to {@link MAX_BODY_BYTES} — dev and
+ * preview endpoints are small and this avoids the `duplex: "half"` streaming
+ * dance. A larger body rejects with {@link BodyTooLargeError}, which
+ * `handleApiRequest` answers as a 413.
  * @param {import("node:http").IncomingMessage} req
  * @returns {Promise<Request>}
  */
@@ -75,19 +82,28 @@ export function writeWebResponse(response: Response, res: import("node:http").Se
  * the handler succeeded or threw), `false` when nothing matched so the caller
  * should fall through to static serving.
  *
+ * Error disclosure: a handler throw is answered as JSON either way, but the
+ * `error` field carries the real message only when `discloseErrors` is set
+ * (the dev server's default — a documented dev convenience). The preview
+ * server passes `false` and the client gets the generic "Internal error",
+ * matching the shape the generated Cloudflare worker ships.
+ *
  * @param {object} io
  * @param {string} io.apiDir Absolute path to the project's `api/` directory.
  * @param {import("node:http").IncomingMessage} io.req
  * @param {import("node:http").ServerResponse} io.res
  * @param {string | string[] | undefined} [io.acceptEncoding] The request's
  *   Accept-Encoding header, when the caller negotiates compression (preview).
+ * @param {boolean} [io.discloseErrors] Echo the thrown message to the client
+ *   (default true, the dev behavior). Pass false on any production-shaped path.
  * @returns {Promise<boolean>}
  */
-export function handleApiRequest({ apiDir, req, res, acceptEncoding }: {
+export function handleApiRequest({ apiDir, req, res, acceptEncoding, discloseErrors }: {
     apiDir: string;
     req: import("node:http").IncomingMessage;
     res: import("node:http").ServerResponse;
     acceptEncoding?: string | string[] | undefined;
+    discloseErrors?: boolean | undefined;
 }): Promise<boolean>;
 /**
  * A discovered API route.

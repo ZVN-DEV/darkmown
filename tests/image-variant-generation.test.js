@@ -440,6 +440,74 @@ test("runResizeJobs reports unavailable when the worker writes garbage", () => {
   assert.deepEqual(result, { unavailable: true, failed: [] });
 });
 
+test("runResizeJobs passes a spawn timeout, and a timed-out worker reads as `unavailable`", async () => {
+  // The stub captures the options: the two-minute default rides along.
+  /** @type {unknown} */
+  let seen;
+  const missing = runResizeJobs([], (_cmd, _args, opts) => {
+    seen = opts;
+  });
+  assert.deepEqual(missing, { unavailable: true, failed: [] });
+  assert.equal(/** @type {{ timeout: number }} */ (seen).timeout, 120000);
+
+  // End-to-end with the REAL spawnSync and an injected short timeout: a worker
+  // that sleeps past it is killed, leaves no results file, and is reported as
+  // `unavailable` (a hint upstream), never a build failure.
+  const { spawnSync } = await import("node:child_process");
+  const result = runResizeJobs(
+    [],
+    /** @type {any} */ (
+      (cmd, _args, opts) => spawnSync(cmd, ["-e", "setTimeout(() => {}, 30000)"], opts)
+    ),
+    100
+  );
+  assert.deepEqual(result, { unavailable: true, failed: [] });
+});
+
+test("the worker caps input pixels via sharp's limitInputPixels option", async () => {
+  const root = freshRoot();
+  // A recording sharp stand-in behind the WD_SHARP_MODULE seam: captures the
+  // constructor options, then mimics the fluent pipeline the worker drives.
+  const capture = path.join(root, "capture.json");
+  const stub = path.join(root, "sharp-stub.mjs");
+  fs.writeFileSync(
+    stub,
+    `import fs from "node:fs";
+export default function sharp(input, options) {
+  fs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ input, options }));
+  const pipeline = {
+    rotate: () => pipeline,
+    resize: () => pipeline,
+    jpeg: () => pipeline,
+    toFile: async (out) => fs.writeFileSync(out, "fake")
+  };
+  return pipeline;
+}
+`
+  );
+  const jobsFile = path.join(root, "jobs.json");
+  const resultsFile = path.join(root, "results.json");
+  fs.writeFileSync(
+    jobsFile,
+    JSON.stringify([{ source: "x.jpg", out: path.join(root, "o.jpg"), width: 640, format: "jpeg" }])
+  );
+  const previous = process.env.WD_SHARP_MODULE;
+  process.env.WD_SHARP_MODULE = stub;
+  try {
+    await runJobsFile(jobsFile, resultsFile);
+  } finally {
+    if (previous === undefined) delete process.env.WD_SHARP_MODULE;
+    else process.env.WD_SHARP_MODULE = previous;
+  }
+  const seen = JSON.parse(fs.readFileSync(capture, "utf8"));
+  assert.equal(seen.input, "x.jpg");
+  assert.deepEqual(seen.options, { limitInputPixels: 1e8 }, "the 100 MP cap is passed to sharp");
+  assert.deepEqual(JSON.parse(fs.readFileSync(resultsFile, "utf8")), {
+    unavailable: false,
+    failed: []
+  });
+});
+
 // --- the worker, in process (the child-process path is covered by the builds) --
 
 test("the worker resizes all three formats and reports per-job failures", async () => {
