@@ -129,6 +129,25 @@ darkmown catalog --llms-full > reference.md
 
 Every `darkmown build` also writes both files (`dist/llms.txt` and `dist/llms-full.txt`), and Darkmown ships a generated GBNF grammar (`grammar/wd-directives.gbnf`) for constrained decoding.
 
+### `darkmown mcp`
+
+Runs a Model Context Protocol server on stdio, so an MCP-capable agent gets the language description and the compiler as first-class tools. It is hand-rolled with zero dependencies: MCP over stdio is newline-delimited JSON-RPC 2.0 (protocol revision 2024-11-05), stdout carries protocol frames only, and logs go to stderr. Every tool is a thin adapter over the same drift-guarded surfaces the CLI uses, so a client and the CLI can never disagree.
+
+Five tools: `catalog` (the directive catalog as `json`, `llms`, or `llms-full`), `grammar` (the full GBNF grammar, or a category slice of the cheatsheet), `validate` (compile `.wd`/`.md` source in memory: static/reactive status and warnings on success, the WD code with file:line, `Use:` hint, and example on failure), `error` (one WD code's cause, fix, and example, or the valid list), and `doc` (fuzzy section search over the shipped README and AGENTS.md). Five resources expose the shipped docs at `darkmown://docs/readme`, `darkmown://docs/agents`, `darkmown://docs/changelog`, `darkmown://docs/errors`, and `darkmown://docs/cli`, read from the installed package at request time. Prompts, logging, completion, sampling, subscriptions, and batched requests are deliberately not implemented.
+
+Client config (Claude Code, Cursor, and friends share this shape):
+
+```json
+{
+  "mcpServers": {
+    "darkmown": {
+      "command": "npx",
+      "args": ["-y", "@zvndev/darkmown", "mcp"]
+    }
+  }
+}
+```
+
 ## Backends (`api/`)
 
 Backend endpoints are plain-JS Web-standard handlers in a top-level `api/` directory — the same shape on every host, and the only thing you write for a server:

@@ -2,6 +2,11 @@
 
 This audit compares the current Darkmown implementation with the original MARROW/WhateverDown vision and the follow-up decisions made on 2026-06-11.
 
+## 2.11.0 additions: the framework speaks MCP, and every page speaks markdown (2026-10-15)
+
+- **The language description became a protocol surface.** `darkmown mcp` is a hand-rolled, zero-dependency MCP stdio server (newline-delimited JSON-RPC 2.0, protocol 2024-11-05, no SDK, so `dependencies` stays empty). Its five tools (catalog, grammar, in-memory validate, error-code lookup, doc-section search) are thin adapters over the same drift-guarded surfaces the CLI and the test suite already pin, so an agent editing `.wd` through MCP gets the same answers as `darkmown validate`, with the shipped markdown docs riding along as `darkmown://docs/*` resources. That resource surface is why `docs/errors.md` now ships in the tarball.
+- **Any page can now be read as its source.** `md_source: true` on the home page publishes each route's byte-exact markdown at `<route>.md` with a `text/markdown` alternate link in the head, a per-page opt-out, drafts excluded by the same discovery filter as everything else, and no feed or sitemap pollution. The llms-full corpus already carried full page text for agents; the `.md` sources are the always-current, per-page form of the same contract, and they cost a plain file copy at build time.
+
 ## 2.10.1 additions: hardening and contract repair (2026-10-14)
 
 A patch release: nothing in it moves the authoring surface, it tightens what the build publishes and repairs the error contract the 2.8.0 skin at-rules shipped without.

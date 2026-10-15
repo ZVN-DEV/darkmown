@@ -391,11 +391,12 @@ tags: [sales, revenue, "q1, q2"]
 
 `lang:` sets the document language on `<html lang>` per page (`lang: fr`, `lang: pt-BR`, …); it defaults to `en`. Every page also ships a visually-hidden-until-focused **skip-to-content link** targeting the main landmark — your own `<main>` is reused (an existing `id` wins as the target; an id-less one gets `id="main"`), and a page without one is wrapped in `<main id="main">`. Restyle it via `.wd-skip-link` in a skin. All compile-time — static pages stay zero-JS.
 
-Three more keys arrived in 2.8:
+More head and publishing keys arrived in 2.8 and 2.11:
 
 - **`icon: /path`** sets the favicon verbatim (`<link rel="icon">`, with a `type` for `.svg`/`.png`/`.ico`). Without it, the first of `site/pages/icon.svg`, `icon.png`, or `favicon.ico` wins; without either, the built-in mark stays the fallback.
 - **`noindex: true`** builds the page but removes it from discovery: a robots `noindex,nofollow` meta, plus exclusion from `sitemap.xml`, `rss.xml`, and the generated `llms.txt`/`llms-full.txt`. On a collection entry with a `_schema.wd`, declare it as `noindex: boolean?`.
 - **`skins: [/base.skin]`** (an inline array) loads shared `.skin` files for that page only, resolved like `@include` paths; a missing file, a non-`.skin` file, or a path outside `site/pages`/`site/_` is `[WD017]`. A shared skin whose first line is `scoped` scopes to the whole page body, so keep to one scoped skin per page.
+- **`md_source: true`** (home page only) publishes every page's byte-exact markdown source at `<route>.md` (`/docs/` also answers `/docs.md`, with a `<link rel="alternate" type="text/markdown">` head tag and a `text/markdown` content type). A page opts out with `md_source: false`; drafts never emit, and the sitemap and feeds never list the `.md` files. Off by default.
 
 **Cascade order changed in 2.8.** Stylesheet links emit the highlight sheet first (code pages), then include skins, then `skins:` entries in listed order, and **the page's own colocated `.skin` last**, so the page wins ties at equal specificity. Before 2.8 the page's skin came first; a page rule that unknowingly relied on losing to an include rule now wins.
 
@@ -1020,6 +1021,10 @@ session.call("outline", {});
 session.call("apply", { edits: [{ op: "replace", symbol: "state:count", text: ":state count = 5" }] });
 session.call("validate", {});
 ```
+
+### MCP server
+
+`darkmown mcp` runs a hand-rolled, zero-dependency MCP server on stdio (protocol 2024-11-05), so an MCP-capable agent gets the language as tools instead of shelling out: `catalog`, `grammar`, `validate` (compile-check `.wd` source in memory with coded errors), `error` (a WD code's cause, fix, and example), and `doc` (fuzzy section search over the shipped README/AGENTS.md), plus the shipped docs as `darkmown://docs/{readme,agents,changelog,errors,cli}` resources. stdout is protocol frames only. Point a client at it with `{ "mcpServers": { "darkmown": { "command": "npx", "args": ["-y", "@zvndev/darkmown", "mcp"] } } }`.
 
 ## Compile error codes
 

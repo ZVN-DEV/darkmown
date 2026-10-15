@@ -86,6 +86,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 - `darkmown deploy <vercel|cloudflare> [--prod]` builds and deploys via the platform CLI.
 - `darkmown serve` previews the built `dist` locally. It also runs the project's `api/` functions (same handler contract and routing as `darkmown dev` and the production hosts, so `:form action="/api/…"` posts and `:fetch … from "/api/…"` demos work in the preview), and it compresses text responses: brotli preferred, then gzip, negotiated off the request's `Accept-Encoding` with `Vary: Accept-Encoding` set. `darkmown dev` is deliberately uncompressed.
 - `darkmown catalog [--llms|--llms-full]` prints the machine-readable directive catalog (JSON), a compact cheatsheet with `--llms`, or the complete reference including every error code with `--llms-full`. See [AI authoring](#ai-authoring).
+- `darkmown mcp` runs a zero-dependency MCP server on stdio, exposing the catalog, grammar, validation, error codes, and docs as agent tools. See [MCP server](#mcp-server-darkmown-mcp).
 - `darkmown version` prints the installed package version.
 - `darkmown help` prints CLI usage.
 
@@ -284,6 +285,8 @@ And one key moves styling into frontmatter: **`skins: [/base.skin, /marketing.sk
 **Cascade order changed in 2.8 (behavior change).** A page's stylesheet links now emit in this order: the framework highlight sheet (code pages only), then include skins in the order their includes compiled, then the page's `skins:` entries in listed order, and **the page's own colocated `.skin` last**, so the page wins ties at equal specificity. Before 2.8 the page's own skin came first and an override of an include rule needed a higher-specificity selector. A page rule that unknowingly relied on losing to an include rule now wins; the migration is to delete specificity hacks that only existed to beat the old order.
 
 A few reserved keys drive **drafts and feeds** (see [SEO & feeds](#seo--feeds-sitemap-rss-robots) below): `draft: true` excludes a page from production builds; `site_url` on the home page turns on `sitemap.xml` + `rss.xml`; `rss_limit:` on the home page caps how many posts the feed carries; `date:` marks a page as a blog post (it lands in `rss.xml` and sets the page's `<lastmod>`); `excerpt:` is the RSS summary. The same frontmatter is queryable when the page is an entry in a [content collection](#content-collections): `{ post.date }`, `{ post.excerpt }`, `{ post.tags }`, and any custom key resolve in an `@loop` over the folder.
+
+**Markdown sources: `md_source: true`** on the home page opts the whole site in to publishing every page's byte-exact source beside its HTML: `/docs/` also answers `/docs.md` (the exact `.md`/`.wd` file the author wrote, frontmatter and CRLF endings included) with a `text/markdown` content type, and each published page carries `<link rel="alternate" type="text/markdown" href="/docs.md" title="Markdown source">`, emitted exactly when the file is, so the link never 404s. A page opts back out with `md_source: false`; a page-level `true` without the home flag does nothing, drafts never emit a source, and sitemap/rss/robots never list the `.md` files (they are alternates, not routes). Off by default, and a site that never sets it builds byte-identical output.
 
 `transitions: true` opts a page into **instant, flash-free navigation** — zero JavaScript, all declarative. It emits a directional fade+slide **view transition** for the page swap (old lifts up and out, new rises up and in — replacing the default cross-fade, which left both pages ghosted at ~50 % opacity mid-navigation), plus a **`<script type="speculationrules">` prerender** hint that renders the next same-origin page on hover/pointerdown so the click activates an already-painted page (no white render-gap flash). It honors `prefers-reduced-motion`. Only same-origin pages that both opt in transition; browsers without support — or with page-preloading disabled — navigate normally. Off by default; opt out with `transitions: false`. Mark a link `{.no-prefetch}` to exclude it from prerendering. (Chrome disables prerendering while DevTools is open, so test the built site with DevTools closed.)
 
@@ -1511,7 +1514,7 @@ Every author-facing compile error opens with a stable `WDxxx` code, so it is sea
         Use: :state name = value [persist|ephemeral] — e.g. :state count = 0
 ```
 
-The full list lives in [`docs/errors.md`](https://github.com/ZVN-DEV/darkmown/blob/master/docs/errors.md): code, cause, fix, and a compilable example each. (It is generated into the repository, not the published tarball; `darkmown catalog --llms-full` prints the same content offline.) Codes are grouped by subsystem:
+The full list lives in [`docs/errors.md`](https://github.com/ZVN-DEV/darkmown/blob/master/docs/errors.md): code, cause, fix, and a compilable example each. (Since 2.11 it also ships in the published tarball, so the `darkmown://docs/errors` MCP resource and offline readers get the same file; `darkmown catalog --llms-full` prints the same content offline.) Codes are grouped by subsystem:
 
 | Range | Subsystem |
 | --- | --- |
@@ -1579,6 +1582,37 @@ session.call("validate", {});
 ```
 
 `toolPrompt()` renders the tool list for a system prompt, and `parseToolCall(reply)` reads a call back out of a model's answer (brace-counting and string-aware, because the one thing a Darkmown edit reliably contains is `{ count }`).
+
+### MCP server: `darkmown mcp`
+
+`darkmown mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server on stdio, so an MCP-capable agent (Claude Code, Codex, Cursor, …) gets the language description and the compiler as first-class tools instead of shelling out. It is hand-rolled and zero-dependency: MCP over stdio is newline-delimited JSON-RPC 2.0 (revision 2024-11-05), so there is no SDK in `dependencies` and nothing to drift. Every tool is a thin adapter over the same drift-guarded surfaces the CLI uses, so an MCP client and the `darkmown` CLI can never disagree about what compiles or what a WD code means. stdout carries protocol frames only; logs go to stderr.
+
+| Tool | Answers |
+| --- | --- |
+| `catalog` | The directive catalog: `mode "json"` (default), `"llms"` (the cheatsheet), or `"llms-full"` (the complete reference). |
+| `grammar` | The GBNF directive-line grammar (`gbnf: true`), or a category slice of the cheatsheet (`categories: ["state", "actions"]`). |
+| `validate` | Compile `.wd`/`.md` source in memory: static/reactive status and warnings on success, the WD code, file:line, `Use:` hint, and example on failure. |
+| `error` | One WD code's cause, fix, and example; an unknown code answers the valid list. |
+| `doc` | Fuzzy-find a section of the shipped README/AGENTS.md by topic (`topic: "includes"`; no topic lists every section). |
+
+Five resources expose the shipped docs at `darkmown://docs/readme`, `darkmown://docs/agents`, `darkmown://docs/changelog`, `darkmown://docs/errors`, and `darkmown://docs/cli`, read from the installed package at request time.
+
+Client config (Claude Code, Cursor, and friends share this shape):
+
+```json
+{
+  "mcpServers": {
+    "darkmown": {
+      "command": "npx",
+      "args": ["-y", "@zvndev/darkmown", "mcp"]
+    }
+  }
+}
+```
+
+Deliberately out of scope: prompts, logging, completion, sampling, subscriptions, and batched requests (a JSON array gets a single Invalid Request error, which the spec permits).
+
+**Any page as plain markdown.** With [`md_source: true`](#frontmatter) on the home page, every route also serves its byte-exact source at `<route>.md` (`/docs/` answers `/docs.md`), advertised with a `<link rel="alternate" type="text/markdown">` head tag, so an agent can read any page without parsing HTML. `llms-full.txt` already carries the full source text of every page; the `.md` sources are the per-page, always-current form of the same idea.
 
 ## Editor support
 
