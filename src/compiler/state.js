@@ -174,6 +174,79 @@ function rejectStateSeed(value, raw, directive, ctx, index) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// A SECRET-SHAPED SEED IS A HINT, NEVER AN ERROR.
+//
+// Every `:state`/`:store` seed is stored verbatim and inlined into the public
+// HTML as a JSON script tag — that is the design, and it means a seed that is
+// really an API key or token is published to every reader of the page. The
+// documented pattern is to seed empty and fill from an api/ endpoint at
+// runtime, but nothing stopped an author from pasting the key itself. This
+// check is a heuristic over string seeds (and string values nested in
+// array/object seeds), pushed onto the same `comp.warnings` channel as the
+// other build hints: it can never fail a build, because a false positive must
+// never break one, and it fires at most once per declaration.
+//
+// The shapes are deliberately tight — false positives are the enemy:
+//
+// - Known key prefixes (`sk-`, `ghp_`, `xoxb-`, `AKIA`, …) followed by a real
+//   token body, and the `-----BEGIN` private-key header.
+// - A JWT: three base64url segments joined by dots, opening with `eyJ` (the
+//   base64 of `{"` — requiring it keeps dotted prose quiet).
+// - A long unbroken token: 32+ chars from the base64/base64url alphabet with
+//   no spaces, requiring BOTH cases and a digit. Requiring the case mix keeps
+//   kebab-case slugs, hex hashes, and UUIDs (all lowercase) silent, and the
+//   charset excludes `:`, `.`, and space, so URLs, file paths, and prose
+//   never match.
+// ---------------------------------------------------------------------------
+const SECRET_PREFIX = /^(?:sk-|sk_live_|sk_test_|ghp_|gho_|xoxb-|xoxp-|AKIA)/;
+const SECRET_TOKEN_BODY = /^[A-Za-z0-9_-]{8,}$/;
+const JWT_SHAPE = /^eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
+const LONG_TOKEN_SHAPE = /^[A-Za-z0-9/_+=-]{32,}$/;
+
+/**
+ * Test one string for the secret shapes above.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function looksLikeSecret(text) {
+  if (text.startsWith("-----BEGIN")) return true;
+  const prefixed = text.match(SECRET_PREFIX);
+  if (prefixed && SECRET_TOKEN_BODY.test(text.slice(prefixed[0].length))) return true;
+  if (JWT_SHAPE.test(text)) return true;
+  return LONG_TOKEN_SHAPE.test(text) && /[a-z]/.test(text) && /[A-Z]/.test(text) && /\d/.test(text);
+}
+
+/**
+ * Walk a parsed seed for a secret-shaped string: the seed itself, or any
+ * string value nested in its arrays/objects.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function seedContainsSecret(value) {
+  if (typeof value === "string") return looksLikeSecret(value);
+  if (Array.isArray(value)) return value.some(seedContainsSecret);
+  if (value && typeof value === "object") return Object.values(value).some(seedContainsSecret);
+  return false;
+}
+
+/**
+ * Push the secret-seed hint when a `:state`/`:store` seed carries one.
+ * @param {unknown} value The parsed seed.
+ * @param {string} name The declared name, for the message.
+ * @param {string} directive `:state` or `:store`, for the message.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index for `file:line`.
+ * @returns {void}
+ */
+function warnSecretSeed(value, name, directive, ctx, index) {
+  if (!seedContainsSecret(value)) return;
+  ctx.comp.warnings.push(
+    `${at(ctx, index)}: ${directive} "${name}" seed looks like a secret — it will be inlined into public HTML. ` +
+      `Seed empty and fill it from an api/ endpoint at runtime.`
+  );
+}
+
 /**
  * @param {string} line
  * @param {Ctx} ctx
@@ -195,6 +268,7 @@ export function handleState(line, ctx, index) {
   const flags = parseModifiers(match[3], ":state", ctx, index);
   const value = parseStateValue(match[2], at(ctx, index));
   rejectStateSeed(value, match[2], ":state", ctx, index);
+  warnSecretSeed(value, match[1], ":state", ctx, index);
   const key = declareState(match[1], value, ctx);
   recordSymbol(ctx, index, { kind: "state", name: key, detail: `${key} = ${match[2].trim()}` });
   const persistAttr = flags.persist ? ` data-wd-persist="${escapeHtml(key)}"` : "";
@@ -263,6 +337,7 @@ export function handleStore(line, ctx, index) {
   const flags = parseModifiers(match[3], ":store", ctx, index);
   const value = parseStateValue(match[2], at(ctx, index));
   rejectStateSeed(value, match[2], ":store", ctx, index);
+  warnSecretSeed(value, match[1], ":store", ctx, index);
   const name = declareStore(match[1], value, ctx);
   recordSymbol(ctx, index, { kind: "store", name, detail: `${name} = ${match[2].trim()}` });
   const ephemeral = flags.ephemeral ? " data-wd-store-ephemeral" : "";
