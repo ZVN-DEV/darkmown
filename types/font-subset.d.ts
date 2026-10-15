@@ -29,17 +29,21 @@ export function subsetFonts(paths: Paths, options?: {
  * build is synchronous; the wasm API is not), communicating through temp JSON
  * files rather than stdio so a large payload never hits a pipe buffer. The
  * worker always writes a results file — a missing or unparsable one means the
- * child itself died, which is reported as `unavailable` (the build then behaves
- * as if the toolchain were absent: a hint, no subsets, no failure).
+ * child itself died (crashed, or killed by the spawn timeout), which is
+ * reported as `unavailable` (the build then behaves as if the toolchain were
+ * absent: a hint, no subsets, no failure).
  * @param {{ charset: number[], jobs: SubsetJob[] }} payload
  * @param {(cmd: string, args: string[], opts: object) => unknown} [spawn]
  *   Injectable for tests; the real one is `spawnSync`.
+ * @param {number} [timeoutMs] The worker is killed after this long (default
+ *   two minutes), so a hung toolchain call cannot stall a build forever. The
+ *   kill lands in the same `unavailable` path as any other dead child.
  * @returns {SubsetResult}
  */
 export function runSubsetJobs(payload: {
     charset: number[];
     jobs: SubsetJob[];
-}, spawn?: (cmd: string, args: string[], opts: object) => unknown): SubsetResult;
+}, spawn?: (cmd: string, args: string[], opts: object) => unknown, timeoutMs?: number): SubsetResult;
 /**
  * The subset charset for a build: the base set plus every code point appearing
  * in the given texts (the emitted pages' HTML). Numeric character references

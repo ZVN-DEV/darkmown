@@ -46,7 +46,10 @@ export async function runJobsFile(jobsFile, resultsFile) {
       // loses the EXIF tag with its pixels physically rotated, so it displays
       // exactly like the tag-carrying original. `withoutEnlargement` is belt and
       // braces — the pre-pass only ever queues widths below the intrinsic size.
-      let pipeline = sharp(job.source)
+      // `limitInputPixels` caps the decompression-bomb surface: 100 MP is above
+      // any real photo, and an oversized input fails as a per-job error (a hint
+      // naming the file), never a build failure.
+      let pipeline = sharp(job.source, { limitInputPixels: 1e8 })
         .rotate()
         .resize({ width: job.width, withoutEnlargement: true });
       if (job.format === "webp") pipeline = pipeline.webp({ quality: 82 });

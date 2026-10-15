@@ -228,21 +228,26 @@ export function generateImageVariants(paths, options = {}) {
  * build is synchronous; sharp is not), communicating through temp JSON files
  * rather than stdio so a large job list never hits a pipe buffer. The worker
  * always writes a results file — a missing or unparsable one means the child
- * itself died, which is reported as `unavailable` (the build then behaves as
- * if sharp were absent: a hint, no variants, no failure).
+ * itself died (crashed, or killed by the spawn timeout), which is reported as
+ * `unavailable` (the build then behaves as if sharp were absent: a hint, no
+ * variants, no failure).
  * @param {ResizeJob[]} jobs
  * @param {(cmd: string, args: string[], opts: object) => unknown} [spawn]
  *   Injectable for tests; the real one is `spawnSync`.
+ * @param {number} [timeoutMs] The worker is killed after this long (default
+ *   two minutes), so a hung sharp call cannot stall a build forever. The kill
+ *   lands in the same `unavailable` path as any other dead child.
  * @returns {ResizeResult}
  */
-export function runResizeJobs(jobs, spawn = /** @type {any} */ (spawnSync)) {
+export function runResizeJobs(jobs, spawn = /** @type {any} */ (spawnSync), timeoutMs = 120000) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wd-img-variants-"));
   try {
     const jobsFile = path.join(dir, "jobs.json");
     const resultsFile = path.join(dir, "results.json");
     fs.writeFileSync(jobsFile, JSON.stringify(jobs));
     spawn(process.execPath, [WORKER_PATH, jobsFile, resultsFile], {
-      stdio: ["ignore", "ignore", "inherit"]
+      stdio: ["ignore", "ignore", "inherit"],
+      timeout: timeoutMs
     });
     if (!fs.existsSync(resultsFile)) return { unavailable: true, failed: [] };
     try {

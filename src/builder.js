@@ -1464,15 +1464,17 @@ function emitAssets(assets, paths, pageHtml, warned) {
     fs.mkdirSync(path.dirname(out), { recursive: true });
     if (source.endsWith(".skin")) {
       const src = fs.readFileSync(source, "utf8");
+      // `file` threads the source path into compileSkin so a skin authoring
+      // error reports `file:line` like every other compile error.
       if (assets.scopedSkins.has(source)) {
         const rel = path.relative(paths.cwd, source).replaceAll(path.sep, "/");
         const scope = scopeIdFor(rel);
         /** @type {Set<string>} */
         const subjects = new Set();
-        fs.writeFileSync(out, compileSkin(src, { scope, subjects }));
+        fs.writeFileSync(out, compileSkin(src, { scope, subjects, file: source }));
         warnUnusedScoped(subjects, scope, pageHtml, path.basename(source), warned);
       } else {
-        fs.writeFileSync(out, compileSkin(src));
+        fs.writeFileSync(out, compileSkin(src, { file: source }));
       }
     } else {
       fs.copyFileSync(source, out);

@@ -29,14 +29,18 @@ export function generateImageVariants(paths: Paths, options?: {
  * build is synchronous; sharp is not), communicating through temp JSON files
  * rather than stdio so a large job list never hits a pipe buffer. The worker
  * always writes a results file — a missing or unparsable one means the child
- * itself died, which is reported as `unavailable` (the build then behaves as
- * if sharp were absent: a hint, no variants, no failure).
+ * itself died (crashed, or killed by the spawn timeout), which is reported as
+ * `unavailable` (the build then behaves as if sharp were absent: a hint, no
+ * variants, no failure).
  * @param {ResizeJob[]} jobs
  * @param {(cmd: string, args: string[], opts: object) => unknown} [spawn]
  *   Injectable for tests; the real one is `spawnSync`.
+ * @param {number} [timeoutMs] The worker is killed after this long (default
+ *   two minutes), so a hung sharp call cannot stall a build forever. The kill
+ *   lands in the same `unavailable` path as any other dead child.
  * @returns {ResizeResult}
  */
-export function runResizeJobs(jobs: ResizeJob[], spawn?: (cmd: string, args: string[], opts: object) => unknown): ResizeResult;
+export function runResizeJobs(jobs: ResizeJob[], spawn?: (cmd: string, args: string[], opts: object) => unknown, timeoutMs?: number): ResizeResult;
 /**
  * @typedef {import("./config.js").Paths} Paths
  */
