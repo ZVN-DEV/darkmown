@@ -66,6 +66,7 @@
     "site",
     "!site/_/og*.png",
     "docs/cli.md",
+    "docs/errors.md",
     "docs/spec-alignment.md",
     "AGENTS.md",
     "README.md",

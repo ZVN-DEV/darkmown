@@ -18,6 +18,8 @@ import {
   devEventsPath,
   injectDevClient
 } from "./dev.js";
+import { createDispatcher, serveMcp } from "./mcp.js";
+import { mcpConfig } from "./mcp-tools.js";
 import { discoverRoutes, isDraft, outputPathForRoute } from "./router.js";
 import { availableTemplates, initProject } from "./scaffold.js";
 import { contentType, isServableFile, pipeFile, resolvePublicFile, serve } from "./statics.js";
@@ -108,6 +110,9 @@ export async function run(argv, env = {}) {
   if (command === "validate") {
     const target = argv.slice(1).find((arg) => !arg.startsWith("-"));
     return runValidate({ cwd, target, log, error });
+  }
+  if (command === "mcp") {
+    return runMcpCommand({ argv, error });
   }
   if (command === "dev") {
     return startDevServer({ cwd, log, warn, error });
@@ -299,6 +304,35 @@ function slurpSiteSources(cwd) {
  */
 function plural(n, word) {
   return n === 1 ? word : `${word}s`;
+}
+
+/**
+ * `darkmown mcp`: run the Model Context Protocol server on stdio, so an agent
+ * (Claude Code, Codex, Cursor, …) can query the directive catalog, grammar,
+ * error codes, and docs, and validate `.wd` source, with zero extra
+ * dependencies. stdout carries ONLY protocol frames; the startup line and any
+ * diagnostics go to stderr (the `error` sink), because one stray byte on
+ * stdout corrupts the JSON-RPC stream. Resolves when the host closes stdin.
+ * @param {{ argv: string[], error: typeof console.error }} io
+ * @returns {Promise<{ command: "mcp" }>}
+ */
+function runMcpCommand({ argv, error }) {
+  const extra = argv.slice(1);
+  if (extra.length > 0) {
+    error(`Unknown argument for mcp: ${extra[0]}`);
+    error("Usage: darkmown mcp   (speaks MCP over stdio; takes no arguments)");
+    throw new CliError(`Unknown argument: ${extra[0]}`, { silent: true });
+  }
+  const config = mcpConfig();
+  error(
+    `Darkmown MCP server v${config.serverInfo.version} on stdio. ` +
+      "Point your agent's MCP config at this command; stop with Ctrl-C or by closing stdin."
+  );
+  return serveMcp({
+    input: process.stdin,
+    output: process.stdout,
+    dispatcher: createDispatcher(config)
+  });
 }
 
 /**
@@ -588,6 +622,7 @@ Usage:
   darkmown validate [path]                  Compile-check pages without building (exit 1 on errors)
   darkmown deploy <${DEPLOY_TARGETS.join("|")}> [--prod]    Build + deploy to a platform
   darkmown serve                            Preview the built dist locally
+  darkmown mcp                              Run the MCP server on stdio (catalog, grammar, validate, error codes, docs)
   darkmown catalog [--llms|--llms-full]     Print the .wd directive catalog (JSON, --llms cheatsheet, or --llms-full reference)
   darkmown version                          Print the installed Darkmown version
   darkmown help                             Show this help
