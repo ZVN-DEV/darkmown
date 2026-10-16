@@ -20,7 +20,7 @@ Benchmarks
 
 We took a live production marketing site, a multi-location dental practice running **Next.js 16, React 19, and Tailwind on Vercel**, and rebuilt it in Darkmown: same copy, same images, same fonts, same CMS content pipeline. Then we measured both. This page is every number we found, including the two categories where the rebuild is worse.
 
-The rebuild is open source at [github.com/ZVN-DEV/darkmown-toothdocs](https://github.com/ZVN-DEV/darkmown-toothdocs); every figure below is the median of three measured page loads, and the [methodology](#methodology) section says exactly how we measured.
+The rebuild lives in a private demo repository, so there is no source link; every figure below is the median of three measured page loads, and the [methodology](#methodology) section says exactly how we measured.
 
 ## The headline numbers
 
