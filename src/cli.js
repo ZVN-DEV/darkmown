@@ -490,11 +490,13 @@ function startDevServer({ cwd, log, warn, error }) {
  * Start the static preview server for an existing `dist/`. Throws `CliError`
  * when there is nothing built to serve.
  *
- * Preview mirrors production more closely than dev in two ways: project
+ * Preview mirrors production more closely than dev in three ways: project
  * `api/*.js` functions run on `/api/*` (same runner and `(request) => Response`
  * contract as dev — a project without `api/` falls straight through to static),
- * and compressible responses are brotli/gzip-negotiated off Accept-Encoding so
- * local weight checks see transfer sizes, not raw bytes.
+ * compressible responses are brotli/gzip-negotiated off Accept-Encoding so
+ * local weight checks see transfer sizes, not raw bytes, and static files carry
+ * validators (ETag/Last-Modified/Cache-Control) with conditional-request 304s,
+ * so a reload revalidates instead of re-downloading every asset.
  * @param {{ cwd: string, log: typeof console.log, error: typeof console.error }} io
  * @returns {Promise<{ command: "serve", server: import("node:http").Server, close: () => Promise<void> }>}
  */
@@ -518,7 +520,15 @@ function startPreviewServer({ cwd, log, error }) {
     // but never echoed — a stack trace leaks paths and internals to the client.
     handleApiRequest({ apiDir, req, res, acceptEncoding, discloseErrors: false })
       .then((handled) => {
-        if (!handled) serve(distRoot, req.url || "/", res, { acceptEncoding });
+        if (!handled) {
+          serve(distRoot, req.url || "/", res, {
+            acceptEncoding,
+            validators: {
+              ifNoneMatch: req.headers["if-none-match"],
+              ifModifiedSince: req.headers["if-modified-since"]
+            }
+          });
+        }
       })
       .catch((err) => {
         error(err instanceof Error && err.stack ? err.stack : String(err));

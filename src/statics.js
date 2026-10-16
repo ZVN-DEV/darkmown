@@ -68,35 +68,71 @@ function routeEntry(distRoot, route) {
 }
 
 /**
+ * The conditional-request headers of an incoming request, forwarded by the
+ * caller. Passing this object turns on validator-based caching for the
+ * response: every served file (200s and the built 404) carries `Last-Modified`
+ * (the file's mtime) and a strong `ETag` (`"<size>-<mtimeMs>"`), plus a
+ * `Cache-Control` by file class — `no-cache` for HTML (always revalidate, but
+ * revalidations 304), `public, max-age=3600` for framework assets under
+ * `/__wd/` and media/image/font files (they change only across builds, and a
+ * rebuild also changes the validators), and `no-cache` for everything else. A
+ * matching `If-None-Match` (which takes precedence) or `If-Modified-Since`
+ * gets a bare 304: the validators again, no body, no Content-Encoding.
+ * Callers that omit it (the dev server) get no validators at all.
+ * @typedef {object} ConditionalRequest
+ * @property {string | string[] | undefined} [ifNoneMatch]
+ * @property {string | string[] | undefined} [ifModifiedSince]
+ */
+
+/**
  * Serve a built file for a request URL out of `distRoot`, or a 404 page.
  *
  * When `options.acceptEncoding` carries the request's Accept-Encoding header,
  * a compressible body (HTML, CSS, JS, JSON, SVG, …) is negotiated and sent
  * brotli- or gzip-compressed with `Content-Encoding` + `Vary: Accept-Encoding`.
- * Callers that omit the option (the dev server) get the exact pre-compression
- * behavior: 200 bodies stream, nothing is re-encoded.
+ * When `options.validators` carries the request's conditional headers,
+ * validator-based caching (ETag/Last-Modified/Cache-Control, 304s) is on —
+ * see {@link ConditionalRequest}; the validators describe the selected
+ * variant, so they compose with the encoding negotiation (`Vary` already
+ * covers Accept-Encoding, and a 304 to a compressible type repeats it).
+ * Callers that omit both options (the dev server) get the exact pre-2.12
+ * behavior: 200 bodies stream, nothing is re-encoded, no caching headers.
  * @param {string} distRoot Absolute path to the build output directory.
  * @param {string} url Request URL (may include a query string).
  * @param {http.ServerResponse} res Response to write to.
- * @param {{ acceptEncoding?: string | string[] }} [options]
+ * @param {{ acceptEncoding?: string | string[], validators?: ConditionalRequest }} [options]
  * @returns {void}
  */
 export function serve(distRoot, url, res, options = {}) {
   const encoding = negotiateEncoding(options.acceptEncoding);
   const file = resolvePublicFile(distRoot, url || "/");
-  if (!file || !isServableFile(file)) {
+  const stat = file ? fs.statSync(file, { throwIfNoEntry: false }) : undefined;
+  if (!file || !stat?.isFile()) {
     const notFound = path.join(distRoot, "404.html");
-    const body = fs.existsSync(notFound)
+    const notFoundStat = fs.statSync(notFound, { throwIfNoEntry: false });
+    const built = Boolean(notFoundStat?.isFile());
+    const body = built
       ? fs.readFileSync(notFound)
       : "<h1>Not found</h1><p>This route is hidden or has not been created.</p>";
-    // The 404 body is always text/html, always compressible.
-    sendBuffered(
-      res,
-      404,
-      { "content-type": "text/html; charset=utf-8", ...htmlSecurityHeaders(distRoot, url) },
-      body,
-      encoding
-    );
+    // The 404 body is always text/html, always compressible. The BUILT 404 is
+    // a real file, so it carries validators like any other HTML response; the
+    // inline fallback has no file to validate and stays header-minimal.
+    /** @type {Record<string, string>} */
+    const headers = {
+      "content-type": "text/html; charset=utf-8",
+      ...htmlSecurityHeaders(distRoot, url)
+    };
+    if (options.validators && built) {
+      const etag = strongEtag(/** @type {fs.Stats} */ (notFoundStat));
+      headers.etag = etag;
+      headers["last-modified"] = /** @type {fs.Stats} */ (notFoundStat).mtime.toUTCString();
+      headers["cache-control"] = "no-cache";
+      if (isFresh(options.validators, etag, /** @type {fs.Stats} */ (notFoundStat))) {
+        sendNotModified(res, headers, true);
+        return;
+      }
+    }
+    sendBuffered(res, 404, headers, body, encoding);
     return;
   }
   const type = contentType(file);
@@ -104,11 +140,24 @@ export function serve(distRoot, url, res, options = {}) {
   const headers = type.startsWith("text/html")
     ? { "content-type": type, ...htmlSecurityHeaders(distRoot, url) }
     : { "content-type": type };
-  if (!encoding || !isCompressibleType(type)) {
+  const compressible = isCompressibleType(type);
+  if (options.validators) {
+    const etag = strongEtag(stat);
+    headers.etag = etag;
+    headers["last-modified"] = stat.mtime.toUTCString();
+    headers["cache-control"] = cacheControlFor(url || "/", type);
+    // The validators describe the variant the request would select, so the
+    // freshness check runs before any compression work.
+    if (isFresh(options.validators, etag, stat)) {
+      sendNotModified(res, headers, compressible);
+      return;
+    }
+  }
+  if (!encoding || !compressible) {
     // Identity path (or a non-compressible asset): stream, exactly as before.
     // A compressible type still varies on Accept-Encoding even when this
     // response is identity, so caches key correctly.
-    if (isCompressibleType(type)) headers.vary = appendVary(headers.vary, "Accept-Encoding");
+    if (compressible) headers.vary = appendVary(headers.vary, "Accept-Encoding");
     res.writeHead(200, headers);
     pipeFile(file, res);
     return;
@@ -124,6 +173,113 @@ export function serve(distRoot, url, res, options = {}) {
     return;
   }
   sendBuffered(res, 200, headers, body, encoding);
+}
+
+/** Image and font extensions that earn the long-cache policy outside `/__wd/`. */
+const LONG_CACHE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".avif",
+  ".ico",
+  ".svg",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf"
+]);
+
+/**
+ * The Cache-Control for a served file: `no-cache` for HTML (every load
+ * revalidates, and the revalidation is a cheap 304), `public, max-age=3600`
+ * for framework assets under `/__wd/` and for media/image/font files anywhere
+ * (unchanged between builds, and any rebuild moves the validators), and
+ * `no-cache` for everything else — a deliberately unopinionated default that
+ * keeps correctness for files with no caching contract (routes.json, feeds).
+ * @param {string} url Request URL (may include a query string).
+ * @param {string} type The resolved content-type.
+ * @returns {string}
+ */
+function cacheControlFor(url, type) {
+  if (type.startsWith("text/html")) return "no-cache";
+  const pathname = url.split("?")[0];
+  if (pathname.startsWith("/__wd/")) return "public, max-age=3600";
+  if (LONG_CACHE_EXTENSIONS.has(path.extname(pathname).toLowerCase())) {
+    return "public, max-age=3600";
+  }
+  return "no-cache";
+}
+
+/**
+ * A strong ETag for a served file: `"<size>-<mtimeMs>"`. Byte-exact static
+ * files change exactly when size or mtime does, so no weak prefix.
+ * @param {fs.Stats} stat
+ * @returns {string}
+ */
+function strongEtag(stat) {
+  return `"${stat.size}-${Math.floor(stat.mtimeMs)}"`;
+}
+
+/**
+ * Whether the request's conditional headers match the file's current
+ * validators. `If-None-Match` wins when present (RFC 7232 precedence: an
+ * `If-Modified-Since` riding alongside is ignored), and uses weak comparison
+ * semantics — a `*` matches anything, otherwise the client token must be the
+ * ETag itself (browsers echo back exactly what they received).
+ * `If-Modified-Since` compares at second precision, the granularity the
+ * Last-Modified header itself carries.
+ * @param {ConditionalRequest} request
+ * @param {string} etag The file's current ETag.
+ * @param {fs.Stats} stat
+ * @returns {boolean}
+ */
+function isFresh(request, etag, stat) {
+  const inm = headerValue(request.ifNoneMatch);
+  if (inm !== undefined) {
+    return inm
+      .split(",")
+      .some((candidate) => candidate.trim() === "*" || candidate.trim() === etag);
+  }
+  const ims = headerValue(request.ifModifiedSince);
+  if (ims !== undefined) {
+    const time = Date.parse(ims);
+    if (Number.isNaN(time)) return false;
+    return Math.floor(stat.mtimeMs / 1000) <= Math.floor(time / 1000);
+  }
+  return false;
+}
+
+/**
+ * Join a possibly-arrayed header value into one string, or undefined.
+ * @param {string | string[] | undefined} value
+ * @returns {string | undefined}
+ */
+function headerValue(value) {
+  return Array.isArray(value) ? value.join(",") : value;
+}
+
+/**
+ * Answer 304: the validators and Cache-Control again (so the cached entry's
+ * freshness state is refreshed), `Vary: Accept-Encoding` for compressible
+ * types (the 304 revalidates one variant of several), and no body or body
+ * headers — no Content-Type, no Content-Encoding.
+ * @param {http.ServerResponse} res
+ * @param {Record<string, string>} headers The 200 response's headers.
+ * @param {boolean} compressible
+ * @returns {void}
+ */
+function sendNotModified(res, headers, compressible) {
+  /** @type {Record<string, string>} */
+  const out = {
+    etag: /** @type {string} */ (headers.etag),
+    "last-modified": /** @type {string} */ (headers["last-modified"]),
+    "cache-control": /** @type {string} */ (headers["cache-control"])
+  };
+  if (compressible) out.vary = "Accept-Encoding";
+  res.writeHead(304, out);
+  res.end();
 }
 
 /**

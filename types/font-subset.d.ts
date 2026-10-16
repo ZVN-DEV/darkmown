@@ -1,13 +1,16 @@
 /**
  * Subset every project-local font referenced by the emitted stylesheets and
- * rewrite the dist CSS to lead with the subset woff2.
+ * rewrite the dist CSS to lead with the subset woff2. Then inject one font
+ * `<link rel="preload" as="font" crossorigin>` per project font into every
+ * emitted page that loads it through its own linked stylesheets.
  *
  * Skips, none of them errors: remote/protocol-relative/data/relative URLs
- * (silently), already-woff2 sources (silently), URLs that escape or miss the
- * project (silently — a broken link is an authoring bug, not a subsetting one).
- * An unreadable font file, and one the toolchain fails on, get a hint naming
- * the file and ship as-is. With no `@font-face` in any emitted stylesheet the
- * pass is a no-op and never even scans the HTML.
+ * (silently), already-woff2 sources (silently — not subsetted, but preloaded
+ * as-is), URLs that escape or miss the project (silently — a broken link is an
+ * authoring bug, not a subsetting one). An unreadable font file, and one the
+ * toolchain fails on, get a hint naming the file and ship as-is. With no
+ * project-font reference in any emitted stylesheet the pass is a no-op and
+ * never even scans the HTML.
  * @param {Paths} paths
  * @param {{ cacheDir?: string, quiet?: boolean,
  *   runJobs?: (payload: { charset: number[], jobs: SubsetJob[] }) => SubsetResult }} [options]
@@ -68,6 +71,19 @@ export function charsetFromTexts(texts: string[]): number[];
  * @returns {string}
  */
 export function rewriteFontFaceCss(css: string, subsetByUrl: Map<string, string>): string;
+/**
+ * Inject one `<link rel="preload" href="…" as="font" type="…" crossorigin>`
+ * per font, immediately after the LAST stylesheet link in the head (after the
+ * favicon link when the page has no stylesheet link, and not at all when it
+ * has neither). `crossorigin` is mandatory: font fetches are always CORS-mode,
+ * even same-origin, so a preload without it downloads the font twice.
+ * Idempotent — a preload already present (an earlier pass over the same dist)
+ * is never duplicated.
+ * @param {string} html The emitted page.
+ * @param {PreloadFont[]} preloads The fonts to preload, in order.
+ * @returns {string} The page, unchanged when there is nothing new to inject.
+ */
+export function injectPreloadLinks(html: string, preloads: PreloadFont[]): string;
 /** The base charset, sorted ascending. */
 export const BASE_CODEPOINTS: number[];
 export type Paths = import("./config.js").Paths;
@@ -141,4 +157,36 @@ export type FontRef = {
      * Absolute cache path, set once the hashes are known.
      */
     cacheFile?: string | undefined;
+};
+/**
+ * A project-local font an emitted stylesheet can preload. For a subsettable
+ * font this is the FontRef itself; an already-woff2 original carries a null
+ * `subsetUrl` (there is nothing to subset — it preloads as-is).
+ */
+export type PreloadRef = {
+    /**
+     * The url() target exactly as written in the CSS.
+     */
+    url: string;
+    /**
+     * Absolute path of the font file it resolves to.
+     */
+    source: string;
+    /**
+     * Served URL of the subset, when subsettable.
+     */
+    subsetUrl: string | null;
+};
+/**
+ * One preload link to inject into a page.
+ */
+export type PreloadFont = {
+    /**
+     * The URL the page's CSS leads with (subset or original).
+     */
+    href: string;
+    /**
+     * The MIME type for the href's extension.
+     */
+    type: string;
 };

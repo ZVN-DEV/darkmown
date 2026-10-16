@@ -1,19 +1,41 @@
 /**
+ * The conditional-request headers of an incoming request, forwarded by the
+ * caller. Passing this object turns on validator-based caching for the
+ * response: every served file (200s and the built 404) carries `Last-Modified`
+ * (the file's mtime) and a strong `ETag` (`"<size>-<mtimeMs>"`), plus a
+ * `Cache-Control` by file class — `no-cache` for HTML (always revalidate, but
+ * revalidations 304), `public, max-age=3600` for framework assets under
+ * `/__wd/` and media/image/font files (they change only across builds, and a
+ * rebuild also changes the validators), and `no-cache` for everything else. A
+ * matching `If-None-Match` (which takes precedence) or `If-Modified-Since`
+ * gets a bare 304: the validators again, no body, no Content-Encoding.
+ * Callers that omit it (the dev server) get no validators at all.
+ * @typedef {object} ConditionalRequest
+ * @property {string | string[] | undefined} [ifNoneMatch]
+ * @property {string | string[] | undefined} [ifModifiedSince]
+ */
+/**
  * Serve a built file for a request URL out of `distRoot`, or a 404 page.
  *
  * When `options.acceptEncoding` carries the request's Accept-Encoding header,
  * a compressible body (HTML, CSS, JS, JSON, SVG, …) is negotiated and sent
  * brotli- or gzip-compressed with `Content-Encoding` + `Vary: Accept-Encoding`.
- * Callers that omit the option (the dev server) get the exact pre-compression
- * behavior: 200 bodies stream, nothing is re-encoded.
+ * When `options.validators` carries the request's conditional headers,
+ * validator-based caching (ETag/Last-Modified/Cache-Control, 304s) is on —
+ * see {@link ConditionalRequest}; the validators describe the selected
+ * variant, so they compose with the encoding negotiation (`Vary` already
+ * covers Accept-Encoding, and a 304 to a compressible type repeats it).
+ * Callers that omit both options (the dev server) get the exact pre-2.12
+ * behavior: 200 bodies stream, nothing is re-encoded, no caching headers.
  * @param {string} distRoot Absolute path to the build output directory.
  * @param {string} url Request URL (may include a query string).
  * @param {http.ServerResponse} res Response to write to.
- * @param {{ acceptEncoding?: string | string[] }} [options]
+ * @param {{ acceptEncoding?: string | string[], validators?: ConditionalRequest }} [options]
  * @returns {void}
  */
 export function serve(distRoot: string, url: string, res: http.ServerResponse, options?: {
     acceptEncoding?: string | string[];
+    validators?: ConditionalRequest;
 }): void;
 /**
  * Pick the response encoding from an Accept-Encoding header value: brotli when
@@ -85,4 +107,21 @@ export function resolvePublicFile(distRoot: string, url: string): string | null;
  * @returns {string}
  */
 export function contentType(file: string): string;
+/**
+ * The conditional-request headers of an incoming request, forwarded by the
+ * caller. Passing this object turns on validator-based caching for the
+ * response: every served file (200s and the built 404) carries `Last-Modified`
+ * (the file's mtime) and a strong `ETag` (`"<size>-<mtimeMs>"`), plus a
+ * `Cache-Control` by file class — `no-cache` for HTML (always revalidate, but
+ * revalidations 304), `public, max-age=3600` for framework assets under
+ * `/__wd/` and media/image/font files (they change only across builds, and a
+ * rebuild also changes the validators), and `no-cache` for everything else. A
+ * matching `If-None-Match` (which takes precedence) or `If-Modified-Since`
+ * gets a bare 304: the validators again, no body, no Content-Encoding.
+ * Callers that omit it (the dev server) get no validators at all.
+ */
+export type ConditionalRequest = {
+    ifNoneMatch?: string | string[] | undefined;
+    ifModifiedSince?: string | string[] | undefined;
+};
 import http from "node:http";

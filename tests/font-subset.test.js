@@ -23,6 +23,7 @@ import { createPaths } from "../src/config.js";
 import {
   BASE_CODEPOINTS,
   charsetFromTexts,
+  injectPreloadLinks,
   rewriteFontFaceCss,
   runSubsetJobs,
   subsetFonts
@@ -243,6 +244,11 @@ test("a site with no @font-face does nothing and says nothing", () => {
   assert.deepEqual(result.fonts, { subsetted: 0, cached: 0, unavailable: false });
   assert.ok(!warns.some((w) => w.includes("font")), "no font hint");
   assert.ok(!fs.existsSync(path.join(root, "node_modules/.cache/darkmown-fonts")));
+  assert.doesNotMatch(
+    fs.readFileSync(path.join(root, "dist/index.html"), "utf8"),
+    /rel="preload"/,
+    "no font preloads either"
+  );
 });
 
 test("an incremental rebuild keeps the rewrite idempotent (no double subset entry)", () => {
@@ -261,6 +267,231 @@ test("an incremental rebuild keeps the rewrite idempotent (no double subset entr
     1,
     "the subset reference appears exactly once"
   );
+  const html = fs.readFileSync(path.join(root, "dist/index.html"), "utf8");
+  assert.equal(
+    html.match(/rel="preload"/g)?.length,
+    1,
+    "the re-emitted page carries exactly one preload link"
+  );
+});
+
+// --- font preload links (2.12.0) ----------------------------------------------
+
+/** The emitted home page of a built test project. */
+function readEmittedHtml(root, rel = "index.html") {
+  return fs.readFileSync(path.join(root, "dist", rel), "utf8");
+}
+
+test("a built page preloads the subset woff2, right after the last stylesheet link", () => {
+  const root = freshRoot();
+  plantFont(root, "site/_/fonts/hanken.ttf");
+  fontProject(root, "/__wd/media/fonts/hanken.ttf");
+  withWarns(() => buildSite(root));
+
+  const html = readEmittedHtml(root);
+  const links = html.match(/<link rel="preload"[^>]*>/g) ?? [];
+  assert.deepEqual(
+    links,
+    [
+      '<link rel="preload" href="/__wd/media/fonts/hanken-subset.woff2" as="font" ' +
+        'type="font/woff2" crossorigin>'
+    ],
+    "one preload: the subset URL the rewritten CSS leads with, CORS-mode"
+  );
+  // Head order: favicon, stylesheets, font preloads, then the rest.
+  const favicon = html.indexOf('rel="icon"');
+  const firstCss = html.indexOf('rel="stylesheet"');
+  const lastCss = html.lastIndexOf('rel="stylesheet"');
+  const preload = html.indexOf('rel="preload"');
+  assert.ok(favicon !== -1 && firstCss !== -1, "the page has a favicon and stylesheets");
+  assert.ok(favicon < firstCss, "favicon before stylesheets");
+  assert.ok(lastCss < preload, "the preload follows the LAST stylesheet link");
+});
+
+test("toolchain absent: the ORIGINAL font url is preloaded (still beats no preload)", async () => {
+  const root = freshRoot();
+  plantFont(root, "site/_/fonts/hanken.ttf");
+  fontProject(root, "/__wd/media/fonts/hanken.ttf");
+  await withEnv("WD_HARFBUZZ_WASM", "/nonexistent/hb-subset.wasm", () =>
+    Promise.resolve(withWarns(() => buildSite(root)))
+  );
+
+  const html = readEmittedHtml(root);
+  assert.match(
+    html,
+    /<link rel="preload" href="\/__wd\/media\/fonts\/hanken\.ttf" as="font" type="font\/ttf" crossorigin>/
+  );
+  assert.doesNotMatch(html, /subset\.woff2/, "no subset exists to preload");
+});
+
+test("an already-woff2 project font is never subsetted but still preloaded as-is", () => {
+  const root = freshRoot();
+  write(root, "site/_/fonts/body.woff2", "wOF2-fake-bytes");
+  write(root, "site/pages/index.wd", "---\ntitle: T\n---\n\n# Hi\n");
+  write(
+    root,
+    "site/pages/index.skin",
+    '@font-face\n  font-family "Body"\n  src url("/__wd/media/fonts/body.woff2") format("woff2")\n'
+  );
+  const { result } = withWarns(() => buildSite(root));
+
+  assert.deepEqual(result.fonts, { subsetted: 0, cached: 0, unavailable: false });
+  assert.ok(!fs.existsSync(path.join(root, "dist/__wd/media/fonts/body-subset.woff2")));
+  assert.doesNotMatch(readEmittedCss(root), /subset\.woff2/, "the CSS keeps the woff2 src alone");
+  assert.match(
+    readEmittedHtml(root),
+    /<link rel="preload" href="\/__wd\/media\/fonts\/body\.woff2" as="font" type="font\/woff2" crossorigin>/
+  );
+});
+
+test("only pages that LOAD the font get the link; a font-less page stays untouched", () => {
+  const root = freshRoot();
+  plantFont(root, "site/_/fonts/hanken.ttf");
+  fontProject(root, "/__wd/media/fonts/hanken.ttf");
+  write(root, "site/pages/about.md", "---\ntitle: About\n---\n\n# About\n\nNo skin, no fonts.\n");
+  withWarns(() => buildSite(root));
+
+  assert.match(readEmittedHtml(root), /rel="preload"/, "the font page preloads");
+  assert.doesNotMatch(
+    readEmittedHtml(root, "about/index.html"),
+    /rel="preload"/,
+    "the plain page has no font to preload"
+  );
+});
+
+test("a font shared by several stylesheets (and a font-less one) earns ONE link per page", () => {
+  const root = freshRoot();
+  plantFont(root, "site/_/fonts/hanken.ttf");
+  write(root, "site/_/plain.skin", "body\n  margin 0\n");
+  write(
+    root,
+    "site/_/alsoused.skin",
+    '@font-face\n  font-family "Hanken"\n  src url("/__wd/media/fonts/hanken.ttf") format("truetype")\n'
+  );
+  write(
+    root,
+    "site/pages/index.wd",
+    "---\ntitle: T\nskins: [/plain.skin, /alsoused.skin]\n---\n\n# Hi\n"
+  );
+  write(root, "site/pages/index.skin", skinWithFont("/__wd/media/fonts/hanken.ttf"));
+  withWarns(() => buildSite(root));
+
+  const html = readEmittedHtml(root);
+  assert.equal(
+    html.match(/rel="preload"/g)?.length,
+    1,
+    "three linked stylesheets, one font between two of them, one preload"
+  );
+});
+
+test("re-running the pass over the same dist never duplicates a link", () => {
+  const root = freshRoot();
+  plantFont(root, "site/_/fonts/hanken.ttf");
+  fontProject(root, "/__wd/media/fonts/hanken.ttf");
+  withWarns(() => buildSite(root));
+  const afterBuild = readEmittedHtml(root);
+
+  // The incremental path re-runs the whole pass over the existing dist: the
+  // already-injected page must come through byte-identical (cache-served, so no
+  // worker spawns either).
+  const second = subsetFonts(createPaths(root), { quiet: true });
+  assert.deepEqual(second, { subsetted: 0, cached: 1, unavailable: false });
+  assert.equal(readEmittedHtml(root), afterBuild, "byte-identical on a second pass");
+
+  // A full rebuild re-emits the page fresh and injects again: still one link.
+  withWarns(() => buildSite(root));
+  assert.equal(readEmittedHtml(root).match(/rel="preload"/g)?.length, 1);
+});
+
+test("stylesheet hrefs that cannot name a dist CSS file are skipped, the good one still preloads", () => {
+  const root = freshRoot();
+  const paths = createPaths(root);
+  plantFont(root, "site/_/fonts/hanken.ttf");
+  fs.mkdirSync(paths.distRoot, { recursive: true });
+  write(
+    root,
+    "dist/style.css",
+    '@font-face { font-family: "H"; src: url("/__wd/media/fonts/hanken.ttf") format("truetype"); }'
+  );
+  write(
+    root,
+    "dist/index.html",
+    [
+      "<html><head>",
+      '<link rel="icon" href="/favicon.ico">',
+      '<link rel="stylesheet" href="/style.css">',
+      '<link rel="stylesheet" href="https://cdn.example.com/x.css">',
+      '<link rel="stylesheet" href="//cdn.example.com/y.css">',
+      '<link rel="stylesheet" href="/not-a-stylesheet">',
+      '<link rel="stylesheet" href="/%E0%A4%A.css">',
+      '<link rel="stylesheet" href="/../escaped.css">',
+      '<link rel="stylesheet">',
+      "</head><body></body></html>"
+    ].join("\n")
+  );
+  subsetFonts(paths, {
+    runJobs: (payload) => {
+      for (const job of payload.jobs) {
+        fs.mkdirSync(path.dirname(job.out), { recursive: true });
+        fs.writeFileSync(job.out, "wOF2-fake");
+      }
+      return { unavailable: false, failed: [] };
+    }
+  });
+  const html = readEmittedHtml(root);
+  const links = html.match(/<link rel="preload"[^>]*>/g) ?? [];
+  assert.deepEqual(links, [
+    '<link rel="preload" href="/__wd/media/fonts/hanken-subset.woff2" as="font" ' +
+      'type="font/woff2" crossorigin>'
+  ]);
+});
+
+test("injectPreloadLinks anchors after the last stylesheet, else the favicon, else nowhere", () => {
+  const font = { href: "/f/a-subset.woff2", type: "font/woff2" };
+  const tag =
+    '  <link rel="preload" href="/f/a-subset.woff2" as="font" type="font/woff2" crossorigin>';
+
+  // Two stylesheets: the link lands immediately after the LAST one.
+  const two =
+    '<head><link rel="stylesheet" href="/a.css">\n<link rel="stylesheet" href="/b.css">\n<title>x</title></head>';
+  const out = injectPreloadLinks(two, [font]);
+  assert.equal(
+    out,
+    `<head><link rel="stylesheet" href="/a.css">\n<link rel="stylesheet" href="/b.css">\n${tag}\n<title>x</title></head>`
+  );
+  // Idempotent: injecting the result again changes nothing.
+  assert.equal(injectPreloadLinks(out, [font]), out);
+
+  // No stylesheet link: the favicon is the anchor.
+  const iconOnly = '<head><link rel="icon" href="/i.svg">\n<title>x</title></head>';
+  assert.equal(
+    injectPreloadLinks(iconOnly, [font]),
+    `<head><link rel="icon" href="/i.svg">\n${tag}\n<title>x</title></head>`
+  );
+
+  // Neither anchor, or nothing to inject: the page is unchanged.
+  assert.equal(
+    injectPreloadLinks("<head><title>x</title></head>", [font]),
+    "<head><title>x</title></head>"
+  );
+  assert.equal(injectPreloadLinks(two, []), two);
+});
+
+test("injectPreloadLinks injects several fonts in order", () => {
+  const out = injectPreloadLinks('<head><link rel="stylesheet" href="/a.css"></head>', [
+    { href: "/f/a-subset.woff2", type: "font/woff2" },
+    { href: "/f/b.ttf", type: "font/ttf" }
+  ]);
+  const a = out.indexOf('href="/f/a-subset.woff2"');
+  const b = out.indexOf('href="/f/b.ttf"');
+  assert.ok(a !== -1 && b !== -1 && a < b, "both links, in the given order");
+  // A partially-injected page only gains the missing links.
+  const again = injectPreloadLinks(out, [
+    { href: "/f/a-subset.woff2", type: "font/woff2" },
+    { href: "/f/c.woff", type: "font/woff" }
+  ]);
+  assert.match(again, /href="\/f\/c\.woff" as="font" type="font\/woff"/);
+  assert.equal(again.match(/a-subset\.woff2/g)?.length, 1, "no duplicate of the existing one");
 });
 
 // --- the post-pass module's own seams ----------------------------------------

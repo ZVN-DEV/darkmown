@@ -119,6 +119,27 @@ test("serve still 404s an /api path with no matching function", async () => {
   }
 });
 
+test("static responses carry cache validators; api responses stay untouched by them", async () => {
+  const root = makeProject({ "echo.mjs": "export default () => Response.json({ ok: true })" });
+  const { handle, origin } = await startServe(root);
+  try {
+    const home = await getRaw(origin, "/");
+    assert.equal(home.status, 200);
+    assert.ok(home.headers.etag, "a static page carries an ETag");
+    assert.ok(home.headers["last-modified"]);
+    assert.equal(home.headers["cache-control"], "no-cache");
+
+    const api = await getRaw(origin, "/api/echo");
+    assert.equal(api.status, 200);
+    assert.equal(api.headers.etag, undefined, "the api runner's response is unchanged");
+    assert.equal(api.headers["last-modified"], undefined);
+    assert.equal(api.headers["cache-control"], undefined);
+  } finally {
+    await handle.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("serve without an api/ directory behaves exactly as before", async () => {
   const root = makeProject();
   const { handle, origin } = await startServe(root);
