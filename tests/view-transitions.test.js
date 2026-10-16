@@ -9,11 +9,11 @@ import { createPaths } from "../src/config.js";
 // ---------------------------------------------------------------------------
 // Cross-document view transitions: opt-in via `transitions: true` frontmatter.
 // Emits a CSS-only stylesheet (no JS, same-origin, graceful fallback). The
-// default is one simultaneous cross-fade: the outgoing snapshot fades out
-// while the incoming fades in, opacity-only, same duration and easing both
-// ways. An earlier directional fade+slide read as a flicker on real sites, so
-// there is deliberately no transform anywhere in the keyframes. Re-enabled per
-// page.
+// default is a quick out-then-in: outgoing fades to 0 in 90ms, incoming fades
+// in after an 80ms delay. A simultaneous cross-fade was measured on a real
+// site and read as flicker: the incoming snapshot stacks over the outgoing
+// one, so image-heavy pages double-expose (outgoing opaque, incoming ghosting
+// through). Sequencing keeps at most a ~10ms overlap near background opacity.
 // ---------------------------------------------------------------------------
 
 test("transitions: true emits the @view-transition opt-in in <head>", () => {
@@ -34,7 +34,7 @@ test("transitions: true emits the @view-transition opt-in in <head>", () => {
   assert.equal(page.assets.runtime, false, "view transitions must not force the runtime on");
 });
 
-test("transitions: true emits a simultaneous opacity-only cross-fade (no transform, same timing both ways)", () => {
+test("transitions: true emits a sequenced out-then-in with no ghosting overlap", () => {
   const root = fixture();
   write(
     root,
@@ -42,19 +42,20 @@ test("transitions: true emits a simultaneous opacity-only cross-fade (no transfo
     ["---", "transitions: true", "---", "<main>", "", "Hi", "", "</main>"].join("\n")
   );
   const html = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).html;
-  // The outgoing and incoming root snapshots each get their own keyed fade,
-  // running at once with the same duration and easing — a single cross-fade,
-  // never an out-then-in sequence.
-  const timing = /animation:\s*wd-nav-(?:out|in)\s+160ms\s+cubic-bezier\(0\.4, 0, 0\.2, 1\)\s+both/;
+  // A simultaneous cross-fade stacks both snapshots (incoming over outgoing)
+  // and double-exposes image-heavy pages: measured as flicker. The outgoing
+  // snapshot therefore fades out first (90ms) and the incoming one fades in
+  // after an 80ms delay, so the overlap is at most ~10ms near background
+  // opacity and nothing ever ghosts.
   assert.match(
     html,
-    /::view-transition-old\(root\)\s*\{\s*animation:\s*wd-nav-out\s+160ms\s+cubic-bezier\(0\.4, 0, 0\.2, 1\)\s+both/,
-    "old(root) must fade out over 160ms"
+    /::view-transition-old\(root\)\s*\{\s*animation:\s*wd-nav-out\s+90ms\s+cubic-bezier\(0\.4, 0, 0\.2, 1\)\s+both/,
+    "old(root) fades out over 90ms"
   );
   assert.match(
     html,
-    /::view-transition-new\(root\)\s*\{\s*animation:\s*wd-nav-in\s+160ms\s+cubic-bezier\(0\.4, 0, 0\.2, 1\)\s+both/,
-    "new(root) must fade in over the same 160ms and easing"
+    /::view-transition-new\(root\)\s*\{\s*animation:\s*wd-nav-in\s+130ms\s+cubic-bezier\(0\.4, 0, 0\.2, 1\)\s+80ms\s+both/,
+    "new(root) fades in after an 80ms delay"
   );
   assert.match(
     html,
@@ -66,18 +67,15 @@ test("transitions: true emits a simultaneous opacity-only cross-fade (no transfo
     /@keyframes wd-nav-in\s*\{\s*from\s*\{\s*opacity:\s*0;\s*\}\s*\}/,
     "wd-nav-in is opacity-only"
   );
-  // No transform anywhere in the transition stylesheet: the directional slide
-  // was the flicker source, so nothing may move the snapshots.
   const start = html.indexOf("@view-transition");
   const style = html.slice(start, html.indexOf("</style>", start));
-  assert.doesNotMatch(style, /transform|translate/, "the cross-fade is opacity-only");
-  // The reduced-motion reduction stays: same fade, collapsed to 1ms.
+  assert.doesNotMatch(style, /transform|translate/, "the transition is opacity-only");
+  // The reduced-motion reduction stays: everything collapses to 1ms with no delay.
   assert.match(
     html,
-    /@media \(prefers-reduced-motion: reduce\)\s*\{\s*::view-transition-old\(root\), ::view-transition-new\(root\)\s*\{\s*animation-duration:\s*1ms/,
+    /@media \(prefers-reduced-motion: reduce\)\s*\{\s*::view-transition-old\(root\), ::view-transition-new\(root\)\s*\{\s*animation-duration:\s*1ms;\s*animation-delay:\s*0ms/,
     "prefers-reduced-motion keeps the 1ms reduction"
   );
-  assert.ok(timing.test(style));
 });
 
 test("no transitions frontmatter → no @view-transition style (default off)", () => {
