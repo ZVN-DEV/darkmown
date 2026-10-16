@@ -2,6 +2,10 @@
 
 This audit compares the current Darkmown implementation with the original MARROW/WhateverDown vision and the follow-up decisions made on 2026-06-11.
 
+## 2.12.1 additions: the transition, measured frame by frame (2026-10-16)
+
+- **The navigation animation is now a sequenced out-then-in, because the cross-fade double-exposed on camera.** CDP screencast of the 2.12.0 simultaneous fade showed the incoming snapshot stacking over the outgoing one, ghosting the old page through the new; fading out first (90ms) and delaying the fade-in (130ms after 80ms) leaves only a ~10ms overlap near background opacity. Both animations stay opacity-only with shared easing, keyframe names are unchanged, and reduced motion still collapses the effect to 1ms.
+
 ## 2.12.0 additions: perceived performance from demo feedback (2026-10-16)
 
 - **First paint stops swapping fonts.** The font post-pass now injects per-page `<link rel="preload" as="font" crossorigin>` tags for exactly the project fonts a page's own stylesheets declare, leading with the subset woff2 when subsetting ran (the original otherwise, still a win), idempotently so dev rebuilds never duplicate a link. `darkmown serve` learned conditional requests: strong ETags and Last-Modified on every static response, RFC 7232-correct 304s, HTML at `no-cache`, fingerprinted-by-build assets at `public, max-age=3600`, dev deliberately unchanged. Together these close the demo's "fonts swap on every reload" complaint from both ends: first load preloads, reloads revalidate.

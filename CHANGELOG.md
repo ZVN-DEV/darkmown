@@ -2,6 +2,12 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 2.12.1 (2026-10-16)
+
+A one-item patch revising the navigation animation again, this time from frame-level measurement instead of reading the stylesheet.
+
+- **BEHAVIOR CHANGE: the default view transition is now a sequenced out-then-in.** The 2.12.0 simultaneous cross-fade was recorded with CDP screencast on the real demo and it double-exposes: the incoming snapshot stacks OVER the outgoing one, so the outgoing page stays fully visible while the incoming ghosts through it (a fade-in-only variant measured no better, since the old snapshot simply holds at full opacity for the whole window). The old root now fades to opacity 0 in 90ms and the new root fades in over 130ms after an 80ms delay, both opacity-only with the same easing and fill mode, so the overlap is about 10ms near background opacity and nothing ghosts. The reduced-motion block collapses both animations to 1ms with 0ms delay. Keyframe names, the `@view-transition` opt-in, and the prerender hint are unchanged, and a `transitions: true` page still ships zero JS.
+
 ## 2.12.0 (2026-10-16)
 
 A perceived-performance release from client-demo feedback (fonts visibly swapped on every reload, and the navigation transition read as a flicker): fonts now preload, the preview server revalidates instead of re-downloading, the default view transition is a plain cross-fade, and Markdown images can carry an author-set `sizes`. No breaking change; the transition animation change is called out below.
