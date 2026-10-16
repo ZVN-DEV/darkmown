@@ -57,13 +57,7 @@ ${u}
 `),N=o.meta.transitions===!0||o.meta.transitions==="true",R=N?`
   <style>
     @view-transition { navigation: auto; }
-    ::view-transition-old(root) { animation: wd-nav-out 90ms cubic-bezier(0.4, 0, 0.2, 1) both; }
-    ::view-transition-new(root) { animation: wd-nav-in 130ms cubic-bezier(0.4, 0, 0.2, 1) 80ms both; }
-    @keyframes wd-nav-out { to { opacity: 0; } }
-    @keyframes wd-nav-in { from { opacity: 0; } }
-    @media (prefers-reduced-motion: reduce) {
-      ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 1ms; animation-delay: 0ms; }
-    }
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
   </style>`:"",B=N?`
   <script type="speculationrules">{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"selector_matches":".no-prefetch"}},{"not":{"selector_matches":"[rel~=nofollow]"}}]},"eagerness":"moderate"}]}<\/script>`:"",H=fn(e,t,r),J=H&&H.scoped?null:Mr(o.meta,e,t,r).map(C=>It(C,t.cwd,r)).find(C=>C.scoped),ne=H&&H.scoped?H.scopeId:J?.scopeId,re=ne?pn(o.html,ne):o.html,K=rb(re,t,r),{content:q,target:k}=nb(K);return{meta:o.meta,deps:o.deps,collectionsUsed:o.collectionsUsed,symbols:o.symbols,html:`<!doctype html>
 <html lang="${w(u)}">

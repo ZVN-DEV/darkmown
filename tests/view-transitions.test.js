@@ -8,12 +8,14 @@ import { createPaths } from "../src/config.js";
 
 // ---------------------------------------------------------------------------
 // Cross-document view transitions: opt-in via `transitions: true` frontmatter.
-// Emits a CSS-only stylesheet (no JS, same-origin, graceful fallback). The
-// default is a quick out-then-in: outgoing fades to 0 in 90ms, incoming fades
-// in after an 80ms delay. A simultaneous cross-fade was measured on a real
-// site and read as flicker: the incoming snapshot stacks over the outgoing
-// one, so image-heavy pages double-expose (outgoing opaque, incoming ghosting
-// through). Sequencing keeps at most a ~10ms overlap near background opacity.
+// Emits a CSS-only stylesheet (no JS, same-origin, graceful fallback). Both
+// root snapshots get `animation: none`: three animated defaults failed in the
+// field (a directional slide read as a bounce, a simultaneous cross-fade
+// double-exposed because the incoming snapshot stacks over the outgoing one,
+// and a sequenced out-then-in was ignored by a shipping browser in favor of
+// its own cross-fade). VT animation compositing varies too much across engines
+// for a default; the instant swap has no possible artifact, and prerendering
+// carries the perceived speed.
 // ---------------------------------------------------------------------------
 
 test("transitions: true emits the @view-transition opt-in in <head>", () => {
@@ -34,7 +36,7 @@ test("transitions: true emits the @view-transition opt-in in <head>", () => {
   assert.equal(page.assets.runtime, false, "view transitions must not force the runtime on");
 });
 
-test("transitions: true emits a sequenced out-then-in with no ghosting overlap", () => {
+test("transitions: true emits no root animation (instant swap, artifact-proof)", () => {
   const root = fixture();
   write(
     root,
@@ -42,40 +44,20 @@ test("transitions: true emits a sequenced out-then-in with no ghosting overlap",
     ["---", "transitions: true", "---", "<main>", "", "Hi", "", "</main>"].join("\n")
   );
   const html = compilePage(path.join(root, "site/pages/index.wd"), createPaths(root)).html;
-  // A simultaneous cross-fade stacks both snapshots (incoming over outgoing)
-  // and double-exposes image-heavy pages: measured as flicker. The outgoing
-  // snapshot therefore fades out first (90ms) and the incoming one fades in
-  // after an 80ms delay, so the overlap is at most ~10ms near background
-  // opacity and nothing ever ghosts.
+  // Three animated defaults failed in the field (slide bounce, cross-fade
+  // double-exposure, a sequenced out-then-in a shipping browser replaced with
+  // its own cross-fade). VT animation compositing varies too much across
+  // engines for a default: both roots get animation:none so the swap is
+  // instant with no possible artifact, and prerendering carries the speed.
   assert.match(
     html,
-    /::view-transition-old\(root\)\s*\{\s*animation:\s*wd-nav-out\s+90ms\s+cubic-bezier\(0\.4, 0, 0\.2, 1\)\s+both/,
-    "old(root) fades out over 90ms"
-  );
-  assert.match(
-    html,
-    /::view-transition-new\(root\)\s*\{\s*animation:\s*wd-nav-in\s+130ms\s+cubic-bezier\(0\.4, 0, 0\.2, 1\)\s+80ms\s+both/,
-    "new(root) fades in after an 80ms delay"
-  );
-  assert.match(
-    html,
-    /@keyframes wd-nav-out\s*\{\s*to\s*\{\s*opacity:\s*0;\s*\}\s*\}/,
-    "wd-nav-out is opacity-only"
-  );
-  assert.match(
-    html,
-    /@keyframes wd-nav-in\s*\{\s*from\s*\{\s*opacity:\s*0;\s*\}\s*\}/,
-    "wd-nav-in is opacity-only"
+    /::view-transition-old\(root\), ::view-transition-new\(root\)\s*\{\s*animation:\s*none/,
+    "both roots must be animation-free"
   );
   const start = html.indexOf("@view-transition");
   const style = html.slice(start, html.indexOf("</style>", start));
-  assert.doesNotMatch(style, /transform|translate/, "the transition is opacity-only");
-  // The reduced-motion reduction stays: everything collapses to 1ms with no delay.
-  assert.match(
-    html,
-    /@media \(prefers-reduced-motion: reduce\)\s*\{\s*::view-transition-old\(root\), ::view-transition-new\(root\)\s*\{\s*animation-duration:\s*1ms;\s*animation-delay:\s*0ms/,
-    "prefers-reduced-motion keeps the 1ms reduction"
-  );
+  assert.doesNotMatch(style, /@keyframes|wd-nav/, "no keyframes at all");
+  assert.doesNotMatch(style, /transform|translate/, "no transforms");
 });
 
 test("no transitions frontmatter → no @view-transition style (default off)", () => {

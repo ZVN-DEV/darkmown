@@ -183,25 +183,22 @@ export function compilePage(file, context, options = {}) {
   // (graceful, transition-free fallback) and only applies to same-origin
   // navigations where both the outgoing and incoming page opt in.
   //
-  // The default is a quick out-then-in: the outgoing snapshot fades to 0 in
-  // 90ms, the incoming one fades in after an 80ms delay. A simultaneous
-  // cross-fade was measured on a real site and read as flicker: the incoming
-  // snapshot stacks over the outgoing one, so image-heavy pages double-expose
-  // (outgoing opaque, incoming ghosting through). Sequencing keeps at most a
-  // ~10ms overlap near background opacity, so nothing ever ghosts. The delay
-  // fills `both`, keeping the incoming snapshot invisible until its turn.
+  // The default is no animation at all: both snapshots drop and swap at
+  // commit. Three animated defaults were field-tested on a real site and each
+  // failed somewhere: the directional slide read as a bounce, the simultaneous
+  // cross-fade double-exposed (the incoming snapshot stacks over the outgoing
+  // one), and the sequenced out-then-in was ignored by a shipping browser in
+  // favor of its own cross-fade. View-transition animation compositing varies
+  // too much across engines to ship as a default. Zero animation is the only
+  // choice with no possible artifact, and the speculation-rules prerender
+  // below is what makes navigation feel instant anyway. Authors who want a
+  // fade can add ::view-transition-old/new rules in their own skin.
   const wantTransitions =
     compiled.meta.transitions === true || compiled.meta.transitions === "true";
   const transitions = wantTransitions
     ? `\n  <style>
     @view-transition { navigation: auto; }
-    ::view-transition-old(root) { animation: wd-nav-out 90ms cubic-bezier(0.4, 0, 0.2, 1) both; }
-    ::view-transition-new(root) { animation: wd-nav-in 130ms cubic-bezier(0.4, 0, 0.2, 1) 80ms both; }
-    @keyframes wd-nav-out { to { opacity: 0; } }
-    @keyframes wd-nav-in { from { opacity: 0; } }
-    @media (prefers-reduced-motion: reduce) {
-      ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 1ms; animation-delay: 0ms; }
-    }
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
   </style>`
     : "";
 

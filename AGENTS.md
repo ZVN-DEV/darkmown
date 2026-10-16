@@ -73,7 +73,7 @@ rss_limit: 20
 ```
 
 - `title`, `description`, `image` drive `<title>`, the meta description, and the Open Graph / Twitter card. `lang` sets `<html lang>` (default `en`).
-- `html: true` allows raw HTML in that file's body. `transitions: true` opts into a view transition (opacity-only, sequenced out-then-in) plus link prerendering.
+- `html: true` allows raw HTML in that file's body. `transitions: true` opts into a view transition (instant swap, no root animation) plus link prerendering.
 - `draft: true` keeps the page out of `dist`, `routes.json`, the sitemap, and the feed. `darkmown dev` still serves it; `darkmown build --drafts` includes it.
 - `noindex: true` builds the page but removes it from discovery: a robots `noindex,nofollow` meta, and exclusion from `sitemap.xml`, `rss.xml`, and the generated `llms.txt`/`llms-full.txt`. On a collection entry with a `_schema.wd`, declare it as `noindex: boolean?`.
 - `icon: /path` sets the favicon verbatim (a `type` is added for `.svg`/`.png`/`.ico`). With no `icon:` key, the first of `site/pages/icon.svg`, `icon.png`, `favicon.ico` wins; with neither, the built-in mark is the fallback.

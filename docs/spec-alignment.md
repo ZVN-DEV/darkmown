@@ -4,7 +4,7 @@ This audit compares the current Darkmown implementation with the original MARROW
 
 ## 2.12.1 additions: the transition, measured frame by frame (2026-10-16)
 
-- **The navigation animation is now a sequenced out-then-in, because the cross-fade double-exposed on camera.** CDP screencast of the 2.12.0 simultaneous fade showed the incoming snapshot stacking over the outgoing one, ghosting the old page through the new; fading out first (90ms) and delaying the fade-in (130ms after 80ms) leaves only a ~10ms overlap near background opacity. Both animations stay opacity-only with shared easing, keyframe names are unchanged, and reduced motion still collapses the effect to 1ms.
+- **The navigation animation is gone, because animated defaults kept failing in the field.** The directional slide read as a bounce; the 2.12.0 simultaneous cross-fade double-exposed on camera (incoming snapshot stacks over outgoing); the sequenced out-then-in was ignored by a shipping browser (Arc), which substituted its own cross-fade. VT animation compositing varies too much across engines for a default, so both roots get `animation: none` (an instant, artifact-free cut) and the prerender hint carries the perceived speed. Authors can still animate in their own skins.
 
 ## 2.12.0 additions: perceived performance from demo feedback (2026-10-16)
 
