@@ -33,7 +33,12 @@ export async function runJobsFile(jobsFile, resultsFile) {
   /** @type {any} */
   let sharp;
   try {
-    sharp = (await import(process.env.WD_SHARP_MODULE || "sharp")).default;
+    // The env override is a test seam pointed at a stub FILE; a dynamic import
+    // needs a file URL on Windows ("D:\..." parses as a scheme). Plain module
+    // specifiers (like a deliberately nonexistent package name) pass through.
+    const spec = process.env.WD_SHARP_MODULE;
+    const target = spec && /[/\\]/.test(spec) ? pathToFileURL(spec).href : spec || "sharp";
+    sharp = (await import(target)).default;
   } catch {
     write({ unavailable: true, failed: [] });
     return;

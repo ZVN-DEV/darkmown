@@ -30,3 +30,10 @@ SPRINT-PLAN.md
 *-REPORT.md
 *-PLAN.md
 docs/superpowers/
+
+# Session working docs (reviews, friction reports, field notes, ceiling maps)
+/PRODUCT-REVIEW-*.md
+/FRICTION-REPORT-*.md
+/FIELD-NOTES-*.md
+/CEILING-MAP-*.md
+.playwright-cli/
