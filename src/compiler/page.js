@@ -183,24 +183,24 @@ export function compilePage(file, context, options = {}) {
   // (graceful, transition-free fallback) and only applies to same-origin
   // navigations where both the outgoing and incoming page opt in.
   //
-  // The default UA animation cross-fades the root: outgoing opacity 1→0 while
-  // incoming 0→1, both at once. Mid-navigation that leaves the two pages
-  // superimposed at ~50% opacity — headings ghost over headings. We override it
-  // with a directional fade+slide (old lifts up and out, new rises up and in) so
-  // the pages move past each other instead of stacking. Short + eased = peppy.
+  // The default is one simultaneous cross-fade: outgoing opacity 1→0 while
+  // incoming 0→1, same duration and easing both ways. An earlier default paired
+  // a fade-out with a fade-in of opposite translates and easings; measured on a
+  // real site that read as a flicker (the outgoing page appeared to come back
+  // mid-navigation). Opacity-only, no transform: the two snapshots overlap in
+  // place, so nothing ever moves backwards. Under prefers-reduced-motion the
+  // same fade runs at 1ms — a cut, keeping the block structure intact.
   const wantTransitions =
     compiled.meta.transitions === true || compiled.meta.transitions === "true";
   const transitions = wantTransitions
     ? `\n  <style>
     @view-transition { navigation: auto; }
-    ::view-transition-old(root) { animation: wd-nav-out 200ms cubic-bezier(0.4, 0, 1, 1) both; }
-    ::view-transition-new(root) { animation: wd-nav-in 200ms cubic-bezier(0, 0, 0.2, 1) both; }
-    @keyframes wd-nav-out { to { opacity: 0; transform: translateY(-1rem); } }
-    @keyframes wd-nav-in { from { opacity: 0; transform: translateY(1rem); } }
+    ::view-transition-old(root) { animation: wd-nav-out 160ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+    ::view-transition-new(root) { animation: wd-nav-in 160ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+    @keyframes wd-nav-out { to { opacity: 0; } }
+    @keyframes wd-nav-in { from { opacity: 0; } }
     @media (prefers-reduced-motion: reduce) {
       ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 1ms; }
-      @keyframes wd-nav-out { to { opacity: 0; } }
-      @keyframes wd-nav-in { from { opacity: 0; } }
     }
   </style>`
     : "";

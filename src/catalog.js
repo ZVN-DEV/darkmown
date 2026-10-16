@@ -724,6 +724,8 @@ function inlineAttributesSection() {
     "- Attach classes/an id to an inline element by following it with NO space:" +
       " `[Get started](/start/){.btn}`, `![logo](/l.png){.brand}`, `*text*{.hl}`.",
     "- Several at once: `[Go](/u/){.btn .lg #cta}`. A space before the block breaks it (stays literal).",
+    '- Images also take a quoted `sizes="…"`: `![hero](/h.jpg){sizes="(max-width: 640px) 100vw, 640px"}`.' +
+      " The srcset variant wiring never invents one; sizes passes through with or without a srcset.",
     "- Works on links, images, and emphasis/strong. It does NOT work on inline `code`.",
     ""
   ];

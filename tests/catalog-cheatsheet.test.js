@@ -81,6 +81,13 @@ test("the inline-attribute section is exactly right, including the inline-code c
   assert.doesNotMatch(body("[Go](/u/) {.btn}\n"), /class="btn"/);
   assert.ok(sheet.includes("does NOT work on inline `code`"));
   assert.match(body("`code`{.hl}\n"), /<code>code<\/code>\{\.hl\}/);
+
+  // The image-only `sizes="…"` extension the sheet documents.
+  assert.ok(sheet.includes('sizes="…"'));
+  assert.match(
+    body('![hero](/h.jpg){sizes="(max-width: 640px) 100vw, 640px"}\n'),
+    /sizes="\(max-width: 640px\) 100vw, 640px"/
+  );
 });
 
 // --- collections -----------------------------------------------------------

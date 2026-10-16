@@ -156,6 +156,20 @@ test("no variants anywhere: the <img> tag is byte-identical to before the featur
   );
 });
 
+test("an author-set sizes coexists with the wired srcset on one img", () => {
+  const html = project('![a](/img/x.webp){sizes="(max-width: 640px) 100vw, 640px"}', {
+    "img/x.webp": [2400, 1600],
+    "img/x@640.webp": [640, 427]
+  });
+  const tag = img(html, 0);
+  assert.match(tag, /srcset="\/img\/x@640\.webp 640w, \/img\/x\.webp 2400w"/);
+  assert.match(
+    tag,
+    /sizes="\(max-width: 640px\) 100vw, 640px"/,
+    "the author's sizes rides alongside the srcset the variants added"
+  );
+});
+
 test("a raw-HTML <img> is author territory: never probed, never given a srcset", () => {
   const html = project('---\nhtml: true\n---\n\n<img src="/img/x.webp" alt="a">', {
     "img/x.webp": [2400, 1600],

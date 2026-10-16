@@ -788,6 +788,13 @@ function bindingPlugin(mdInstance) {
  * wrapper container. The block must directly follow the element (no space), and
  * `{ … }` interpolation is unaffected (its content starts with a name, not `.`/`#`).
  * Issue #18.
+ *
+ * One image-only extension: `sizes="…"` (quoted, any content). The srcset
+ * variant wiring emits no `sizes` of its own — inventing one guesses the
+ * layout — so the AUTHOR supplies it here when the image is not full-width:
+ * `![hero](/h.jpg){sizes="(max-width: 640px) 100vw, 640px"}`. It passes through
+ * with or without a srcset, and markdown-it escapes the value on render. On a
+ * non-image target the token is ignored like any other unrecognized part.
  * @param {MarkdownIt} mdInstance
  * @returns {void}
  */
@@ -799,13 +806,18 @@ function attrsPlugin(mdInstance) {
       for (let i = 0; i < children.length; i++) {
         const tok = children[i];
         if (tok.type !== "text") continue;
-        const m = /^\{([.#][^}]*)\}/.exec(tok.content);
+        const m = /^\{((?:[.#]|sizes=")[^}]*)\}/.exec(tok.content);
         if (!m) continue;
         const target = attrTarget(children, i);
         if (!target) continue;
-        for (const part of m[1].split(/\s+/).filter(Boolean)) {
+        // `sizes` is one quoted token that may itself hold spaces, so it must
+        // be matched whole before the whitespace split. Anything else that is
+        // not `.class` / `#id` keeps its long-standing behavior: skipped.
+        for (const part of m[1].match(/sizes="[^"]*"|\S+/g) ?? []) {
           if (part[0] === ".") target.attrJoin("class", part.slice(1));
           else if (part[0] === "#") target.attrSet("id", part.slice(1));
+          else if (target.type === "image" && part.startsWith('sizes="'))
+            target.attrSet("sizes", part.slice(7, -1));
         }
         tok.content = tok.content.slice(m[0].length);
       }
