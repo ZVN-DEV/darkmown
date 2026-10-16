@@ -2,6 +2,12 @@
 
 This audit compares the current Darkmown implementation with the original MARROW/WhateverDown vision and the follow-up decisions made on 2026-06-11.
 
+## 2.12.0 additions: perceived performance from demo feedback (2026-10-16)
+
+- **First paint stops swapping fonts.** The font post-pass now injects per-page `<link rel="preload" as="font" crossorigin>` tags for exactly the project fonts a page's own stylesheets declare, leading with the subset woff2 when subsetting ran (the original otherwise, still a win), idempotently so dev rebuilds never duplicate a link. `darkmown serve` learned conditional requests: strong ETags and Last-Modified on every static response, RFC 7232-correct 304s, HTML at `no-cache`, fingerprinted-by-build assets at `public, max-age=3600`, dev deliberately unchanged. Together these close the demo's "fonts swap on every reload" complaint from both ends: first load preloads, reloads revalidate.
+- **The default navigation animation lost its flicker.** `transitions: true` now emits a simultaneous, opacity-only 160ms cross-fade both ways (no `transform` anywhere; the directional translate was the flicker source), with keyframe names, the reduced-motion reduction, and the prerender hint unchanged. It is a visible behavior change with no markup or config delta, and pages still ship zero JS.
+- **The srcset story is complete: authors can set `sizes`.** The 2.9 variant wiring emitted no `sizes`, so browsers assumed `100vw` and fetched the full-size original on desktop. The inline-attribute block now passes `sizes="…"` through on Markdown images (the build still never invents one), composing with classes, ids, and the wired srcset.
+
 ## 2.11.0 additions: the framework speaks MCP, and every page speaks markdown (2026-10-15)
 
 - **The language description became a protocol surface.** `darkmown mcp` is a hand-rolled, zero-dependency MCP stdio server (newline-delimited JSON-RPC 2.0, protocol 2024-11-05, no SDK, so `dependencies` stays empty). Its five tools (catalog, grammar, in-memory validate, error-code lookup, doc-section search) are thin adapters over the same drift-guarded surfaces the CLI and the test suite already pin, so an agent editing `.wd` through MCP gets the same answers as `darkmown validate`, with the shipped markdown docs riding along as `darkmown://docs/*` resources. That resource surface is why `docs/errors.md` now ships in the tarball.
