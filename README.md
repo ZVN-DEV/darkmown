@@ -68,6 +68,15 @@ We rebuilt a live production marketing site (Next.js 16, React 19, Tailwind, on 
 
 The honest losses, because a benchmark that only wins is marketing: the rebuild shipped 1.07 MB of raw TTF fonts against `next/font`'s 158 KB of subset woff2, and 1,045 KB of unoptimized photos against 147 KB of CDN width variants. Fonts now have a documented woff2 + subsetting recipe (2.8), and responsive image variants are generated at build time (2.9).
 
+## Example rebuilds
+
+Private example repos under ZVN-DEV. Each one rebuilds a live Next.js marketing site in Darkmown, pulls content from the same production CMS at build time, and leaves the live site untouched. Each repo's commit history includes Darkmown friction notes for the framework.
+
+- `darkmown-toothdocs`: ToothDocs rebuild, 67 routes. The benchmark subject above.
+- `darkmown-7thst`: 7th Street Orthodontics rebuild, 36 routes.
+- `darkmown-eetf`: East End Tooth Ferry rebuild, 31 routes.
+- `darkmown-dafko`: DAFKO rebuild, 40 routes.
+
 ## Working from this repo
 
 ```sh
