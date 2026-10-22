@@ -37,7 +37,9 @@ export function availableTemplates() {
 export function initProject(root, options = {}) {
   const template = options.template || "starter";
   const templateDir = path.join(templatesDir, template);
-  if (!fs.existsSync(templateDir) || !fs.statSync(templateDir).isDirectory()) {
+  // Only a shipped template name: `--template ../../somewhere` would otherwise
+  // copy an arbitrary directory into the new project.
+  if (!availableTemplates().includes(template) || !fs.statSync(templateDir).isDirectory()) {
     const list = availableTemplates().join(", ");
     throw wdError(
       `Unknown template "${template}". Available templates: ${list || "(none)"}. ` +
@@ -120,9 +122,14 @@ export function initProject(root, options = {}) {
  */
 function writeNew(root, file, content) {
   const target = path.join(root, file);
-  if (fs.existsSync(target)) return;
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, content);
+  // `wx` is the "never overwrite" check itself: an `existsSync` probe answers
+  // false for a DANGLING symlink, and the write then follows it out of `root`.
+  try {
+    fs.writeFileSync(target, content, { flag: "wx" });
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code !== "EEXIST") throw err;
+  }
 }
 
 /**
@@ -132,9 +139,13 @@ function writeNew(root, file, content) {
  * @returns {void}
  */
 function copyNew(source, dest) {
-  if (fs.existsSync(dest)) return;
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(source, dest);
+  // COPYFILE_EXCL fails on any existing entry, a dangling symlink included.
+  try {
+    fs.copyFileSync(source, dest, fs.constants.COPYFILE_EXCL);
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code !== "EEXIST") throw err;
+  }
 }
 
 /**

@@ -159,3 +159,29 @@ test("every template scaffolds the agent files, not just the starter", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("init refuses a template name that escapes the templates directory", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-tpl-escape-"));
+  assert.throws(
+    () => initProject(path.join(root, "p"), { template: "../../.." }),
+    /Unknown template/
+  );
+  assert.equal(fs.existsSync(path.join(root, "p")), false);
+});
+
+test("init never writes through a dangling symlink in the target", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wd-tpl-link-"));
+  const outside = path.join(root, "outside");
+  const project = path.join(root, "p");
+  fs.mkdirSync(path.join(project, "site/pages"), { recursive: true });
+  fs.mkdirSync(outside);
+  try {
+    fs.symlinkSync(path.join(outside, "agents.md"), path.join(project, "AGENTS.md"));
+    fs.symlinkSync(path.join(outside, "index.wd"), path.join(project, "site/pages/index.wd"));
+  } catch {
+    t.skip("symlinks unavailable on this platform");
+    return;
+  }
+  initProject(project);
+  assert.deepEqual(fs.readdirSync(outside), [], "nothing was written outside the project");
+});

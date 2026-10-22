@@ -51,8 +51,13 @@ export const REACTIVE_CSP: string;
  */
 export const STATIC_CSP: string;
 /**
- * Baseline security headers applied to every HTML response, independent of the
+ * Baseline security headers applied to every response, independent of the
  * CSP. CSP is added per-route (static vs reactive) by the helpers below.
+ *
+ * HSTS is one year WITHOUT `includeSubDomains`/`preload`: those pin every
+ * sibling subdomain to HTTPS, which only the domain owner can safely decide.
+ * Browsers ignore the header over plain HTTP, so local `serve` is unaffected.
+ * Cloudflare custom domains send no HSTS unless the zone enables it.
  * @type {Record<string, string>}
  */
 export const BASE_SECURITY_HEADERS: Record<string, string>;

@@ -147,14 +147,20 @@ export function routeCsp(reactive, embedHosts = []) {
 }
 
 /**
- * Baseline security headers applied to every HTML response, independent of the
+ * Baseline security headers applied to every response, independent of the
  * CSP. CSP is added per-route (static vs reactive) by the helpers below.
+ *
+ * HSTS is one year WITHOUT `includeSubDomains`/`preload`: those pin every
+ * sibling subdomain to HTTPS, which only the domain owner can safely decide.
+ * Browsers ignore the header over plain HTTP, so local `serve` is unaffected.
+ * Cloudflare custom domains send no HSTS unless the zone enables it.
  * @type {Record<string, string>}
  */
 export const BASE_SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
-  "X-Frame-Options": "SAMEORIGIN"
+  "X-Frame-Options": "SAMEORIGIN",
+  "Strict-Transport-Security": "max-age=31536000"
 };
 
 /**

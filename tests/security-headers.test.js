@@ -609,3 +609,11 @@ function write(root, file, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content);
 }
+
+test("every surface sends HSTS, scoped to the host only (no includeSubDomains/preload)", () => {
+  assert.equal(BASE_SECURITY_HEADERS["Strict-Transport-Security"], "max-age=31536000");
+  assert.match(
+    renderCloudflareHeaders([]),
+    /^\/\*\n(?:.*\n)*?\s+Strict-Transport-Security: max-age=31536000$/m
+  );
+});
