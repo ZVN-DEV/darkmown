@@ -4653,3 +4653,56 @@ test("CONTROL: the battery really does exercise the encoder", () => {
   const encoded = PARITY_VALUES.filter(([, v]) => encodeDest(v) !== v);
   assert.ok(encoded.length >= 6, `only ${encoded.length} values encode to something else`);
 });
+
+// ---------------------------------------------------------------------------
+// Untrusted-JSON hardening (security audit 2026-10-21)
+// ---------------------------------------------------------------------------
+
+test("a persisted {toString} value is stripped on restore, so binds still paint", () => {
+  let span;
+  const h = makeSandbox(
+    (root, El) => {
+      stateScript(root, El, { n: 1 }, { "data-wd-persist": "n" });
+      span = el(El, "span", { "data-wd-bind": "n", "data-wd-path": "a" });
+      root.appendChild(span);
+    },
+    {
+      initialStore: {
+        "wd:n": JSON.stringify({ toString: 1, valueOf: 1, a: "ok", deep: { toString: 1 } })
+      }
+    }
+  );
+  const n = h.sandbox.wd.state.n;
+  assert.equal(Object.hasOwn(n, "toString"), false);
+  assert.equal(Object.hasOwn(n, "valueOf"), false);
+  assert.equal(Object.hasOwn(n.deep, "toString"), false);
+  assert.doesNotThrow(() => String(n));
+  assert.equal(span.textContent, "ok");
+});
+
+test(":fetch strips {toString} keys from the response body", async () => {
+  const stub = makeFetchStub({
+    "/api/rows": { status: 200, body: [{ id: { toString: 1 }, t: "x" }] }
+  });
+  const h = makeSandbox((root, El) => fetchRegion(root, El, { key: "rows", url: "/api/rows" }), {
+    globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise }
+  });
+  await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.sandbox.wd.state.rows)), [{ id: {}, t: "x" }]);
+  assert.doesNotThrow(() => String(h.sandbox.wd.state.rows[0].id));
+});
+
+test(":fetch treats a `.` or `..` placeholder value as missing (no path retarget)", async () => {
+  for (const id of [".", ".."]) {
+    const stub = makeFetchStub({ "/api/users/x/profile": { status: 200, body: {} } });
+    makeSandbox(
+      (root, El) => {
+        stateScript(root, El, { id });
+        fetchRegion(root, El, { key: "user", url: "/api/users/{ id }/profile" });
+      },
+      { globals: { fetch: stub.fetch, setTimeout, clearTimeout, Promise } }
+    );
+    await settle();
+    assert.equal(stub.calls.length, 0, `id=${JSON.stringify(id)} must not issue a request`);
+  }
+});

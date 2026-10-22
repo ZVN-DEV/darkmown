@@ -140,3 +140,9 @@ test("fmtAttr serializes to the compact runtime form", () => {
     '[["sum",["price"]],["money",[]]]'
   );
 });
+
+test("min/max survive a list too large to spread into Math.min/Math.max", () => {
+  const big = Array.from({ length: 300_000 }, (_, i) => ({ price: i }));
+  assert.equal(f("min", big, "price"), 0);
+  assert.equal(f("max", big, "price"), 299_999);
+});

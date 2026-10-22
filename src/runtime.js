@@ -158,8 +158,8 @@ window.addEventListener("popstate", () => {
 window.addEventListener("storage", (event) => {
   const name = event.key && event.key.startsWith("wd:store:") ? event.key.slice(9) : "";
   if (!storeKeys.has(name) || event.newValue == null) return;
-  let next;
-  try { next = JSON.parse(event.newValue); } catch { return; }
+  const next = jsonOr(event.newValue);
+  if (next === undefined) return;
   if (JSON.stringify(next) === JSON.stringify(state[name])) return;
   state[name] = next;
   render();
@@ -225,11 +225,17 @@ function isEmpty(v) {
  * Parse JSON, or undefined when the text is not JSON. `undefined` is a safe
  * sentinel: no JSON document parses to it, so a body of literal `null` is still
  * distinguishable from "not JSON at all".
+ *
+ * Every UNTRUSTED document (a fetch body, a `from-url` param, localStorage, a
+ * cross-tab storage event) enters through here. The reviver drops own
+ * `toString`/`valueOf` keys: `{"toString":1}` is an object `String()` cannot
+ * convert, so it would throw on every render that paints it, and a persisted
+ * copy would keep the page dead after a reload of the clean URL.
  * @param {string} text
  * @returns {any}
  */
 function jsonOr(text) {
-  try { return JSON.parse(text); } catch { return undefined; }
+  try { return JSON.parse(text, (k, v) => (k === "toString" || k === "valueOf" ? undefined : v)); } catch { return undefined; }
 }
 
 // The characters a value must not carry into a URL, mirroring `DEST_UNSAFE`
@@ -334,8 +340,9 @@ const FMT = {
   default: (v, [fb = ""]) => (v == null || v === "" || (Array.isArray(v) && !v.length) ? String(fb) : v),
   sum: (v, [f]) => fmtNums(fmtList(v), f).reduce((a, n) => a + n, 0),
   avg: (v, [f]) => { const l = fmtList(v); return l.length ? FMT.sum(l, [f]) / l.length : 0; },
-  min: (v, [f]) => { const l = fmtList(v); return l.length ? Math.min(...fmtNums(l, f)) : 0; },
-  max: (v, [f]) => { const l = fmtList(v); return l.length ? Math.max(...fmtNums(l, f)) : 0; },
+  // reduce, not spread: `Math.max(...list)` throws RangeError past ~100k items.
+  min: (v, [f]) => { const l = fmtList(v); return l.length ? fmtNums(l, f).reduce((a, n) => Math.min(a, n)) : 0; },
+  max: (v, [f]) => { const l = fmtList(v); return l.length ? fmtNums(l, f).reduce((a, n) => Math.max(a, n)) : 0; },
   count: (v) => fmtList(v).length,
   join: (v, [sep = ", ", f]) => fmtList(v).map((r) => fmtPick(r, f)).join(String(sep))
 };
@@ -1080,7 +1087,10 @@ function startFetch(node) {
   let missing = false;
   const url = g("url").replace(/\{\s*([\w$.]+)\s*\}/g, (_, p) => {
     const v = getPath(state, p);
-    if (v == null || v === "") missing = true;
+    // `.`/`..` survive encodeURIComponent and the URL parser resolves them, so
+    // `?id=..` would retarget `/api/users/{ id }/x` (headers and body included)
+    // at `/api/x`. Treat them as missing, like an empty value.
+    if (v == null || v === "" || v === "." || v === "..") missing = true;
     return encodeURIComponent(String(v ?? ""));
   });
   if (missing) return set("_loading", false);

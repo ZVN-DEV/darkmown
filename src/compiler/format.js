@@ -67,8 +67,9 @@ const dateOnlyTZ = (v) =>
 export const AGGREGATES = {
   sum: (list, f) => nums(list, f || "").reduce((a, n) => a + n, 0),
   avg: (list, f) => (list.length ? AGGREGATES.sum(list, f) / list.length : 0),
-  min: (list, f) => (list.length ? Math.min(...nums(list, f || "")) : 0),
-  max: (list, f) => (list.length ? Math.max(...nums(list, f || "")) : 0),
+  // reduce, not spread: `Math.max(...list)` throws RangeError past ~100k items.
+  min: (list, f) => (list.length ? nums(list, f || "").reduce((a, n) => Math.min(a, n)) : 0),
+  max: (list, f) => (list.length ? nums(list, f || "").reduce((a, n) => Math.max(a, n)) : 0),
   count: (list) => list.length
 };
 
