@@ -41,7 +41,10 @@ export function discoverRoutes(routesRoot, options = {}) {
   /** @param {string} dir */
   function walk(dir) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (isHiddenName(entry.name)) continue;
+      // A symlinked page would compile (and, with md sources on, publish) a
+      // file from anywhere on the machine: CI keys, a contributor's `.env`.
+      // Assets/images/fonts already skip symlinks; pages must too.
+      if (isHiddenName(entry.name) || entry.isSymbolicLink()) continue;
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(abs);

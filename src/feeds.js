@@ -27,14 +27,23 @@ import { wdError } from "./compiler/context.js";
  * @property {string} lastmod ISO date (`yyyy-mm-dd`).
  */
 
+// Characters XML 1.0 cannot carry (see escapeXml).
+const XML_INVALID =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: these are exactly the characters being removed.
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
 /**
  * XML-escape a text value for use inside an element or attribute. Covers the
- * five predefined XML entities — the same set RSS/sitemap consumers expect.
+ * five predefined XML entities — the same set RSS/sitemap consumers expect —
+ * and drops the characters XML 1.0 cannot carry at all (C0 controls other than
+ * tab/LF/CR, U+FFFE/U+FFFF, lone surrogates): one in a single post title makes
+ * the whole feed malformed, and readers reject it outright.
  * @param {string} value
  * @returns {string}
  */
 export function escapeXml(value) {
   return String(value)
+    .replace(XML_INVALID, "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -174,14 +183,20 @@ export function firstParagraph(body) {
   /** @type {string[]} */
   const collected = [];
   for (let j = i; j < lines.length && lines[j].trim(); j++) collected.push(lines[j].trim());
-  return collected
-    .join(" ")
-    .replace(/`([^`]+)`/g, "$1") // inline code → its text
-    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
-    .replace(/\*([^*]+)\*/g, "$1") // italic
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // [text](url) → text
-    .replace(/\s+/g, " ")
-    .trim();
+  return (
+    collected
+      .join(" ")
+      .replace(/`([^`]+)`/g, "$1") // inline code → its text
+      .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
+      .replace(/\*([^*]+)\*/g, "$1") // italic
+      // [text](url) → text. The classes also exclude the OPENING bracket/paren:
+      // with `[^\]]*` a body of 200k `[` rescans to the end from every `[`
+      // (quadratic, 17 s per call), and any one collection author can write it.
+      // One level of parens is kept for URLs like `/wiki/Foo_(bar)`.
+      .replace(/\[([^[\]]*)\]\([^()]*(?:\([^()]*\)[^()]*)*\)/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
 }
 
 /**

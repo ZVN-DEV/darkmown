@@ -305,3 +305,9 @@ test("a frontmatter line that is not a `key: value` pair is skipped, not crashed
   assert.deepEqual(meta, { title: "T" });
   assert.equal(quotedKeys.size, 0);
 });
+
+test("a __proto__ frontmatter key is ignored instead of swapping meta's prototype", () => {
+  const { meta } = parseFrontmatter("---\n__proto__: [a]\ntitle: T\n---\nbody\n", "x.md");
+  assert.equal(Object.getPrototypeOf(meta), Object.prototype);
+  assert.deepEqual(Object.keys(meta), ["title"]);
+});

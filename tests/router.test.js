@@ -67,3 +67,20 @@ function write(root, file, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content);
 }
+
+test("a symlinked page file is not a route (it could point anywhere on disk)", (t) => {
+  const root = fixture();
+  const outside = fixture();
+  write(outside, "secret.md", "SECRET\n");
+  write(root, "index.md", "# Home\n");
+  try {
+    fs.symlinkSync(path.join(outside, "secret.md"), path.join(root, "leak.md"));
+  } catch {
+    t.skip("symlinks unavailable on this platform");
+    return;
+  }
+  assert.deepEqual(
+    discoverRoutes(root).map((r) => r.route),
+    ["/"]
+  );
+});

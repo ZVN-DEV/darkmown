@@ -56,7 +56,8 @@ export function parseFrontmatter(raw, file) {
   const quotedKeys = new Set();
   for (const line of front.split("\n")) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (!match) continue;
+    // `__proto__: [a]` would swap meta's prototype rather than set a key.
+    if (!match || match[1] === "__proto__") continue;
     const parsed = parseFrontmatterValue(match[2]);
     meta[match[1]] = parsed.value;
     if (parsed.quoted) quotedKeys.add(match[1]);

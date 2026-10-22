@@ -11,6 +11,7 @@ import { highlightCode } from "../highlight.js";
 import { LOOP_META, lineOf, recordRead, wdError } from "./context.js";
 import { applyPipeline, fmtAttr, validatePipes } from "./format.js";
 import { imageSize } from "./image-size.js";
+import { isAllowedInclude } from "./includes.js";
 import {
   escapeHtml,
   getPath,
@@ -487,11 +488,14 @@ function buildSrcset(src, ctx) {
     return null;
   }
   const reader = ctx.comp.reader;
+  // Same sandbox as measureImage/@include: a data-driven `/../../x.png` must not
+  // probe (or read the header of) files outside site/pages and site/_.
+  if (!isAllowedInclude(path.join(root, `${relBase}${ext}`), ctx.context, reader)) return null;
   /** @type {{ href: string, width: number }[]} */
   const candidates = [];
   for (const width of VARIANT_WIDTHS) {
     const abs = path.join(root, `${relBase}@${width}${ext}`);
-    if (!reader.exists(abs)) continue;
+    if (!isAllowedInclude(abs, ctx.context, reader) || !reader.exists(abs)) continue;
     candidates.push({ href: `${base}@${width}${ext}`, width: measureWidth(abs, reader) ?? width });
   }
   // Builder-generated variants (2.9.0): resized into dist by the pre-pass, so

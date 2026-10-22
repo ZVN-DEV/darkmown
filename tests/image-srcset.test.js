@@ -297,3 +297,12 @@ test("variant files are ordinary colocated assets: they copy to dist and are nev
     /srcset="\/img\/x@640\.webp 640w, \/img\/x@1280\.webp 1280w, \/img\/x\.webp 2400w"/
   );
 });
+
+test("a src that climbs out of site/pages is never probed for variants", () => {
+  // `files` paths are relative to site/pages, so `../../outside/` lands beside the project.
+  const html = project("![x](/../../outside/a.png)\n", {
+    "../../outside/a.png": [1200, 800],
+    "../../outside/a@640.png": [640, 427]
+  });
+  assert.doesNotMatch(img(html), /srcset/);
+});

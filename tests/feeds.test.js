@@ -564,3 +564,16 @@ test("a dated post with no title falls back to Untitled", () => {
   const rss = fs.readFileSync(path.join(distRoot, "rss.xml"), "utf8");
   assert.match(rss, /<title>Untitled<\/title>/);
 });
+
+test("escapeXml drops characters XML 1.0 cannot carry, keeping tab/LF and astral text", () => {
+  assert.equal(escapeXml("A\u0001\u000b￾\ud800 b\t\n😀"), "A b\t\n😀");
+});
+
+test("firstParagraph stays linear on hostile bracket runs", () => {
+  for (const body of ["[".repeat(200_000), "[a](".repeat(50_000), "[a](x(y)".repeat(30_000)]) {
+    const started = performance.now();
+    firstParagraph(body);
+    assert.ok(performance.now() - started < 500, `took ${performance.now() - started}ms`);
+  }
+  assert.equal(firstParagraph("See [Foo](https://w.org/wiki/Foo_(bar)) now"), "See Foo now");
+});
