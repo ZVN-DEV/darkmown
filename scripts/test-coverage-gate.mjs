@@ -71,7 +71,7 @@
 // ===========================================================================
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -300,10 +300,20 @@ function main() {
       env: { ...process.env, NODE_V8_COVERAGE: covDir }
     });
 
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    // writeSync, not process.stdout.write: on a pipe (CI) the async write of a
+    // multi-MB TAP stream is still flushing when process.exit below runs, so
+    // the log was cut off before the failing test and the failure was invisible.
+    if (result.stdout) writeSync(1, result.stdout);
+    if (result.stderr) writeSync(2, result.stderr);
     if (result.status !== 0) {
-      console.error("\nTest suite failed; coverage gate aborted (fix the tests first).");
+      const failed = (result.stdout || "").split("\n").filter((line) => /^\s*not ok /.test(line));
+      const why = result.error
+        ? ` (${result.error.message})`
+        : result.signal
+          ? ` (killed by ${result.signal})`
+          : "";
+      writeSync(2, `\nTest suite failed${why}; coverage gate aborted (fix the tests first).\n`);
+      if (failed.length) writeSync(2, `Failing:\n${failed.join("\n")}\n`);
       process.exit(result.status ?? 1);
     }
 
