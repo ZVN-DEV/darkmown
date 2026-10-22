@@ -460,3 +460,70 @@ test("CONTROL: the same value one character shorter is a normal relative URL", (
   assert.match(body(page), /<a href="\/a%20javascript:alert%281%29">go<\/a>/);
   assert.deepEqual(body(page).match(/<a /g).length, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Attribute context beyond URLs (security audit 2026-10-21): escaping holds in
+// text and quoted values, but not in script-valued attributes, bare tag
+// position, or an unquoted value that a space can end.
+// ---------------------------------------------------------------------------
+
+test("a value in an on*= handler or srcdoc is dropped, with a warning", () => {
+  const page = compile(
+    [
+      ...RAW_HTML,
+      "@loop /rows.json into r",
+      "<button onclick=\"go('{ r.j }')\">b</button>",
+      '<iframe srcdoc="{ r.t }"></iframe>',
+      "@endloop"
+    ],
+    { shelf: { "rows.json": [{ j: "');alert(1);//", t: "<script>alert(1)</script>" }] } }
+  );
+  const out = body(page);
+  assert.match(out, /onclick="go\(''\)"/);
+  assert.match(out, /srcdoc=""/);
+  assert.doesNotMatch(out, /alert/);
+  assert.equal(page.warnings.length, 2);
+  assert.match(page.warnings[0], /in the onclick= attribute/);
+  assert.match(page.warnings[1], /in the srcdoc= attribute/);
+});
+
+test("a value in bare tag position cannot add attributes", () => {
+  const page = compile(
+    [...RAW_HTML, "@loop /rows.json into r", "<div { r.a }>x</div>", "@endloop"],
+    {
+      shelf: { "rows.json": [{ a: "onmouseover=alert(1)" }] }
+    }
+  );
+  assert.match(body(page), /<div >x<\/div>/);
+  assert.match(page.warnings[0], /inside a tag but outside any attribute value/);
+});
+
+test("an unquoted attribute value stays one value", () => {
+  const page = compile(
+    [...RAW_HTML, "@loop /rows.json into r", "<div><img alt={ r.a } src=/x.png></div>", "@endloop"],
+    {
+      shelf: { "rows.json": [{ a: "x onmouseover=alert(1)" }] }
+    }
+  );
+  assert.match(body(page), /<img alt=x&#32;onmouseover&#61;alert\(1\) src=\/x\.png/);
+  assert.deepEqual(page.warnings, []);
+});
+
+test("object data= is URL-guarded; text, quoted titles and style values are untouched", () => {
+  const page = compile(
+    [
+      ...RAW_HTML,
+      "@loop /rows.json into r",
+      '<object data="{ r.u }"></object>',
+      '<p title="hi { r.n }">Hello { r.n } = ok</p>',
+      '<i style="--c:{ r.c }">s</i>',
+      "@endloop"
+    ],
+    { shelf: { "rows.json": [{ u: "javascript:alert(1)", n: "Ada Lovelace", c: "#f00" }] } }
+  );
+  const out = body(page);
+  assert.match(out, /<object data="">/);
+  assert.match(out, /<p title="hi Ada Lovelace">Hello Ada Lovelace = ok<\/p>/);
+  assert.match(out, /<i style="--c:#f00">/);
+  assert.equal(page.warnings.length, 1);
+});

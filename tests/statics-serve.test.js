@@ -124,7 +124,7 @@ test("serve picks the per-route CSP from routes.json — static route has no 'un
   }
 });
 
-test("serve does not attach the CSP to non-HTML assets", async () => {
+test("serve keeps the CSP off non-HTML assets but sends the base headers", async () => {
   const dist = fs.mkdtempSync(path.join(os.tmpdir(), "wd-serve-asset-"));
   try {
     fs.mkdirSync(path.join(dist, "__wd"), { recursive: true });
@@ -134,7 +134,9 @@ test("serve does not attach the CSP to non-HTML assets", async () => {
     assert.equal(res.statusCode, 200);
     assert.equal(res.headers["content-type"], "text/javascript; charset=utf-8");
     assert.equal(res.headers["content-security-policy"], undefined);
-    assert.equal(res.headers["x-content-type-options"], undefined);
+    // The base headers DO apply to every file, matching the `_headers` `/*`
+    // block production ships (nosniff matters most on scripts).
+    assert.equal(res.headers["x-content-type-options"], "nosniff");
   } finally {
     fs.rmSync(dist, { recursive: true, force: true });
   }

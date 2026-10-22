@@ -1,4 +1,32 @@
 /**
+ * The local dev/preview servers bind to loopback, but loopback alone does not
+ * keep a website you are visiting out. Two attacks reach it from a browser:
+ *
+ * - DNS rebinding: `evil.example` re-resolves to 127.0.0.1, after which the
+ *   page can READ every response (drafts, the dep map, the SSE stream, and
+ *   `api/*` handlers, which run with the full `process.env`). The browser still
+ *   sends `Host: evil.example`, so only hostnames that cannot be rebound pass:
+ *   `localhost`/`*.localhost`, IP literals (a rebinding needs a domain), the
+ *   bind address, and the `DARKMOWN_ALLOWED_HOSTS` list (a tunnel's domain).
+ * - Cross-site requests: any page can fire a simple POST at
+ *   `http://127.0.0.1:5173/api/x` without reading the reply, so the handler's
+ *   side effects run. `/api/*` therefore also refuses `Sec-Fetch-Site:
+ *   cross-site` and an `Origin` that is not loopback, the request's own host,
+ *   or allow-listed.
+ *
+ * `DARKMOWN_ALLOWED_HOSTS=*` turns the guard off.
+ * @param {{ url?: string, headers: Record<string, string | string[] | undefined> }} req
+ * @param {{ bindHost?: string, allowedHosts?: string }} [options]
+ * @returns {string | null} why the request is refused, or null to serve it
+ */
+export function refuseLocalRequest(req: {
+    url?: string;
+    headers: Record<string, string | string[] | undefined>;
+}, { bindHost, allowedHosts }?: {
+    bindHost?: string;
+    allowedHosts?: string;
+}): string | null;
+/**
  * Serialize the dev server's rebuilds: at most ONE child build runs at a time.
  * Every build read-modify-writes the dependency map (`dist/.wd-dev-deps.json`),
  * so overlapping children could persist a stale map missing deps a concurrent

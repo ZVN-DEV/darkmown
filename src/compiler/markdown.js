@@ -681,8 +681,24 @@ function rawHtmlPlugin(mdInstance) {
 // happened to resolve to. Escaping is no defense here: `href` and friends
 // resolve `javascript:` without any quote breakout, and unlike a markdown
 // destination nothing upstream vets an author's own raw `<a href="…">`.
-const URL_ATTR_TAIL =
-  /\b(?:href|src|action|formaction|xlink:href)\s*=\s*(?:"([^"]*)|'([^']*)|([^\s>"']*))$/i;
+const URL_ATTRS = new Set([
+  "href",
+  "src",
+  "action",
+  "formaction",
+  "xlink:href",
+  "data",
+  "poster",
+  "cite",
+  "background",
+  "ping"
+]);
+
+// The tag a fragment is inside of, as far as it has been written (no `>` yet),
+// and within it the attribute whose value is open: name, then the value so far
+// as group 2 ("…), 3 ('…) or 4 (unquoted).
+const OPEN_TAG = /<[A-Za-z][^<>]*$/;
+const OPEN_ATTR = /\s([^\s"'<>/=]+)\s*=\s*(?:"([^"]*)|'([^']*)|([^\s"'=<>`]*))$/;
 
 /**
  * Warn that a value in URL position carries a scheme the browser would execute.
@@ -695,6 +711,22 @@ function warnUnsafeUrl(ctx, index, expr) {
   ctx.comp.warnings.push(
     `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" resolves to a javascript:, data: or vbscript: URL, so the attribute is emitted empty. ` +
       `Use an https:, mailto: or site-relative value, or render it as text rather than a link target.`
+  );
+}
+
+/**
+ * Warn that a value landed where HTML escaping cannot contain it (an event
+ * handler, `srcdoc`, or bare tag position), so it was dropped.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index, for `file:line`.
+ * @param {string} expr
+ * @param {string} where
+ * @returns {void}
+ */
+function warnUnsafeSlot(ctx, index, expr, where) {
+  ctx.comp.warnings.push(
+    `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" sits ${where}, where escaping cannot stop a value from running as code, so it is emitted empty. ` +
+      `Put the value in a quoted attribute such as data-*, or render it as text, and read it from a colocated .js file.`
   );
 }
 
@@ -736,14 +768,32 @@ function fillRawHtml(html, ctx, index) {
       continue;
     }
     if (found.kind === "state") warnUnbindable(ctx, index, expr, true);
-    const open = URL_ATTR_TAIL.exec(out);
-    const head = open ? (open[1] ?? open[2] ?? open[3]) : "";
-    if (open && unsafeUrlValue(head + found.text)) {
+    // Escaping only holds inside a quoted attribute or text. In a script-valued
+    // attribute the browser entity-decodes `&#39;` back into a live quote, and
+    // in bare tag position (`<div { x }>`) the value IS markup.
+    const tag = OPEN_TAG.exec(out);
+    const open = tag && OPEN_ATTR.exec(tag[0]);
+    const name = open ? open[1].toLowerCase() : "";
+    if (tag && !open) {
+      warnUnsafeSlot(ctx, index, expr, "inside a tag but outside any attribute value");
+      continue;
+    }
+    if (name.startsWith("on") || name === "srcdoc") {
+      warnUnsafeSlot(ctx, index, expr, `in the ${name}= attribute`);
+      continue;
+    }
+    const head = open ? (open[2] ?? open[3] ?? open[4]) : "";
+    if (URL_ATTRS.has(name) && unsafeUrlValue(head + found.text)) {
       warnUnsafeUrl(ctx, index, expr);
       out = out.slice(0, out.length - head.length); // the head belongs to the refused value
       continue;
     }
-    out += escapeHtml(found.text);
+    // An unquoted value ends at whitespace, so `x onmouseover=…` would open a
+    // new attribute. Entities keep it one value and decode back to the text.
+    out +=
+      open?.[4] !== undefined
+        ? escapeHtml(found.text).replace(/[\s=`]/g, (c) => `&#${c.charCodeAt(0)};`)
+        : escapeHtml(found.text);
   }
   return out + html.slice(last);
 }
