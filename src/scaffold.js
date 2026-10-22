@@ -122,15 +122,16 @@ export function initProject(root, options = {}) {
  */
 function writeNew(root, file, content) {
   const target = path.join(root, file);
+  // `existsSync` answers false for a DANGLING symlink, and a write then follows
+  // it out of `root`. lstat sees the link itself, on every OS (on Windows
+  // an exclusive `wx` create still follows the link); `wx` is the backstop.
+  if (present(target)) return;
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  // `wx` is the "never overwrite" check itself: an `existsSync` probe answers
-  // false for a DANGLING symlink, and the write then follows it out of `root`.
-  try {
-    fs.writeFileSync(target, content, { flag: "wx" });
-  } catch (err) {
-    if (/** @type {NodeJS.ErrnoException} */ (err).code !== "EEXIST") throw err;
-  }
+  fs.writeFileSync(target, content, { flag: "wx" });
 }
+
+/** Whether anything, a dangling symlink included, already occupies `target`. @param {string} target */
+const present = (target) => fs.lstatSync(target, { throwIfNoEntry: false }) !== undefined;
 
 /**
  * Copy a template file to `dest`, preserving bytes, only if `dest` is absent.
@@ -139,13 +140,9 @@ function writeNew(root, file, content) {
  * @returns {void}
  */
 function copyNew(source, dest) {
+  if (present(dest)) return; // see writeNew: a dangling symlink counts as present
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  // COPYFILE_EXCL fails on any existing entry, a dangling symlink included.
-  try {
-    fs.copyFileSync(source, dest, fs.constants.COPYFILE_EXCL);
-  } catch (err) {
-    if (/** @type {NodeJS.ErrnoException} */ (err).code !== "EEXIST") throw err;
-  }
+  fs.copyFileSync(source, dest, fs.constants.COPYFILE_EXCL);
 }
 
 /**
