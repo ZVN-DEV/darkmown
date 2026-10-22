@@ -1,7 +1,70 @@
+import { isIP } from "node:net";
 import { escapeHtml } from "./compiler.js";
 
 export const devClientPath = "/__wd/dev-client.js";
 export const devEventsPath = "/__wd/dev-events";
+
+/** @param {string} h */
+const isLoopbackName = (h) =>
+  h === "localhost" || h.endsWith(".localhost") || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h);
+
+/** `Host`/`Origin` → bare lowercase hostname (`[::1]:5173` → `::1`), or null. @param {string} value */
+function hostnameOf(value) {
+  try {
+    return new URL(value.includes("://") ? value : `http://${value}`).hostname
+      .toLowerCase()
+      .replace(/^\[|\]$/g, "");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The local dev/preview servers bind to loopback, but loopback alone does not
+ * keep a website you are visiting out. Two attacks reach it from a browser:
+ *
+ * - DNS rebinding: `evil.example` re-resolves to 127.0.0.1, after which the
+ *   page can READ every response (drafts, the dep map, the SSE stream, and
+ *   `api/*` handlers, which run with the full `process.env`). The browser still
+ *   sends `Host: evil.example`, so only hostnames that cannot be rebound pass:
+ *   `localhost`/`*.localhost`, IP literals (a rebinding needs a domain), the
+ *   bind address, and the `DARKMOWN_ALLOWED_HOSTS` list (a tunnel's domain).
+ * - Cross-site requests: any page can fire a simple POST at
+ *   `http://127.0.0.1:5173/api/x` without reading the reply, so the handler's
+ *   side effects run. `/api/*` therefore also refuses `Sec-Fetch-Site:
+ *   cross-site` and an `Origin` that is not loopback, the request's own host,
+ *   or allow-listed.
+ *
+ * `DARKMOWN_ALLOWED_HOSTS=*` turns the guard off.
+ * @param {{ url?: string, headers: Record<string, string | string[] | undefined> }} req
+ * @param {{ bindHost?: string, allowedHosts?: string }} [options]
+ * @returns {string | null} why the request is refused, or null to serve it
+ */
+export function refuseLocalRequest(req, { bindHost = "", allowedHosts = "" } = {}) {
+  const allowed = allowedHosts
+    .split(",")
+    .map((h) => hostnameOf(h.trim()) ?? "")
+    .filter(Boolean);
+  if (allowedHosts.split(",").some((h) => h.trim() === "*")) return null;
+  const bind = hostnameOf(bindHost) ?? "";
+  const host = hostnameOf(String(req.headers.host ?? ""));
+  if (!host || !(isLoopbackName(host) || isIP(host) || host === bind || allowed.includes(host))) {
+    return `Host "${req.headers.host ?? ""}" is not allowed. Set DARKMOWN_ALLOWED_HOSTS to permit it.`;
+  }
+  if (!(req.url || "/").startsWith("/api/")) return null;
+  if (req.headers["sec-fetch-site"] === "cross-site") return "Cross-site request to /api/ refused.";
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    const from = origin === "null" ? null : hostnameOf(String(origin));
+    if (
+      !from ||
+      !(isLoopbackName(from) || from === host || from === bind || allowed.includes(from))
+    ) {
+      return `Origin "${origin}" may not call /api/ on this server.`;
+    }
+  }
+  return null;
+}
 
 /**
  * Serialize the dev server's rebuilds: at most ONE child build runs at a time.

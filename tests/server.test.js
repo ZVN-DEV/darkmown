@@ -173,3 +173,32 @@ test("a read failure mid-response answers instead of throwing an unhandled error
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("host-only build files (worker source, _headers, dep map) are never served", () => {
+  const dist = path.resolve("/tmp/dm-dist");
+  for (const url of [
+    "/_worker.js/api/boom.js",
+    "/_headers",
+    "/_redirects",
+    "/_routes.json",
+    "/.wd-dev-deps.json",
+    "/a/../_headers"
+  ]) {
+    assert.equal(resolvePublicFile(dist, url), null, url);
+  }
+  assert.equal(resolvePublicFile(dist, "/_astro/x.js"), path.join(dist, "_astro/x.js"));
+});
+
+test("non-HTML assets carry the base security headers too (parity with _headers /*)", async () => {
+  const dist = dottedDist();
+  const server = http.createServer((req, res) => serve(dist, req.url || "/", res));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/app.v2.js`);
+    await response.text();
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("content-security-policy"), null, "CSP stays HTML-only");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

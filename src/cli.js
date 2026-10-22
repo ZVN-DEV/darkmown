@@ -16,7 +16,8 @@ import {
   devClientPath,
   devClientScript,
   devEventsPath,
-  injectDevClient
+  injectDevClient,
+  refuseLocalRequest
 } from "./dev.js";
 import { createDispatcher, serveMcp } from "./mcp.js";
 import { mcpConfig } from "./mcp-tools.js";
@@ -421,6 +422,7 @@ function startDevServer({ cwd, log, warn, error }) {
 
   const apiDir = path.join(cwd, "api");
   const server = http.createServer((req, res) => {
+    if (refuseForeign(req, res, host)) return;
     const url = req.url || "/";
     if (url.split("?")[0] === devEventsPath) {
       res.writeHead(200, {
@@ -487,6 +489,25 @@ function startDevServer({ cwd, log, warn, error }) {
 }
 
 /**
+ * Answer 403 when `refuseLocalRequest` rejects the request (DNS rebinding or a
+ * cross-site call into `api/`). Shared by `dev` and `serve`.
+ * @param {import("node:http").IncomingMessage} req
+ * @param {import("node:http").ServerResponse} res
+ * @param {string} bindHost
+ * @returns {boolean} true when the request was refused and answered
+ */
+function refuseForeign(req, res, bindHost) {
+  const reason = refuseLocalRequest(req, {
+    bindHost,
+    allowedHosts: process.env.DARKMOWN_ALLOWED_HOSTS || ""
+  });
+  if (!reason) return false;
+  res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+  res.end(`${reason}\n`);
+  return true;
+}
+
+/**
  * Start the static preview server for an existing `dist/`. Throws `CliError`
  * when there is nothing built to serve.
  *
@@ -510,6 +531,7 @@ function startPreviewServer({ cwd, log, error }) {
   }
   const apiDir = path.join(cwd, "api");
   const server = http.createServer((req, res) => {
+    if (refuseForeign(req, res, host)) return;
     const acceptEncoding = req.headers["accept-encoding"];
     // Serverless parity, exactly as in dev: run a project api/*.js function when
     // the path matches; otherwise serve static (compressed when negotiated).

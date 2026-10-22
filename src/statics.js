@@ -139,7 +139,7 @@ export function serve(distRoot, url, res, options = {}) {
   /** @type {Record<string, string>} */
   const headers = type.startsWith("text/html")
     ? { "content-type": type, ...htmlSecurityHeaders(distRoot, url) }
-    : { "content-type": type };
+    : { "content-type": type, ...BASE_SECURITY_HEADERS }; // `_headers` `/*` covers every file
   const compressible = isCompressibleType(type);
   if (options.validators) {
     const etag = strongEtag(stat);
@@ -402,6 +402,15 @@ export function pipeFile(file, res) {
   stream.pipe(res);
 }
 
+/** Top-level dist entries a host consumes but never serves (see resolvePublicFile). */
+const HOST_ONLY_FILES = new Set([
+  "_worker.js",
+  "_headers",
+  "_redirects",
+  "_routes.json",
+  ".wd-dev-deps.json"
+]);
+
 /**
  * Resolve a request URL to an absolute file inside `distRoot`, guarding against
  * path traversal. Returns null when the resolved path escapes the root.
@@ -420,6 +429,12 @@ export function resolvePublicFile(distRoot, url) {
   // resulting path throws ERR_INVALID_ARG_VALUE out of the request handler,
   // killing the server. It can never name a built file, so it is a miss.
   if (cleanUrl.includes("\0")) return null;
+  // Build-control files a host consumes but never serves: the Cloudflare worker
+  // bundle (`api/*` handler SOURCE), `_headers`/`_redirects`/`_routes.json`, and
+  // the dev dependency map (the project's file graph). Serve them locally and a
+  // preview leaks what production hides.
+  const head = path.posix.normalize(cleanUrl.replaceAll("\\", "/")).split("/")[1] ?? "";
+  if (HOST_ONLY_FILES.has(head)) return null;
   const base = cleanUrl.startsWith("/__wd/")
     ? cleanUrl
     : path.join(cleanUrl, path.extname(cleanUrl) ? "" : "index.html");
