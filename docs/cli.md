@@ -73,6 +73,16 @@ Rebuilds are **incremental** for `site/` content changes. Every dev build writes
 
 Correctness beats speed: **any uncertainty runs a full rebuild** — a new, deleted, or renamed file; a file no dependency graph accounts for; a change to the site-wide feed link; a missing or stale map. A change under `src/` (the framework's own code) always runs a full rebuild in a child process so fresh modules load. Production `darkmown build` writes no map and is unaffected.
 
+Both `dev` and `serve` read three environment variables:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `5173` (dev), `4173` (serve) | Port to listen on. |
+| `HOST` | `127.0.0.1` | Address to bind. `0.0.0.0` exposes the server to your network. |
+| `DARKMOWN_ALLOWED_HOSTS` | empty | Extra `Host` names to accept, comma-separated, such as a tunnel domain. `*` disables the check. |
+
+Requests whose `Host` is not `localhost`, `*.localhost`, an IP literal, the bind address, or listed in `DARKMOWN_ALLOWED_HOSTS` get a `403`. This stops DNS rebinding, where a website you visit points its own domain at `127.0.0.1` to read your dev server. Requests to `/api/*` also get a `403` when they are cross-site (`Sec-Fetch-Site: cross-site`, or an `Origin` that is not local or allow-listed).
+
 ### `darkmown build [--target cloudflare] [--drafts]`
 
 Compiles `site/pages` into `dist`. The output is always 100% static HTML.

@@ -2,6 +2,19 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## Unreleased
+
+A security pass over the runtime, the compiler's output escaping, and the local servers. Nothing found executed script on a default (`html: false`) page; the fixes close denial-of-service, redirect, and leak paths, plus script injection on `html: true` pages fed by data.
+
+- **Local dev/preview servers refuse other websites.** `darkmown dev` and `darkmown serve` now answer `403` to an unrecognized `Host` (DNS rebinding) and to cross-site calls into `/api/*`. Before, any page you visited could rebind its domain to `127.0.0.1` and read drafts, the dependency map, and `api/*` responses, whose handlers run with the full `process.env`. New `DARKMOWN_ALLOWED_HOSTS` env var for tunnels (`*` disables). **BEHAVIOR CHANGE** if you open the dev server through a custom domain or tunnel: add it to the variable.
+- **Runtime: hostile JSON can no longer wedge a page.** `?n={"toString":1}` on a `from-url` key made every render throw, and a `persist` key then kept the page broken after reloading the clean URL. All untrusted JSON (fetch bodies, URL params, localStorage, storage events) now drops own `toString`/`valueOf` keys. A `:fetch` placeholder valued `.` or `..` is treated as missing, so `?id=..` can no longer retarget `/api/users/{ id }/profile` at `/api/profile`. Runtime 6,603 → 6,621 B gzipped.
+- **Raw HTML interpolation is attribute-context aware** on `html: true` pages: values in `on*=`, `srcdoc=`, or bare tag position are emitted empty with a warning; unquoted values are entity-encoded; `data`, `poster`, `cite`, `background` and `ping` join the URL scheme guard.
+- **Collection-author vectors closed.** The excerpt/RSS description regex was quadratic (a 200k-character body took 17 s or more per call); one control character in a post title made `rss.xml` invalid XML; a data-driven image src could probe for `@width` variants outside `site/`; a symlinked `.md` page compiled any file on the machine into `dist`. All fixed. A `__proto__` frontmatter key is ignored.
+- **Preview parity.** `serve` no longer serves `_worker.js/` (your `api/` handler source), `_headers`, `_redirects`, `_routes.json`, or the dev dependency map, and sends `nosniff` and the other base headers on every file, not only HTML.
+- **HSTS.** Every surface now sends `Strict-Transport-Security: max-age=31536000` (no `includeSubDomains`/`preload`).
+- **Scaffold.** `init` writes with exclusive opens, so a dangling symlink in the target can no longer redirect a write, and `--template` must name a shipped template.
+- **Dependencies and CI.** `markdown-it` 14.3.3 fixes two quadratic-time advisories (GHSA-vfgh-jcmw-g37q, GHSA-gfr2-rv44-r23c; the second affects default options). The CI workflow token is now `contents: read`.
+
 ## 2.12.1 (2026-10-16)
 
 A one-item patch revising the navigation animation again, this time from frame-level measurement instead of reading the stylesheet.

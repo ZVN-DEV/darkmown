@@ -368,6 +368,17 @@ test("run('serve') serves the built dist over real HTTP, then closes cleanly", a
     assert.equal(home.status, 200);
     const missing = await httpGet(origin, "/does-not-exist/");
     assert.equal(missing.status, 404);
+    // DNS rebinding: a foreign Host is refused before anything is served.
+    const rebound = await new Promise((resolve, reject) => {
+      const req = http.get(`${origin}/`, { headers: { host: "evil.example" } }, (res) => {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => resolve({ status: res.statusCode, body }));
+      });
+      req.on("error", reject);
+    });
+    assert.equal(rebound.status, 403);
+    assert.match(rebound.body, /DARKMOWN_ALLOWED_HOSTS/);
   } finally {
     if (prevPort === undefined) delete process.env.PORT;
     else process.env.PORT = prevPort;
