@@ -2,7 +2,7 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
-## Unreleased
+## 2.12.3 (2026-10-22)
 
 A security pass over the runtime, the compiler's output escaping, and the local servers. Nothing found executed script on a default (`html: false`) page; the fixes close denial-of-service, redirect, and leak paths, plus script injection on `html: true` pages fed by data.
 
