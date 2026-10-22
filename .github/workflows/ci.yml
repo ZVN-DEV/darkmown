@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
 
+# Least privilege: no job here writes to the repo, and a token scoped to
+# read-only keeps a compromised dependency in a test step from pushing.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

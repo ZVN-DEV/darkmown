@@ -17,7 +17,8 @@ const DOCS = "site/pages/docs/index.wd";
 // needs a reason, and the list is meant to stay tiny.
 const readmeOnly = new Map([
   ["showcase", "the site has a dedicated /showcase/ page instead of a docs section"],
-  ["working from this repo", "cloning and running the framework repo is not a docs-site topic"]
+  ["working from this repo", "cloning and running the framework repo is not a docs-site topic"],
+  ["example rebuilds", "names private ZVN-DEV repos, not framework docs"]
 ]);
 
 // Sections that exist on both, under names each surface chose for itself. The
