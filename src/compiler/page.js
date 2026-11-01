@@ -489,6 +489,15 @@ export function compileDocument(
     0,
     null
   );
+  // Checked after the whole page, not at the :fetch line: the runtime reads state
+  // when the request fires, so a :state further down still fills the placeholder.
+  for (const { name, url, at } of comp.fetchPlaceholders) {
+    if (!comp.state.has(name)) {
+      comp.warnings.push(
+        `${at}: :fetch "${url}" reads "{ ${name} }", but the page declares no :state ${name}, so the request never fires until something sets it. Declare it with :state ${name} = …, or set it from a colocated .js.`
+      );
+    }
+  }
   // Shared skins (frontmatter `skins:`) join the page's asset set through the
   // exact same pipeline as colocated skins (compile through compileSkin at emit,
   // scoping honored), and the CSS cascade is then ordered so the page always

@@ -117,6 +117,7 @@ export function handleFetch(line, ctx, index) {
     validatePath(dep[1], ctx, FETCH_USE);
     const headKey = dep[1].split(".")[0];
     if (!deps.includes(headKey)) deps.push(headKey);
+    ctx.comp.fetchPlaceholders.push({ name: headKey, url, at: at(ctx, index) });
   }
 
   // Auto-declare the lifecycle keys. `name` is declared via declareState

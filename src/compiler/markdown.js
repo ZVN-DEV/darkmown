@@ -38,6 +38,7 @@ export { unsafeUrlValue };
 // instances share it so `html: false` pages highlight too.
 const md = new MarkdownIt({ html: false, highlight: highlightCode });
 md.use(bindingPlugin);
+md.use(unresolvedPlugin);
 md.use(attrsPlugin);
 md.use(attrBindPlugin);
 md.use(imageVariantsPlugin);
@@ -63,6 +64,7 @@ export function selectMd(meta) {
   if (!mdRawHtml) {
     mdRawHtml = new MarkdownIt({ html: true, highlight: highlightCode });
     mdRawHtml.use(bindingPlugin);
+    mdRawHtml.use(unresolvedPlugin);
     mdRawHtml.use(attrsPlugin);
     mdRawHtml.use(attrBindPlugin);
     mdRawHtml.use(imageVariantsPlugin);
@@ -143,6 +145,61 @@ function warnUnbindable(ctx, index, expr, painted) {
     `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" is reactive, but raw HTML (an attribute or an html block) cannot bind, so ${outcome}. ` +
       `Move the value into ordinary text or a markdown link/image destination (where { ${expr} } does bind), or update it from a colocated .js with wd.subscribe.`
   );
+}
+
+/**
+ * Names in reach of `head`, for the "did you mean" in {@link warnUnresolved}.
+ * @param {Ctx} ctx
+ * @returns {string[]}
+ */
+function knownNames(ctx) {
+  const names = new Set([...ctx.comp.state.keys()].map((key) => key.split(":").pop() ?? key));
+  /** @type {typeof ctx.scope | null} */
+  let scope = ctx.scope;
+  for (; scope; scope = scope.parent) {
+    for (const name of Object.keys(scope.vars)) names.add(name);
+  }
+  return [...names];
+}
+
+/**
+ * Levenshtein distance, stopping the moment it can no longer be 2 or less.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function editDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) {
+      next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    row = next;
+  }
+  return row[b.length];
+}
+
+/**
+ * Warn once that `{ expr }` matched nothing, so it ships as the literal braces.
+ * A real page has no reason to show them, and `\{ name }` says it on purpose.
+ * @param {Ctx} ctx
+ * @param {number} index 0-based line index, for `file:line`.
+ * @param {string} expr
+ * @returns {void}
+ */
+function warnUnresolved(ctx, index, expr) {
+  const head = expr.split(/[.|\s]/)[0];
+  const near = knownNames(ctx)
+    .map((name) => /** @type {[string, number]} */ ([name, editDistance(head, name)]))
+    .filter(([, distance]) => distance <= 2)
+    .sort((a, b) => a[1] - b[1])[0];
+  const hint = near ? `Did you mean "${near[0]}"? ` : "";
+  const message =
+    `${ctx.file}:${lineOf(ctx, index)}: "{ ${expr} }" matches no :state, include argument or in-scope value, so it ships as literal text. ` +
+    `${hint}Declare it above this line, or write \\{ ${expr} } if the braces are meant to show.`;
+  if (!ctx.comp.warnings.includes(message)) ctx.comp.warnings.push(message);
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +325,10 @@ function resolveDestinationBindings(text, ctx, attrs, index) {
         /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\}/g,
         (/** @type {string} */ brace, /** @type {string} */ expr) => {
           const found = resolveBinding(expr, ctx);
-          if (!found) return brace; // not in scope — leave the author's text alone
+          if (!found) {
+            warnUnresolved(ctx, index + i, expr);
+            return brace; // not in scope — leave the author's text alone
+          }
           if (found.kind === "static") {
             // The scheme test runs on the RAW value, before encoding, because
             // that is the string the runtime's guard sees. Encoding first would
@@ -695,14 +755,118 @@ const URL_ATTRS = new Set([
   "poster",
   "cite",
   "background",
-  "ping"
+  "ping",
+  "to",
+  "from",
+  "by"
 ]);
 
-// The tag a fragment is inside of, as far as it has been written (no `>` yet),
-// and within it the attribute whose value is open: name, then the value so far
-// as group 2 ("…), 3 ('…) or 4 (unquoted).
-const OPEN_TAG = /<[A-Za-z][^<>]*$/;
-const OPEN_ATTR = /\s([^\s"'<>/=]+)\s*=\s*(?:"([^"]*)|'([^']*)|([^\s"'=<>`]*))$/;
+// `{ path }` plus an optional `| pipe:arg` chain, as the inline binding rule reads it.
+const BINDING_BRACE = /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*(?:\|[^}]*)?)\}/g;
+
+/** @param {string | undefined} c */
+const isHtmlSpace = (c) => c === " " || c === "\t" || c === "\n" || c === "\f" || c === "\r";
+const TEXT_CONTEXT = /** @type {RawContext} */ ({ kind: "text" });
+
+/**
+ * @typedef {{ kind: "text" }
+ *   | { kind: "tag" }
+ *   | { kind: "value", name: string, head: string, quoted: boolean }
+ *   | { kind: "rawtext", tag: string, type: string }} RawContext
+ */
+
+/**
+ * Where the end of a raw-HTML fragment sits, as the browser's tokenizer would
+ * read it: in text, inside a tag but between attributes, inside an attribute
+ * value (with the value so far), or inside a `<script>`/`<style>` body. It walks
+ * quoted values rather than pattern-matching back from the end, because a `>`
+ * inside `title=">"` does not close the tag.
+ * @param {string} html
+ * @returns {RawContext}
+ */
+function rawHtmlContext(html) {
+  const n = html.length;
+  let i = 0;
+  for (;;) {
+    const lt = html.indexOf("<", i);
+    if (lt < 0) return TEXT_CONTEXT;
+    const next = html[lt + 1];
+    // `<` then the value: whatever the value starts with decides the tag name.
+    if (next === undefined) return { kind: "tag" };
+    if (html.startsWith("<!--", lt)) {
+      const end = html.indexOf("-->", lt + 4);
+      if (end < 0) return TEXT_CONTEXT;
+      i = end + 3;
+      continue;
+    }
+    if (next === "/" && lt + 2 === n) return { kind: "tag" };
+    const closing = next === "/" && /[A-Za-z]/.test(html[lt + 2]);
+    if (!closing && !/[A-Za-z]/.test(next)) {
+      if (next !== "!" && next !== "?" && next !== "/") {
+        i = lt + 1;
+        continue;
+      }
+      // A bogus comment runs to the next `>`, and an escaped value cannot hold one.
+      const end = html.indexOf(">", lt + 2);
+      if (end < 0) return TEXT_CONTEXT;
+      i = end + 1;
+      continue;
+    }
+    let j = lt + (closing ? 2 : 1);
+    const nameStart = j;
+    while (j < n && !isHtmlSpace(html[j]) && html[j] !== "/" && html[j] !== ">") j++;
+    const tag = html.slice(nameStart, j).toLowerCase();
+    let type = "";
+    for (;;) {
+      while (j < n && (isHtmlSpace(html[j]) || html[j] === "/")) j++;
+      if (j >= n) return { kind: "tag" };
+      if (html[j] === ">") {
+        j++;
+        break;
+      }
+      const attrStart = j++;
+      while (j < n && !isHtmlSpace(html[j]) && !"/>=".includes(html[j])) j++;
+      const name = html.slice(attrStart, j).toLowerCase();
+      while (j < n && isHtmlSpace(html[j])) j++;
+      if (j >= n) return { kind: "tag" };
+      if (html[j] !== "=") continue;
+      j++;
+      while (j < n && isHtmlSpace(html[j])) j++;
+      if (j >= n) return { kind: "value", name, head: "", quoted: false };
+      let value;
+      const quote = html[j];
+      if (quote === '"' || quote === "'") {
+        const end = html.indexOf(quote, j + 1);
+        if (end < 0) return { kind: "value", name, head: html.slice(j + 1), quoted: true };
+        value = html.slice(j + 1, end);
+        j = end + 1;
+      } else {
+        const valueStart = j;
+        while (j < n && !isHtmlSpace(html[j]) && html[j] !== ">") j++;
+        value = html.slice(valueStart, j);
+        if (j >= n) return { kind: "value", name, head: value, quoted: false };
+      }
+      if (name === "type") type = value.trim().toLowerCase();
+    }
+    if (!closing && (tag === "script" || tag === "style")) {
+      const end = html.slice(j).search(new RegExp(`</${tag}[\\s/>]`, "i"));
+      if (end < 0) return { kind: "rawtext", tag, type };
+      i = j + end + 2;
+      continue;
+    }
+    i = j;
+  }
+}
+
+/**
+ * A JSON `<script>` is data the browser never runs, and an escaped value cannot
+ * close it, so a binding there is safe. Every other script or style body is code.
+ * @param {string} type
+ * @returns {boolean}
+ */
+function isDataScript(type) {
+  return /^application\/(?:[\w.-]+\+)?json$/.test(type);
+}
 
 /**
  * Warn that a value in URL position carries a scheme the browser would execute.
@@ -752,7 +916,7 @@ function fillRawHtml(html, ctx, index) {
   // The capture mirrors the inline `wd_binding` rule: path plus an optional
   // `| pipe:arg` chain. A pipe-only divergence here left `{ d | date }` literal
   // in raw HTML while the same expression folded in prose.
-  const brace = /\{\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*(?:\|[^}]*)?)\}/g;
+  const brace = new RegExp(BINDING_BRACE);
   let out = "";
   let last = 0;
   /** @type {RegExpExecArray | null} */
@@ -762,7 +926,10 @@ function fillRawHtml(html, ctx, index) {
     last = hit.index + hit[0].length;
     const expr = hit[1].trim();
     const found = resolveBinding(expr, ctx);
+    const context = rawHtmlContext(out);
     if (!found) {
+      // Inside a script or style, `{ x }` is usually the language's own braces.
+      if (context.kind !== "rawtext") warnUnresolved(ctx, index, expr);
       out += hit[0];
       continue;
     }
@@ -775,31 +942,71 @@ function fillRawHtml(html, ctx, index) {
     // Escaping only holds inside a quoted attribute or text. In a script-valued
     // attribute the browser entity-decodes `&#39;` back into a live quote, and
     // in bare tag position (`<div { x }>`) the value IS markup.
-    const tag = OPEN_TAG.exec(out);
-    const open = tag && OPEN_ATTR.exec(tag[0]);
-    const name = open ? open[1].toLowerCase() : "";
-    if (tag && !open) {
+    if (context.kind === "tag") {
       warnUnsafeSlot(ctx, index, expr, "inside a tag but outside any attribute value");
       continue;
     }
+    if (context.kind === "rawtext") {
+      if (context.tag === "style" || !isDataScript(context.type)) {
+        warnUnsafeSlot(ctx, index, expr, `in a <${context.tag}> body`);
+        continue;
+      }
+      out += escapeHtml(found.text);
+      continue;
+    }
+    if (context.kind === "text") {
+      out += escapeHtml(found.text);
+      continue;
+    }
+    const { name, head, quoted } = context;
     if (name.startsWith("on") || name === "srcdoc") {
       warnUnsafeSlot(ctx, index, expr, `in the ${name}= attribute`);
       continue;
     }
-    const head = open ? (open[2] ?? open[3] ?? open[4]) : "";
-    if (URL_ATTRS.has(name) && unsafeUrlValue(head + found.text)) {
+    // SVG `values` is a `;`-separated list, and any entry can animate a link's href.
+    const assembled = head + found.text;
+    const unsafe =
+      name === "values"
+        ? assembled.split(";").some(unsafeUrlValue)
+        : URL_ATTRS.has(name) && unsafeUrlValue(assembled);
+    if (unsafe) {
       warnUnsafeUrl(ctx, index, expr);
       out = out.slice(0, out.length - head.length); // the head belongs to the refused value
       continue;
     }
     // An unquoted value ends at whitespace, so `x onmouseover=…` would open a
     // new attribute. Entities keep it one value and decode back to the text.
-    out +=
-      open?.[4] !== undefined
-        ? escapeHtml(found.text).replace(/[\s=`]/g, (c) => `&#${c.charCodeAt(0)};`)
-        : escapeHtml(found.text);
+    out += quoted
+      ? escapeHtml(found.text)
+      : escapeHtml(found.text).replace(/[\s=`]/g, (c) => `&#${c.charCodeAt(0)};`);
   }
   return out + html.slice(last);
+}
+
+/**
+ * markdown-it plugin (core rule): a `{ name }` still in a text token after the
+ * inline pass is one {@link bindingPlugin} could not resolve. Runs before
+ * `text_join`, which would merge an escaped `\{` back in and make it look unresolved.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
+function unresolvedPlugin(mdInstance) {
+  mdInstance.core.ruler.after("inline", "wd_unresolved", (state) => {
+    const wd = state.env?.wd;
+    if (!wd) return false;
+    for (const block of state.tokens) {
+      const line = wd.index + (block.map ? block.map[0] : 0);
+      let offset = 0;
+      for (const child of block.children ?? []) {
+        if (child.type === "softbreak" || child.type === "hardbreak") offset++;
+        if (child.type !== "text") continue;
+        for (const hit of child.content.matchAll(BINDING_BRACE)) {
+          warnUnresolved(wd.ctx, line + offset, hit[1].trim());
+        }
+      }
+    }
+    return false;
+  });
 }
 
 /**
