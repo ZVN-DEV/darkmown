@@ -103,6 +103,7 @@ npm run dev     # live demo site — the same site that runs darkmown.com
 
 - `site/pages` is the route tree. `.md` and `.wd` files become pages.
 - `.md` is strict CommonMark (real parser: ordered lists, tables, blockquotes, images, the lot). Directives stay plain text, and the build hints when it spots `.wd` syntax in a `.md` file.
+- `.wd` adds read-only task lists: `- [ ] item` and `- [x] item` render as checkboxes, with no runtime. For a checkbox the reader can tick, use `:checkbox`.
 - Files or folders starting with `.`, `-`, or `_` are hidden from routing.
 - `site/_` is the include shelf for `@include /name.wd`.
 - Matching `page.skin` and `page.js` colocate styling and behavior by basename.

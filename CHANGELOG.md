@@ -2,6 +2,12 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 2.13.0 (2026-11-01)
+
+### Added
+
+- `.wd` task lists: `- [ ] item` and `- [x] item` render as read-only checkboxes, with no runtime. `.md` stays strict CommonMark.
+
 ## 2.12.4 (2026-11-01)
 
 Closes what the 2026-10-23 audit got past the 2.12.3 security pass, and stops two kinds of broken page from passing `validate` as clean.
