@@ -27,6 +27,17 @@ test("a rebound domain name is refused, on pages and api alike", () => {
   assert.ok(check({}), "a request with no Host is refused");
 });
 
+test("the cross-site guard covers every URL the api runner would serve", () => {
+  const host = "127.0.0.1:5173";
+  for (const url of ["/api", "/api?x=1", "/./api/x", "/%2e/api/x", "/x/../api/x", "//["]) {
+    assert.ok(check({ host, origin: "https://evil.example" }, url), url);
+    assert.ok(check({ host, "sec-fetch-site": "cross-site" }, url), url);
+  }
+  for (const url of ["/apifoo", "/about", "/docs/api"]) {
+    assert.equal(check({ host, origin: "https://evil.example" }, url), null, url);
+  }
+});
+
 test("/api/ refuses cross-site callers but allows other local origins", () => {
   const host = "localhost:5173";
   assert.ok(check({ host, origin: "https://evil.example" }, "/api/x"));

@@ -268,10 +268,11 @@ test("a reactive binding in ordinary prose still binds and never warns", () => {
   assert.deepEqual(page.warnings, []);
 });
 
-test("a name that is in no scope is left as written, with no warning", () => {
+test("a name that is in no scope is left as written, with a warning", () => {
   const page = compile([...HTML_PAGE, "[go](/p/{ nothing.here }/)"]);
   assert.ok(page.html.includes("{ nothing.here }"));
-  assert.deepEqual(page.warnings, []);
+  assert.equal(page.warnings.length, 1);
+  assert.match(page.warnings[0], /"\{ nothing\.here \}" matches no :state/);
 });
 
 // ---------------------------------------------------------------------------
@@ -408,7 +409,7 @@ test("a static loop value containing braces stays literal text", () => {
   assert.doesNotMatch(body, /SECRET-TITLE/);
 });
 
-test("a name that is not in scope stays literal in raw HTML, with no warning", () => {
+test("a name that is not in scope stays literal in raw HTML, with a warning", () => {
   // The fill only touches braces it can resolve. `{ nothing }` matches no include
   // arg, loop var, meta field or declared state, so the author's text survives
   // byte for byte (this is also what lets a page document the syntax itself).
@@ -416,5 +417,6 @@ test("a name that is not in scope stays literal in raw HTML, with no warning", (
     shelf: SHELF
   });
   assert.match(page.html, /<a href="\/x" title="\{ nothing \}">go<\/a>/);
-  assert.equal(page.warnings.length, 0);
+  assert.equal(page.warnings.length, 1);
+  assert.match(page.warnings[0], /"\{ nothing \}" matches no :state/);
 });

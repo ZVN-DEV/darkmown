@@ -182,7 +182,11 @@ test("host-only build files (worker source, _headers, dep map) are never served"
     "/_redirects",
     "/_routes.json",
     "/.wd-dev-deps.json",
-    "/a/../_headers"
+    "/a/../_headers",
+    // macOS and Windows filesystems are case-insensitive.
+    "/_Worker.js/index.js",
+    "/_HEADERS",
+    "/.WD-DEV-DEPS.JSON"
   ]) {
     assert.equal(resolvePublicFile(dist, url), null, url);
   }

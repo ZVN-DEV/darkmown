@@ -2,6 +2,30 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## 2.12.4 (2026-11-01)
+
+Closes what the 2026-10-23 audit got past the 2.12.3 security pass, and stops two kinds of broken page from passing `validate` as clean.
+
+### Security
+
+- Raw-HTML interpolation now reads a fragment the way the browser's tokenizer does. A `>` inside an earlier quoted value (`<button title=">" onclick="{ x }">`) no longer hides the attribute from the guard.
+- A value in a `<script>` or `<style>` body is dropped with a warning. JSON scripts such as `application/ld+json` still take values.
+- `to`, `from`, `by` and each entry of `values` get the URL scheme check, closing SVG `<animate>` and `<set>`.
+- `<{ x }>` can no longer choose the tag name.
+- The dev and preview servers apply the cross-site guard to every URL the `api/` runner serves, including `/api` itself.
+- Host-only files are refused in any letter case, for macOS and Windows filesystems.
+- A `:fetch` placeholder holding `[".."]` is treated as missing, like `..`.
+- The generated Cloudflare worker answers malformed percent-encoding with a 400 instead of throwing.
+
+### Warnings
+
+- `{ name }` that matches nothing now warns with its line and the nearest declared name. It still ships as literal text. Write `\{ name }` to show braces on purpose.
+- A `:fetch` URL reading a name the page never declares now warns, since the request will not fire until something sets it.
+
+### Fixed
+
+- The MCP stdio test accepts a prerelease version, which had been failing every canary since 2026-10-15.
+
 ## 2.12.3 (2026-10-22)
 
 A security pass over the runtime, the compiler's output escaping, and the local servers. Nothing found executed script on a default (`html: false`) page; the fixes close denial-of-service, redirect, and leak paths, plus script injection on `html: true` pages fed by data.

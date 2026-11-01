@@ -4693,7 +4693,8 @@ test(":fetch strips {toString} keys from the response body", async () => {
 });
 
 test(":fetch treats a `.` or `..` placeholder value as missing (no path retarget)", async () => {
-  for (const id of [".", ".."]) {
+  // The arrays come from `?id=[".."]`: a non-string `from-url` seed parses JSON.
+  for (const id of [".", "..", [".."], ["."]]) {
     const stub = makeFetchStub({ "/api/users/x/profile": { status: 200, body: {} } });
     makeSandbox(
       (root, El) => {

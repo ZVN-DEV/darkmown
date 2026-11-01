@@ -498,6 +498,129 @@ test("a value in bare tag position cannot add attributes", () => {
   assert.match(page.warnings[0], /inside a tag but outside any attribute value/);
 });
 
+// The audit of 2026-10-23 got past the first version of this guard with a `>`
+// inside an earlier quoted value, which it read as the end of the tag.
+const fill = (line, row) =>
+  compile([...RAW_HTML, "@loop /rows.json into r", line, "@endloop"], {
+    shelf: { "rows.json": [row] }
+  });
+
+test("a > inside an earlier quoted value does not end the tag", () => {
+  for (const line of [
+    '<button title=">" onclick="{ r.x }">b</button>',
+    "<button title='>' onclick='{ r.x }'>b</button>",
+    '<div><button title=">" onclick={ r.x }>b</button></div>'
+  ]) {
+    const page = fill(line, { x: "alert(1)" });
+    assert.doesNotMatch(body(page), /alert/, line);
+    assert.match(page.warnings[0], /in the onclick= attribute/, line);
+  }
+});
+
+test("a > in an earlier value cannot smuggle a javascript: URL or a bare attribute", () => {
+  const link = fill('<a title=">" href="{ r.x }">go</a>', { x: "javascript:alert(1)" });
+  assert.doesNotMatch(body(link), /javascript/);
+  assert.match(link.warnings[0], /emitted empty/);
+
+  const bare = fill('<div title=">" { r.x }>x</div>', { x: "onmouseover=alert(1)" });
+  assert.doesNotMatch(body(bare), /onmouseover/);
+  assert.match(bare.warnings[0], /outside any attribute value/);
+});
+
+test("SVG animation attributes cannot carry a javascript: URL", () => {
+  for (const [attr, value] of [
+    ["to", "javascript:alert(1)"],
+    ["from", "javascript:alert(1)"],
+    ["by", "javascript:alert(1)"],
+    ["values", "https://ok.example;javascript:alert(1)"]
+  ]) {
+    const page = fill(`<svg><a><animate attributeName="href" ${attr}="{ r.x }"/></a></svg>`, {
+      x: value
+    });
+    assert.doesNotMatch(body(page), /javascript/, attr);
+    assert.match(page.warnings[0], /emitted empty/, attr);
+  }
+  const safe = fill('<svg><a><animate attributeName="href" values="{ r.x }"/></a></svg>', {
+    x: "/a;/b"
+  });
+  assert.match(body(safe), /values="\/a;\/b"/);
+  assert.deepEqual(safe.warnings, []);
+});
+
+test("a script or style body takes no value, unless the script is JSON data", () => {
+  const script = fill("<script>go({ r.x })</script>", { x: "alert(1)" });
+  assert.doesNotMatch(body(script), /alert/);
+  assert.match(script.warnings[0], /in a <script> body/);
+
+  const upper = fill('<SCRIPT TYPE="module">go({ r.x })</SCRIPT>', { x: "alert(1)" });
+  assert.doesNotMatch(body(upper), /alert/);
+  assert.match(upper.warnings[0], /in a <script> body/);
+
+  const style = fill("<style>a { color: { r.x } }</style>", { x: "red;background:url(//x)" });
+  assert.doesNotMatch(body(style), /background/);
+  assert.match(style.warnings[0], /in a <style> body/);
+
+  const data = fill('<script type="application/ld+json">{"name":"{ r.x }"}</script>', {
+    x: "</script><b>"
+  });
+  assert.match(body(data), /"name":"&lt;\/script&gt;&lt;b&gt;"/);
+  assert.deepEqual(data.warnings, []);
+});
+
+test("braces that belong to a script or style body are not reported as unresolved", () => {
+  const page = fill("<script>if (a) { nothing }</script>", { x: 1 });
+  assert.match(body(page), /\{ nothing \}/);
+  assert.deepEqual(page.warnings, []);
+});
+
+test("a value cannot pick the tag name", () => {
+  for (const line of ["<div><{ r.x }></div>", "<div></{ r.x }></div>"]) {
+    const page = fill(line, { x: "img src=x onerror=alert(1)" });
+    assert.doesNotMatch(body(page), /onerror/, line);
+    assert.match(page.warnings[0], /outside any attribute value/, line);
+  }
+});
+
+test("text after a closed comment, doctype, script or end tag is still text", () => {
+  for (const line of [
+    "<div><!-- <a title=' --><b>{ r.x }</b></div>",
+    "<div><?pi <a title='><b>{ r.x }</b></div>",
+    "<div></ <a title='><b>{ r.x }</b></div>",
+    "<div>1 < 2 <b>{ r.x }</b></div>",
+    '<div><script>var a = "<b title=";</script><b>{ r.x }</b></div>',
+    "<div></section ><b>{ r.x }</b></div>"
+  ]) {
+    const page = fill(line, { x: "<i>" });
+    assert.match(body(page), /<b>&lt;i&gt;<\/b>/, line);
+    assert.deepEqual(page.warnings, [], line);
+  }
+});
+
+test("a comment or bogus comment still open at the value is text, and escaped", () => {
+  for (const line of ["<div><!-- { r.x } --></div>", "<div><!doctype { r.x }></div>"]) {
+    const page = fill(line, { x: "--><img>" });
+    assert.doesNotMatch(body(page), /<img/, line);
+    assert.deepEqual(page.warnings, [], line);
+  }
+});
+
+test("attribute spellings the tokenizer allows are still read as values", () => {
+  const spaced = fill('<a data-a = "{ r.x }">go</a>', { x: "y" });
+  assert.match(body(spaced), /data-a = "y"/);
+
+  const bare = fill("<div hidden data-b={ r.x }>x</div>", { x: "y z" });
+  assert.match(body(bare), /data-b=y&#32;z/);
+
+  const afterName = fill("<div hidden { r.x }>x</div>", { x: "y" });
+  assert.match(afterName.warnings[0], /outside any attribute value/);
+
+  const afterEquals = fill("<div data-c= { r.x }>x</div>", { x: "y" });
+  assert.match(body(afterEquals), /data-c= y/);
+
+  const afterUnquoted = fill("<div data-d=a { r.x }>x</div>", { x: "y" });
+  assert.match(afterUnquoted.warnings[0], /outside any attribute value/);
+});
+
 test("an unquoted attribute value stays one value", () => {
   const page = compile(
     [...RAW_HTML, "@loop /rows.json into r", "<div><img alt={ r.a } src=/x.png></div>", "@endloop"],

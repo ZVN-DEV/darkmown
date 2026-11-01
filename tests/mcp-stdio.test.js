@@ -108,7 +108,9 @@ test("node src/cli.js mcp speaks JSON-RPC over real child-process stdio", async 
 
   const code = await new Promise((resolve) => child.on("exit", resolve));
   assert.equal(code, 0, `server exits cleanly when the host closes stdin. stderr: ${stderr}`);
-  assert.match(stderr, /Darkmown MCP server v\d+\.\d+\.\d+ on stdio/);
+  // The version may carry a prerelease suffix: canary.yml bumps package.json to
+  // `x.y.z-next.N.gSHA` before `npm publish` re-runs this suite.
+  assert.match(stderr, /Darkmown MCP server v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)? on stdio/);
   assert.match(stderr, /Ctrl-C/);
 
   // Every stdout line is a protocol frame: the banner must stay on stderr.

@@ -51,7 +51,7 @@ export function refuseLocalRequest(req, { bindHost = "", allowedHosts = "" } = {
   if (!host || !(isLoopbackName(host) || isIP(host) || host === bind || allowed.includes(host))) {
     return `Host "${req.headers.host ?? ""}" is not allowed. Set DARKMOWN_ALLOWED_HOSTS to permit it.`;
   }
-  if (!(req.url || "/").startsWith("/api/")) return null;
+  if (!isApiPath(req.url || "/")) return null;
   if (req.headers["sec-fetch-site"] === "cross-site") return "Cross-site request to /api/ refused.";
   const origin = req.headers.origin;
   if (origin !== undefined) {
@@ -64,6 +64,22 @@ export function refuseLocalRequest(req, { bindHost = "", allowedHosts = "" } = {
     }
   }
   return null;
+}
+
+/**
+ * Whether a request reaches the `api/` runner: the same URL parse and the same
+ * test as `handleApiRequest`, so `/api`, `/api?x` and `/./api/x` are all guarded.
+ * A URL it cannot parse gets the stricter answer.
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isApiPath(url) {
+  try {
+    const { pathname } = new URL(url, "http://localhost");
+    return pathname === "/api" || pathname.startsWith("/api/");
+  } catch {
+    return true;
+  }
 }
 
 /**

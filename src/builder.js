@@ -1343,7 +1343,12 @@ function match(pathname) {
 
 export default {
   async fetch(request, env, ctx) {
-    const matched = match(new URL(request.url).pathname);
+    let matched;
+    try {
+      matched = match(new URL(request.url).pathname);
+    } catch {
+      return Response.json({ ok: false, error: "Malformed URL encoding" }, { status: 400 });
+    }
     if (!matched) return env.ASSETS.fetch(request);
     try {
       const response = await matched.handler(request, { params: matched.params, env });

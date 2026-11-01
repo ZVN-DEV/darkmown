@@ -35,6 +35,20 @@ export function attrTarget(children: any[], i: number): any;
 export function slugify(text: string): string;
 export { unsafeUrlValue };
 export function encodeDest(value: unknown): string;
+export type RawContext = {
+    kind: "text";
+} | {
+    kind: "tag";
+} | {
+    kind: "value";
+    name: string;
+    head: string;
+    quoted: boolean;
+} | {
+    kind: "rawtext";
+    tag: string;
+    type: string;
+};
 /**
  * A resolved `{ name.path }` binding.
  */

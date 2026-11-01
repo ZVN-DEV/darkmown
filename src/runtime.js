@@ -1090,8 +1090,10 @@ function startFetch(node) {
     // `.`/`..` survive encodeURIComponent and the URL parser resolves them, so
     // `?id=..` would retarget `/api/users/{ id }/x` (headers and body included)
     // at `/api/x`. Treat them as missing, like an empty value.
-    if (v == null || v === "" || v === "." || v === "..") missing = true;
-    return encodeURIComponent(String(v ?? ""));
+    // String() first: `?id=[".."]` seeds an array, which stringifies to `..`.
+    const text = String(v ?? "");
+    if (text === "" || text === "." || text === "..") missing = true;
+    return encodeURIComponent(text);
   });
   if (missing) return set("_loading", false);
 

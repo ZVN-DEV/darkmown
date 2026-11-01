@@ -132,6 +132,11 @@ test("generated cloudflare worker routes /api/* and falls through to ASSETS", as
     }
   };
 
+  // Malformed percent-encoding is the URL's fault: a 400, the same as the local runner.
+  const malformed = await worker.fetch(new Request("https://x/api/users/%E0%A4%A"), env, {});
+  assert.equal(malformed.status, 400);
+  assert.deepEqual(await malformed.json(), { ok: false, error: "Malformed URL encoding" });
+
   const echo = await worker.fetch(new Request("https://x/api/echo"), env, {});
   assert.deepEqual(await echo.json(), { ok: true, who: "echo" });
 

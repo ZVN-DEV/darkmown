@@ -273,5 +273,6 @@ test("a name that is not in scope stays literal in raw HTML, pipe or not", () =>
   );
   const page = compile(root);
   assert.ok(page.html.includes("{ ghost | upper }"), "the author's text is left alone");
-  assert.equal(page.warnings.length, 0);
+  assert.equal(page.warnings.length, 1);
+  assert.match(page.warnings[0], /"\{ ghost \| upper \}" matches no :state/);
 });

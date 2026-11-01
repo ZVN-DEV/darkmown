@@ -434,7 +434,8 @@ export function resolvePublicFile(distRoot, url) {
   // the dev dependency map (the project's file graph). Serve them locally and a
   // preview leaks what production hides.
   const head = path.posix.normalize(cleanUrl.replaceAll("\\", "/")).split("/")[1] ?? "";
-  if (HOST_ONLY_FILES.has(head)) return null;
+  // Lowercased because macOS and Windows filesystems find `_Worker.js` anyway.
+  if (HOST_ONLY_FILES.has(head.toLowerCase())) return null;
   const base = cleanUrl.startsWith("/__wd/")
     ? cleanUrl
     : path.join(cleanUrl, path.extname(cleanUrl) ? "" : "index.html");

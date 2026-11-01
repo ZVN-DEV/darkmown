@@ -64,6 +64,8 @@
  * @property {Assets} assets
  * @property {Map<string, unknown>} state Declared state keys → initial values.
  * @property {Set<string>} stores Page-global store names (a subset of state keys).
+ * @property {{ name: string, url: string, at: string }[]} fetchPlaceholders Every
+ *   `{ name }` a `:fetch` URL reads, checked once the whole page has declared its state.
  * @property {Set<string>} fetchKeys Base state keys declared by `:fetch`, so
  *   bare `:if <key>_loading` / `:if <key>_error` regions get compile-time
  *   `role`/`aria-live` announcements.
@@ -320,6 +322,7 @@ export function createCompilation(reader) {
     state: new Map(),
     stores: new Set(),
     fetchKeys: new Set(),
+    fetchPlaceholders: [],
     warnings: [],
     sectionCounter: 0,
     headingSlugs: new Map(),
