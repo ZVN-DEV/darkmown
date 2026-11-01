@@ -103,13 +103,12 @@ test("CI fails a PR whose committed minified runtime is stale", () => {
       "dist runtime that is not built from its own src/runtime.js."
   );
 
-  // The publishing workflows gate on it too: a stale artifact reaching npm is
-  // the one version of this failure nobody can fix after the fact.
-  for (const workflow of ["release.yml", "canary.yml"]) {
-    assert.match(
-      readFileSync(`.github/workflows/${workflow}`, "utf8"),
-      /scripts\/build-runtime\.mjs --check/,
-      `${workflow} must verify the committed runtime artifact before publishing.`
-    );
-  }
+  // Both publishing paths gate on it too: a stale artifact reaching npm is the
+  // one version of this failure nobody can fix after the fact.
+  const release = readFileSync(".github/workflows/release.yml", "utf8");
+  assert.equal(
+    release.match(/scripts\/build-runtime\.mjs --check/g)?.length,
+    2,
+    "the tag path and the canary path must each verify the committed runtime artifact before publishing."
+  );
 });
