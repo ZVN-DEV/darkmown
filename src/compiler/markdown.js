@@ -39,6 +39,7 @@ export { unsafeUrlValue };
 const md = new MarkdownIt({ html: false, highlight: highlightCode });
 md.use(bindingPlugin);
 md.use(unresolvedPlugin);
+md.use(taskListPlugin);
 md.use(attrsPlugin);
 md.use(attrBindPlugin);
 md.use(imageVariantsPlugin);
@@ -65,6 +66,7 @@ export function selectMd(meta) {
     mdRawHtml = new MarkdownIt({ html: true, highlight: highlightCode });
     mdRawHtml.use(bindingPlugin);
     mdRawHtml.use(unresolvedPlugin);
+    mdRawHtml.use(taskListPlugin);
     mdRawHtml.use(attrsPlugin);
     mdRawHtml.use(attrBindPlugin);
     mdRawHtml.use(imageVariantsPlugin);
@@ -1005,6 +1007,33 @@ function unresolvedPlugin(mdInstance) {
         }
       }
     }
+    return false;
+  });
+}
+
+/**
+ * markdown-it plugin (core rule): `- [ ] item` in a `.wd` renders a read-only
+ * checkbox, so a checklist survives a markdown document becoming a `.wd`. `.md`
+ * stays strict CommonMark: it renders with no `wd` env, and this rule is a no-op
+ * without one. Static output, so a static page stays `runtime: false`. A checkbox
+ * the reader can tick is `:checkbox`.
+ * @param {MarkdownIt} mdInstance
+ * @returns {void}
+ */
+function taskListPlugin(mdInstance) {
+  mdInstance.core.ruler.after("wd_unresolved", "wd_task_list", (state) => {
+    if (!state.env?.wd) return false;
+    state.tokens.forEach((block, i) => {
+      if (block.type !== "inline" || state.tokens[i - 2]?.type !== "list_item_open") return;
+      const first = block.children?.[0];
+      const box = first?.type === "text" ? /^\[([ xX])\](?=\s|$)\s*/.exec(first.content) : null;
+      if (!first || !box) return;
+      first.content = first.content.slice(box[0].length);
+      const input = new state.Token("html_inline", "", 0);
+      input.content = `<input type="checkbox" disabled${box[1] === " " ? "" : " checked"}> `;
+      input.meta = { wdText: "" };
+      block.children?.unshift(input);
+    });
     return false;
   });
 }

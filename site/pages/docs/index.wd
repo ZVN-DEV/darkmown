@@ -91,6 +91,7 @@ For editing, there is a VS Code extension for `.wd` and `.skin` files: see [Edit
 ## The two formats
 
 - `.md` is strict CommonMark. Directives, includes, and `{ bindings }` stay plain text, and the build prints a hint if it spots `.wd` syntax in a `.md` file.
+- `.wd` adds read-only task lists: `- [ ] item` and `- [x] item` render as checkboxes, with no runtime. For a checkbox the reader can tick, use `:checkbox`.
 - `.wd` is Markdown plus directives. Renaming a file from `.md` to `.wd` is the upgrade path — nothing else changes.
 
 ## Routing rules
