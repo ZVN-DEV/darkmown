@@ -74,13 +74,13 @@ test("serve binds to loopback by default and reports HOST overrides", async () =
   const defaultOutput = await readServerBanner(root, "serve", "Darkmown preview of dist", {
     PORT: "0"
   });
-  assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:0/);
+  assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:[1-9]\d*\b/);
 
   const overrideOutput = await readServerBanner(root, "serve", "Darkmown preview of dist", {
     PORT: "0",
     HOST: "localhost"
   });
-  assert.match(overrideOutput, /http:\/\/localhost:0/);
+  assert.match(overrideOutput, /http:\/\/localhost:[1-9]\d*\b/);
 });
 
 test("dev binds to loopback by default and reports HOST overrides", async () => {
@@ -91,13 +91,13 @@ test("dev binds to loopback by default and reports HOST overrides", async () => 
   const defaultOutput = await readServerBanner(root, "dev", "Darkmown dev server ready", {
     PORT: "0"
   });
-  assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:0/);
+  assert.match(defaultOutput, /http:\/\/127\.0\.0\.1:[1-9]\d*\b/);
 
   const overrideOutput = await readServerBanner(root, "dev", "Darkmown dev server ready", {
     PORT: "0",
     HOST: "localhost"
   });
-  assert.match(overrideOutput, /http:\/\/localhost:0/);
+  assert.match(overrideOutput, /http:\/\/localhost:[1-9]\d*\b/);
 });
 
 test("bare `darkmown` prints help instead of silently building", () => {

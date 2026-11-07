@@ -361,7 +361,15 @@ test("run('serve') serves the built dist over real HTTP, then closes cleanly", a
   try {
     handle = await run(["serve"], c.env);
     assert.equal(handle.command, "serve");
-    assert.match(c.stdout(), /Darkmown preview of dist at http:\/\/127\.0\.0\.1:0/);
+    // PORT=0 asks the OS for a port; the banner names the one it really got.
+    assert.match(
+      c.stdout(),
+      new RegExp(
+        `Darkmown preview of dist at http://127\\.0\\.0\\.1:${handle.server.address().port}$`,
+        "m"
+      )
+    );
+    assert.notEqual(handle.server.address().port, 0);
 
     const origin = originOf(handle.server);
     const home = await httpGet(origin, "/");
@@ -407,7 +415,13 @@ test("run('dev') serves dist with the dev client injected, SSE + api, then close
   try {
     handle = await run(["dev"], c.env);
     assert.equal(handle.command, "dev");
-    assert.match(c.stdout(), /Darkmown dev server ready at http:\/\/127\.0\.0\.1:0/);
+    assert.match(
+      c.stdout(),
+      new RegExp(
+        `Darkmown dev server ready at http://127\\.0\\.0\\.1:${handle.server.address().port}$`,
+        "m"
+      )
+    );
     assert.match(c.stdout(), /Live compiler watching site\/ and src\//);
 
     const origin = originOf(handle.server);
@@ -555,7 +569,12 @@ test("run('dev') records a broken initial build and replays it to SSE clients", 
     assert.match(c.stderr(), /Missing @endloop/);
     // The "ready" line is honest: it says the build failed instead of
     // pretending everything is fine.
-    assert.match(c.stdout(), /ready at http:\/\/127\.0\.0\.1:0.*initial build FAILED/);
+    assert.match(
+      c.stdout(),
+      new RegExp(
+        `ready at http://127\\.0\\.0\\.1:${handle.server.address().port} .*initial build FAILED`
+      )
+    );
 
     const origin = originOf(handle.server);
     const sse = await readSse(origin, "/__wd/dev-events", { timeout: 400 });
