@@ -58,7 +58,7 @@ npm install
 npm run dev
 ```
 
-### `darkmown dev`
+### `darkmown dev [--port <n>]`
 
 Runs a live compiler:
 
@@ -73,11 +73,20 @@ Rebuilds are **incremental** for `site/` content changes. Every dev build writes
 
 Correctness beats speed: **any uncertainty runs a full rebuild** — a new, deleted, or renamed file; a file no dependency graph accounts for; a change to the site-wide feed link; a missing or stale map. A change under `src/` (the framework's own code) always runs a full rebuild in a child process so fresh modules load. Production `darkmown build` writes no map and is unaffected.
 
+Both `dev` and `serve` take `--port <n>` (or `--port=<n>`), a whole number from 0 to 65535. The flag wins over `PORT`, which wins over the default. `--port 0` asks the OS for any free port, and the ready line prints the port the server really bound:
+
+```sh
+darkmown dev --port 3000
+darkmown serve --port 0
+```
+
+A bad value fails before anything starts, with one line that says what to type instead, such as `Invalid --port "abc": expected a whole number from 0 to 65535 (0 picks any free port). Use: darkmown dev --port 5173`. A port that is already taken prints `Port 5173 is already in use. Use: darkmown dev --port 5174` and exits 1. A port the user may not bind, such as one below 1024 without root, prints one line suggesting the default port. Neither case picks a different port on its own. `dev` binds before its initial build, so a taken port leaves no build, watcher, or child process behind.
+
 Both `dev` and `serve` read three environment variables:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PORT` | `5173` (dev), `4173` (serve) | Port to listen on. |
+| `PORT` | `5173` (dev), `4173` (serve) | Port to listen on when `--port` is not given. |
 | `HOST` | `127.0.0.1` | Address to bind. `0.0.0.0` exposes the server to your network. |
 | `DARKMOWN_ALLOWED_HOSTS` | empty | Extra `Host` names to accept, comma-separated, such as a tunnel domain. `*` disables the check. |
 
@@ -116,7 +125,7 @@ Builds (target-aware) and deploys to the platform by wrapping its CLI:
 
 The deploy URL is printed when the CLI reports it. If the platform CLI isn't signed in, the command surfaces the login to run (`npx vercel login` / `npx wrangler login`) — in a Claude Code session you can run it inline with the `!` prefix — then re-run the deploy.
 
-### `darkmown serve`
+### `darkmown serve [--port <n>]`
 
 Serves the already-built `dist` directory for local preview. Run `darkmown build` first.
 

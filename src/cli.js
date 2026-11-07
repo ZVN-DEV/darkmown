@@ -2,6 +2,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleApiRequest } from "./api-runner.js";
@@ -116,10 +117,10 @@ export async function run(argv, env = {}) {
     return runMcpCommand({ argv, error });
   }
   if (command === "dev") {
-    return startDevServer({ cwd, log, warn, error });
+    return startDevServer({ argv, cwd, log, warn, error });
   }
   if (command === "serve") {
-    return startPreviewServer({ cwd, log, error });
+    return startPreviewServer({ argv, cwd, log, error });
   }
   if (command === "deploy") {
     const target = argv.slice(1).find((arg) => !arg.startsWith("-"));
@@ -337,88 +338,27 @@ function runMcpCommand({ argv, error }) {
 }
 
 /**
- * Start the live-compiler dev server. Builds once (recording, not crashing on, a
- * broken initial build), watches `site/` and `src/`, and serves dist with the
- * dev client + SSE reload channel injected. Returns the server and a clean
- * `close()` that tears down the watchers and the rebuild debounce timer.
- * @param {{ cwd: string, log: typeof console.log, warn: typeof console.warn, error: typeof console.error }} io
+ * Start the live-compiler dev server. Binds the port FIRST, then builds once
+ * (recording, not crashing on, a broken initial build), watches `site/` and
+ * `src/`, and serves dist with the dev client + SSE reload channel injected.
+ * Returns the server and a clean `close()` that tears down the watchers and the
+ * rebuild debounce timer.
+ *
+ * Binding before building means a taken or privileged port fails in one line
+ * before any work starts: no build, no watcher, no timer, no child process to
+ * tear down. The initial build is synchronous, so a request that arrives while
+ * it runs waits in the listen backlog and is answered from the fresh `dist`.
+ * @param {{ argv: string[], cwd: string, log: typeof console.log, warn: typeof console.warn, error: typeof console.error }} io
  * @returns {Promise<{ command: "dev", server: import("node:http").Server, close: () => Promise<void> }>}
  */
-function startDevServer({ cwd, log, warn, error }) {
-  const port = Number(process.env.PORT || 5173);
+function startDevServer({ argv, cwd, log, warn, error }) {
+  const port = resolvePort(argv, "dev", process.env.PORT, error);
   const host = process.env.HOST || "127.0.0.1";
   const distRoot = path.join(cwd, "dist");
   /** @type {Set<import("node:http").ServerResponse>} */
   const clients = new Set();
   /** @type {string | undefined} Last build failure, replayed to clients on connect. */
   let lastBuildError;
-
-  // A broken initial build must NOT crash the process before the HTTP server —
-  // and thus the error overlay — comes up. Record the error so new SSE clients
-  // see it on connect; the next successful rebuild clears it via `reload`.
-  // Dev builds + serves `draft: true` pages (they're work-in-progress you want
-  // to preview); the dev client stamps a visible banner so a draft is obvious.
-  // `depMap: true` writes the per-route dependency map that lets the rebuilds
-  // below be incremental for site/ content changes.
-  try {
-    buildSite(cwd, { includeDrafts: true, depMap: true });
-  } catch (err) {
-    lastBuildError = (err instanceof Error ? err.message : String(err)).trim();
-    error(`✗ Initial build failed:\n${lastBuildError}`);
-  }
-
-  // Rebuild in a child process so changes to Darkmown's own src/ always load
-  // fresh modules — an in-process rebuild would reuse the stale import cache.
-  // A site/ change additionally passes the changed path(s), so the child can
-  // rebuild only the routes whose dependency graph contains them (the builder
-  // falls back to a full rebuild on any uncertainty). A src/ change — or an
-  // event with no attributable file — queues `null`, forcing the full rebuild.
-  // The queue serializes the children: every build read-modify-writes the
-  // dependency map, so overlapping children could persist a stale map and
-  // silently stop rebuilding affected routes.
-  const runBuild = (/** @type {string[]} */ changed) =>
-    new Promise((/** @type {(value?: void) => void} */ done) => {
-      const args = [cliPath, "build", "--drafts", "--dep-map", "--quiet-feed-hints"];
-      for (const file of changed) args.push("--changed", file);
-      const started = performance.now();
-      execFile(process.execPath, args, { cwd }, (err, stdout, stderr) => {
-        if (err) {
-          const message = (stderr || stdout || String(err)).trim();
-          lastBuildError = message;
-          error(message);
-          broadcast(
-            clients,
-            `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`
-          );
-          done();
-          return;
-        }
-        lastBuildError = undefined;
-        const elapsed = Math.round(performance.now() - started);
-        if (stderr.trim()) warn(stderr.trim());
-        broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
-        log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
-        done();
-      });
-    });
-  const queue = createRebuildQueue(runBuild);
-
-  /** @type {import("node:fs").FSWatcher[]} */
-  const watchers = [];
-  for (const dir of ["site", "src"]) {
-    const abs = path.join(cwd, dir);
-    if (fs.existsSync(abs)) {
-      watchers.push(
-        fs.watch(abs, { recursive: true }, (_event, filename) => {
-          queue.change(
-            dir === "site" && filename
-              ? path.join(dir, filename.toString()).replaceAll(path.sep, "/")
-              : null
-          );
-        })
-      );
-    }
-  }
 
   const apiDir = path.join(cwd, "api");
   const server = http.createServer((req, res) => {
@@ -463,27 +403,216 @@ function startDevServer({ cwd, log, warn, error }) {
       });
   });
 
-  return new Promise((resolve) => {
-    server.listen(port, host, () => {
-      // Never claim a clean start over a broken build: when the initial build
-      // failed, say so on the ready line and point at the fix-to-retry flow.
-      log(
-        lastBuildError
-          ? `Darkmown dev server ready at http://${host}:${port} — but the initial build FAILED (see the error above). Routes show it until you fix the file; rebuilds run on save.`
-          : `Darkmown dev server ready at http://${host}:${port}`
-      );
-      log(`Live compiler watching site/ and src/`);
-      resolve({
-        command: "dev",
-        server,
-        close: () => {
-          queue.close();
-          for (const watcher of watchers) watcher.close();
-          for (const client of clients) client.end();
-          clients.clear();
-          return new Promise((done) => server.close(() => done()));
-        }
+  return listenOn(server, { port, host, command: "dev", error }).then((origin) => {
+    // A broken initial build must NOT crash the process before the HTTP server —
+    // and thus the error overlay — comes up. Record the error so new SSE clients
+    // see it on connect; the next successful rebuild clears it via `reload`.
+    // Dev builds + serves `draft: true` pages (they're work-in-progress you want
+    // to preview); the dev client stamps a visible banner so a draft is obvious.
+    // `depMap: true` writes the per-route dependency map that lets the rebuilds
+    // below be incremental for site/ content changes.
+    try {
+      buildSite(cwd, { includeDrafts: true, depMap: true });
+    } catch (err) {
+      lastBuildError = (err instanceof Error ? err.message : String(err)).trim();
+      error(`✗ Initial build failed:\n${lastBuildError}`);
+    }
+
+    // Rebuild in a child process so changes to Darkmown's own src/ always load
+    // fresh modules — an in-process rebuild would reuse the stale import cache.
+    // A site/ change additionally passes the changed path(s), so the child can
+    // rebuild only the routes whose dependency graph contains them (the builder
+    // falls back to a full rebuild on any uncertainty). A src/ change — or an
+    // event with no attributable file — queues `null`, forcing the full rebuild.
+    // The queue serializes the children: every build read-modify-writes the
+    // dependency map, so overlapping children could persist a stale map and
+    // silently stop rebuilding affected routes.
+    const runBuild = (/** @type {string[]} */ changed) =>
+      new Promise((/** @type {(value?: void) => void} */ done) => {
+        const args = [cliPath, "build", "--drafts", "--dep-map", "--quiet-feed-hints"];
+        for (const file of changed) args.push("--changed", file);
+        const started = performance.now();
+        execFile(process.execPath, args, { cwd }, (err, stdout, stderr) => {
+          if (err) {
+            const message = (stderr || stdout || String(err)).trim();
+            lastBuildError = message;
+            error(message);
+            broadcast(
+              clients,
+              `event: builderror\ndata: ${JSON.stringify({ message: message.slice(0, 4000) })}\n\n`
+            );
+            done();
+            return;
+          }
+          lastBuildError = undefined;
+          const elapsed = Math.round(performance.now() - started);
+          if (stderr.trim()) warn(stderr.trim());
+          broadcast(clients, `event: reload\ndata: ${JSON.stringify({ elapsed })}\n\n`);
+          log(`${stdout.trim().split("\n").at(-1)} (${elapsed}ms)`);
+          done();
+        });
       });
+    const queue = createRebuildQueue(runBuild);
+
+    /** @type {import("node:fs").FSWatcher[]} */
+    const watchers = [];
+    for (const dir of ["site", "src"]) {
+      const abs = path.join(cwd, dir);
+      if (fs.existsSync(abs)) {
+        watchers.push(
+          fs.watch(abs, { recursive: true }, (_event, filename) => {
+            queue.change(
+              dir === "site" && filename
+                ? path.join(dir, filename.toString()).replaceAll(path.sep, "/")
+                : null
+            );
+          })
+        );
+      }
+    }
+
+    // Never claim a clean start over a broken build: when the initial build
+    // failed, say so on the ready line and point at the fix-to-retry flow.
+    log(
+      lastBuildError
+        ? `Darkmown dev server ready at ${origin} — but the initial build FAILED (see the error above). Routes show it until you fix the file; rebuilds run on save.`
+        : `Darkmown dev server ready at ${origin}`
+    );
+    log(`Live compiler watching site/ and src/`);
+    return {
+      command: /** @type {const} */ ("dev"),
+      server,
+      close: () => {
+        queue.close();
+        for (const watcher of watchers) watcher.close();
+        for (const client of clients) client.end();
+        clients.clear();
+        return new Promise((/** @type {(value?: void) => void} */ done) =>
+          server.close(() => done())
+        );
+      }
+    };
+  });
+}
+
+/**
+ * The port each local server listens on when neither `--port` nor PORT is set.
+ * @type {{ dev: number, serve: number }}
+ */
+const DEFAULT_PORTS = { dev: 5173, serve: 4173 };
+
+/**
+ * Resolve the port `dev`/`serve` listens on. Precedence: `--port <n>` or
+ * `--port=<n>`, then the PORT environment variable, then the command's default
+ * (5173 for dev, 4173 for serve). `0` asks the OS for any free port. An empty
+ * PORT counts as unset, as it always has.
+ *
+ * A value that is not a whole number from 0 to 65535 (`abc`, `-1`, `80.5`,
+ * `70000`), or a `--port` with no value, prints one `✗` line naming what to type
+ * instead and throws a silent `CliError`, before anything is built or bound.
+ * @param {string[]} argv The argv tail (`argv[0]` is the command).
+ * @param {"dev" | "serve"} command
+ * @param {string | undefined} envPort `process.env.PORT`.
+ * @param {typeof console.error} error stderr sink for the one-line message.
+ * @returns {number}
+ */
+export function resolvePort(argv, command, envPort, error) {
+  const fallback = DEFAULT_PORTS[command];
+  const fix = `Use: darkmown ${command} --port ${fallback}`;
+  const at = argv.findIndex((arg) => arg === "--port" || arg.startsWith("--port="));
+  if (at !== -1) {
+    const raw = argv[at] === "--port" ? argv[at + 1] : argv[at].slice("--port=".length);
+    if (raw === undefined || raw === "") {
+      throw cliFailure(error, `Missing a value for --port. ${fix}`);
+    }
+    return parsePort(raw, "--port", fix, error);
+  }
+  if (envPort) return parsePort(envPort, "PORT", fix, error);
+  return fallback;
+}
+
+/**
+ * @param {string} raw The port as typed.
+ * @param {string} source `--port` or `PORT`, named in the message.
+ * @param {string} fix The `Use: …` suggestion.
+ * @param {typeof console.error} error
+ * @returns {number}
+ */
+function parsePort(raw, source, fix, error) {
+  // Trimmed so a CRLF `.env` file's `PORT=5173\r` still reads as 5173.
+  const port = /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+  if (!(port >= 0 && port <= 65535)) {
+    throw cliFailure(
+      error,
+      `Invalid ${source} "${raw}": expected a whole number from 0 to 65535 (0 picks any free port). ${fix}`
+    );
+  }
+  return port;
+}
+
+/**
+ * Print a one-line `✗` message through the `error` sink and return the silent
+ * `CliError` to throw (or reject with), so the binary prints it exactly once.
+ * @param {typeof console.error} error
+ * @param {string} message
+ * @returns {CliError}
+ */
+function cliFailure(error, message) {
+  error(`✗ ${message}`);
+  return new CliError(message, { silent: true });
+}
+
+/**
+ * The one-line explanation for a listen failure the CLI handles itself, or
+ * undefined for any other error. A taken port suggests the next port up; a
+ * permission failure suggests the command's default port (or `0`, any free
+ * port, when the default itself was refused, as on Windows reserved ranges).
+ * Neither ever picks a port silently: the user types the suggestion.
+ * @param {{ code?: string }} err The `error` event's payload.
+ * @param {{ command: "dev" | "serve", port: number }} context
+ * @returns {string | undefined}
+ */
+export function listenErrorMessage(err, { command, port }) {
+  const fallback = DEFAULT_PORTS[command];
+  if (err.code === "EADDRINUSE") {
+    const next = port < 65535 ? port + 1 : fallback;
+    return `Port ${port} is already in use. Use: darkmown ${command} --port ${next}`;
+  }
+  if (err.code === "EACCES") {
+    const hint = port < 1024 ? " (ports below 1024 need root)" : "";
+    const next = port === fallback ? 0 : fallback;
+    return `Permission denied for port ${port}${hint}. Use: darkmown ${command} --port ${next}`;
+  }
+  return undefined;
+}
+
+/**
+ * Bind `server` and resolve with the origin it really listens on, read from
+ * `server.address()`, so `--port 0` reports the port the OS picked. Hostnames
+ * (`localhost`) print as typed, since that is what the browser should use; an
+ * IP host prints as bound, bracketed when IPv6.
+ *
+ * `EADDRINUSE` and `EACCES` print one `✗` line and reject with a silent
+ * `CliError`. Every other listen error is rethrown from the `error` event, which
+ * surfaces it exactly as it did before this handler existed. The handler is
+ * removed once listening, so later server errors are untouched too.
+ * @param {import("node:http").Server} server
+ * @param {{ port: number, host: string, command: "dev" | "serve", error: typeof console.error }} options
+ * @returns {Promise<string>}
+ */
+function listenOn(server, { port, host, command, error }) {
+  return new Promise((resolve, reject) => {
+    const onError = (/** @type {NodeJS.ErrnoException} */ err) => {
+      const message = listenErrorMessage(err, { command, port });
+      if (message === undefined) throw err;
+      reject(cliFailure(error, message));
+    };
+    server.once("error", onError);
+    server.listen(port, host, () => {
+      server.removeListener("error", onError);
+      const bound = /** @type {import("node:net").AddressInfo} */ (server.address());
+      const shown = net.isIP(host) ? bound.address : host;
+      resolve(`http://${net.isIPv6(shown) ? `[${shown}]` : shown}:${bound.port}`);
     });
   });
 }
@@ -518,11 +647,11 @@ function refuseForeign(req, res, bindHost) {
  * local weight checks see transfer sizes, not raw bytes, and static files carry
  * validators (ETag/Last-Modified/Cache-Control) with conditional-request 304s,
  * so a reload revalidates instead of re-downloading every asset.
- * @param {{ cwd: string, log: typeof console.log, error: typeof console.error }} io
+ * @param {{ argv: string[], cwd: string, log: typeof console.log, error: typeof console.error }} io
  * @returns {Promise<{ command: "serve", server: import("node:http").Server, close: () => Promise<void> }>}
  */
-function startPreviewServer({ cwd, log, error }) {
-  const port = Number(process.env.PORT || 4173);
+function startPreviewServer({ argv, cwd, log, error }) {
+  const port = resolvePort(argv, "serve", process.env.PORT, error);
   const host = process.env.HOST || "127.0.0.1";
   const distRoot = path.join(cwd, "dist");
   if (!fs.existsSync(distRoot)) {
@@ -558,15 +687,14 @@ function startPreviewServer({ cwd, log, error }) {
         res.end("Internal Server Error");
       });
   });
-  return new Promise((resolve) => {
-    server.listen(port, host, () => {
-      log(`Darkmown preview of dist at http://${host}:${port}`);
-      resolve({
-        command: "serve",
-        server,
-        close: () => new Promise((done) => server.close(() => done()))
-      });
-    });
+  return listenOn(server, { port, host, command: "serve", error }).then((origin) => {
+    log(`Darkmown preview of dist at ${origin}`);
+    return {
+      command: /** @type {const} */ ("serve"),
+      server,
+      close: () =>
+        new Promise((/** @type {(value?: void) => void} */ done) => server.close(() => done()))
+    };
   });
 }
 
@@ -648,18 +776,22 @@ export function helpText() {
 
 Usage:
   darkmown init [dir] [--template <name>]   Scaffold a new project from a template
-  darkmown dev                              Start the live compiler dev server
+  darkmown dev [--port <n>]                 Start the live compiler dev server (port 5173)
   darkmown build [--target cloudflare]      Compile site/pages into dist
             [--drafts]                      Include draft: true pages (staging)
   darkmown validate [path]                  Compile-check pages without building (exit 1 on errors)
   darkmown deploy <${DEPLOY_TARGETS.join("|")}> [--prod]    Build + deploy to a platform
-  darkmown serve                            Preview the built dist locally
+  darkmown serve [--port <n>]               Preview the built dist locally (port 4173)
   darkmown mcp                              Run the MCP server on stdio (catalog, grammar, validate, error codes, docs)
   darkmown catalog [--llms|--llms-full]     Print the .wd directive catalog (JSON, --llms cheatsheet, or --llms-full reference)
   darkmown version                          Print the installed Darkmown version
   darkmown help                             Show this help
 
 Templates (init --template <name>): ${availableTemplates().join(", ")}
+
+Servers (dev, serve):
+  --port <n>          Port to listen on, 0 to 65535. Beats the PORT env var; 0 picks any free port
+  HOST=<address>      Address to bind (default 127.0.0.1)
 
 Authoring:
   site/pages          File-based routes: .md stays plain, .wd adds directives

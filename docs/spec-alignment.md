@@ -126,6 +126,7 @@ The 1.3.0 cycle shipped the crawler *files* (sitemap, rss, robots). This closes 
 - **Folder router:** `site/pages` maps to routes, and `.`, `-`, `_` prefixes hide pages.
 - **Colocation:** matching `.skin` and `.js` files attach to the page by basename, for includes too.
 - **Live DX:** dev mode live-compiles and reloads through a small SSE client.
+- **Local server ports:** `darkmown dev` and `darkmown serve` take `--port <n>` or `--port=<n>`. Precedence is flag, then `PORT`, then 5173/4173; values are validated as whole numbers from 0 to 65535, and `0` means any free port. The ready line prints the port read back from `server.address()`. A taken port (`EADDRINUSE`) or a refused one (`EACCES`) becomes one corrective `Use: darkmown <cmd> --port <n>` line and exit 1; the CLI suggests a port but never picks one silently. Dev now binds before its initial build, so that failure leaves no build, watcher, timer, or child process behind. Other listen errors surface unchanged. Covered by `tests/cli-port.test.js`.
 
 ## Stage 3 additions (2026-06-11, same day)
 

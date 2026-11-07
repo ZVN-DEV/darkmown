@@ -2,6 +2,18 @@
 
 All notable changes to Darkmown are documented here. Versions follow [semver](https://semver.org); pre-1.0 minor versions may contain breaking changes.
 
+## Unreleased
+
+### Added
+
+- `darkmown dev` and `darkmown serve` take `--port <n>` (or `--port=<n>`). It wins over `PORT`. `--port 0` picks any free port.
+
+### Changed
+
+- The ready line prints the port the server really bound, so `--port 0` and `PORT=0` show a usable URL.
+- A taken port prints `Port 5173 is already in use. Use: darkmown dev --port 5174` and exits 1, instead of a stack trace. A refused port (`EACCES`) gets one line too. A bad `--port` or `PORT` value fails with one line that says what to type.
+- `darkmown dev` binds its port before the initial build, so a taken port fails at once and leaves nothing running.
+
 ## 2.13.0 (2026-11-01)
 
 ### Added
