@@ -106,7 +106,12 @@ jobs:
 
   e2e:
     name: Browser e2e (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: when ubuntu-latest moved to 26.04, the cached
+    # Playwright WebKit (built for 24.04, keyed only by OS family and
+    # Playwright version) failed to start with "libicudata.so.74: cannot open
+    # shared object file", so every webkit test failed in 3 ms. Move this with
+    # a Playwright release that supports the newer image.
+    runs-on: ubuntu-24.04
     strategy:
       # A WebKit-only regression and a Firefox-only one are different bugs; one
       # engine going red must not hide the other two.
